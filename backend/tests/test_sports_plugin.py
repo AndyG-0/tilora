@@ -405,9 +405,7 @@ async def test_trending_surfaces_per_league_error_without_raising(tmp_db):
     summary = await plugin.get_summary()
 
     assert [g["id"] for g in summary["trending"]] == ["10", "11"]
-    assert summary["trending_errors"] == [
-        {"league": "college-football", "error": "ESPN request failed (HTTP 500)."}
-    ]
+    assert summary["trending_errors"] == [{"league": "college-football", "error": "ESPN request failed (HTTP 500)."}]
 
 
 async def test_trending_surfaces_unsupported_league_without_raising(tmp_db):

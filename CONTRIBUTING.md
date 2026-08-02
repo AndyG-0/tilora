@@ -92,7 +92,9 @@ Component tests live next to the component (`AlertTile.svelte` +
 `frontend/src/lib/components/tiles/AlertTile.test.ts`.
 
 CI (`.github/workflows/ci.yml`) runs both suites on every push; a PR should
-pass both before merge.
+pass both before merge. `./scripts/ci-check.sh` runs everything the
+`backend` and `frontend` CI jobs run, in the same order, so you can catch a
+failure locally before pushing.
 
 ## Commits / PRs
 
