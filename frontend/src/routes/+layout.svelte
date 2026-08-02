@@ -9,6 +9,7 @@
 	import { loadThemeFromServer } from '$lib/stores/theme';
 	import { device, ensureDevice, renameDevice } from '$lib/stores/device';
 	import { user, userLoaded, loadCurrentUser } from '$lib/stores/user';
+	import { needsSetup, setupStatusLoaded, setupStatusError, loadSetupStatus } from '$lib/stores/setup';
 
 	let { children } = $props();
 
@@ -25,14 +26,28 @@
 			deviceNameInput = registered.name;
 		}
 
+		// Resolved before loadCurrentUser() so the redirect effect below can
+		// decide setup-vs-login before either store's data actually matters.
+		await loadSetupStatus();
 		await loadCurrentUser();
 	});
 
-	// Redirect to the profile picker once we know there's no session — but
-	// only after the initial check resolves, so a logged-in user isn't
-	// bounced through /login on every reload, and only outside /login itself
-	// so the picker doesn't redirect-loop against itself.
+	// Three-way redirect: unreachable backend gets its own message (below),
+	// a fresh install goes to /setup, everyone else falls through to the
+	// existing "no session -> /login" check. Order matters — $needsSetup and
+	// $userLoaded are only meaningful once their respective loads resolve.
 	$effect(() => {
+		if (!$setupStatusLoaded || $setupStatusError) return;
+
+		if ($needsSetup) {
+			if (page.url.pathname !== '/setup') goto('/setup');
+			return;
+		}
+		if (page.url.pathname === '/setup') {
+			goto('/login');
+			return;
+		}
+
 		if (!$userLoaded) return;
 		if (!$user && page.url.pathname !== '/login') {
 			goto('/login');
@@ -55,20 +70,38 @@
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
-{#if namingDevice}
-	<div class="device-modal-backdrop" role="presentation">
-		<div class="device-modal">
-			<h2>Name this device</h2>
-			<p class="hint">Helps tell it apart in the device list — e.g. "Kitchen Tablet" or "Living Room TV".</p>
-			<input type="text" bind:value={deviceNameInput} maxlength="40" />
-			<button class="confirm" onclick={confirmDeviceName}>Done</button>
-		</div>
+{#if $setupStatusError}
+	<div class="fatal-error">
+		<h2>Could not reach the Tilora backend</h2>
+		<p class="hint">Check that the backend is running and reachable, then reload this page.</p>
 	</div>
+{:else}
+	{#if namingDevice}
+		<div class="device-modal-backdrop" role="presentation">
+			<div class="device-modal">
+				<h2>Name this device</h2>
+				<p class="hint">Helps tell it apart in the device list — e.g. "Kitchen Tablet" or "Living Room TV".</p>
+				<input type="text" bind:value={deviceNameInput} maxlength="40" />
+				<button class="confirm" onclick={confirmDeviceName}>Done</button>
+			</div>
+		</div>
+	{/if}
+
+	{@render children()}
 {/if}
 
-{@render children()}
-
 <style>
+	.fatal-error {
+		min-height: 100vh;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		padding: 2rem;
+		text-align: center;
+	}
+
 	.device-modal-backdrop {
 		position: fixed;
 		inset: 0;

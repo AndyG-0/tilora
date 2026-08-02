@@ -13,8 +13,21 @@ services:
       # fresh 2FA prompt for the private iCloud Photos provider. Routing it
       # into the same volume as the DB fixes that, matching DB_PATH.
       - ICLOUD_SESSION_DIR=/app/data/icloud_session
+      # Must match wherever the *browser* actually loads the frontend from —
+      # this compose file serves it on port 3000, not the backend's own
+      # 5173 default (that's the local Vite dev server's port). Overriding
+      # here (rather than relying on backend/.env) means it's always correct
+      # for this deployment out of the box; override again if
+      # PUBLIC_API_BASE_URL below is also pointed at a non-default host.
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
     volumes:
-      - ./backend/config/dashboard.yaml:/app/config/dashboard.yaml
+      # A directory mount (not a single-file mount on dashboard.yaml) —
+      # ./backend/config is tracked in git and always exists, so a missing
+      # dashboard.yaml on the host just becomes a normal missing file inside
+      # an always-present directory, instead of Docker silently creating an
+      # empty directory at the mount point (see docker-entrypoint.sh, which
+      # copies the example file into place when that happens).
+      - ./backend/config:/app/config
       - ./backend/.env:/app/.env
       - backend-storage:/app/data
     restart: unless-stopped

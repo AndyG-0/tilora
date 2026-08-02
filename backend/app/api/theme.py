@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
-router = APIRouter(prefix="/api/theme", tags=["theme"])
+from app.auth import get_current_user
+
+router = APIRouter(prefix="/api/theme", tags=["theme"], dependencies=[Depends(get_current_user)])
 
 # v1 ships two themes; the frontend owns the actual CSS. This endpoint just
 # tells the UI what's selectable and what to default to.

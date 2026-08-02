@@ -5,13 +5,25 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api import settings as settings_api
+from app.auth import get_current_admin
 
 
 @pytest.fixture
 def client():
     app = FastAPI()
     app.include_router(settings_api.router)
+    # These tests exercise settings persistence, not auth — stub out who's
+    # asking rather than juggling real device/session cookies here.
+    app.dependency_overrides[get_current_admin] = lambda: {"id": "admin", "role": "admin"}
     return TestClient(app)
+
+
+def test_settings_routes_require_an_admin_session():
+    app = FastAPI()
+    app.include_router(settings_api.router)
+    client = TestClient(app)
+
+    assert client.get("/api/settings").status_code == 401
 
 
 def test_get_settings_never_returns_raw_secret_values(client, tmp_db):

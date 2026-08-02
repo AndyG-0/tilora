@@ -18,14 +18,11 @@ def client():
     return TestClient(app)
 
 
-def test_list_profiles_includes_the_seeded_default_profile(client, tmp_db):
+def test_list_profiles_is_empty_on_a_fresh_install(client, tmp_db):
     response = client.get("/api/users")
 
     assert response.status_code == 200
-    body = response.json()
-    assert len(body) == 1
-    assert body[0]["id"] == "default"
-    assert body[0]["has_pin"] is False
+    assert response.json() == []
 
 
 def test_create_profile_requires_a_device_cookie(client, tmp_db):
@@ -60,8 +57,10 @@ def test_create_profile_rejects_a_malformed_pin(client, tmp_db):
 
 def test_login_with_no_pin_set_succeeds_without_a_pin(client, tmp_db):
     client.post("/api/devices/register")
+    profile = client.post("/api/users", json={"name": "Alice"}).json()
+    client.post("/api/users/logout")
 
-    response = client.post("/api/users/default/login", json={})
+    response = client.post(f"/api/users/{profile['id']}/login", json={})
 
     assert response.status_code == 200
     assert SESSION_COOKIE_NAME in response.cookies
@@ -89,7 +88,7 @@ def test_login_with_a_pin_requires_the_correct_pin(client, tmp_db):
 
 def test_logout_clears_the_session(client, tmp_db):
     client.post("/api/devices/register")
-    client.post("/api/users/default/login", json={})
+    client.post("/api/users", json={"name": "Alice"})
 
     response = client.post("/api/users/logout")
 
@@ -111,7 +110,7 @@ def test_me_requires_a_session(client, tmp_db):
 
 def test_patch_me_updates_name_and_avatar(client, tmp_db):
     client.post("/api/devices/register")
-    client.post("/api/users/default/login", json={})
+    client.post("/api/users", json={"name": "Alice"})
 
     response = client.patch("/api/users/me", json={"name": "Renamed", "avatar": "dog.png"})
 
@@ -123,18 +122,18 @@ def test_patch_me_updates_name_and_avatar(client, tmp_db):
 
 def test_patch_me_can_set_and_then_clear_a_pin(client, tmp_db):
     client.post("/api/devices/register")
-    client.post("/api/users/default/login", json={})
+    profile = client.post("/api/users", json={"name": "Alice"}).json()
 
     client.patch("/api/users/me", json={"pin": "4321"})
-    assert db.get_user("default")["pin_hash"] is not None
+    assert db.get_user(profile["id"])["pin_hash"] is not None
 
     client.patch("/api/users/me", json={"pin": ""})
-    assert db.get_user("default")["pin_hash"] is None
+    assert db.get_user(profile["id"])["pin_hash"] is None
 
 
 def test_delete_me_refuses_to_delete_the_only_remaining_profile(client, tmp_db):
     client.post("/api/devices/register")
-    client.post("/api/users/default/login", json={})
+    client.post("/api/users", json={"name": "Alice"})
 
     response = client.delete("/api/users/me")
 
@@ -144,17 +143,17 @@ def test_delete_me_refuses_to_delete_the_only_remaining_profile(client, tmp_db):
 def test_delete_me_succeeds_when_another_profile_exists(client, tmp_db):
     client.post("/api/devices/register")
     client.post("/api/users", json={"name": "Alice"})
-    client.post("/api/users/default/login", json={})
+    bob = client.post("/api/users", json={"name": "Bob"}).json()
 
     response = client.delete("/api/users/me")
 
     assert response.status_code == 200
-    assert db.get_user("default") is None
+    assert db.get_user(bob["id"]) is None
 
 
 def test_get_and_patch_preferences_round_trip(client, tmp_db):
     client.post("/api/devices/register")
-    client.post("/api/users/default/login", json={})
+    client.post("/api/users", json={"name": "Alice"})
 
     assert client.get("/api/users/me/preferences").json() == {"theme": "dark"}
 

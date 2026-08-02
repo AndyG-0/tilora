@@ -518,14 +518,41 @@ export interface UserProfile {
 	has_pin: boolean;
 }
 
+export type UserRole = 'admin' | 'member';
+
 export interface CurrentUser {
 	id: string;
 	name: string;
 	avatar: string | null;
+	role: UserRole;
 }
 
 export interface UserPreferences {
 	theme: string;
+}
+
+export interface SetupStatus {
+	needs_setup: boolean;
+}
+
+export interface HouseholdUser {
+	id: string;
+	name: string;
+	avatar: string | null;
+	has_pin: boolean;
+	role: UserRole;
+	created_at: string;
+}
+
+// fetch() itself throws a TypeError before ever reaching a response — that's
+// the one reliable signal that the request never made it to the server (CORS
+// block, DNS failure, connection refused), as opposed to a server response
+// that just wasn't `ok`. Used to tell "backend unreachable" apart from
+// "backend responded with an error" in first-run/login error messaging.
+export type FetchErrorKind = 'network' | 'server';
+
+export function describeFetchError(error: unknown): FetchErrorKind {
+	return error instanceof TypeError ? 'network' : 'server';
 }
 
 // `credentials: 'include'` on every request so the device/session cookies
@@ -675,4 +702,14 @@ export const api = {
 	getPreferences: () => getJSON<UserPreferences>('/api/users/me/preferences'),
 	updatePreferences: (partial: Partial<UserPreferences>) =>
 		patchJSON<UserPreferences>('/api/users/me/preferences', partial),
+	setupStatus: () => getJSON<SetupStatus>('/api/setup/status'),
+	createSetupAdmin: (name: string, avatar?: string, pin?: string) =>
+		postJSON<CurrentUser>('/api/setup/admin', {
+			name,
+			...(avatar !== undefined && { avatar }),
+			...(pin !== undefined && { pin }),
+		}),
+	listHouseholdUsers: () => getJSON<HouseholdUser[]>('/api/admin/users'),
+	updateUserRole: (id: string, role: UserRole) => patchJSON<HouseholdUser>(`/api/admin/users/${id}/role`, { role }),
+	removeHouseholdUser: (id: string) => deleteJSON<{ status: string }>(`/api/admin/users/${id}`),
 };
