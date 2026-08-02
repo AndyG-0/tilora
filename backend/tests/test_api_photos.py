@@ -10,7 +10,7 @@ from app.integrations import icloud_photos, icloud_shared_album, immich_client
 
 
 @pytest.fixture
-def client():
+def client(tmp_db):
     app = FastAPI()
     app.include_router(photos.router)
     return TestClient(app)

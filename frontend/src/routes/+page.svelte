@@ -425,12 +425,7 @@
 	</button>
 	{#if $user}
 		<div class="profile-menu-wrap">
-			<button
-				class="icon-button"
-				class:active={profileMenuOpen}
-				onclick={toggleProfileMenu}
-				aria-label="Profile"
-			>
+			<button class="icon-button" class:active={profileMenuOpen} onclick={toggleProfileMenu} aria-label="Profile">
 				{$user.avatar || $user.name.charAt(0).toUpperCase()}
 			</button>
 			{#if profileMenuOpen}
