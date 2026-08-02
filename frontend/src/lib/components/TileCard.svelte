@@ -1,0 +1,42 @@
+<script lang="ts">
+	import { goto } from '$app/navigation';
+	import type { Snippet } from 'svelte';
+
+	let { widgetId, children }: { widgetId: string; children: Snippet } = $props();
+</script>
+
+<div
+	class="tile"
+	role="button"
+	tabindex="0"
+	onclick={() => goto(`/widget/${widgetId}`)}
+	onkeydown={(e) => {
+		if (e.key === 'Enter' || e.key === ' ') {
+			e.preventDefault();
+			goto(`/widget/${widgetId}`);
+		}
+	}}
+>
+	{@render children()}
+</div>
+
+<style>
+	.tile {
+		display: block;
+		width: 100%;
+		height: 100%;
+		text-align: left;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 1rem;
+		padding: 1.25rem;
+		cursor: pointer;
+		/* Touch-first: no hover-dependent affordance, generous tap target. */
+		min-height: 8rem;
+		overflow: hidden;
+	}
+
+	.tile:active {
+		background: var(--color-surface-hover);
+	}
+</style>

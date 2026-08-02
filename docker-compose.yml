@@ -1,0 +1,52 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_PATH=/app/data/storage.db
+      # Without this, icloudpy's trusted-session cookies default to
+      # /app/icloud_session (see backend/app/config.py), which isn't backed
+      # by any volume above — every container recreation would force a
+      # fresh 2FA prompt for the private iCloud Photos provider. Routing it
+      # into the same volume as the DB fixes that, matching DB_PATH.
+      - ICLOUD_SESSION_DIR=/app/data/icloud_session
+    volumes:
+      - ./backend/config/dashboard.yaml:/app/config/dashboard.yaml
+      - ./backend/.env:/app/.env
+      - backend-storage:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      # Read at request time (not baked into the image) — must be an address
+      # the *browser* can reach the backend at, e.g. the Pi's LAN IP; see the
+      # note in frontend/Dockerfile. Override in a .env file next to this
+      # compose file, or with `PUBLIC_API_BASE_URL=... docker compose up`.
+      # Changing this only needs a container restart, not a rebuild.
+      - PUBLIC_API_BASE_URL=${PUBLIC_API_BASE_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  backend-storage:

@@ -1,0 +1,65 @@
+from __future__ import annotations
+
+from app.plugins.ai_insights.plugin import AIInsightsPlugin
+from app.storage import db
+
+
+def make_plugin() -> AIInsightsPlugin:
+    return AIInsightsPlugin(
+        {
+            "id": "ai-insights",
+            "settings": {
+                "title": "Daily Briefing",
+                "cron": "30 6 * * *",
+                "prompt": "Say hello",
+            },
+        }
+    )
+
+
+async def test_get_summary_with_no_prior_run(tmp_db):
+    plugin = make_plugin()
+    summary = await plugin.get_summary()
+    assert summary == {
+        "title": "Daily Briefing",
+        "text": "No briefing generated yet.",
+        "ran_at": None,
+    }
+
+
+async def test_get_summary_returns_latest_run(tmp_db):
+    plugin = make_plugin()
+    db.record_ai_run(plugin.id, {"text": "It's sunny today."})
+
+    summary = await plugin.get_summary()
+
+    assert summary["title"] == "Daily Briefing"
+    assert summary["text"] == "It's sunny today."
+    assert summary["ran_at"] is not None
+
+
+async def test_get_detail_includes_history(tmp_db):
+    plugin = make_plugin()
+    db.record_ai_run(plugin.id, {"text": "First run"})
+    db.record_ai_run(plugin.id, {"text": "Second run"})
+
+    detail = await plugin.get_detail()
+
+    assert detail["text"] == "Second run"
+    assert len(detail["history"]) == 2
+    assert [h["text"] for h in detail["history"]] == ["Second run", "First run"]
+
+
+async def test_get_detail_includes_prompt_and_cron(tmp_db):
+    plugin = make_plugin()
+
+    detail = await plugin.get_detail()
+
+    assert detail["prompt"] == "Say hello"
+    assert detail["cron"] == "30 6 * * *"
+
+
+async def test_prompt_and_cron_properties():
+    plugin = make_plugin()
+    assert plugin.prompt == "Say hello"
+    assert plugin.cron == "30 6 * * *"

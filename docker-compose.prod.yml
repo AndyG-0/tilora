@@ -1,0 +1,45 @@
+services:
+  backend:
+    image: ghcr.io/AndyG-0/tilora-backend:${TILORA_VERSION:-latest}
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_PATH=/app/data/storage.db
+      - ICLOUD_SESSION_DIR=/app/data/icloud_session
+    volumes:
+      - ./backend/config/dashboard.yaml:/app/config/dashboard.yaml
+      - ./backend/.env:/app/.env
+      - backend-storage:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    image: ghcr.io/AndyG-0/tilora-frontend:${TILORA_VERSION:-latest}
+    environment:
+      # Read at request time, not baked into the image — must be an address
+      # the *browser* can reach the backend at. Defaults to localhost, which
+      # is correct only when the browser and both containers share a host
+      # (e.g. the kiosk Pi itself). For any other topology (frontend and
+      # backend on different hosts, a custom port, ...) override this —
+      # no rebuild needed, just restart the container.
+      - PUBLIC_API_BASE_URL=${PUBLIC_API_BASE_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  backend-storage:

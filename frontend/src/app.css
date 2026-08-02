@@ -1,0 +1,34 @@
+@import './lib/themes/light.css';
+@import './lib/themes/dark.css';
+@import './lib/themes/sepia.css';
+@import './lib/themes/contrast.css';
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	height: 100%;
+	margin: 0;
+}
+
+body {
+	background: var(--color-bg);
+	color: var(--color-text);
+	font-family:
+		system-ui,
+		-apple-system,
+		'Segoe UI',
+		sans-serif;
+	/* Kiosk touchscreen: no text selection, no overscroll bounce, no callouts. */
+	-webkit-user-select: none;
+	user-select: none;
+	overscroll-behavior: none;
+	touch-action: manipulation;
+}
+
+button {
+	font: inherit;
+	color: inherit;
+}

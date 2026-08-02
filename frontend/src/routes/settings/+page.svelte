@@ -1,0 +1,725 @@
+<script lang="ts">
+	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
+	import { api, type AppSettings, type VersionInfo, type DeviceListEntry } from '$lib/api';
+	import { user, logout } from '$lib/stores/user';
+	import { device as currentDevice, renameDevice as renameCurrentDevice } from '$lib/stores/device';
+
+	let settings = $state<AppSettings | null>(null);
+	let version = $state<VersionInfo | null>(null);
+	let aiModelInput = $state('');
+	let timezoneInput = $state('UTC');
+	let anthropicKeyInput = $state('');
+	let openaiKeyInput = $state('');
+	let geminiKeyInput = $state('');
+	let googleCalendarClientIdInput = $state('');
+	let googleCalendarClientSecretInput = $state('');
+	let microsoftCalendarClientIdInput = $state('');
+	let microsoftCalendarClientSecretInput = $state('');
+	let caldavUrlInput = $state('');
+	let caldavUsernameInput = $state('');
+	let caldavPasswordInput = $state('');
+	let icloudUsernameInput = $state('');
+	let icloudPasswordInput = $state('');
+	let timezoneOptions = $state<string[]>(['UTC']);
+	let saving = $state(false);
+	let saved = $state(false);
+	let error = $state<string | null>(null);
+
+	// Name/avatar/PIN for the logged-in profile — separate save flow from
+	// the app-wide settings above since it hits /api/users/me, not
+	// /api/settings.
+	let profileNameInput = $state('');
+	let profileAvatarInput = $state('');
+	let profilePinInput = $state('');
+	let profileHasPin = $state(false);
+	let profileSaving = $state(false);
+	let profileSaved = $state(false);
+	let profileError = $state<string | null>(null);
+	let confirmingDeleteProfile = $state(false);
+	let deletingProfile = $state(false);
+	let profileInitialized = false;
+
+	// $user loads asynchronously (see +layout.svelte's gate), so seed these
+	// inputs the first time it becomes available rather than in onMount.
+	$effect(() => {
+		if ($user && !profileInitialized) {
+			profileInitialized = true;
+			profileNameInput = $user.name;
+			profileAvatarInput = $user.avatar ?? '';
+			const currentUserId = $user.id;
+			api
+				.listUsers()
+				.then((profiles) => {
+					profileHasPin = profiles.find((p) => p.id === currentUserId)?.has_pin ?? false;
+				})
+				.catch(() => {
+					// leave the PIN section assuming no PIN is set
+				});
+		}
+	});
+
+	let devices = $state<DeviceListEntry[]>([]);
+	let devicesError = $state<string | null>(null);
+	let deviceNameInput = $state('');
+	let savingDeviceName = $state(false);
+	let confirmingForgetDeviceId = $state<string | null>(null);
+	let forgettingDeviceId = $state<string | null>(null);
+	let deviceNameInitialized = false;
+
+	$effect(() => {
+		if ($currentDevice && !deviceNameInitialized) {
+			deviceNameInitialized = true;
+			deviceNameInput = $currentDevice.name;
+		}
+	});
+
+	async function loadDevices() {
+		try {
+			devices = await api.listDevices();
+		} catch {
+			devicesError = 'Could not load devices.';
+		}
+	}
+
+	onMount(async () => {
+		try {
+			// Intl.supportedValuesOf isn't in every browser's types yet, but is
+			// available in the Chromium the kiosk runs — avoids shipping a
+			// hardcoded IANA timezone list.
+			const supported = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.(
+				'timeZone',
+			);
+			if (supported?.length) timezoneOptions = supported;
+		} catch {
+			// keep the UTC-only fallback
+		}
+
+		try {
+			settings = await api.settings();
+			aiModelInput = settings.ai_model;
+			timezoneInput = settings.timezone;
+			caldavUrlInput = settings.caldav_url;
+			caldavUsernameInput = settings.caldav_username;
+			icloudUsernameInput = settings.icloud_username;
+			if (!timezoneOptions.includes(timezoneInput)) timezoneOptions = [timezoneInput, ...timezoneOptions];
+		} catch {
+			error = 'Could not load settings.';
+		}
+
+		try {
+			version = await api.version();
+		} catch {
+			// leave the update section hidden
+		}
+
+		await loadDevices();
+	});
+
+	async function save() {
+		saving = true;
+		saved = false;
+		error = null;
+		try {
+			const partial: Record<string, string> = {
+				ai_model: aiModelInput,
+				timezone: timezoneInput,
+				caldav_url: caldavUrlInput,
+				caldav_username: caldavUsernameInput,
+				icloud_username: icloudUsernameInput,
+			};
+			if (anthropicKeyInput) partial.anthropic_api_key = anthropicKeyInput;
+			if (openaiKeyInput) partial.openai_api_key = openaiKeyInput;
+			if (geminiKeyInput) partial.gemini_api_key = geminiKeyInput;
+			if (googleCalendarClientIdInput) partial.google_calendar_client_id = googleCalendarClientIdInput;
+			if (googleCalendarClientSecretInput) partial.google_calendar_client_secret = googleCalendarClientSecretInput;
+			if (microsoftCalendarClientIdInput) partial.microsoft_calendar_client_id = microsoftCalendarClientIdInput;
+			if (microsoftCalendarClientSecretInput)
+				partial.microsoft_calendar_client_secret = microsoftCalendarClientSecretInput;
+			if (caldavPasswordInput) partial.caldav_password = caldavPasswordInput;
+			if (icloudPasswordInput) partial.icloud_password = icloudPasswordInput;
+
+			settings = await api.updateSettings(partial);
+			anthropicKeyInput = '';
+			openaiKeyInput = '';
+			geminiKeyInput = '';
+			googleCalendarClientIdInput = '';
+			googleCalendarClientSecretInput = '';
+			microsoftCalendarClientIdInput = '';
+			microsoftCalendarClientSecretInput = '';
+			caldavPasswordInput = '';
+			icloudPasswordInput = '';
+			saved = true;
+		} catch {
+			error = 'Could not save settings.';
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function clearKey(
+		key:
+			| 'anthropic_api_key'
+			| 'openai_api_key'
+			| 'gemini_api_key'
+			| 'google_calendar_client_id'
+			| 'google_calendar_client_secret'
+			| 'microsoft_calendar_client_id'
+			| 'microsoft_calendar_client_secret'
+			| 'caldav_password'
+			| 'icloud_password',
+	) {
+		error = null;
+		try {
+			settings = await api.updateSettings({ [key]: '' });
+		} catch {
+			error = 'Could not clear the key.';
+		}
+	}
+
+	async function saveProfile() {
+		if (profilePinInput && !/^\d{4,8}$/.test(profilePinInput)) {
+			profileError = 'PIN must be 4-8 digits.';
+			return;
+		}
+		profileSaving = true;
+		profileSaved = false;
+		profileError = null;
+		try {
+			const partial: { name?: string; avatar?: string; pin?: string } = {
+				name: profileNameInput.trim(),
+				avatar: profileAvatarInput.trim(),
+			};
+			if (profilePinInput) partial.pin = profilePinInput;
+			const updated = await api.updateUser(partial);
+			user.set(updated);
+			if (profilePinInput) profileHasPin = true;
+			profilePinInput = '';
+			profileSaved = true;
+		} catch {
+			profileError = 'Could not save profile.';
+		} finally {
+			profileSaving = false;
+		}
+	}
+
+	async function clearPin() {
+		profileError = null;
+		try {
+			const updated = await api.updateUser({ pin: '' });
+			user.set(updated);
+			profileHasPin = false;
+		} catch {
+			profileError = 'Could not clear PIN.';
+		}
+	}
+
+	async function deleteProfile() {
+		deletingProfile = true;
+		profileError = null;
+		try {
+			await api.deleteUser();
+			await logout().catch(() => {});
+			goto('/login');
+		} catch {
+			profileError = "Could not delete profile — it may be the only one left.";
+			deletingProfile = false;
+			confirmingDeleteProfile = false;
+		}
+	}
+
+	async function saveDeviceName() {
+		savingDeviceName = true;
+		devicesError = null;
+		try {
+			await renameCurrentDevice(deviceNameInput.trim());
+			await loadDevices();
+		} catch {
+			devicesError = 'Could not rename device.';
+		} finally {
+			savingDeviceName = false;
+		}
+	}
+
+	async function forgetDevice(id: string) {
+		forgettingDeviceId = id;
+		devicesError = null;
+		try {
+			await api.deleteDevice(id);
+			devices = devices.filter((d) => d.id !== id);
+		} catch {
+			devicesError = 'Could not forget device.';
+		} finally {
+			forgettingDeviceId = null;
+			confirmingForgetDeviceId = null;
+		}
+	}
+</script>
+
+<div class="settings-page">
+	<button class="back" onclick={() => goto('/')}>← Back</button>
+	<h1>Settings</h1>
+
+	{#if !settings}
+		<p class="hint">{error ?? 'Loading…'}</p>
+	{:else}
+		<section>
+			<h2>AI provider</h2>
+			<label>
+				Model
+				<input type="text" bind:value={aiModelInput} placeholder="anthropic/claude-sonnet-5" />
+			</label>
+			<p class="hint">
+				Follows litellm's "&lt;provider&gt;/&lt;model&gt;" convention, e.g. anthropic/claude-sonnet-5, openai/gpt-5, or
+				gemini/gemini-2.5-flash.
+			</p>
+
+			<label>
+				Anthropic API key
+				<input
+					type="password"
+					bind:value={anthropicKeyInput}
+					placeholder={settings.has_anthropic_api_key ? 'Set — enter a new value to replace it' : 'Not set'}
+				/>
+			</label>
+			{#if settings.has_anthropic_api_key}
+				<button class="clear" onclick={() => clearKey('anthropic_api_key')}>Clear key</button>
+			{/if}
+
+			<label>
+				OpenAI API key
+				<input
+					type="password"
+					bind:value={openaiKeyInput}
+					placeholder={settings.has_openai_api_key ? 'Set — enter a new value to replace it' : 'Not set'}
+				/>
+			</label>
+			{#if settings.has_openai_api_key}
+				<button class="clear" onclick={() => clearKey('openai_api_key')}>Clear key</button>
+			{/if}
+
+			<label>
+				Gemini API key
+				<input
+					type="password"
+					bind:value={geminiKeyInput}
+					placeholder={settings.has_gemini_api_key ? 'Set — enter a new value to replace it' : 'Not set'}
+				/>
+			</label>
+			{#if settings.has_gemini_api_key}
+				<button class="clear" onclick={() => clearKey('gemini_api_key')}>Clear key</button>
+			{/if}
+		</section>
+
+		<section>
+			<h2>Google Calendar</h2>
+			<label>
+				Client ID
+				<input
+					type="password"
+					bind:value={googleCalendarClientIdInput}
+					placeholder={settings.has_google_calendar_client_id ? 'Set — enter a new value to replace it' : 'Not set'}
+				/>
+			</label>
+			{#if settings.has_google_calendar_client_id}
+				<button class="clear" onclick={() => clearKey('google_calendar_client_id')}> Clear client ID </button>
+			{/if}
+
+			<label>
+				Client secret
+				<input
+					type="password"
+					bind:value={googleCalendarClientSecretInput}
+					placeholder={settings.has_google_calendar_client_secret ? 'Set — enter a new value to replace it' : 'Not set'}
+				/>
+			</label>
+			{#if settings.has_google_calendar_client_secret}
+				<button class="clear" onclick={() => clearKey('google_calendar_client_secret')}> Clear client secret </button>
+			{/if}
+			<p class="hint">
+				From an OAuth 2.0 Client ID (console.cloud.google.com). Once saved, connect your account from the Calendar
+				widget's detail view.
+			</p>
+		</section>
+
+		<section>
+			<h2>Microsoft 365 Calendar</h2>
+			<label>
+				Client ID
+				<input
+					type="password"
+					bind:value={microsoftCalendarClientIdInput}
+					placeholder={settings.has_microsoft_calendar_client_id ? 'Set — enter a new value to replace it' : 'Not set'}
+				/>
+			</label>
+			{#if settings.has_microsoft_calendar_client_id}
+				<button class="clear" onclick={() => clearKey('microsoft_calendar_client_id')}> Clear client ID </button>
+			{/if}
+
+			<label>
+				Client secret
+				<input
+					type="password"
+					bind:value={microsoftCalendarClientSecretInput}
+					placeholder={settings.has_microsoft_calendar_client_secret
+						? 'Set — enter a new value to replace it'
+						: 'Not set'}
+				/>
+			</label>
+			{#if settings.has_microsoft_calendar_client_secret}
+				<button class="clear" onclick={() => clearKey('microsoft_calendar_client_secret')}>
+					Clear client secret
+				</button>
+			{/if}
+			<p class="hint">
+				From an app registration (portal.azure.com -> Microsoft Entra ID -> App registrations). Once saved, connect your
+				account from a Calendar widget's detail view whose
+				<code>provider</code> is <code>microsoft</code>.
+			</p>
+		</section>
+
+		<section>
+			<h2>CalDAV Calendar</h2>
+			<label>
+				Server URL
+				<input type="text" bind:value={caldavUrlInput} placeholder="https://caldav.icloud.com" />
+			</label>
+
+			<label>
+				Username
+				<input type="text" bind:value={caldavUsernameInput} />
+			</label>
+
+			<label>
+				Password
+				<input
+					type="password"
+					bind:value={caldavPasswordInput}
+					placeholder={settings.has_caldav_password ? 'Set — enter a new value to replace it' : 'Not set'}
+				/>
+			</label>
+			{#if settings.has_caldav_password}
+				<button class="clear" onclick={() => clearKey('caldav_password')}>Clear password</button>
+			{/if}
+			<p class="hint">
+				Works with iCloud, Fastmail, Nextcloud, and most self-hosted calendars — usually an app-specific password rather
+				than your account password. Set a calendar widget's
+				<code>provider</code> to <code>caldav</code> in <code>dashboard.yaml</code> to use it.
+			</p>
+		</section>
+
+		<section>
+			<h2>iCloud Photos</h2>
+			<label>
+				Apple ID
+				<input type="text" bind:value={icloudUsernameInput} />
+			</label>
+
+			<label>
+				Password
+				<input
+					type="password"
+					bind:value={icloudPasswordInput}
+					placeholder={settings.has_icloud_password ? 'Set — enter a new value to replace it' : 'Not set'}
+				/>
+			</label>
+			{#if settings.has_icloud_password}
+				<button class="clear" onclick={() => clearKey('icloud_password')}>Clear password</button>
+			{/if}
+			<p class="hint">
+				Your real Apple ID and account password (Apple doesn't support app-specific passwords here), so this grants full
+				account access, not just Photos — only fill this in if you're comfortable with that. Set a photos widget's <code
+					>provider</code
+				>
+				to
+				<code>icloud_private</code> in <code>dashboard.yaml</code>, save this section, then connect (including any 2FA
+				prompt) from that widget's detail view.
+			</p>
+		</section>
+
+		<section>
+			<h2>Timezone</h2>
+			<label>
+				Used by the clock and date widgets
+				<select bind:value={timezoneInput}>
+					{#each timezoneOptions as tz (tz)}
+						<option value={tz}>{tz}</option>
+					{/each}
+				</select>
+			</label>
+		</section>
+
+		<section>
+			<h2>Profile</h2>
+			<label>
+				Name
+				<input type="text" bind:value={profileNameInput} maxlength="40" />
+			</label>
+			<label>
+				Avatar (emoji, optional)
+				<input type="text" bind:value={profileAvatarInput} placeholder="🐱" maxlength="8" />
+			</label>
+			<label>
+				PIN
+				<input
+					type="password"
+					inputmode="numeric"
+					bind:value={profilePinInput}
+					placeholder={profileHasPin ? 'Set — enter a new value to replace it' : 'Not set — optional'}
+					maxlength="8"
+				/>
+			</label>
+			{#if profileHasPin}
+				<button class="clear" onclick={clearPin}>Clear PIN</button>
+			{/if}
+			{#if profileError}
+				<p class="hint error">{profileError}</p>
+			{/if}
+			{#if profileSaved}
+				<p class="hint">Saved.</p>
+			{/if}
+			<button class="save" disabled={profileSaving || !profileNameInput.trim()} onclick={saveProfile}>
+				{profileSaving ? 'Saving…' : 'Save profile'}
+			</button>
+
+			{#if confirmingDeleteProfile}
+				<p class="hint error">Delete this profile? Its layout and preferences on every device are lost.</p>
+				<div class="confirm-actions">
+					<button class="cancel" onclick={() => (confirmingDeleteProfile = false)} disabled={deletingProfile}>
+						Cancel
+					</button>
+					<button class="danger" onclick={deleteProfile} disabled={deletingProfile}>
+						{deletingProfile ? 'Deleting…' : 'Delete profile'}
+					</button>
+				</div>
+			{:else}
+				<button class="danger-link" onclick={() => (confirmingDeleteProfile = true)}>Delete this profile</button>
+			{/if}
+		</section>
+
+		<section>
+			<h2>Devices</h2>
+			{#if $currentDevice}
+				<label>
+					This device
+					<input type="text" bind:value={deviceNameInput} maxlength="40" />
+				</label>
+				<button
+					class="save"
+					disabled={savingDeviceName || !deviceNameInput.trim()}
+					onclick={saveDeviceName}
+				>
+					{savingDeviceName ? 'Saving…' : 'Rename this device'}
+				</button>
+			{/if}
+
+			{#if devicesError}
+				<p class="hint error">{devicesError}</p>
+			{/if}
+
+			{#if devices.filter((d) => d.id !== $currentDevice?.id).length > 0}
+				<ul class="device-list">
+					{#each devices.filter((d) => d.id !== $currentDevice?.id) as d (d.id)}
+						<li>
+							<span class="device-name">{d.name}</span>
+							{#if confirmingForgetDeviceId === d.id}
+								<span class="confirm-actions">
+									<button
+										class="cancel"
+										onclick={() => (confirmingForgetDeviceId = null)}
+										disabled={forgettingDeviceId === d.id}
+									>
+										Cancel
+									</button>
+									<button class="danger" onclick={() => forgetDevice(d.id)} disabled={forgettingDeviceId === d.id}>
+										{forgettingDeviceId === d.id ? 'Forgetting…' : 'Forget'}
+									</button>
+								</span>
+							{:else}
+								<button class="danger-link" onclick={() => (confirmingForgetDeviceId = d.id)}>Forget device</button>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
+
+		{#if version}
+			<section>
+				<h2>Software update</h2>
+				<p class="hint">Running version {version.current_version}.</p>
+				{#if version.update_available}
+					<p class="hint">
+						Update available: v{version.latest_version}
+						{#if version.release_url}
+							— <a href={version.release_url} target="_blank" rel="noreferrer">view release</a>
+						{/if}
+					</p>
+				{/if}
+			</section>
+		{/if}
+
+		{#if error}
+			<p class="hint error">{error}</p>
+		{/if}
+		{#if saved}
+			<p class="hint">Saved.</p>
+		{/if}
+
+		<button class="save" disabled={saving} onclick={save}>
+			{saving ? 'Saving…' : 'Save'}
+		</button>
+	{/if}
+</div>
+
+<style>
+	.settings-page {
+		padding: 2rem;
+		min-height: 100vh;
+		max-width: 30rem;
+	}
+
+	.back {
+		background: none;
+		border: none;
+		font-size: 1.1rem;
+		color: var(--color-accent);
+		margin-bottom: 1.5rem;
+		cursor: pointer;
+		padding: 0.5rem 0;
+	}
+
+	h1 {
+		margin: 0 0 1.5rem;
+	}
+
+	section {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		margin-bottom: 1.5rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 0.75rem;
+		padding: 1rem;
+	}
+
+	section h2 {
+		margin: 0;
+		font-size: 1rem;
+	}
+
+	label {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		font-size: 0.9rem;
+		color: var(--color-text-muted);
+	}
+
+	input,
+	select {
+		font: inherit;
+		padding: 0.5rem 0.75rem;
+		border-radius: 0.5rem;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface);
+		color: var(--color-text);
+	}
+
+	.clear {
+		align-self: flex-start;
+		background: none;
+		border: none;
+		color: var(--color-text-muted);
+		text-decoration: underline;
+		cursor: pointer;
+		padding: 0;
+		font-size: 0.85rem;
+	}
+
+	.save {
+		align-self: flex-start;
+		background: var(--color-accent);
+		color: var(--color-surface);
+		border: none;
+		border-radius: 0.5rem;
+		padding: 0.5rem 1rem;
+		cursor: pointer;
+	}
+
+	.save:disabled,
+	.danger:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+
+	.danger-link {
+		align-self: flex-start;
+		background: none;
+		border: none;
+		color: var(--color-error);
+		text-decoration: underline;
+		cursor: pointer;
+		padding: 0;
+		font-size: 0.85rem;
+	}
+
+	.confirm-actions {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+	}
+
+	.confirm-actions .cancel {
+		background: none;
+		border: none;
+		color: var(--color-text-muted);
+		cursor: pointer;
+		padding: 0;
+		font-size: 0.85rem;
+	}
+
+	.danger {
+		background: var(--color-error);
+		color: var(--color-surface);
+		border: none;
+		border-radius: 0.5rem;
+		padding: 0.4rem 0.75rem;
+		cursor: pointer;
+		font-size: 0.85rem;
+	}
+
+	.device-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.device-list li {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+
+	.device-name {
+		font-size: 0.9rem;
+	}
+
+	.hint a {
+		color: var(--color-accent);
+	}
+
+	.hint {
+		color: var(--color-text-muted);
+		margin: 0.25rem 0 0;
+	}
+
+	.hint.error {
+		color: var(--color-error);
+	}
+</style>

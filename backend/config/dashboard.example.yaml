@@ -1,0 +1,441 @@
+# Dashboard widget layout and configuration.
+#
+# `layout` uses a simple CSS-grid coordinate system: col/row are 1-indexed
+# grid-line positions, colSpan/rowSpan are cell counts.
+
+# Optional: external MCP servers whose tools get merged with local plugins'
+# tools for every AI widget's tool-calling set (see app/ai/mcp_client.py).
+# Each entry needs either `command` (+ optional `args`/`env`) for a local
+# stdio server, or `url` for a remote streamable-HTTP server, e.g.:
+#   - name: filesystem
+#     command: npx
+#     args: ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/dir"]
+mcp_servers: []
+
+# Optional: split widgets across multiple swipeable tabs (touch swipe or
+# keyboard arrows on the dashboard). Each widget entry below can then set
+# `tab: <id>`; widgets without one land on the first tab. Omit this key
+# entirely to keep everything on one tab, e.g.:
+# tabs:
+#   - id: home
+#     name: Home
+#   - id: media
+#     name: Media
+
+widgets:
+  - id: weather
+    type: weather
+    enabled: true
+    layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 }
+    settings:
+      # Fort Worth, TX by default — swap for your own coordinates.
+      latitude: 32.7555
+      longitude: -97.3308
+      location_name: "Fort Worth, TX"
+      units: fahrenheit
+
+  - id: ai-insights
+    type: ai
+    enabled: true
+    layout: { col: 2, row: 1, colSpan: 2, rowSpan: 1 }
+    settings:
+      title: "Daily Briefing"
+      # Standard cron expression (minute hour day month day_of_week).
+      # Runs once at 6:30am.
+      cron: "30 6 * * *"
+      prompt: >
+        Write a short, friendly daily briefing (2-3 sentences) for someone
+        glancing at a kitchen dashboard. Use the get_weather_summary tool to
+        ground it in the current weather for their location. Mention the
+        temperature and one practical suggestion (e.g. bring a jacket).
+
+  - id: photos
+    type: photos
+    # Disabled by default. `provider` is "local" (default), "icloud_shared",
+    # or "icloud_private".
+    # local: point `directory` at a real folder of images on the machine
+    #   running the backend — e.g. a Mac/PC with iCloud Photos (or Google
+    #   Photos, etc.) syncing to a local folder.
+    # icloud_shared: a public iCloud Shared Album link (Photos app -> album
+    #   -> Share Link -> "Public Website"). Anyone with the link can view
+    #   it — Apple has no auth option for this feature — so don't use it for
+    #   photos you wouldn't want on an open, unlisted web page. No Apple ID
+    #   sign-in needed on this end. Set the album link from this widget's
+    #   detail view (not here) so the token isn't committed to this
+    #   git-tracked file — it's stored in the backend's local database
+    #   instead, same as the calendar widget's `calendar_ids`.
+    # icloud_private: full, private access to a named album (default
+    #   "All Photos") via a real Apple ID + password (+ 2FA) — see
+    #   ICLOUD_USERNAME/ICLOUD_PASSWORD in backend/.env.example. Connect
+    #   from this widget's detail view or the Settings page.
+    # A background job re-scans the source and rebuilds a persisted photo
+    # index every `index_refresh_seconds` (default below, 1 hour) — the
+    # widget itself always reads from that index, never the live source,
+    # so it stays fast even for large folders/libraries. Editing the
+    # folder path, album link, or connecting iCloud from this widget's
+    # detail view always triggers an immediate re-scan regardless of this
+    # interval.
+    enabled: true
+    layout: { col: 4, row: 1, colSpan: 1, rowSpan: 1 }
+    settings:
+      provider: local
+      directory: "/Volumes/Pictures/"
+      recursive: true # local only — scan subdirectories too
+      # album_name: "All Photos" # icloud_private only
+      interval_seconds: 10
+      index_refresh_seconds: 3600 # how often to rescan the source, in seconds
+
+  - id: movies
+    type: movies
+    # Requires TMDB_API_KEY in backend/.env. Shows movies, TV shows, and an
+    # always-on "Trending" TV row, each with JustWatch-sourced streaming
+    # availability. `mode` is "popular" (default) or "trending" (this week's
+    # trending titles instead of the all-time popular list) — it only
+    # affects the Movies/Shows rows; Trending is independent of it.
+    enabled: true
+    layout: { col: 1, row: 2, colSpan: 3, rowSpan: 1 }
+    settings:
+      region: US
+      mode: popular
+
+  - id: discord
+    type: discord
+    # Disabled by default — requires DISCORD_BOT_TOKEN in backend/.env and a
+    # channel_id the bot has been invited to (a thread ID also works).
+    enabled: true
+    layout: { col: 4, row: 2, colSpan: 1, rowSpan: 1 }
+    settings:
+      channel_id: "123456789012345678"
+      message_limit: 20
+      # Optional: also drop messages older than this many minutes.
+      time_window_minutes: null
+      # One of: static (scrollable list), marquee (continuous scroll),
+      # fade (cycles one message at a time).
+      display_mode: static
+      marquee_speed_seconds: 40
+      fade_interval_seconds: 6
+
+  - id: clock
+    type: clock
+    enabled: true
+    layout: { col: 1, row: 3, colSpan: 1, rowSpan: 1 }
+    settings: {}
+
+  - id: date
+    type: date
+    enabled: true
+    layout: { col: 2, row: 3, colSpan: 1, rowSpan: 1 }
+    settings: {}
+
+  - id: message
+    type: message
+    # Disabled by default — needs a title/text of your own; edit from the
+    # widget's detail view once enabled.
+    enabled: false
+    layout: { col: 3, row: 3, colSpan: 2, rowSpan: 1 }
+    settings:
+      title: "Note"
+      text: "Tap to edit this message."
+
+  - id: rss
+    type: rss
+    # Disabled by default — swap in your own feeds, or flip this on to try
+    # it with the sample below.
+    enabled: false
+    layout: { col: 1, row: 4, colSpan: 4, rowSpan: 2 }
+    settings:
+      title: "Headlines"
+      feeds:
+        - url: "https://hnrss.org/frontpage"
+          name: "Hacker News"
+      item_limit: 5
+
+  - id: alert
+    type: alert
+    # Disabled by default — position it once you want alerts (raised manually
+    # via POST /api/alerts, or by an AI widget's create_alert tool) to show up.
+    enabled: false
+    layout: { col: 1, row: 6, colSpan: 4, rowSpan: 1 }
+    settings: {}
+
+  - id: calendar
+    type: calendar
+    # Disabled by default. `provider` is "google" (default) or "caldav".
+    # google: requires GOOGLE_CALENDAR_CLIENT_ID/SECRET in backend/.env (or
+    #   set from the Settings page), then connect your Google account from
+    #   this widget's detail view.
+    # caldav: requires CALDAV_URL/USERNAME/PASSWORD in backend/.env (or set
+    #   from the Settings page) — works with iCloud, Fastmail, Nextcloud, and
+    #   most self-hosted servers. Defaults to the account's first calendar;
+    #   use "Manage calendars" in the widget's detail view to select one or
+    #   more calendars instead (stored as `calendar_ids`, a list of ids from
+    #   the CalDAV server — not meant to be hand-typed here). Each selected
+    #   calendar gets an auto-assigned color, overridable from the same
+    #   "Manage calendars" picker (stored as `calendar_colors`, a map of
+    #   calendar id -> hex color — also not meant to be hand-typed here).
+    enabled: false
+    layout: { col: 1, row: 7, colSpan: 2, rowSpan: 1 }
+    settings:
+      provider: google
+      calendar_id: primary
+      # calendar_ids: ["<id>", "<id>"]
+      # calendar_colors: { "<id>": "#2a78d6" }
+      days_ahead: 7
+
+  - id: jellyfin
+    type: jellyfin
+    # Disabled by default. Set host/port below, then connect an API key or
+    # username/password from this widget's detail view (not here, so the
+    # secret isn't committed to this git-tracked file — stored in the
+    # backend's local database instead, same as the CalDAV calendar
+    # provider's password). `auth_mode` is "api_key" (an admin-issued key
+    # from Jellyfin Dashboard -> API Keys — server-wide library view) or
+    # "password" (a real Jellyfin user, exchanged server-side for an access
+    # token — personalized, permission-aware view). `playback_mode` is
+    # "compatible" (stream-copies video but transcodes audio to AAC, so
+    # sound always works — cheap on the server since only audio is
+    # re-encoded) or "direct" (byte-for-byte passthrough, zero transcode
+    # cost, but silent if the source's audio codec isn't browser-supported).
+    enabled: false
+    layout: { col: 1, row: 8, colSpan: 2, rowSpan: 1 }
+    settings:
+      host: ""
+      port: 8096
+      use_https: false
+      auth_mode: api_key
+      library_ids: []
+      playback_mode: compatible
+
+  - id: pihole
+    type: pihole
+    # Disabled by default. Targets Pi-hole v6+'s FTL REST API (not the old
+    # `admin/api.php` PHP API from v5) — `host`/`port`/`use_https` point at
+    # the Pi-hole web interface. Set the admin/app password from this
+    # widget's detail view (not here, so it isn't committed to this
+    # git-tracked file — stored in the backend's local database instead,
+    # same as the Jellyfin widget's api_key/password).
+    enabled: true
+    layout: { col: 3, row: 8, colSpan: 1, rowSpan: 1 }
+    settings:
+      host: "pi.hole"
+      port: 80
+      use_https: false
+
+  - id: game2048
+    type: game2048
+    # Disabled by default. The whole game (board, moves, best score) runs
+    # client-side in the browser via localStorage — nothing to configure
+    # here. Tap the tile to open the full board and play.
+    enabled: true
+    layout: { col: 4, row: 8, colSpan: 1, rowSpan: 1 }
+    settings: {}
+
+  - id: system-monitor
+    type: system_monitor
+    # Disabled by default. Reports CPU/RAM/disk/network usage for the host
+    # running the backend via `psutil` — no external service, auth, or
+    # settings to configure.
+    enabled: true
+    layout: { col: 3, row: 9, colSpan: 2, rowSpan: 1 }
+    settings: {}
+
+  - id: hdhomerun
+    type: hdhomerun
+    # Disabled by default. `tuner_host`/`tuner_port` point at your HDHomeRun
+    # tuner device (plain HTTP, no auth, default port 80) — find its address
+    # from your router's DHCP client list or SiliconDust's discovery app;
+    # there's no auto-discovery here. `dvr_host`/`dvr_port` point at a
+    # *separate* machine running the HDHomeRun DVR recording-engine service,
+    # if you run one — leave `dvr_host` blank to skip DVR recording status
+    # entirely; the tuner connection works independently either way. Full
+    # program-guide data ("now playing" titles) first tries an active
+    # HDHomeRun DVR subscription tied to the tuner's own DeviceAuth (see its
+    # /discover.json); if that's not available, set `epg_url` to an XMLTV
+    # guide URL instead (the format used by Plex/Channels DVR/TVheadend/etc,
+    # e.g. from an IPTV-org guide or your own Schedules Direct/xmltv setup) —
+    # its <channel id> values must match your HDHomeRun channel numbers
+    # (e.g. "4.1") for programs to map to the right channel. With neither
+    # available, this widget falls back to the tuner's plain channel lineup
+    # (numbers/names only, no titles) instead of erroring. Raw HDHomeRun
+    # streams are MPEG-2/AC3 (standard US ATSC OTA), which no browser can
+    # decode, so in-app playback needs one of these `playback_mode` values:
+    #   - server_transcode (default): the backend runs `ffmpeg` (must be
+    #     installed, see deploy/README.md) to transcode the raw stream to
+    #     H.264/AAC. Works with any tuner model, but adds real backend CPU
+    #     load per viewer.
+    #   - external: no in-app player — each channel just exposes its raw
+    #     stream URL (as an .m3u playlist) to open in an external player
+    #     like VLC.
+    # `hwaccel` picks which ffmpeg arguments server_transcode uses — the
+    # right choice depends entirely on the machine running the *backend*,
+    # not the display. See app/transcoding.py for the full list and exactly
+    # what each one assumes about drivers/hardware:
+    #   - software (default): CPU-only libx264, works everywhere.
+    #   - software_lowpower: also CPU-only, tuned (ultrafast preset) for
+    #     weak ARM boards like a Raspberry Pi — the Pi's GPU doesn't have a
+    #     reliable hardware H.264 encoder in ffmpeg.
+    #   - videotoolbox: hardware encode if the backend runs on a Mac.
+    #   - qsv: Intel Quick Sync (Linux + Intel iGPU + intel-media-driver).
+    #   - vaapi: Intel/AMD hardware encode via VAAPI (Linux + Mesa).
+    #   - nvenc: NVIDIA hardware encode (needs current NVIDIA drivers).
+    #   - custom: set custom_ffmpeg_args to your own raw ffmpeg arguments.
+    # The resolved command is always shown in this widget's detail view, so
+    # you can confirm what's actually running after changing this.
+    enabled: true
+    layout: { col: 1, row: 9, colSpan: 2, rowSpan: 1 }
+    settings:
+      tuner_host: "192.168.1.20"
+      tuner_port: 80
+      dvr_host: "192.168.1.21"
+      dvr_port: 59090
+      epg_url: "192.168.1.21:9999"
+      playback_mode: server_transcode
+      hwaccel: software
+      custom_ffmpeg_args: ""
+
+  - id: docker
+    type: docker
+    # Disabled by default. `connection` is "socket" (default, targets
+    # `socket_path` — works out of the box if this backend can see the
+    # Docker host's own socket, e.g. bind-mounted in as
+    # `/var/run/docker.sock:/var/run/docker.sock`) or "tcp" (a separate
+    # host's Docker API exposed unauthenticated on the LAN via `dockerd -H
+    # tcp://0.0.0.0:2375`, e.g. `docker.local:2375` below — same trusted-LAN
+    # assumption as the Pi-hole/HDHomeRun widgets, no TLS/auth support).
+    enabled: true
+    layout: { col: 1, row: 10, colSpan: 2, rowSpan: 1 }
+    settings:
+      connection: socket
+      socket_path: "/var/run/docker.sock"
+      host: "docker.local"
+      port: 2375
+
+  - id: podman
+    type: podman
+    # Disabled by default. Same shape as the `docker` widget above, but
+    # against Podman's Docker-Engine-API-compatible REST API instead.
+    # `connection: socket` targets `socket_path` — the default below is the
+    # rootful socket (`/run/podman/podman.sock`); rootless Podman users
+    # should point this at their own `$XDG_RUNTIME_DIR/podman/podman.sock`
+    # (e.g. `/run/user/1000/podman/podman.sock`) instead. `connection: tcp`
+    # targets a separate host's `podman system service tcp:0.0.0.0:8080`,
+    # unauthenticated over the LAN — same trusted-LAN assumption as Docker.
+    enabled: false
+    layout: { col: 1, row: 11, colSpan: 2, rowSpan: 1 }
+    settings:
+      connection: socket
+      socket_path: "/run/podman/podman.sock"
+      host: "podman.local"
+      port: 8080
+
+  - id: sports
+    type: sports
+    # Disabled by default — swap in the leagues/teams you follow. Each entry
+    # is `{league, team}`: `league` is one of nfl, nba, mlb, nhl,
+    # college-football, wnba; `team` is ESPN's team abbreviation (case-insensitive,
+    # e.g. "DAL" for the Dallas Cowboys, "LAL" for the Lakers). No API key
+    # needed — uses ESPN's free public site API. Shows each team's next
+    # upcoming/in-progress game and which network or streaming service is
+    # broadcasting it.
+    enabled: true
+    layout: { col: 3, row: 10, colSpan: 2, rowSpan: 1 }
+    settings:
+      teams:
+        - league: nfl
+          team: azc
+        - league: nba
+          team: phx
+        - league: mlb
+          team: azd
+        - league: nhl
+          team: cbj
+        - league: college-football
+          team: osu
+        - league: wnba
+          team: phx
+
+  - id: steam
+    type: steam
+    # Disabled by default — needs a free Steam Web API key
+    # (https://steamcommunity.com/dev/apikey) and the user's SteamID64, both
+    # entered via the widget's own settings editor (never committed here,
+    # same convention as Pi-hole's password/Jellyfin's API key). Shows the
+    # configured user's currently-playing/recently-played games and their
+    # friends' online/in-game status. The friend-list and friend-status
+    # calls need the profile's "Game details"/friends list privacy set to
+    # Public on Steam — otherwise they fail gracefully with an error string
+    # rather than breaking the widget.
+    enabled: true
+    layout: { col: 1, row: 11, colSpan: 2, rowSpan: 1 }
+    settings:
+      steamid: ""
+      api_key: ""
+
+  - id: bf6
+    type: bf6
+    # Disabled by default — swap in a server name and/or a player name to
+    # track (both optional and independent — track just one or both). No
+    # API key needed — uses the free, unofficial, community-run
+    # gametools.network API. `server_name` is matched with a fuzzy
+    # substring search against live servers (no exact match needed);
+    # `platform` only affects the player stats lookup and must match the
+    # platform the player's stats are actually tracked under (pc, steam,
+    # ea, epic, xbox, xboxone, xboxseries, psn, ps4, ps5) — a mismatch
+    # surfaces as "player not found" rather than a hard error.
+    enabled: false
+    layout: { col: 3, row: 11, colSpan: 2, rowSpan: 1 }
+    settings:
+      server_name: ""
+      player_name: "|||0N3|||"
+      platform: pc
+
+  - id: synology
+    type: synology
+    # Disabled by default. `host`/`port`/`use_https` point at the Synology
+    # DSM web interface (default port 5000 for HTTP, 5001 for HTTPS). Set
+    # the username/password from this widget's detail view (not here, so
+    # they aren't committed to this git-tracked file — stored in the
+    # backend's local database instead, same as the Pi-hole/Jellyfin
+    # widgets). Shows per-volume storage usage/health, plus model/uptime/
+    # CPU temperature in the detail view.
+    enabled: true
+    layout: { col: 1, row: 12, colSpan: 2, rowSpan: 1 }
+    settings:
+      host: "synology.local"
+      port: 5000
+      use_https: false
+      username: ""
+
+  - id: asus_router
+    type: asus_router
+    # Disabled by default. `host`/`port`/`use_https` point at the router's
+    # web admin interface (Merlin firmware defaults to HTTPS on 443, but many
+    # routers — especially on a local IP like 192.168.x.1 — only serve the
+    # admin UI over plain HTTP on port 80; set use_https: false and port: 80
+    # from this widget's detail view in that case). Set the username/password
+    # from this widget's detail view too (not here, so they aren't committed
+    # to this git-tracked file — stored in the backend's local database
+    # instead, same as the Synology/Pi-hole widgets). Shows WAN status and
+    # connected-client count, plus a per-client list and traffic counters in
+    # the detail view.
+    enabled: true
+    layout: { col: 3, row: 12, colSpan: 2, rowSpan: 1 }
+    settings:
+      host: "192.168.50.1"
+      port: 443
+      use_https: true
+      username: "admin"
+
+  - id: goodreads
+    type: goodreads
+    # Disabled by default. `user_id` is the numeric id in your Goodreads
+    # profile URL (e.g. goodreads.com/user/show/12345678-jane-doe ->
+    # user_id: "12345678"). `shelf` is the shelf name as it appears in your
+    # shelf URL (e.g. "currently-reading", "read", "to-read", or a custom
+    # shelf's slug). Reads Goodreads' public shelf RSS feed — no account
+    # login needed, but the shelf must be public.
+    enabled: true
+    layout: { col: 1, row: 13, colSpan: 1, rowSpan: 2 }
+    settings:
+      user_id: "12345678"
+      shelf: "currently-reading"
