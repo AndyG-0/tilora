@@ -110,3 +110,21 @@ async def test_get_current_user_raises_401_when_the_user_row_is_gone(tmp_db):
     with pytest.raises(HTTPException) as exc_info:
         await auth.get_current_user(session)
     assert exc_info.value.status_code == 401
+
+
+async def test_get_current_admin_returns_the_user_when_role_is_admin(tmp_db):
+    db.create_user("alice", "Alice", None, None, None, None, "2020-01-01T00:00:00Z", role="admin")
+    user = db.get_user("alice")
+
+    admin = await auth.get_current_admin(user)
+
+    assert admin["id"] == "alice"
+
+
+async def test_get_current_admin_raises_403_for_a_member(tmp_db):
+    db.create_user("bob", "Bob", None, None, None, None, "2020-01-01T00:00:00Z", role="member")
+    user = db.get_user("bob")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await auth.get_current_admin(user)
+    assert exc_info.value.status_code == 403

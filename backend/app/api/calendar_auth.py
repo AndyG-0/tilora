@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 
+from app.auth import get_current_admin
 from app.config import effective_settings, settings
 from app.integrations import caldav_client, google_oauth, microsoft_oauth
 from app.storage.cache import cache
 
-router = APIRouter(prefix="/api/calendar", tags=["calendar"])
+router = APIRouter(prefix="/api/calendar", tags=["calendar"], dependencies=[Depends(get_current_admin)])
 
 
 @router.get("/auth/start")

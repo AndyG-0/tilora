@@ -6,6 +6,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
+    admin as admin_api,
+)
+from app.api import (
     alerts,
     calendar_auth,
     icloud_auth,
@@ -34,6 +37,9 @@ from app.api import (
 )
 from app.api import (
     settings as settings_api,
+)
+from app.api import (
+    setup as setup_api,
 )
 from app.api import (
     sports as sports_api,
@@ -116,6 +122,8 @@ app.include_router(asus_router_api.router)
 app.include_router(sports_api.router)
 app.include_router(devices_api.router)
 app.include_router(users_api.router)
+app.include_router(setup_api.router)
+app.include_router(admin_api.router)
 
 
 @app.get("/api/health")

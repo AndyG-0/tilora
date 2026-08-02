@@ -60,12 +60,14 @@ npm run dev
 
 The frontend expects the backend at `PUBLIC_API_BASE_URL` (`frontend/.env`,
 defaults to `http://localhost:8000`), and the backend allows CORS from
-`CORS_ORIGIN` (`backend/.env`, defaults to `http://localhost:5173`,
-comma-separated if you need more than one origin) — keep these in sync with
-whatever ports/hosts you actually run on. Both are read at runtime, not
-baked in at build time, so frontend and backend can run on different
-devices — just point `PUBLIC_API_BASE_URL` at wherever the backend is
-reachable from the browser, and add that frontend origin to `CORS_ORIGIN`.
+`CORS_ORIGIN` (`backend/.env`, defaults to `http://localhost:5173` for this
+local dev setup — the Docker Compose files below set it to port 3000
+themselves, since that's where they serve the frontend, comma-separated if
+you need more than one origin) — keep these in sync with whatever
+ports/hosts you actually run on. Both are read at runtime, not baked in at
+build time, so frontend and backend can run on different devices — just
+point `PUBLIC_API_BASE_URL` at wherever the backend is reachable from the
+browser, and add that frontend origin to `CORS_ORIGIN`.
 
 ## Tests
 
@@ -89,7 +91,7 @@ planned/speculative follow-up work.
 ```bash
 cp backend/.env.example backend/.env   # fill in an AI provider key
 cp backend/config/dashboard.example.yaml backend/config/dashboard.yaml
-PUBLIC_API_BASE_URL=http://<host-ip>:8000 docker compose up --build -d
+PUBLIC_API_BASE_URL=http://<host-ip>:8000 CORS_ORIGIN=http://<host-ip>:3000 docker compose up --build -d
 ```
 
 **Pull pre-built images** (`docker-compose.prod.yml`) — published to GHCR on
@@ -107,8 +109,11 @@ container's environment at request time (default
 share a host, e.g. a kiosk Pi) — no rebuild needed if your setup needs a
 different backend address, just override the environment variable (see
 the comments in `docker-compose.prod.yml`) and restart the container.
-Remember to add that origin to the backend's `CORS_ORIGIN` too if it
-differs from the default.
+Both compose files already set the backend's `CORS_ORIGIN` for you
+(default `http://localhost:3000`, matching the frontend service above) —
+if you override `PUBLIC_API_BASE_URL` to point at a different host, set
+`CORS_ORIGIN` to that same host on port 3000 alongside it, e.g.
+`PUBLIC_API_BASE_URL=http://<host-ip>:8000 CORS_ORIGIN=http://<host-ip>:3000 docker compose -f docker-compose.prod.yml up -d`.
 
 For native Debian, Ubuntu, and Raspberry Pi OS installation, run
 `curl -fsSL https://raw.githubusercontent.com/AndyG-0/tilora/main/deploy/install.sh | bash`.

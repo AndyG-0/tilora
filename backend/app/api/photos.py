@@ -11,14 +11,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import FileResponse, RedirectResponse
 
+from app.auth import get_current_user
 from app.config import effective_settings, widget_config
 from app.integrations import icloud_photos, icloud_shared_album, immich_client
 from app.plugins.photos.plugin import IMAGE_EXTENSIONS
 
-router = APIRouter(prefix="/api/photos", tags=["photos"])
+router = APIRouter(prefix="/api/photos", tags=["photos"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/{widget_id}/{filename:path}")

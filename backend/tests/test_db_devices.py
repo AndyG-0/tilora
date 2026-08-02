@@ -22,12 +22,16 @@ def test_create_then_get_device_round_trips(tmp_db):
     assert device["last_seen_at"] == "2026-01-01T00:00:00Z"
 
 
-def test_list_devices_includes_the_seeded_default_device(tmp_db):
+def test_list_devices_is_empty_on_a_fresh_install(tmp_db):
+    assert db.list_devices() == []
+
+
+def test_list_devices_returns_created_devices(tmp_db):
     _create("dev1", "Kitchen Tablet")
 
     ids = {d["id"] for d in db.list_devices()}
 
-    assert ids == {"default", "dev1"}
+    assert ids == {"dev1"}
 
 
 def test_update_device_changes_only_given_fields(tmp_db):

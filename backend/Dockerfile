@@ -26,9 +26,15 @@ RUN groupadd --gid 1000 tilora \
     && useradd --uid 1000 --gid tilora --home-dir /app --shell /usr/sbin/nologin tilora \
     && mkdir -p /app/data \
     && chown -R tilora:tilora /app
+
+COPY backend/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 USER tilora
 
 EXPOSE 8000
+
+ENTRYPOINT ["docker-entrypoint.sh"]
 
 # Binds all interfaces inside the container, not just localhost — required
 # for Docker's port-publishing (`ports:` in compose) to reach the process at

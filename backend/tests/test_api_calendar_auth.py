@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api import calendar_auth
+from app.auth import get_current_admin
 from app.config import settings
 from app.storage import db
 
@@ -18,6 +19,9 @@ MICROSOFT_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/toke
 def client():
     app = FastAPI()
     app.include_router(calendar_auth.router)
+    # These tests exercise the OAuth flow, not auth — stub out who's asking
+    # rather than juggling real device/session cookies here.
+    app.dependency_overrides[get_current_admin] = lambda: {"id": "admin", "role": "admin"}
     return TestClient(app)
 
 
@@ -100,3 +104,11 @@ def test_status_reports_connected(client, tmp_db):
     response = client.get("/api/calendar/status")
 
     assert response.json() == {"connected": True}
+
+
+def test_calendar_routes_require_an_admin_session():
+    app = FastAPI()
+    app.include_router(calendar_auth.router)
+    client = TestClient(app)
+
+    assert client.get("/api/calendar/status").status_code == 401

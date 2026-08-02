@@ -1,13 +1,26 @@
 services:
   backend:
-    image: ghcr.io/AndyG-0/tilora-backend:${TILORA_VERSION:-latest}
+    image: ghcr.io/andyg-0/tilora-backend:${TILORA_VERSION:-latest}
     ports:
       - "8000:8000"
     environment:
       - DB_PATH=/app/data/storage.db
       - ICLOUD_SESSION_DIR=/app/data/icloud_session
+      # Must match wherever the *browser* actually loads the frontend from —
+      # this compose file serves it on port 3000, not the backend's own
+      # 5173 default (that's the local Vite dev server's port). Overriding
+      # here (rather than relying on backend/.env) means it's always correct
+      # for this deployment out of the box; override again if
+      # PUBLIC_API_BASE_URL below is also pointed at a non-default host.
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
     volumes:
-      - ./backend/config/dashboard.yaml:/app/config/dashboard.yaml
+      # A directory mount (not a single-file mount on dashboard.yaml) —
+      # ./backend/config is tracked in git and always exists, so a missing
+      # dashboard.yaml on the host just becomes a normal missing file inside
+      # an always-present directory, instead of Docker silently creating an
+      # empty directory at the mount point (see docker-entrypoint.sh, which
+      # copies the example file into place when that happens).
+      - ./backend/config:/app/config
       - ./backend/.env:/app/.env
       - backend-storage:/app/data
     restart: unless-stopped
@@ -19,7 +32,7 @@ services:
       start_period: 10s
 
   frontend:
-    image: ghcr.io/AndyG-0/tilora-frontend:${TILORA_VERSION:-latest}
+    image: ghcr.io/andyg-0/tilora-frontend:${TILORA_VERSION:-latest}
     environment:
       # Read at request time, not baked into the image — must be an address
       # the *browser* can reach the backend at. Defaults to localhost, which

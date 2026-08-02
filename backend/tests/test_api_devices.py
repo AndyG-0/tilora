@@ -70,15 +70,16 @@ def test_list_all_devices_requires_a_user_session(client, tmp_db):
 
 def test_list_all_devices_returns_every_registered_device(client, tmp_db):
     db.create_user("alice", "Alice", None, None, None, None, "2026-01-01T00:00:00Z")
-    db.create_session("sess1", "alice", "default", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
+    db.create_device("other", "Other Device", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")
+    db.create_session("sess1", "alice", "other", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
     client.cookies.set("tilora_session", "sess1")
-    client.post("/api/devices/register")
+    registered = client.post("/api/devices/register").json()
 
     response = client.get("/api/devices")
 
     assert response.status_code == 200
     ids = {d["id"] for d in response.json()}
-    assert "default" in ids
+    assert ids == {"other", registered["id"]}
 
 
 def test_forget_device_deletes_an_unknown_returns_404(client, tmp_db):

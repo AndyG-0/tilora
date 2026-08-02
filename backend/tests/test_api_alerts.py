@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api import alerts
+from app.auth import get_current_user
 from app.storage import db
 from app.storage.cache import cache
 
@@ -13,6 +14,9 @@ from app.storage.cache import cache
 def client():
     app = FastAPI()
     app.include_router(alerts.router)
+    # These tests exercise alert persistence, not auth — stub out who's
+    # asking rather than juggling real device/session cookies here.
+    app.dependency_overrides[get_current_user] = lambda: {"id": "user", "role": "member"}
     return TestClient(app)
 
 
@@ -66,3 +70,11 @@ def test_dismiss_alert_returns_404_for_unknown_id(client, tmp_db):
     response = client.post("/api/alerts/9999/dismiss")
 
     assert response.status_code == 404
+
+
+def test_alerts_routes_require_a_session():
+    app = FastAPI()
+    app.include_router(alerts.router)
+    client = TestClient(app)
+
+    assert client.post("/api/alerts", json={"message": "Hi"}).status_code == 401

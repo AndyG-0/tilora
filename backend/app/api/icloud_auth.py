@@ -9,8 +9,9 @@ Calendar are a single connected account rather than per-widget credentials.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.auth import get_current_admin
 from app.config import effective_settings
 from app.integrations import icloud_photos
 from app.plugins.base import registry
@@ -18,7 +19,7 @@ from app.plugins.photos.plugin import PhotosPlugin
 from app.scheduler import schedule_photo_index
 from app.storage.cache import cache
 
-router = APIRouter(prefix="/api/icloud", tags=["icloud"])
+router = APIRouter(prefix="/api/icloud", tags=["icloud"], dependencies=[Depends(get_current_admin)])
 
 
 def _credentials() -> tuple[str, str]:

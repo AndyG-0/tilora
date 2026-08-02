@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { api, type UserProfile } from '$lib/api';
+	import { api, describeFetchError, type UserProfile } from '$lib/api';
 	import { user } from '$lib/stores/user';
 
 	let profiles = $state<UserProfile[]>([]);
@@ -27,8 +27,17 @@
 		loadError = null;
 		try {
 			profiles = await api.listUsers();
-		} catch {
-			loadError = 'Could not load profiles.';
+			// The root layout already routes a genuinely fresh install to
+			// /setup — an empty list here means it lost a race with that
+			// redirect (or the only profile was just deleted). Defer to it
+			// rather than showing a broken, empty grid.
+			if (profiles.length === 0) {
+				goto('/setup');
+				return;
+			}
+		} catch (err) {
+			loadError =
+				describeFetchError(err) === 'network' ? 'Could not reach the Tilora backend.' : 'Could not load profiles.';
 		} finally {
 			loading = false;
 		}
