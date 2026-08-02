@@ -41,9 +41,9 @@ def test_full_register_login_layout_switch_profile_flow(client, dashboard_yaml, 
     register = client.post("/api/devices/register")
     assert register.json()["is_new"] is True
 
-    # 2. Profile picker is non-empty on day one (seeded "default" profile).
+    # 2. Profile picker is empty on a fresh install — no profile is seeded.
     profiles = client.get("/api/users").json()
-    assert [p["id"] for p in profiles] == ["default"]
+    assert profiles == []
 
     # 3. Create two real profiles.
     alice = client.post("/api/users", json={"name": "Alice"}).json()
@@ -98,5 +98,6 @@ def test_widgets_endpoints_require_both_device_and_user_auth(client, dashboard_y
     client.post("/api/devices/register")
     assert client.get("/api/widgets").status_code == 401
 
-    client.post("/api/users/default/login", json={})
+    profile = client.post("/api/users", json={"name": "Alice"}).json()
+    client.post(f"/api/users/{profile['id']}/login", json={})
     assert client.get("/api/widgets").status_code == 200

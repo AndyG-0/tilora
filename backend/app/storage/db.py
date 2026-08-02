@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -46,7 +47,8 @@ CREATE TABLE IF NOT EXISTS users (
     pin_hash TEXT,
     pin_salt TEXT,
     pin_iterations INTEGER,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'member'
 );
 
 CREATE TABLE IF NOT EXISTS devices (
@@ -147,22 +149,17 @@ def _connect() -> sqlite3.Connection:
 # `widget_layout` gained a (user_id, device_id) dimension for multi-user/
 # multi-device support. SQLite can't ALTER a PRIMARY KEY, so this rebuilds
 # the table under a temp name and swaps it in. Existing rows (from a
-# single-user, single-device install) are re-keyed under a seeded "default"
-# user/device rather than dropped, so an upgrade preserves the live
-# dashboard's current layout instead of resetting it. Explicit BEGIN/COMMIT
+# single-user, single-device install) are re-keyed under a "default"
+# user/device id rather than dropped, so an upgrade preserves the live
+# dashboard's current layout instead of resetting it. No FK constraints
+# anywhere in this schema, so re-keying to an id that may not (yet, or ever)
+# have a matching users/devices row is safe — it just means those rows are
+# inert until/unless something creates that id. Explicit BEGIN/COMMIT
 # because `_apply_migrations` only advances `PRAGMA user_version` after this
 # whole script returns — without a transaction, a crash between DROP TABLE
 # and the RENAME could lose the table on a retried boot.
 _MIGRATION_001_USERS_DEVICES = """
 BEGIN;
-
-INSERT INTO users (id, name, avatar, pin_hash, pin_salt, pin_iterations, created_at)
-VALUES ('default', 'Default', NULL, NULL, NULL, NULL, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO devices (id, name, created_at, last_seen_at)
-VALUES ('default', 'Default Device', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-ON CONFLICT (id) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS widget_layout_new (
     user_id TEXT NOT NULL,
@@ -182,13 +179,43 @@ CREATE INDEX IF NOT EXISTS idx_widget_layout_widget_id ON widget_layout (widget_
 COMMIT;
 """
 
-_MIGRATIONS: tuple[str, ...] = (_MIGRATION_001_USERS_DEVICES,)
+
+# Added the `role` column (for admin/member permissions) after `users` had
+# already shipped, so unlike migration 001 this can't be folded into
+# `_SCHEMA`'s `CREATE TABLE IF NOT EXISTS` — that only handles brand-new
+# tables, not a column an already-created table is missing. Needs
+# conditional logic a raw SQL script can't express (check column existence,
+# count admins), so `_MIGRATIONS`/`_apply_migrations` accept a callable here
+# instead of a SQL string. On a fresh install `users` is empty, so this is a
+# no-op past adding the column — the resulting zero-admin, zero-user state
+# is exactly what should trigger first-run onboarding. On an upgrade with
+# existing profiles, promoting the oldest one keeps everyone's access
+# working with no manual step.
+def _migration_002_user_roles(conn: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
+    if "role" not in columns:
+        conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'member'")
+
+    admin_count = conn.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'").fetchone()[0]
+    if admin_count == 0:
+        oldest = conn.execute("SELECT id FROM users ORDER BY created_at ASC LIMIT 1").fetchone()
+        if oldest is not None:
+            conn.execute("UPDATE users SET role = 'admin' WHERE id = ?", (oldest["id"],))
+
+
+_MIGRATIONS: tuple[str | Callable[[sqlite3.Connection], None], ...] = (
+    _MIGRATION_001_USERS_DEVICES,
+    _migration_002_user_roles,
+)
 
 
 def _apply_migrations(conn: sqlite3.Connection) -> None:
     current_version = conn.execute("PRAGMA user_version").fetchone()[0]
     for migration in _MIGRATIONS[current_version:]:
-        conn.executescript(migration)
+        if callable(migration):
+            migration(conn)
+        else:
+            conn.executescript(migration)
     conn.execute(f"PRAGMA user_version = {len(_MIGRATIONS)}")
 
 
@@ -542,12 +569,13 @@ def create_user(
     pin_salt: str | None,
     pin_iterations: int | None,
     created_at: str,
+    role: str = "member",
 ) -> None:
     with _connect() as conn:
         conn.execute(
-            "INSERT INTO users (id, name, avatar, pin_hash, pin_salt, pin_iterations, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (id, name, avatar, pin_hash, pin_salt, pin_iterations, created_at),
+            "INSERT INTO users (id, name, avatar, pin_hash, pin_salt, pin_iterations, created_at, role) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (id, name, avatar, pin_hash, pin_salt, pin_iterations, created_at, role),
         )
 
 

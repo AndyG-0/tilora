@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api import icloud_auth
+from app.auth import get_current_admin
 from app.config import settings
 from app.integrations import icloud_photos
 from app.storage.cache import cache
@@ -14,6 +15,9 @@ from app.storage.cache import cache
 def client(tmp_db):
     app = FastAPI()
     app.include_router(icloud_auth.router)
+    # These tests exercise the connect flow, not auth — stub out who's
+    # asking rather than juggling real device/session cookies here.
+    app.dependency_overrides[get_current_admin] = lambda: {"id": "admin", "role": "admin"}
     return TestClient(app)
 
 
@@ -107,3 +111,11 @@ def test_status_reports_connected(client):
     response = client.get("/api/icloud/status")
 
     assert response.json() == {"connected": True}
+
+
+def test_icloud_routes_require_an_admin_session(tmp_db):
+    app = FastAPI()
+    app.include_router(icloud_auth.router)
+    client = TestClient(app)
+
+    assert client.get("/api/icloud/status").status_code == 401

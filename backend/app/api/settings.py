@@ -3,14 +3,15 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict
 
+from app.auth import get_current_admin
 from app.config import APP_SETTINGS_KEYS, effective_settings
 from app.storage.cache import cache
 from app.storage.db import save_app_settings
 
-router = APIRouter(prefix="/api/settings", tags=["settings"])
+router = APIRouter(prefix="/api/settings", tags=["settings"], dependencies=[Depends(get_current_admin)])
 
 _SECRET_KEYS = (
     "anthropic_api_key",

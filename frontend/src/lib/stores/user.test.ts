@@ -22,7 +22,7 @@ describe('user store', () => {
 	});
 
 	it('loadCurrentUser sets the user and marks loaded on success', async () => {
-		const me = { id: 'u1', name: 'Alice', avatar: null };
+		const me = { id: 'u1', name: 'Alice', avatar: null, role: 'member' as const };
 		currentUser.mockResolvedValue(me);
 
 		const { user, userLoaded, loadCurrentUser } = await import('./user');
@@ -48,7 +48,7 @@ describe('user store', () => {
 		logoutUser.mockResolvedValue({ status: 'ok' });
 
 		const { user, logout } = await import('./user');
-		user.set({ id: 'u1', name: 'Alice', avatar: null });
+		user.set({ id: 'u1', name: 'Alice', avatar: null, role: 'member' });
 		await logout();
 
 		expect(get(user)).toBeNull();
@@ -58,7 +58,7 @@ describe('user store', () => {
 		logoutUser.mockRejectedValue(new Error('network error'));
 
 		const { user, logout } = await import('./user');
-		user.set({ id: 'u1', name: 'Alice', avatar: null });
+		user.set({ id: 'u1', name: 'Alice', avatar: null, role: 'member' });
 
 		// The store is cleared via `.finally()` regardless of outcome, but
 		// the rejection itself still propagates to the caller.

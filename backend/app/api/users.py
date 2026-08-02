@@ -34,13 +34,13 @@ from app.storage.db import (
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
-_PIN_PATTERN = r"^\d{4,8}$"
+PIN_PATTERN = r"^\d{4,8}$"
 
 
 class CreateUserRequest(BaseModel):
     name: str
     avatar: str | None = None
-    pin: str | None = Field(default=None, pattern=_PIN_PATTERN)
+    pin: str | None = Field(default=None, pattern=PIN_PATTERN)
 
 
 class LoginRequest(BaseModel):
@@ -68,8 +68,8 @@ def _profile_shape(user: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _me_shape(user: dict[str, Any]) -> dict[str, Any]:
-    return {"id": user["id"], "name": user["name"], "avatar": user["avatar"]}
+def user_shape(user: dict[str, Any]) -> dict[str, Any]:
+    return {"id": user["id"], "name": user["name"], "avatar": user["avatar"], "role": user["role"]}
 
 
 @router.get("")
@@ -95,7 +95,7 @@ async def create_profile(
     await asyncio.to_thread(create_session, session_id, user_id, device["id"], now, session_expiry())
     set_session_cookie(response, session_id)
 
-    return _me_shape({"id": user_id, "name": payload.name, "avatar": payload.avatar})
+    return user_shape({"id": user_id, "name": payload.name, "avatar": payload.avatar, "role": "member"})
 
 
 @router.post("/{user_id}/login")
@@ -118,7 +118,7 @@ async def login(
     await asyncio.to_thread(create_session, session_id, user["id"], device["id"], now, session_expiry())
     set_session_cookie(response, session_id)
 
-    return _me_shape(user)
+    return user_shape(user)
 
 
 @router.post("/logout")
@@ -135,7 +135,7 @@ async def logout(request: Request, response: Response):
 
 @router.get("/me")
 async def current_profile(user: dict[str, Any] = Depends(get_current_user)):
-    return _me_shape(user)
+    return user_shape(user)
 
 
 @router.patch("/me")
@@ -150,7 +150,7 @@ async def update_profile(payload: UpdateUserRequest, user: dict[str, Any] = Depe
     if fields:
         await asyncio.to_thread(update_user, user["id"], **fields)
     updated = await asyncio.to_thread(get_user, user["id"])
-    return _me_shape(updated)
+    return user_shape(updated)
 
 
 @router.delete("/me")

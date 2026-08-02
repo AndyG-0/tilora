@@ -55,6 +55,13 @@ def test_migration_reseats_pre_existing_single_user_layout_under_default_user_an
     """Simulates upgrading a pre-multi-user install: an old-shape `widget_layout`
     table (widget_id PRIMARY KEY, no user_id/device_id) already has live rows
     before `init_db()` ever runs the new schema/migration against this file.
+
+    Migration 001 re-keys these rows under a "default" user/device id but (as
+    of the role migration) no longer creates matching `users`/`devices` rows
+    itself — that's onboarding's job now, and onboarding mints a random id,
+    not "default". No FK constraints means this doesn't error; it just means
+    the re-keyed rows are inert unless something later creates a "default"
+    id, which is an accepted trade-off for a very old, pre-multi-user DB.
     """
     db_path = tmp_path / "legacy.db"
     conn = sqlite3.connect(db_path)
@@ -84,8 +91,8 @@ def test_migration_reseats_pre_existing_single_user_layout_under_default_user_an
         "colSpan": 2,
         "rowSpan": 1,
     }
-    assert db.get_user("default") is not None
-    assert db.get_device("default") is not None
+    assert db.get_user("default") is None
+    assert db.get_device("default") is None
 
     # Idempotent: re-running against an already-migrated DB doesn't error or duplicate data.
     db.init_db()

@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api import photos
+from app.auth import get_current_user
 from app.config import settings
 from app.integrations import icloud_photos, icloud_shared_album, immich_client
 
@@ -13,7 +14,18 @@ from app.integrations import icloud_photos, icloud_shared_album, immich_client
 def client(tmp_db):
     app = FastAPI()
     app.include_router(photos.router)
+    # These tests exercise photo serving, not auth — stub out who's asking
+    # rather than juggling real device/session cookies here.
+    app.dependency_overrides[get_current_user] = lambda: {"id": "user", "role": "member"}
     return TestClient(app)
+
+
+def test_photos_routes_require_a_session(tmp_db):
+    app = FastAPI()
+    app.include_router(photos.router)
+    client = TestClient(app)
+
+    assert client.get("/api/photos/photos/a.jpg").status_code == 401
 
 
 @pytest.fixture

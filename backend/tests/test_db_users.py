@@ -24,12 +24,16 @@ def test_create_then_get_user_round_trips(tmp_db):
     assert user["pin_iterations"] == 210_000
 
 
-def test_list_users_includes_the_seeded_default_user(tmp_db):
+def test_list_users_is_empty_on_a_fresh_install(tmp_db):
+    assert db.list_users() == []
+
+
+def test_list_users_returns_created_users(tmp_db):
     _create("alice", "Alice")
 
     ids = {u["id"] for u in db.list_users()}
 
-    assert ids == {"default", "alice"}
+    assert ids == {"alice"}
 
 
 def test_update_user_changes_only_given_fields(tmp_db):
