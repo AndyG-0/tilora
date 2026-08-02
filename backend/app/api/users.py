@@ -89,9 +89,7 @@ async def create_profile(
 
     user_id = uuid4().hex
     now = datetime.now(UTC).isoformat()
-    await asyncio.to_thread(
-        create_user, user_id, payload.name, payload.avatar, pin_hash, pin_salt, pin_iterations, now
-    )
+    await asyncio.to_thread(create_user, user_id, payload.name, payload.avatar, pin_hash, pin_salt, pin_iterations, now)
 
     session_id = new_token()
     await asyncio.to_thread(create_session, session_id, user_id, device["id"], now, session_expiry())

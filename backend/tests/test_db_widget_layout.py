@@ -58,9 +58,7 @@ def test_migration_reseats_pre_existing_single_user_layout_under_default_user_an
     """
     db_path = tmp_path / "legacy.db"
     conn = sqlite3.connect(db_path)
-    conn.execute(
-        "CREATE TABLE widget_layout (widget_id TEXT PRIMARY KEY, layout TEXT NOT NULL)"
-    )
+    conn.execute("CREATE TABLE widget_layout (widget_id TEXT PRIMARY KEY, layout TEXT NOT NULL)")
     conn.executemany(
         "INSERT INTO widget_layout (widget_id, layout) VALUES (?, ?)",
         [

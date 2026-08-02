@@ -4,6 +4,7 @@
 // tile's summary data) so the fade recalculates once async data arrives —
 // a ResizeObserver alone won't catch that, since the scroll container's own
 // box size is fixed by flex layout and only its content (scrollHeight) grows.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- dep isn't read; it only exists so Svelte re-invokes update() when it changes
 export function scrollFade(node: HTMLElement, dep?: unknown) {
 	const target = node.parentElement;
 

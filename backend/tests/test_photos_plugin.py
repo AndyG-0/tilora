@@ -386,7 +386,7 @@ async def test_private_provider_get_detail_lists_all_photos(tmp_db, monkeypatch)
     assert "connected" in detail
 
 
-async def test_enumerate_photo_ids_chunks_icloud_private_yields_multiple_chunks(monkeypatch):
+async def test_enumerate_photo_ids_chunks_icloud_private_yields_multiple_chunks(tmp_db, monkeypatch):
     monkeypatch.setattr(settings, "icloud_username", "user@example.com")
     monkeypatch.setattr(settings, "icloud_password", "hunter2")
 
@@ -402,7 +402,7 @@ async def test_enumerate_photo_ids_chunks_icloud_private_yields_multiple_chunks(
     assert chunks == [["id-1"], ["id-2", "id-3"]]
 
 
-async def test_enumerate_photo_ids_chunks_icloud_private_without_credentials_yields_nothing():
+async def test_enumerate_photo_ids_chunks_icloud_private_without_credentials_yields_nothing(tmp_db):
     plugin = make_private_plugin()
 
     chunks = [chunk async for chunk in plugin._enumerate_photo_ids_chunks()]

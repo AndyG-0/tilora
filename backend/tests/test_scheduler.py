@@ -2,12 +2,23 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pytest
+
 import app.scheduler as scheduler_module
+from app import config
 from app.plugins.ai_insights.plugin import AIInsightsPlugin
 from app.plugins.base import registry
 from app.plugins.photos.plugin import PhotosPlugin
 from app.plugins.weather.plugin import WeatherPlugin
 from app.storage import db
+
+
+@pytest.fixture
+def dashboard_yaml(tmp_path, monkeypatch):
+    path = tmp_path / "dashboard.yaml"
+    path.write_text("widgets: []\n")
+    monkeypatch.setattr(config, "DASHBOARD_CONFIG_PATH", path)
+    return path
 
 
 def make_ai_plugin() -> AIInsightsPlugin:
@@ -30,7 +41,7 @@ def test_schedule_ai_widgets_only_schedules_ai_insights_plugins():
         scheduler_module.scheduler.remove_all_jobs()
 
 
-async def test_run_ai_widget_records_successful_run(tmp_db, monkeypatch):
+async def test_run_ai_widget_records_successful_run(tmp_db, dashboard_yaml, monkeypatch):
     plugin = make_ai_plugin()
     registry.register(plugin)
 

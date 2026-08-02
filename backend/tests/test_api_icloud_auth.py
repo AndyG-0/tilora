@@ -11,7 +11,7 @@ from app.storage.cache import cache
 
 
 @pytest.fixture
-def client():
+def client(tmp_db):
     app = FastAPI()
     app.include_router(icloud_auth.router)
     return TestClient(app)

@@ -222,7 +222,7 @@
 			await logout().catch(() => {});
 			goto('/login');
 		} catch {
-			profileError = "Could not delete profile — it may be the only one left.";
+			profileError = 'Could not delete profile — it may be the only one left.';
 			deletingProfile = false;
 			confirmingDeleteProfile = false;
 		}
@@ -504,11 +504,7 @@
 					This device
 					<input type="text" bind:value={deviceNameInput} maxlength="40" />
 				</label>
-				<button
-					class="save"
-					disabled={savingDeviceName || !deviceNameInput.trim()}
-					onclick={saveDeviceName}
-				>
+				<button class="save" disabled={savingDeviceName || !deviceNameInput.trim()} onclick={saveDeviceName}>
 					{savingDeviceName ? 'Saving…' : 'Rename this device'}
 				</button>
 			{/if}
