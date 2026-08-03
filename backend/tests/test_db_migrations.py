@@ -243,3 +243,72 @@ def test_migration_003_is_a_no_op_on_a_fresh_install(tmp_db):
     # blow up when both source tables it reads from are empty.
     db.init_db()
     assert db.get_widget_user_settings("nobody", "rss") is None
+
+
+def _legacy_db_at_version_3(db_path, custom_widgets=(), widget_settings=()):
+    """A DB shaped like one that already ran migrations 001-003 (full schema,
+    no `container` merge yet) — the starting point for exercising migration
+    004 in isolation."""
+    conn = sqlite3.connect(db_path)
+    conn.executescript(db._SCHEMA)
+    conn.executemany("INSERT INTO custom_widgets (id, type, layout, tab) VALUES (?, ?, '{}', NULL)", custom_widgets)
+    conn.executemany("INSERT INTO widget_settings (widget_id, settings) VALUES (?, ?)", widget_settings)
+    conn.execute("PRAGMA user_version = 3")
+    conn.commit()
+    conn.close()
+
+
+def test_migration_004_rewrites_custom_widget_type_to_container(tmp_path, monkeypatch):
+    db_path = tmp_path / "legacy.db"
+    _legacy_db_at_version_3(db_path, custom_widgets=[("podman-abc12345", "podman")])
+
+    monkeypatch.setattr(db, "DB_PATH", db_path)
+    db.init_db()
+
+    widgets = {w["id"]: w["type"] for w in db.list_custom_widgets()}
+    assert widgets == {"podman-abc12345": "container"}
+    assert db.get_widget_settings("podman-abc12345") == {"engine": "podman"}
+
+
+def test_migration_004_preserves_existing_settings_overrides(tmp_path, monkeypatch):
+    db_path = tmp_path / "legacy.db"
+    _legacy_db_at_version_3(
+        db_path,
+        custom_widgets=[("docker-def67890", "docker")],
+        widget_settings=[("docker-def67890", '{"connection": "tcp", "host": "nas.local", "port": 2375}')],
+    )
+
+    monkeypatch.setattr(db, "DB_PATH", db_path)
+    db.init_db()
+
+    assert db.get_widget_settings("docker-def67890") == {
+        "connection": "tcp",
+        "host": "nas.local",
+        "port": 2375,
+        "engine": "docker",
+    }
+
+
+def test_migration_004_ignores_other_widget_types(tmp_path, monkeypatch):
+    db_path = tmp_path / "legacy.db"
+    _legacy_db_at_version_3(db_path, custom_widgets=[("rss-abc12345", "rss")])
+
+    monkeypatch.setattr(db, "DB_PATH", db_path)
+    db.init_db()
+
+    widgets = {w["id"]: w["type"] for w in db.list_custom_widgets()}
+    assert widgets == {"rss-abc12345": "rss"}
+    assert db.get_widget_settings("rss-abc12345") is None
+
+
+def test_migration_004_is_idempotent(tmp_path, monkeypatch):
+    db_path = tmp_path / "legacy.db"
+    _legacy_db_at_version_3(db_path, custom_widgets=[("podman-abc12345", "podman")])
+
+    monkeypatch.setattr(db, "DB_PATH", db_path)
+    db.init_db()
+    db.init_db()
+
+    widgets = {w["id"]: w["type"] for w in db.list_custom_widgets()}
+    assert widgets == {"podman-abc12345": "container"}
+    assert db.get_widget_settings("podman-abc12345") == {"engine": "podman"}

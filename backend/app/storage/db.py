@@ -264,10 +264,35 @@ def _migration_003_seed_personal_widget_settings(conn: sqlite3.Connection) -> No
         )
 
 
+# The `docker` and `podman` plugins were merged into a single `container`
+# plugin with an `engine` setting ("docker" | "podman"). dashboard.yaml-
+# sourced widgets need no migration: `main.py:load_plugins` merges settings
+# as `{**plugin_cls.default_settings, **yaml_settings, **db_overrides}`, and
+# the updated dashboard.yaml now supplies `engine` at the yaml layer, which
+# any pre-existing `widget_settings` override (saved before `engine`
+# existed) simply inherits since it never set that key. UI-added widgets
+# have no yaml entry to inherit from, so their `custom_widgets.type` and
+# `widget_settings` row are rewritten explicitly here instead.
+def _migration_004_merge_container_widgets(conn: sqlite3.Connection) -> None:
+    rows = conn.execute("SELECT id, type FROM custom_widgets WHERE type IN ('docker', 'podman')").fetchall()
+    for row in rows:
+        widget_id, engine = row["id"], row["type"]
+        conn.execute("UPDATE custom_widgets SET type = 'container' WHERE id = ?", (widget_id,))
+        existing = conn.execute("SELECT settings FROM widget_settings WHERE widget_id = ?", (widget_id,)).fetchone()
+        settings = json.loads(existing["settings"]) if existing else {}
+        settings.setdefault("engine", engine)
+        conn.execute(
+            "INSERT INTO widget_settings (widget_id, settings) VALUES (?, ?) "
+            "ON CONFLICT (widget_id) DO UPDATE SET settings = excluded.settings",
+            (widget_id, json.dumps(settings)),
+        )
+
+
 _MIGRATIONS: tuple[str | Callable[[sqlite3.Connection], None], ...] = (
     _MIGRATION_001_USERS_DEVICES,
     _migration_002_user_roles,
     _migration_003_seed_personal_widget_settings,
+    _migration_004_merge_container_widgets,
 )
 
 

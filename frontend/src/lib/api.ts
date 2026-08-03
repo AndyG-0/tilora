@@ -291,32 +291,33 @@ export interface SystemMonitorDetail extends SystemMonitorSummary {
 	load_average: [number, number, number];
 }
 
-export interface DockerContainerSummary {
+export interface ContainerSummaryItem {
 	name: string;
 	state: string;
 	status: string;
 }
 
-export interface DockerContainerDetail extends DockerContainerSummary {
+export interface ContainerDetailItem extends ContainerSummaryItem {
 	id: string;
 	image: string;
 }
 
-export interface DockerSummary {
+export interface ContainerSummary {
+	engine: 'docker' | 'podman';
 	connected: boolean;
 	connection: string;
 	socket_path: string;
 	host: string;
 	port: number;
-	containers: DockerContainerSummary[];
+	containers: ContainerSummaryItem[];
 	running_count: number;
 	stopped_count: number;
 	total_count: number;
 	error?: string;
 }
 
-export interface DockerDetail extends Omit<DockerSummary, 'containers'> {
-	containers: DockerContainerDetail[];
+export interface ContainerDetail extends Omit<ContainerSummary, 'containers'> {
+	containers: ContainerDetailItem[];
 }
 
 export interface SportsBroadcastLink {

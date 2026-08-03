@@ -13,9 +13,9 @@ from app.plugins.asus_router.plugin import AsusRouterPlugin
 from app.plugins.bf6.plugin import BF6Plugin
 from app.plugins.calendar.plugin import CaldavCalendarPlugin, CalendarPlugin, MicrosoftCalendarPlugin
 from app.plugins.clock.plugin import ClockPlugin
+from app.plugins.container.plugin import ContainerPlugin
 from app.plugins.date.plugin import DatePlugin
 from app.plugins.discord.plugin import DiscordPlugin
-from app.plugins.docker.plugin import DockerPlugin
 from app.plugins.game2048.plugin import Game2048Plugin
 from app.plugins.goodreads.plugin import GoodreadsPlugin
 from app.plugins.hdhomerun.plugin import HDHomeRunPlugin
@@ -24,7 +24,6 @@ from app.plugins.message.plugin import MessagePlugin
 from app.plugins.movies.plugin import MoviesPlugin
 from app.plugins.photos.plugin import PhotosPlugin
 from app.plugins.pihole.plugin import PiholePlugin
-from app.plugins.podman.plugin import PodmanPlugin
 from app.plugins.rss.plugin import RSSPlugin
 from app.plugins.sports.plugin import SportsPlugin
 from app.plugins.steam.plugin import SteamPlugin
@@ -51,8 +50,7 @@ PLUGIN_CLASSES_BY_TYPE = {
     "calendar_microsoft": MicrosoftCalendarPlugin,
     "game2048": Game2048Plugin,
     "system_monitor": SystemMonitorPlugin,
-    "docker": DockerPlugin,
-    "podman": PodmanPlugin,
+    "container": ContainerPlugin,
     "sports": SportsPlugin,
     "steam": SteamPlugin,
     "bf6": BF6Plugin,
