@@ -5,19 +5,21 @@ const { goto, widgetSummary } = vi.hoisted(() => ({ goto: vi.fn(), widgetSummary
 vi.mock('$app/navigation', () => ({ goto }));
 vi.mock('$lib/api', () => ({ api: { widgetSummary } }));
 
-import DockerTile from './DockerTile.svelte';
+import ContainerTile from './ContainerTile.svelte';
 
-describe('DockerTile', () => {
+describe('ContainerTile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(DockerTile, { props: { widgetId: 'docker' } });
+		render(ContainerTile, { props: { widgetId: 'container' } });
 
 		expect(screen.getByText('Loading…')).toBeInTheDocument();
+		expect(screen.getByText('Container')).toBeInTheDocument();
 	});
 
 	it('shows a not-connected state', async () => {
 		widgetSummary.mockResolvedValue({
+			engine: 'docker',
 			connected: false,
 			connection: 'tcp',
 			socket_path: '/var/run/docker.sock',
@@ -29,13 +31,14 @@ describe('DockerTile', () => {
 			total_count: 0,
 		});
 
-		render(DockerTile, { props: { widgetId: 'docker' } });
+		render(ContainerTile, { props: { widgetId: 'container' } });
 
 		expect(await screen.findByText('Not connected')).toBeInTheDocument();
 	});
 
-	it('renders the fetched summary with counts and containers', async () => {
+	it('renders the fetched summary with counts and containers, titled for the docker engine', async () => {
 		widgetSummary.mockResolvedValue({
+			engine: 'docker',
 			connected: true,
 			connection: 'socket',
 			socket_path: '/var/run/docker.sock',
@@ -50,16 +53,37 @@ describe('DockerTile', () => {
 			total_count: 2,
 		});
 
-		render(DockerTile, { props: { widgetId: 'docker' } });
+		render(ContainerTile, { props: { widgetId: 'container' } });
 
-		expect(await screen.findByText('1 running')).toBeInTheDocument();
+		expect(await screen.findByText('Docker')).toBeInTheDocument();
+		expect(screen.getByText('1 running')).toBeInTheDocument();
 		expect(screen.getByText('1 stopped')).toBeInTheDocument();
 		expect(screen.getByText('web')).toBeInTheDocument();
 		expect(screen.getByText('worker')).toBeInTheDocument();
 	});
 
+	it('titles the tile for the podman engine', async () => {
+		widgetSummary.mockResolvedValue({
+			engine: 'podman',
+			connected: true,
+			connection: 'socket',
+			socket_path: '/run/podman/podman.sock',
+			host: '',
+			port: 8080,
+			containers: [],
+			running_count: 0,
+			stopped_count: 0,
+			total_count: 0,
+		});
+
+		render(ContainerTile, { props: { widgetId: 'container' } });
+
+		expect(await screen.findByText('Podman')).toBeInTheDocument();
+	});
+
 	it('shows an error message when the plugin surfaces a fetch error', async () => {
 		widgetSummary.mockResolvedValue({
+			engine: 'docker',
 			connected: true,
 			connection: 'tcp',
 			socket_path: '/var/run/docker.sock',
@@ -69,11 +93,11 @@ describe('DockerTile', () => {
 			running_count: 0,
 			stopped_count: 0,
 			total_count: 0,
-			error: 'Could not reach the Docker API: connection refused',
+			error: 'Could not reach the container API: connection refused',
 		});
 
-		render(DockerTile, { props: { widgetId: 'docker' } });
+		render(ContainerTile, { props: { widgetId: 'container' } });
 
-		expect(await screen.findByText('Could not reach the Docker API: connection refused')).toBeInTheDocument();
+		expect(await screen.findByText('Could not reach the container API: connection refused')).toBeInTheDocument();
 	});
 });

@@ -144,9 +144,11 @@ async def stream_channel(widget_id: str, channel_number: str, request: Request):
         raise HTTPException(
             status_code=503,
             detail=(
-                "ffmpeg is not installed or not on PATH on the backend host. "
-                "Install it (e.g. `brew install ffmpeg` on macOS, "
-                "`sudo apt install ffmpeg` on Debian/Raspberry Pi) and restart the backend."
+                "ffmpeg is not installed or not on PATH for the backend process. "
+                "If running the bare-metal installer, install it (e.g. `brew install ffmpeg` on macOS, "
+                "`sudo apt install ffmpeg` on Debian/Raspberry Pi) and restart the backend. "
+                "If running in Docker/Podman, ffmpeg must be present in the backend image itself — "
+                "installing it on the container host has no effect; rebuild the backend image."
             ),
         ) from exc
     assert process.stdout is not None

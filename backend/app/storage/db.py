@@ -53,6 +53,21 @@ CREATE TABLE IF NOT EXISTS widget_user_settings (
 );
 CREATE INDEX IF NOT EXISTS idx_widget_user_settings_widget_id ON widget_user_settings (widget_id);
 
+-- Per-device overrides for individual settings keys a plugin marks via
+-- Plugin.device_overridable_settings — orthogonal to settings_scope above:
+-- a "network"-scope plugin's shared settings still need an admin to change,
+-- but a specific field (e.g. Jellyfin's playback_mode) can still be tuned
+-- per physical device by any user, since it doesn't touch shared config.
+-- Layered on top of the network/personal value, not a replacement for it —
+-- an unset device falls back to whatever settings_scope already resolved.
+CREATE TABLE IF NOT EXISTS widget_device_settings (
+    device_id TEXT NOT NULL,
+    widget_id TEXT NOT NULL,
+    settings TEXT NOT NULL,
+    PRIMARY KEY (device_id, widget_id)
+);
+CREATE INDEX IF NOT EXISTS idx_widget_device_settings_widget_id ON widget_device_settings (widget_id);
+
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -249,10 +264,35 @@ def _migration_003_seed_personal_widget_settings(conn: sqlite3.Connection) -> No
         )
 
 
+# The `docker` and `podman` plugins were merged into a single `container`
+# plugin with an `engine` setting ("docker" | "podman"). dashboard.yaml-
+# sourced widgets need no migration: `main.py:load_plugins` merges settings
+# as `{**plugin_cls.default_settings, **yaml_settings, **db_overrides}`, and
+# the updated dashboard.yaml now supplies `engine` at the yaml layer, which
+# any pre-existing `widget_settings` override (saved before `engine`
+# existed) simply inherits since it never set that key. UI-added widgets
+# have no yaml entry to inherit from, so their `custom_widgets.type` and
+# `widget_settings` row are rewritten explicitly here instead.
+def _migration_004_merge_container_widgets(conn: sqlite3.Connection) -> None:
+    rows = conn.execute("SELECT id, type FROM custom_widgets WHERE type IN ('docker', 'podman')").fetchall()
+    for row in rows:
+        widget_id, engine = row["id"], row["type"]
+        conn.execute("UPDATE custom_widgets SET type = 'container' WHERE id = ?", (widget_id,))
+        existing = conn.execute("SELECT settings FROM widget_settings WHERE widget_id = ?", (widget_id,)).fetchone()
+        settings = json.loads(existing["settings"]) if existing else {}
+        settings.setdefault("engine", engine)
+        conn.execute(
+            "INSERT INTO widget_settings (widget_id, settings) VALUES (?, ?) "
+            "ON CONFLICT (widget_id) DO UPDATE SET settings = excluded.settings",
+            (widget_id, json.dumps(settings)),
+        )
+
+
 _MIGRATIONS: tuple[str | Callable[[sqlite3.Connection], None], ...] = (
     _MIGRATION_001_USERS_DEVICES,
     _migration_002_user_roles,
     _migration_003_seed_personal_widget_settings,
+    _migration_004_merge_container_widgets,
 )
 
 
@@ -429,6 +469,43 @@ def delete_widget_user_settings_for_widget(widget_id: str) -> None:
 def delete_widget_user_settings_for_user(user_id: str) -> None:
     with _connect() as conn:
         conn.execute("DELETE FROM widget_user_settings WHERE user_id = ?", (user_id,))
+
+
+def save_widget_device_settings(device_id: str, widget_id: str, settings: dict[str, Any]) -> None:
+    """Persist a (device, widget) settings override, overwriting any prior one.
+
+    Scoped to a single physical device — for settings keys a plugin lists in
+    `device_overridable_settings` (e.g. Jellyfin's playback_mode), where the
+    right value depends on that device's hardware/browser, not who's logged
+    in or the household's shared default.
+    """
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO widget_device_settings (device_id, widget_id, settings) VALUES (?, ?, ?) "
+            "ON CONFLICT (device_id, widget_id) DO UPDATE SET settings = excluded.settings",
+            (device_id, widget_id, json.dumps(settings)),
+        )
+
+
+def get_widget_device_settings(device_id: str, widget_id: str) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT settings FROM widget_device_settings WHERE device_id = ? AND widget_id = ?",
+            (device_id, widget_id),
+        ).fetchone()
+    return None if row is None else json.loads(row["settings"])
+
+
+def delete_widget_device_settings(device_id: str, widget_id: str) -> None:
+    """Reset a single device's override for a widget back to the household default."""
+    with _connect() as conn:
+        conn.execute("DELETE FROM widget_device_settings WHERE device_id = ? AND widget_id = ?", (device_id, widget_id))
+
+
+def delete_widget_device_settings_for_widget(widget_id: str) -> None:
+    """Drop every device's settings override for a widget that's been removed."""
+    with _connect() as conn:
+        conn.execute("DELETE FROM widget_device_settings WHERE widget_id = ?", (widget_id,))
 
 
 def begin_photo_index_scan(widget_id: str) -> int:
@@ -759,6 +836,7 @@ def delete_device(device_id: str) -> None:
     with _connect() as conn:
         conn.execute("DELETE FROM sessions WHERE device_id = ?", (device_id,))
         conn.execute("DELETE FROM widget_layout WHERE device_id = ?", (device_id,))
+        conn.execute("DELETE FROM widget_device_settings WHERE device_id = ?", (device_id,))
         conn.execute("DELETE FROM devices WHERE id = ?", (device_id,))
 
 

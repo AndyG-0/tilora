@@ -115,6 +115,11 @@ if you override `PUBLIC_API_BASE_URL` to point at a different host, set
 `CORS_ORIGIN` to that same host on port 3000 alongside it, e.g.
 `PUBLIC_API_BASE_URL=http://<host-ip>:8000 CORS_ORIGIN=http://<host-ip>:3000 docker compose -f docker-compose.prod.yml up -d`.
 
+The backend image bundles `ffmpeg`, so the HDHomeRun widget's
+`server_transcode` playback mode works out of the box in both compose files
+above — no extra install step needed (contrast with the bare-metal installer
+below, which intentionally leaves `ffmpeg` out; see `deploy/README.md`).
+
 For native Debian, Ubuntu, and Raspberry Pi OS installation, run
 `curl -fsSL https://raw.githubusercontent.com/AndyG-0/tilora/main/deploy/install.sh | bash`.
 See `deploy/README.md` for configuration, upgrades, and the optional Raspberry

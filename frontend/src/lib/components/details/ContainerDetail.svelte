@@ -1,30 +1,48 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { api, type DockerDetail } from '$lib/api';
+	import { api, type ContainerDetail } from '$lib/api';
 	import { user } from '$lib/stores/user';
 
-	let { data: initialData }: { data: DockerDetail } = $props();
+	let { data: initialData }: { data: ContainerDetail } = $props();
 
 	// svelte-ignore state_referenced_locally -- seed local state from the
 	// initial load once; subsequent updates come from saveSettings's refetch.
-	let podman = $state(initialData);
+	let container = $state(initialData);
+
+	const ENGINE_LABELS: Record<'docker' | 'podman', string> = { docker: 'Docker', podman: 'Podman' };
+	const ENGINE_DEFAULTS: Record<'docker' | 'podman', { socketPath: string; host: string; port: number }> = {
+		docker: { socketPath: '/var/run/docker.sock', host: 'docker.local', port: 2375 },
+		podman: { socketPath: '/run/podman/podman.sock', host: 'podman.local', port: 8080 },
+	};
 
 	let editing = $state(false);
+	let engineInput = $state<'docker' | 'podman'>('docker');
 	let connectionInput = $state<'socket' | 'tcp'>('socket');
-	let socketPathInput = $state('/run/podman/podman.sock');
+	let socketPathInput = $state('/var/run/docker.sock');
 	let hostInput = $state('');
-	let portInput = $state(8080);
+	let portInput = $state(2375);
 	let saving = $state(false);
 	let error = $state<string | null>(null);
 
 	const widgetId = $derived(page.params.id!);
+	const title = $derived(ENGINE_LABELS[container.engine] ?? 'Container');
+	const enginePlaceholders = $derived(ENGINE_DEFAULTS[engineInput]);
 
 	function openEditor() {
-		connectionInput = podman.connection === 'tcp' ? 'tcp' : 'socket';
-		socketPathInput = podman.socket_path;
-		hostInput = podman.host;
-		portInput = podman.port;
+		engineInput = container.engine;
+		connectionInput = container.connection === 'tcp' ? 'tcp' : 'socket';
+		socketPathInput = container.socket_path;
+		hostInput = container.host;
+		portInput = container.port;
 		editing = true;
+	}
+
+	function onEngineChange(next: 'docker' | 'podman') {
+		const previousDefaults = ENGINE_DEFAULTS[engineInput];
+		const nextDefaults = ENGINE_DEFAULTS[next];
+		if (socketPathInput === previousDefaults.socketPath) socketPathInput = nextDefaults.socketPath;
+		if (portInput === previousDefaults.port) portInput = nextDefaults.port;
+		engineInput = next;
 	}
 
 	async function saveSettings() {
@@ -32,12 +50,13 @@
 		error = null;
 		try {
 			await api.updateWidgetSettings(widgetId, {
+				engine: engineInput,
 				connection: connectionInput,
 				socket_path: socketPathInput,
 				host: hostInput,
 				port: portInput,
 			});
-			podman = await api.widgetDetail<DockerDetail>(widgetId);
+			container = await api.widgetDetail<ContainerDetail>(widgetId);
 			editing = false;
 		} catch {
 			error = 'Could not save the connection settings.';
@@ -48,7 +67,7 @@
 </script>
 
 <div class="header">
-	<h1>Podman</h1>
+	<h1>{title}</h1>
 	{#if $user?.role === 'admin'}
 		<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
 			{editing ? 'Cancel' : 'Edit connection'}
@@ -59,6 +78,13 @@
 {#if editing}
 	<div class="settings-form">
 		<label>
+			Engine
+			<select value={engineInput} onchange={(e) => onEngineChange(e.currentTarget.value as 'docker' | 'podman')}>
+				<option value="docker">Docker</option>
+				<option value="podman">Podman</option>
+			</select>
+		</label>
+		<label>
 			Connection
 			<select bind:value={connectionInput}>
 				<option value="socket">Local socket</option>
@@ -68,12 +94,12 @@
 		{#if connectionInput === 'socket'}
 			<label>
 				Socket path
-				<input type="text" bind:value={socketPathInput} placeholder="/run/podman/podman.sock" />
+				<input type="text" bind:value={socketPathInput} placeholder={enginePlaceholders.socketPath} />
 			</label>
 		{:else}
 			<label>
 				Host
-				<input type="text" bind:value={hostInput} placeholder="podman.local" />
+				<input type="text" bind:value={hostInput} placeholder={enginePlaceholders.host} />
 			</label>
 			<label>
 				Port
@@ -94,38 +120,38 @@
 {/if}
 
 {#if !editing}
-	{#if !podman.connected}
-		<p class="hint">Not connected yet — tap "Edit connection" to set up Podman.</p>
+	{#if !container.connected}
+		<p class="hint">Not connected yet — tap "Edit connection" to set up {title}.</p>
 	{:else}
-		{#if podman.error}
-			<p class="hint error">{podman.error}</p>
+		{#if container.error}
+			<p class="hint error">{container.error}</p>
 		{/if}
 
 		<div class="counts">
 			<div class="count">
-				<div class="count-value">{podman.running_count}</div>
+				<div class="count-value">{container.running_count}</div>
 				<div class="count-label">Running</div>
 			</div>
 			<div class="count">
-				<div class="count-value">{podman.stopped_count}</div>
+				<div class="count-value">{container.stopped_count}</div>
 				<div class="count-label">Stopped</div>
 			</div>
 			<div class="count">
-				<div class="count-value">{podman.total_count}</div>
+				<div class="count-value">{container.total_count}</div>
 				<div class="count-label">Total</div>
 			</div>
 		</div>
 
-		{#if podman.containers.length === 0}
+		{#if container.containers.length === 0}
 			<p class="hint">No containers found.</p>
 		{:else}
 			<ul class="containers">
-				{#each podman.containers as container (container.id)}
+				{#each container.containers as item (item.id)}
 					<li>
-						<span class="dot" class:on={container.state === 'running'}></span>
-						<span class="name">{container.name}</span>
-						<span class="image">{container.image}</span>
-						<span class="status">{container.status}</span>
+						<span class="dot" class:on={item.state === 'running'}></span>
+						<span class="name">{item.name}</span>
+						<span class="image">{item.image}</span>
+						<span class="status">{item.status}</span>
 					</li>
 				{/each}
 			</ul>

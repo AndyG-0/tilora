@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import httpx
+import pytest
 import respx
 
-from app.plugins.podman.plugin import PodmanPlugin
-
-TCP_SETTINGS = {"connection": "tcp", "host": "podman.local", "port": 8080}
+from app.plugins.container.plugin import ContainerPlugin
 
 CONTAINERS_RESPONSE = [
     {"Id": "aaaaaaaaaaaa1111", "Names": ["/web"], "Image": "nginx:latest", "State": "running", "Status": "Up 2 hours"},
@@ -18,13 +17,20 @@ CONTAINERS_RESPONSE = [
     },
 ]
 
+ENGINE_TCP_SETTINGS = {
+    "docker": {"engine": "docker", "connection": "tcp", "host": "docker.local", "port": 2375},
+    "podman": {"engine": "podman", "connection": "tcp", "host": "podman.local", "port": 8080},
+}
+ENGINE_SOCKET_PATHS = {"docker": "/var/run/docker.sock", "podman": "/run/podman/podman.sock"}
 
-def make_plugin(**settings) -> PodmanPlugin:
-    return PodmanPlugin({"id": "podman", "settings": {**PodmanPlugin.default_settings, **settings}})
+
+def make_plugin(**settings) -> ContainerPlugin:
+    return ContainerPlugin({"id": "container", "settings": {**ContainerPlugin.default_settings, **settings}})
 
 
-async def test_get_summary_when_not_configured():
-    plugin = make_plugin(connection="tcp", host="")
+@pytest.mark.parametrize("engine", ["docker", "podman"])
+async def test_get_summary_when_not_configured(engine):
+    plugin = make_plugin(engine=engine, connection="tcp", host="")
 
     summary = await plugin.get_summary()
 
@@ -33,21 +39,28 @@ async def test_get_summary_when_not_configured():
     assert summary["total_count"] == 0
 
 
-async def test_get_summary_defaults_to_socket_connection():
-    plugin = make_plugin()
+@pytest.mark.parametrize("engine", ["docker", "podman"])
+async def test_get_summary_defaults_to_socket_connection_for_engine(engine):
+    # No `socket_path` key at all (unlike make_plugin, which always merges
+    # in default_settings' docker-flavored one) — isolates _settings_view's
+    # own per-engine fallback from the class-level default_settings.
+    plugin = ContainerPlugin({"id": "container", "settings": {"engine": engine}})
 
     summary = await plugin.get_summary()
 
+    assert summary["engine"] == engine
     assert summary["connection"] == "socket"
-    assert summary["socket_path"] == "/run/podman/podman.sock"
+    assert summary["socket_path"] == ENGINE_SOCKET_PATHS[engine]
 
 
+@pytest.mark.parametrize("engine", ["docker", "podman"])
 @respx.mock
-async def test_get_summary_when_connected_reports_counts():
-    respx.get("http://podman.local:8080/containers/json", params={"all": "true"}).mock(
+async def test_get_summary_when_connected_reports_counts(engine):
+    tcp_settings = ENGINE_TCP_SETTINGS[engine]
+    respx.get(f"http://{tcp_settings['host']}:{tcp_settings['port']}/containers/json", params={"all": "true"}).mock(
         return_value=httpx.Response(200, json=CONTAINERS_RESPONSE)
     )
-    plugin = make_plugin(**TCP_SETTINGS)
+    plugin = make_plugin(**tcp_settings)
 
     summary = await plugin.get_summary()
 
@@ -63,8 +76,8 @@ async def test_get_summary_when_connected_reports_counts():
 
 @respx.mock
 async def test_get_summary_surfaces_error_without_raising():
-    respx.get("http://podman.local:8080/containers/json").mock(side_effect=httpx.ConnectError("refused"))
-    plugin = make_plugin(**TCP_SETTINGS)
+    respx.get("http://docker.local:2375/containers/json").mock(side_effect=httpx.ConnectError("refused"))
+    plugin = make_plugin(**ENGINE_TCP_SETTINGS["docker"])
 
     summary = await plugin.get_summary()
 
@@ -76,10 +89,10 @@ async def test_get_summary_surfaces_error_without_raising():
 
 @respx.mock
 async def test_get_detail_includes_image_and_id():
-    respx.get("http://podman.local:8080/containers/json", params={"all": "true"}).mock(
+    respx.get("http://docker.local:2375/containers/json", params={"all": "true"}).mock(
         return_value=httpx.Response(200, json=CONTAINERS_RESPONSE)
     )
-    plugin = make_plugin(**TCP_SETTINGS)
+    plugin = make_plugin(**ENGINE_TCP_SETTINGS["docker"])
 
     detail = await plugin.get_detail()
 
@@ -106,8 +119,8 @@ async def test_get_detail_when_not_configured():
 
 @respx.mock
 async def test_get_detail_surfaces_error_without_raising():
-    respx.get("http://podman.local:8080/containers/json").mock(return_value=httpx.Response(500))
-    plugin = make_plugin(**TCP_SETTINGS)
+    respx.get("http://docker.local:2375/containers/json").mock(return_value=httpx.Response(500))
+    plugin = make_plugin(**ENGINE_TCP_SETTINGS["docker"])
 
     detail = await plugin.get_detail()
 
@@ -116,12 +129,13 @@ async def test_get_detail_surfaces_error_without_raising():
     assert detail["containers"] == []
 
 
-async def test_get_ai_tools_returns_status_tool():
-    plugin = make_plugin(connection="tcp", host="")
+@pytest.mark.parametrize("engine", ["docker", "podman"])
+async def test_get_ai_tools_returns_status_tool_named_for_engine(engine):
+    plugin = make_plugin(engine=engine, connection="tcp", host="")
 
     tools = plugin.get_ai_tools()
 
     assert len(tools) == 1
-    assert tools[0].name == "get_podman_container_status"
+    assert tools[0].name == f"get_{engine}_container_status"
     result = await tools[0].handler()
     assert result["connected"] is False

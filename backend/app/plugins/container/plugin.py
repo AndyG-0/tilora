@@ -1,30 +1,40 @@
-"""Docker plugin: container list and health/state for a single Docker host,
-via the Docker Engine API (see `app/integrations/docker_client.py` for the
-socket-vs-TCP connection handling).
+"""Container plugin: container list and health/state for a single Docker or
+Podman host, via `app/integrations/container_client.py` (both engines share
+the same Docker-Engine-API-compatible REST shape).
 
-The default settings point at the standard local socket path
-(`/var/run/docker.sock`), so a backend that has that socket available (e.g.
-bind-mounted into its own container, or running directly on the Docker host)
-works out of the box with no configuration. Switching `connection` to "tcp"
-targets a separate host's Docker API instead, unauthenticated over the LAN —
-same trusted-network assumption Pi-hole/HDHomeRun make. Either way,
-get_summary/get_detail return a not-connected or an error state rather than
-raising, so the widget degrades gracefully when the daemon isn't reachable.
+Which engine a widget instance talks to is just its `engine` setting
+("docker" | "podman") — everything else (connection mode, socket path, host,
+port) is the same shape either way. `_ENGINE_DEFAULTS` supplies the
+per-engine connection defaults (Docker's standard local socket path is
+`/var/run/docker.sock`; Podman's rootful socket is
+`/run/podman/podman.sock` — rootless Podman users should override
+`socket_path` to their own `$XDG_RUNTIME_DIR/podman/podman.sock`).
+Switching `connection` to "tcp" targets a separate host's API instead,
+unauthenticated over the LAN — same trusted-network assumption Pi-hole/
+HDHomeRun make. Either way, get_summary/get_detail return a not-connected or
+an error state rather than raising, so the widget degrades gracefully when
+the daemon isn't reachable.
 """
 
 from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from app.integrations import docker_client
+from app.integrations import container_client
 from app.plugins.base import Plugin, ToolDef
 
+_ENGINE_DEFAULTS: dict[str, dict[str, Any]] = {
+    "docker": {"socket_path": "/var/run/docker.sock", "host": "docker.local", "port": 2375},
+    "podman": {"socket_path": "/run/podman/podman.sock", "host": "podman.local", "port": 8080},
+}
 
-class DockerPlugin(Plugin):
-    id = "docker"
-    name = "Docker"
+
+class ContainerPlugin(Plugin):
+    id = "container"
+    name = "Container"
     refresh_interval_seconds = 30
     default_settings: ClassVar[dict[str, Any]] = {
+        "engine": "docker",  # "docker" | "podman"
         "connection": "socket",  # "socket" | "tcp"
         "socket_path": "/var/run/docker.sock",
         "host": "",
@@ -35,24 +45,30 @@ class DockerPlugin(Plugin):
     def _settings(self) -> dict[str, Any]:
         return self.config["settings"]
 
+    def _engine(self) -> str:
+        return self._settings().get("engine", "docker")
+
     def _is_connected(self) -> bool:
-        return docker_client.is_configured(self._settings())
+        return container_client.is_configured(self._settings())
 
     def _settings_view(self) -> dict[str, Any]:
         s = self._settings()
+        engine = self._engine()
+        engine_defaults = _ENGINE_DEFAULTS.get(engine, _ENGINE_DEFAULTS["docker"])
         return {
+            "engine": engine,
             "connection": s.get("connection", "socket"),
-            "socket_path": s.get("socket_path", "/var/run/docker.sock"),
+            "socket_path": s.get("socket_path", engine_defaults["socket_path"]),
             "host": s.get("host", ""),
-            "port": s.get("port", 2375),
+            "port": s.get("port", engine_defaults["port"]),
         }
 
     async def _containers(self) -> tuple[list[dict[str, Any]], str | None]:
         if not self._is_connected():
             return [], None
         try:
-            containers = await docker_client.fetch_containers(self._settings())
-        except docker_client.DockerError as exc:
+            containers = await container_client.fetch_containers(self._settings())
+        except container_client.ContainerError as exc:
             return [], str(exc)
         return containers, None
 
@@ -100,15 +116,17 @@ class DockerPlugin(Plugin):
         }
 
     def get_ai_tools(self) -> list[ToolDef]:
-        async def get_docker_container_status() -> dict[str, Any]:
+        engine = self._engine()
+
+        async def get_container_status() -> dict[str, Any]:
             return await self.get_summary()
 
         return [
             ToolDef(
-                name="get_docker_container_status",
-                description="Get the list of Docker containers on the configured host, their "
+                name=f"get_{engine}_container_status",
+                description=f"Get the list of {engine.capitalize()} containers on the configured host, their "
                 "running/stopped state, and counts of running vs. stopped containers.",
                 parameters={"type": "object", "properties": {}},
-                handler=get_docker_container_status,
+                handler=get_container_status,
             )
         ]

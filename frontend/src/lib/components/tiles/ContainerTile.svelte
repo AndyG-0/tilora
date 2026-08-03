@@ -1,15 +1,18 @@
 <script lang="ts">
 	import { pollWidget } from '$lib/polling';
-	import { api, type DockerSummary } from '$lib/api';
+	import { api, type ContainerSummary } from '$lib/api';
 	import TileCard from '$lib/components/TileCard.svelte';
 
 	let { widgetId }: { widgetId: string } = $props();
 
-	let summary = $state<DockerSummary | null>(null);
+	let summary = $state<ContainerSummary | null>(null);
+
+	const ENGINE_LABELS: Record<string, string> = { docker: 'Docker', podman: 'Podman' };
+	const title = $derived(summary ? (ENGINE_LABELS[summary.engine] ?? 'Container') : 'Container');
 
 	async function refresh() {
 		try {
-			summary = await api.widgetSummary<DockerSummary>(widgetId);
+			summary = await api.widgetSummary<ContainerSummary>(widgetId);
 		} catch {
 			// keep showing the last known value on a failed poll
 		}
@@ -19,7 +22,7 @@
 </script>
 
 <TileCard {widgetId}>
-	<div class="title">Docker</div>
+	<div class="title">{title}</div>
 	{#if !summary}
 		<div class="hint">Loading…</div>
 	{:else if !summary.connected}

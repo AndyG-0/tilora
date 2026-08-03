@@ -3,7 +3,7 @@
 Targets Valve's free, key-based Steam Web API (no OAuth — just `?key=...`
 query params); a key is generated at https://steamcommunity.com/dev/apikey.
 No official Python SDK is used, same thin httpx-client-per-integration
-approach as everywhere else in this codebase (see docker_client.py,
+approach as everywhere else in this codebase (see container_client.py,
 espn_client.py).
 
 Confirmed by hitting the live endpoints (with an invalid key, since no real

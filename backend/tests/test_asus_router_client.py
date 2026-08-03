@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 import pytest
 import respx
@@ -62,6 +64,26 @@ async def test_resolve_session_reuses_cached_session():
     await asus_router_client._resolve_session(SETTINGS, "r3")
 
     assert route.call_count == 1
+
+
+@respx.mock
+async def test_resolve_session_serializes_concurrent_cold_cache_calls():
+    # AsusWRT/Merlin only tracks one active session at a time, so two
+    # concurrent logins from our own process would invalidate each other's
+    # token on the router. On a cold cache, concurrent resolvers must
+    # serialize down to a single login.cgi call instead of racing.
+    route = respx.post("https://router.local:443/login.cgi").mock(
+        return_value=httpx.Response(200, json={"asus_token": "tok-concurrent"})
+    )
+
+    results = await asyncio.gather(
+        asus_router_client._resolve_session(SETTINGS, "r33-concurrent"),
+        asus_router_client._resolve_session(SETTINGS, "r33-concurrent"),
+        asus_router_client._resolve_session(SETTINGS, "r33-concurrent"),
+    )
+
+    assert route.call_count == 1
+    assert {session.token for session in results} == {"tok-concurrent"}
 
 
 @respx.mock
@@ -167,6 +189,68 @@ async def test_authenticate_keeps_non_default_port_in_origin_and_referer():
 
 
 @respx.mock
+async def test_authenticate_omits_default_port_when_port_is_a_string():
+    # Settings can round-trip through JSON storage that doesn't guarantee
+    # `port` stays a native int — a stringified "443" must still be treated
+    # as the default and omitted from Origin/Referer (see _base_url).
+    settings = {**SETTINGS, "port": "443"}
+    route = respx.post("https://router.local/login.cgi").mock(
+        return_value=httpx.Response(200, json={"asus_token": "tok"})
+    )
+
+    await asus_router_client._resolve_session(settings, "r30")
+
+    request_headers = route.calls.last.request.headers
+    assert request_headers["referer"] == "https://router.local/Main_Login.asp"
+    assert request_headers["origin"] == "https://router.local"
+
+
+@respx.mock
+async def test_authenticate_omits_default_port_when_port_is_none():
+    settings = {**SETTINGS, "port": None}
+    route = respx.post("https://router.local/login.cgi").mock(
+        return_value=httpx.Response(200, json={"asus_token": "tok"})
+    )
+
+    await asus_router_client._resolve_session(settings, "r31")
+
+    request_headers = route.calls.last.request.headers
+    assert request_headers["referer"] == "https://router.local/Main_Login.asp"
+    assert request_headers["origin"] == "https://router.local"
+
+
+@respx.mock
+async def test_authenticate_keeps_explicit_port_zero():
+    # An explicit port of 0 must not be mistaken for "unset" and silently
+    # swapped for the scheme default — falsy-coercion (`port or default`)
+    # would do exactly that, since 0 is falsy.
+    settings = {**SETTINGS, "port": 0}
+    route = respx.post("https://router.local:0/login.cgi").mock(
+        return_value=httpx.Response(200, json={"asus_token": "tok"})
+    )
+
+    await asus_router_client._resolve_session(settings, "r34")
+
+    request_headers = route.calls.last.request.headers
+    assert request_headers["referer"] == "https://router.local:0/Main_Login.asp"
+    assert request_headers["origin"] == "https://router.local:0"
+
+
+@respx.mock
+async def test_authenticate_treats_string_use_https_false_as_http():
+    settings = {**SETTINGS_HTTP, "use_https": "false"}
+    route = respx.post("http://192.168.50.1/login.cgi").mock(
+        return_value=httpx.Response(200, json={"asus_token": "tok"})
+    )
+
+    await asus_router_client._resolve_session(settings, "r32")
+
+    request_headers = route.calls.last.request.headers
+    assert request_headers["referer"] == "http://192.168.50.1/Main_Login.asp"
+    assert request_headers["origin"] == "http://192.168.50.1"
+
+
+@respx.mock
 async def test_authenticate_reports_error_status_lockout():
     respx.post("https://router.local:443/login.cgi").mock(return_value=httpx.Response(200, json={"error_status": "3"}))
 
@@ -215,6 +299,30 @@ async def test_hook_raises_after_retry_still_fails():
 
     with pytest.raises(asus_router_client.AsusRouterError):
         await asus_router_client.test_connection(SETTINGS, "r8")
+
+
+@respx.mock
+async def test_hook_reports_login_page_bounce_without_retrying():
+    # A 200 with HTML back from the hook endpoint (not 401/403) means the
+    # router accepted the session token but is bouncing every request back
+    # to Main_Login.asp anyway — Merlin firmware does this when it's
+    # requiring a captcha or has rate-limited logins after repeated failed
+    # attempts. This must not trigger the 401/403 re-auth-and-retry path:
+    # retrying a login here only makes an active lockout worse.
+    auth_route = respx.post("https://router.local:443/login.cgi").mock(
+        return_value=httpx.Response(200, json={"asus_token": "tok"})
+    )
+    hook_route = respx.post("https://router.local:443/appGet.cgi").mock(
+        return_value=httpx.Response(
+            200, html="<html><script>window.top.location.href='/Main_Login.asp';</script></html>"
+        )
+    )
+
+    with pytest.raises(asus_router_client.AsusRouterError, match="requiring a captcha"):
+        await asus_router_client.test_connection(SETTINGS, "r33")
+
+    assert auth_route.call_count == 1
+    assert hook_route.call_count == 1
 
 
 @respx.mock

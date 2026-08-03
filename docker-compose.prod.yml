@@ -23,6 +23,18 @@ services:
       - ./backend/config:/app/config
       - ./backend/.env:/app/.env
       - backend-storage:/app/data
+      # Uncomment to enable the Docker widget (backend/app/plugins/docker) —
+      # exposes the host's Docker socket to the container.
+      # - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Uncomment to enable the Podman widget (backend/app/plugins/podman) —
+      # path shown is rootful Podman's default; rootless is
+      # $XDG_RUNTIME_DIR/podman/podman.sock (commonly
+      # /run/user/<uid>/podman/podman.sock).
+      # - /run/podman/podman.sock:/run/podman/podman.sock:ro
+      # Uncomment and point at a folder of images on the host to back the
+      # Photos widget's "local" provider — set that same container-side path
+      # as the widget's `directory` setting.
+      # - /path/to/photos:/app/photos:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
