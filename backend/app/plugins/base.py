@@ -11,7 +11,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 
 @dataclass(frozen=True)
@@ -47,6 +47,13 @@ class Plugin(ABC):
     #: most widgets are fine at a single cell, but content-heavy ones (e.g.
     #: a list of RSS headlines) need more room to be readable by default
     default_layout: ClassVar[dict[str, int]] = {"colSpan": 1, "rowSpan": 1}
+    #: who this widget's settings belong to. "network" (the default) means
+    #: one shared config for the whole household (e.g. a NAS or router — same
+    #: for everyone), viewable by any logged-in user but writable only by an
+    #: admin. "personal" means each household member has their own settings
+    #: *and* sees their own content on the tile (e.g. RSS feeds, calendar
+    #: selection) — see app.api.widgets for how this is enforced/personalized.
+    settings_scope: ClassVar[Literal["network", "personal"]] = "network"
 
     def __init__(self, config: dict[str, Any]):
         self.config = config
@@ -66,6 +73,18 @@ class Plugin(ABC):
     def get_ai_tools(self) -> list[ToolDef]:
         """Tools this plugin exposes to the AI layer. Optional to override."""
         return []
+
+    def with_settings(self, settings: dict[str, Any]) -> Plugin:
+        """A fresh instance of this plugin carrying a different settings dict.
+
+        Used to personalize a "personal"-scope plugin per request without
+        mutating the shared registry singleton — get_summary/get_detail are
+        async with awaited I/O, so two users' requests interleaving on the
+        event loop could otherwise corrupt each other's view if the
+        singleton's settings were mutated in place instead. Requires __init__
+        to stay cheap/side-effect-free, which holds for every plugin today.
+        """
+        return type(self)({**self.config, "settings": settings})
 
 
 class PluginRegistry:

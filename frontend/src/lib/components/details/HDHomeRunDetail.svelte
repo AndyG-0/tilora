@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { api, type HDHomeRunTestConnectionResult, type HDHomeRunTranscodePreset } from '$lib/api';
 	import HDHomeRunPlayer from '$lib/components/HDHomeRunPlayer.svelte';
+	import { user } from '$lib/stores/user';
 
 	interface HDHomeRunGuideEntry {
 		title: string;
@@ -264,9 +265,11 @@
 
 <div class="header">
 	<h1>HDHomeRun</h1>
-	<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
-		{editing ? 'Cancel' : 'Edit connection'}
-	</button>
+	{#if $user?.role === 'admin'}
+		<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
+			{editing ? 'Cancel' : 'Edit connection'}
+		</button>
+	{/if}
 </div>
 
 {#if editing}

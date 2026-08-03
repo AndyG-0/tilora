@@ -25,6 +25,9 @@ class RSSPlugin(Plugin):
     id = "rss"
     name = "RSS"
     refresh_interval_seconds = 900
+    # Each household member reads different headlines, not a shared feed —
+    # see Plugin.settings_scope.
+    settings_scope = "personal"
     default_settings: ClassVar[dict[str, Any]] = {
         "title": "Headlines",
         "feeds": [],

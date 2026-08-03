@@ -122,12 +122,18 @@ Pi kiosk path.
 
 ## Network exposure
 
-Tilora has no built-in authentication (see `TODO.md`) — anyone who can reach
-the backend/frontend ports can read and change dashboard state. It's built
-to run on a trusted home/local network (e.g. a Pi behind your router), not
-to be exposed directly to the internet. If you need remote access, put it
-behind a VPN (Tailscale, WireGuard) or an authenticating reverse proxy
-rather than port-forwarding it.
+Tilora requires a session-cookie login (a household profile + optional PIN)
+for every widget read and write — see `CONTRIBUTING.md`'s "Settings tiers"
+section for how that plays out per-widget: any logged-in member can view a
+widget's data, but changing a shared/network-wide setting (NAS, router,
+Docker, timezone, ...) requires the `admin` role, while personal settings
+(RSS feeds, calendar picks, ...) are each member's own to change. This
+protects against a device that merely shares your network, but not against
+another *logged-in* household member — Tilora is still built to run on a
+trusted home/local network (e.g. a Pi behind your router), not to be
+exposed directly to the internet. If you need remote access, put it behind
+a VPN (Tailscale, WireGuard) or an authenticating reverse proxy rather than
+port-forwarding it.
 
 ## Raspberry Pi kiosk deployment
 

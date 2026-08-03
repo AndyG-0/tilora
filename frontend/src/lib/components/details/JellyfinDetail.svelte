@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { api, type JellyfinItem, type JellyfinTestConnectionResult } from '$lib/api';
 	import JellyfinPlayer from '$lib/components/JellyfinPlayer.svelte';
+	import { user } from '$lib/stores/user';
 
 	interface JellyfinDetailData {
 		connected: boolean;
@@ -149,9 +150,11 @@
 
 <div class="header">
 	<h1>Jellyfin</h1>
-	<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
-		{editing ? 'Cancel' : 'Edit connection'}
-	</button>
+	{#if $user?.role === 'admin'}
+		<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
+			{editing ? 'Cancel' : 'Edit connection'}
+		</button>
+	{/if}
 </div>
 
 {#if editing}
