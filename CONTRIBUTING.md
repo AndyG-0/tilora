@@ -54,7 +54,43 @@ text over the API — only a `has_<key>` boolean), and add an input for it in
 
 After any mutation that changes a widget's cached data, invalidate its cache
 entries: `cache.delete(f"summary:{widget_id}")` /
-`cache.delete(f"detail:{widget_id}")`.
+`cache.delete(f"detail:{widget_id}")` (or `_cache_key(...)` for a
+`"personal"`-scope widget — see below).
+
+### Settings tiers: network vs. personal
+
+A widget's settings (`Plugin.config["settings"]`) land in one of two places,
+controlled by `Plugin.settings_scope: ClassVar[Literal["network", "personal"]]`
+(`backend/app/plugins/base.py`), which defaults to `"network"`:
+
+- **`"network"`** (default) — one shared value for the whole household,
+  stored in the global `widget_settings` table. Use this when the setting is
+  a property of the network/device the widget talks to, so it's the same
+  for everyone regardless of who's logged in: NAS/router/media-server host
+  and credentials, Docker/Podman socket, HDHomeRun tuner address, timezone.
+  Any logged-in user can read it (`GET .../summary|detail`); only an admin
+  can write it (`PATCH .../settings` 403s for a non-admin — enforced in
+  `backend/app/api/widgets.py`'s `_require_write_access`). On the frontend,
+  gate the corresponding `<Name>Detail.svelte`'s edit controls behind
+  `$user?.role === 'admin'` (see `SynologyDetail.svelte` for the pattern) —
+  this is a UX nicety only, the backend enforces the real check.
+- **`"personal"`** — each household member has their own value and sees
+  their own content on the tile, stored per-user in `widget_user_settings`.
+  Use this when the setting reflects individual preference rather than
+  network topology: which RSS feeds to follow, which calendars to show.
+  Any logged-in user can read and write their own settings; there's nothing
+  to gate in the UI, since `GET .../summary|detail` already returns the
+  requesting user's own data via the session cookie.
+
+Opting a plugin into `"personal"` scope is just `settings_scope = "personal"`
+on the class — no other code changes are needed as long as `__init__` stays
+cheap and side-effect-free (true for every plugin today), since
+personalization works by constructing a fresh instance per request via
+`Plugin.with_settings()` rather than mutating the shared registry singleton.
+
+When in doubt about which bucket a new integration belongs in, ask: would
+two people on the same household network expect to see the same value here,
+or their own? Same value → `"network"`. Their own → `"personal"`.
 
 ## Theming
 

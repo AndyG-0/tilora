@@ -43,6 +43,7 @@ vi.mock('$app/state', () => ({
 	},
 }));
 
+import { user } from '$lib/stores/user';
 import HDHomeRunDetail from './HDHomeRunDetail.svelte';
 
 const notConnected = {
@@ -95,6 +96,7 @@ describe('HDHomeRunDetail', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		pageUrl = new URL('http://localhost/widget/hdhomerun');
+		user.set({ id: 'admin-user', name: 'Admin', avatar: null, role: 'admin' });
 	});
 
 	it('shows a not-connected hint', () => {
@@ -194,5 +196,13 @@ describe('HDHomeRunDetail', () => {
 
 		await vi.waitFor(() => expect(updateWidgetSettings).toHaveBeenCalled());
 		expect(widgetDetail).toHaveBeenCalledWith('hdhomerun');
+	});
+
+	it('hides the edit-connection control for a non-admin', () => {
+		user.set({ id: 'member-user', name: 'Member', avatar: null, role: 'member' });
+
+		render(HDHomeRunDetail, { props: { data: connected } });
+
+		expect(screen.queryByText('Edit connection')).not.toBeInTheDocument();
 	});
 });

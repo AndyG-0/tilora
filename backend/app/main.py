@@ -73,10 +73,13 @@ def load_plugins() -> None:
         if plugin_cls is None:
             raise ValueError(f"No plugin registered for widget type '{widget['type']}'")
         # Settings changed at runtime (e.g. the weather widget's city) are
-        # persisted separately from dashboard.yaml; layer them on top.
-        overrides = get_widget_settings(widget["id"])
-        if overrides:
-            widget = {**widget, "settings": {**widget.get("settings", {}), **overrides}}
+        # persisted separately from dashboard.yaml; layer them on top. The
+        # plugin's own starter defaults sit underneath both, so a widget
+        # that predates a plugin adding `default_settings` (or a UI-added
+        # widget whose empty starter settings were never persisted) still
+        # loads with usable settings instead of missing required keys.
+        overrides = get_widget_settings(widget["id"]) or {}
+        widget = {**widget, "settings": {**plugin_cls.default_settings, **widget.get("settings", {}), **overrides}}
         registry.register(plugin_cls(widget))
 
 
