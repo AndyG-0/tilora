@@ -216,6 +216,29 @@ describe('api', () => {
 		});
 	});
 
+	it('layoutStatus fetches the layout-status endpoint', async () => {
+		const status = { has_layout: true };
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => status }));
+
+		const result = await api.layoutStatus();
+
+		expect(fetch).toHaveBeenCalledWith('http://api.test/api/devices/me/layout-status', { credentials: 'include' });
+		expect(result).toEqual(status);
+	});
+
+	it('copyDeviceLayout POSTs the source device id to the copy-layout endpoint', async () => {
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ status: 'ok' }) }));
+
+		await api.copyDeviceLayout('dev1');
+
+		expect(fetch).toHaveBeenCalledWith('http://api.test/api/devices/me/copy-layout', {
+			method: 'POST',
+			credentials: 'include',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ source_device_id: 'dev1' }),
+		});
+	});
+
 	it('listUsers fetches the users endpoint', async () => {
 		const profiles = [{ id: 'default', name: 'Default', avatar: null, has_pin: false }];
 		vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => profiles }));

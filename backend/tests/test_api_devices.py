@@ -82,6 +82,84 @@ def test_list_all_devices_returns_every_registered_device(client, tmp_db):
     assert ids == {"other", registered["id"]}
 
 
+def test_layout_status_requires_a_user_session(client, tmp_db):
+    client.post("/api/devices/register")
+
+    response = client.get("/api/devices/me/layout-status")
+
+    assert response.status_code == 401
+
+
+def test_layout_status_is_false_when_the_user_has_no_layout_on_this_device(client, tmp_db):
+    db.create_user("alice", "Alice", None, None, None, None, "2026-01-01T00:00:00Z")
+    db.create_session("sess1", "alice", "default", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
+    client.cookies.set("tilora_session", "sess1")
+    client.post("/api/devices/register")
+
+    response = client.get("/api/devices/me/layout-status")
+
+    assert response.status_code == 200
+    assert response.json() == {"has_layout": False}
+
+
+def test_layout_status_is_true_once_the_user_has_a_layout_on_this_device(client, tmp_db):
+    db.create_user("alice", "Alice", None, None, None, None, "2026-01-01T00:00:00Z")
+    db.create_session("sess1", "alice", "default", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
+    client.cookies.set("tilora_session", "sess1")
+    device_id = client.post("/api/devices/register").json()["id"]
+    db.save_widget_layout("alice", device_id, "clock", {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1})
+
+    response = client.get("/api/devices/me/layout-status")
+
+    assert response.status_code == 200
+    assert response.json() == {"has_layout": True}
+
+
+def test_copy_layout_requires_a_user_session(client, tmp_db):
+    client.post("/api/devices/register")
+
+    response = client.post("/api/devices/me/copy-layout", json={"source_device_id": "other"})
+
+    assert response.status_code == 401
+
+
+def test_copy_layout_refuses_the_same_device_as_source_and_target(client, tmp_db):
+    db.create_user("alice", "Alice", None, None, None, None, "2026-01-01T00:00:00Z")
+    db.create_session("sess1", "alice", "default", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
+    client.cookies.set("tilora_session", "sess1")
+    device_id = client.post("/api/devices/register").json()["id"]
+
+    response = client.post("/api/devices/me/copy-layout", json={"source_device_id": device_id})
+
+    assert response.status_code == 400
+
+
+def test_copy_layout_returns_404_for_an_unknown_source_device(client, tmp_db):
+    db.create_user("alice", "Alice", None, None, None, None, "2026-01-01T00:00:00Z")
+    db.create_session("sess1", "alice", "default", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
+    client.cookies.set("tilora_session", "sess1")
+    client.post("/api/devices/register")
+
+    response = client.post("/api/devices/me/copy-layout", json={"source_device_id": "nope"})
+
+    assert response.status_code == 404
+
+
+def test_copy_layout_copies_the_users_layout_from_the_source_device(client, tmp_db):
+    db.create_user("alice", "Alice", None, None, None, None, "2026-01-01T00:00:00Z")
+    db.create_session("sess1", "alice", "default", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
+    client.cookies.set("tilora_session", "sess1")
+    db.create_device("other", "Other Device", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")
+    db.save_widget_layout("alice", "other", "clock", {"col": 2, "row": 1, "colSpan": 1, "rowSpan": 1})
+    device_id = client.post("/api/devices/register").json()["id"]
+
+    response = client.post("/api/devices/me/copy-layout", json={"source_device_id": "other"})
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert db.get_widget_layout("alice", device_id, "clock") == {"col": 2, "row": 1, "colSpan": 1, "rowSpan": 1}
+
+
 def test_forget_device_deletes_an_unknown_returns_404(client, tmp_db):
     db.create_user("alice", "Alice", None, None, None, None, "2026-01-01T00:00:00Z")
     db.create_session("sess1", "alice", "default", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
