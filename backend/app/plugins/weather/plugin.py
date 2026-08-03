@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 
@@ -42,6 +42,17 @@ class WeatherPlugin(Plugin):
     id = "weather"
     name = "Weather"
     refresh_interval_seconds = 600
+    # A widget added via the UI has no dashboard.yaml entry to source
+    # settings from, so it starts here — same Fort Worth, TX default as
+    # dashboard.example.yaml — and the user swaps in their own city via the
+    # detail view's "Change city" search. Without this, a freshly-added
+    # widget has no latitude/longitude and 500s before that UI can load.
+    default_settings: ClassVar[dict[str, Any]] = {
+        "latitude": 32.7555,
+        "longitude": -97.3308,
+        "location_name": "Fort Worth, TX",
+        "units": "fahrenheit",
+    }
 
     async def _fetch(self) -> dict[str, Any]:
         settings = self.config["settings"]
