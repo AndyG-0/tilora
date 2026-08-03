@@ -432,6 +432,7 @@
 				<div class="profile-menu">
 					<p class="profile-menu-name">{$user.name}</p>
 					<button class="profile-menu-action" onclick={switchProfile}>Switch profile</button>
+					<button class="profile-menu-action profile-menu-logout" onclick={switchProfile}>Log out</button>
 				</div>
 			{/if}
 		</div>
@@ -457,7 +458,7 @@
 {/if}
 
 <div class="tabs-viewport" role="presentation" ontouchstart={onTouchStart} ontouchend={onTouchEnd}>
-	<div class="tabs-track" style="transform: translateX(-{clampedIndex * 100}vw)">
+	<div class="tabs-track" style="transform: translateX(-{clampedIndex * 100}%)">
 		{#each grouped as tab, tabIndex (tab.id)}
 			<div class="tab-panel">
 				<div
@@ -576,10 +577,11 @@
 	}
 
 	.tab-panel {
-		flex: 0 0 100vw;
+		flex: 0 0 100%;
 		min-width: 0;
 		height: 100%;
 		overflow-y: auto;
+		overflow-x: hidden;
 	}
 
 	.grid {
@@ -715,6 +717,11 @@
 		font-size: 0.9rem;
 		text-align: left;
 		padding: 0;
+	}
+
+	.profile-menu-logout {
+		padding-top: 0.5rem;
+		border-top: 1px solid var(--color-border);
 	}
 
 	.cell {

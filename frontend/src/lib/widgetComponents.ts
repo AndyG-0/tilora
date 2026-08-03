@@ -21,8 +21,7 @@ import HDHomeRunTile from '$lib/components/tiles/HDHomeRunTile.svelte';
 import PiholeTile from '$lib/components/tiles/PiholeTile.svelte';
 import Game2048Tile from '$lib/components/tiles/Game2048Tile.svelte';
 import SystemMonitorTile from '$lib/components/tiles/SystemMonitorTile.svelte';
-import DockerTile from '$lib/components/tiles/DockerTile.svelte';
-import PodmanTile from '$lib/components/tiles/PodmanTile.svelte';
+import ContainerTile from '$lib/components/tiles/ContainerTile.svelte';
 import SynologyTile from '$lib/components/tiles/SynologyTile.svelte';
 import AsusRouterTile from '$lib/components/tiles/AsusRouterTile.svelte';
 import SportsTile from '$lib/components/tiles/SportsTile.svelte';
@@ -46,8 +45,7 @@ import HDHomeRunDetail from '$lib/components/details/HDHomeRunDetail.svelte';
 import PiholeDetail from '$lib/components/details/PiholeDetail.svelte';
 import Game2048Detail from '$lib/components/details/Game2048Detail.svelte';
 import SystemMonitorDetail from '$lib/components/details/SystemMonitorDetail.svelte';
-import DockerDetail from '$lib/components/details/DockerDetail.svelte';
-import PodmanDetail from '$lib/components/details/PodmanDetail.svelte';
+import ContainerDetail from '$lib/components/details/ContainerDetail.svelte';
 import SynologyDetail from '$lib/components/details/SynologyDetail.svelte';
 import AsusRouterDetail from '$lib/components/details/AsusRouterDetail.svelte';
 import SportsDetail from '$lib/components/details/SportsDetail.svelte';
@@ -72,8 +70,7 @@ type TileComponent =
 	| typeof PiholeTile
 	| typeof Game2048Tile
 	| typeof SystemMonitorTile
-	| typeof DockerTile
-	| typeof PodmanTile
+	| typeof ContainerTile
 	| typeof SynologyTile
 	| typeof AsusRouterTile
 	| typeof SportsTile
@@ -98,8 +95,7 @@ type DetailComponent =
 	| typeof PiholeDetail
 	| typeof Game2048Detail
 	| typeof SystemMonitorDetail
-	| typeof DockerDetail
-	| typeof PodmanDetail
+	| typeof ContainerDetail
 	| typeof SynologyDetail
 	| typeof AsusRouterDetail
 	| typeof SportsDetail
@@ -126,8 +122,7 @@ export const TILE_COMPONENTS: Record<string, TileComponent> = {
 	pihole: PiholeTile,
 	game2048: Game2048Tile,
 	system_monitor: SystemMonitorTile,
-	docker: DockerTile,
-	podman: PodmanTile,
+	container: ContainerTile,
 	synology: SynologyTile,
 	asus_router: AsusRouterTile,
 	sports: SportsTile,
@@ -155,8 +150,7 @@ export const DETAIL_COMPONENTS: Record<string, DetailComponent> = {
 	pihole: PiholeDetail,
 	game2048: Game2048Detail,
 	system_monitor: SystemMonitorDetail,
-	docker: DockerDetail,
-	podman: PodmanDetail,
+	container: ContainerDetail,
 	synology: SynologyDetail,
 	asus_router: AsusRouterDetail,
 	sports: SportsDetail,

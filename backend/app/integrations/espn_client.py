@@ -15,7 +15,7 @@ returns a whole season for one team directly, already sorted chronologically,
 and includes the same per-competition `status`/`broadcasts` data.
 
 No auth, no retries/backoff beyond what's standard elsewhere in this
-codebase (see docker_client.py) — a single request, wrapped in an
+codebase (see container_client.py) — a single request, wrapped in an
 integration-specific error.
 """
 

@@ -18,6 +18,7 @@ here.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 import re
@@ -138,9 +139,22 @@ def is_configured(settings: dict[str, Any]) -> bool:
 
 
 def _base_url(settings: dict[str, Any]) -> str:
-    scheme = "https" if settings.get("use_https", True) else "http"
+    use_https = settings.get("use_https", True)
+    if isinstance(use_https, str):
+        use_https = use_https.strip().lower() not in ("", "0", "false", "no")
+    scheme = "https" if use_https else "http"
     default_port = 443 if scheme == "https" else 80
-    port = settings.get("port", default_port)
+    # Settings can round-trip through JSON storage/APIs that don't guarantee
+    # `port` stays a native int (e.g. a stringified "80"), so coerce it
+    # rather than comparing raw — see the port-omission comment below for why
+    # a wrong type here silently reintroduces a CSRF-check failure. Check
+    # for unset/blank explicitly rather than falsiness so a literal port 0
+    # isn't mistaken for "not configured" and swapped for the default.
+    raw_port = settings.get("port")
+    try:
+        port = default_port if raw_port in (None, "") else int(raw_port)
+    except (TypeError, ValueError):
+        port = default_port
     host = settings["host"]
     # Omit the port when it's the scheme's default, matching what a real
     # browser sends as Origin/Referer/Host (e.g. "http://192.168.50.1", not
@@ -215,9 +229,12 @@ async def _authenticate(base_url: str, widget_id: str, username: str, password: 
             )
             raise AsusRouterError(
                 f'Router returned its login page instead of a token (page: "{snippet}") — double check the '
-                "host/port/use_https settings match how the router is actually reached. If those are "
-                "correct, this firmware may require a login flow (e.g. a CSRF token from the login page, "
-                "or a captcha) that isn't supported yet."
+                "host/port/use_https settings match how the router is actually reached. This can also "
+                "happen if someone is currently logged into the router's own admin page from another "
+                "device — AsusWRT/Merlin only allows one active session, so wait about a minute for that "
+                "session to go idle and this will reconnect on its own. If neither applies, this firmware "
+                "may require a login flow (e.g. a CSRF token from the login page, or a captcha) that isn't "
+                "supported yet."
             )
         raise AsusRouterError("Router rejected that username/password.")
 
@@ -226,17 +243,36 @@ async def _authenticate(base_url: str, widget_id: str, username: str, password: 
     return session
 
 
+# AsusWRT/Merlin only tracks one active login session at a time, so two
+# concurrent requests racing to re-authenticate (e.g. both hitting a cold
+# cache) would each invalidate the other's freshly-issued token on the
+# router. Serializing per widget_id means only one of them actually calls
+# login.cgi; the rest just read the cache entry it fills in.
+_session_locks: dict[str, asyncio.Lock] = {}
+
+
+def _session_lock(widget_id: str) -> asyncio.Lock:
+    return _session_locks.setdefault(widget_id, asyncio.Lock())
+
+
 async def _resolve_session(
     settings: dict[str, Any], widget_id: str, *, force_reauth: bool = False
 ) -> AsusRouterSession:
     cache_key = f"asus_token:{widget_id}"
-    session = None if force_reauth else cache.get(cache_key)
-    if session is None:
-        base_url = _base_url(settings)
-        session = await _authenticate(
-            base_url, widget_id, settings.get("username") or "", settings.get("password") or ""
-        )
-    return session
+    if not force_reauth:
+        session = cache.get(cache_key)
+        if session is not None:
+            return session
+    async with _session_lock(widget_id):
+        # Re-check after acquiring the lock — another caller may have
+        # already refreshed the session while we were waiting.
+        session = None if force_reauth else cache.get(cache_key)
+        if session is None:
+            base_url = _base_url(settings)
+            session = await _authenticate(
+                base_url, widget_id, settings.get("username") or "", settings.get("password") or ""
+            )
+        return session
 
 
 async def _hook(hook_call: str, *, settings: dict[str, Any], widget_id: str) -> Any:
@@ -285,6 +321,20 @@ async def _hook(hook_call: str, *, settings: dict[str, Any], widget_id: str) -> 
             response.headers.get("content-type"),
             response.text[:300],
         )
+        # A 200 with an HTML body at this point (session token already
+        # accepted) is the router bouncing us back to Main_Login.asp anyway —
+        # on Merlin firmware this means it's now requiring a captcha or has
+        # rate-limited logins after repeated failed attempts, not that the
+        # request itself was malformed. Don't retry (another attempt only
+        # digs the lockout deeper); point at the fix that actually works.
+        if "text/html" in response.headers.get("content-type", ""):
+            raise AsusRouterError(
+                "Router redirected this request back to its login page even though the session was "
+                "accepted — this usually means the router is requiring a captcha or has temporarily "
+                "locked out logins after repeated failed attempts. Log into the router's own web "
+                "admin UI directly in a browser, clear any captcha/lockout prompt shown there, then "
+                "try again."
+            ) from exc
         raise AsusRouterError("Router returned an unexpected response.") from exc
 
 

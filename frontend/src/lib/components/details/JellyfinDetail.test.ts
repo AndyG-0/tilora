@@ -4,6 +4,9 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 const {
 	widgetDetail,
 	updateWidgetSettings,
+	getWidgetDeviceSettings,
+	updateWidgetDeviceSettings,
+	clearWidgetDeviceSettings,
 	jellyfinTestConnection,
 	jellyfinChildren,
 	jellyfinImageUrl,
@@ -11,6 +14,9 @@ const {
 } = vi.hoisted(() => ({
 	widgetDetail: vi.fn(),
 	updateWidgetSettings: vi.fn(),
+	getWidgetDeviceSettings: vi.fn(),
+	updateWidgetDeviceSettings: vi.fn(),
+	clearWidgetDeviceSettings: vi.fn(),
 	jellyfinTestConnection: vi.fn(),
 	jellyfinChildren: vi.fn(),
 	jellyfinImageUrl: vi.fn((widgetId: string, id: string) => `https://example.com/${widgetId}/${id}/image`),
@@ -20,6 +26,9 @@ vi.mock('$lib/api', () => ({
 	api: {
 		widgetDetail,
 		updateWidgetSettings,
+		getWidgetDeviceSettings,
+		updateWidgetDeviceSettings,
+		clearWidgetDeviceSettings,
 		jellyfinTestConnection,
 		jellyfinChildren,
 		jellyfinImageUrl,
@@ -55,6 +64,7 @@ describe('JellyfinDetail', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		jellyfinChildren.mockResolvedValue([]);
+		getWidgetDeviceSettings.mockResolvedValue({});
 		user.set({ id: 'admin-user', name: 'Admin', avatar: null, role: 'admin' });
 	});
 
@@ -153,6 +163,22 @@ describe('JellyfinDetail', () => {
 
 		await vi.waitFor(() => expect(updateWidgetSettings).toHaveBeenCalled());
 		expect(widgetDetail).toHaveBeenCalledWith('jellyfin');
+		// playback_mode is exclusively managed via the per-device panel now —
+		// the network-wide connection form must never echo it back, or it
+		// would silently overwrite the household default with whatever this
+		// device's effective (possibly overridden) mode happened to be.
+		const [, submittedSettings] = updateWidgetSettings.mock.calls[0];
+		expect(submittedSettings).not.toHaveProperty('playback_mode');
+	});
+
+	it('does not show playback-mode controls in the edit-connection form', async () => {
+		render(JellyfinDetail, { props: { data: connected } });
+
+		await fireEvent.click(screen.getByText('Edit connection'));
+
+		expect(screen.queryByText('Compatible audio')).not.toBeInTheDocument();
+		expect(screen.queryByText('Force transcode')).not.toBeInTheDocument();
+		expect(screen.queryByText('Direct play')).not.toBeInTheDocument();
 	});
 
 	it('hides the edit-connection control for a non-admin', () => {
@@ -161,5 +187,45 @@ describe('JellyfinDetail', () => {
 		render(JellyfinDetail, { props: { data: connected } });
 
 		expect(screen.queryByText('Edit connection')).not.toBeInTheDocument();
+	});
+
+	it('shows the per-device playback panel for any user, defaulting to the household mode', async () => {
+		user.set({ id: 'member-user', name: 'Member', avatar: null, role: 'member' });
+
+		render(JellyfinDetail, { props: { data: connected } });
+
+		expect(await screen.findByText('Playback (this device)')).toBeInTheDocument();
+		expect(screen.getByText(/using the household default playback mode/)).toBeInTheDocument();
+		expect(screen.queryByText('Use household default')).not.toBeInTheDocument();
+	});
+
+	it('overrides the playback mode for this device and refetches detail', async () => {
+		updateWidgetDeviceSettings.mockResolvedValue({ playback_mode: 'direct' });
+		widgetDetail.mockResolvedValue({ ...connected, playback_mode: 'direct' });
+
+		render(JellyfinDetail, { props: { data: connected } });
+		await screen.findByText('Playback (this device)');
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Direct play' }));
+
+		await vi.waitFor(() =>
+			expect(updateWidgetDeviceSettings).toHaveBeenCalledWith('jellyfin', { playback_mode: 'direct' }),
+		);
+		expect(widgetDetail).toHaveBeenCalledWith('jellyfin');
+	});
+
+	it('shows an active override and resets it to the household default', async () => {
+		getWidgetDeviceSettings.mockResolvedValue({ playback_mode: 'direct' });
+		widgetDetail.mockResolvedValue(connected);
+
+		render(JellyfinDetail, { props: { data: { ...connected, playback_mode: 'direct' } } });
+
+		expect(await screen.findByText(/its own playback mode, overriding the household default/)).toBeInTheDocument();
+		const resetButton = screen.getByRole('button', { name: 'Use household default' });
+
+		await fireEvent.click(resetButton);
+
+		await vi.waitFor(() => expect(clearWidgetDeviceSettings).toHaveBeenCalledWith('jellyfin'));
+		expect(widgetDetail).toHaveBeenCalledWith('jellyfin');
 	});
 });

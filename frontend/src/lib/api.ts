@@ -291,32 +291,33 @@ export interface SystemMonitorDetail extends SystemMonitorSummary {
 	load_average: [number, number, number];
 }
 
-export interface DockerContainerSummary {
+export interface ContainerSummaryItem {
 	name: string;
 	state: string;
 	status: string;
 }
 
-export interface DockerContainerDetail extends DockerContainerSummary {
+export interface ContainerDetailItem extends ContainerSummaryItem {
 	id: string;
 	image: string;
 }
 
-export interface DockerSummary {
+export interface ContainerSummary {
+	engine: 'docker' | 'podman';
 	connected: boolean;
 	connection: string;
 	socket_path: string;
 	host: string;
 	port: number;
-	containers: DockerContainerSummary[];
+	containers: ContainerSummaryItem[];
 	running_count: number;
 	stopped_count: number;
 	total_count: number;
 	error?: string;
 }
 
-export interface DockerDetail extends Omit<DockerSummary, 'containers'> {
-	containers: DockerContainerDetail[];
+export interface ContainerDetail extends Omit<ContainerSummary, 'containers'> {
+	containers: ContainerDetailItem[];
 }
 
 export interface SportsBroadcastLink {
@@ -628,6 +629,11 @@ export const api = {
 	widgetDetail: <T = Record<string, unknown>>(id: string) => getJSON<T>(`/api/widgets/${id}/detail`),
 	updateWidgetSettings: <T = Record<string, unknown>>(id: string, settings: Record<string, unknown>) =>
 		patchJSON<T>(`/api/widgets/${id}/settings`, settings),
+	getWidgetDeviceSettings: <T = Record<string, unknown>>(id: string) =>
+		getJSON<T>(`/api/widgets/${id}/device-settings`),
+	updateWidgetDeviceSettings: <T = Record<string, unknown>>(id: string, settings: Record<string, unknown>) =>
+		patchJSON<T>(`/api/widgets/${id}/device-settings`, settings),
+	clearWidgetDeviceSettings: (id: string) => deleteJSON<{ status: string }>(`/api/widgets/${id}/device-settings`),
 	updateWidgetsLayout: (widgets: { id: string; layout: WidgetLayout }[]) =>
 		putJSON<{ status: string }>('/api/widgets/layout', { widgets }),
 	runAiWidget: <T = Record<string, unknown>>(id: string) => postJSON<T>(`/api/widgets/${id}/run`),

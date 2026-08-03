@@ -233,6 +233,23 @@ async def test_open_video_stream_compatible_mode_transcodes_audio_only():
 
 
 @respx.mock
+async def test_open_video_stream_compatible_video_mode_transcodes_video_too():
+    settings = {**API_KEY_SETTINGS, "playback_mode": "compatible_video"}
+    route = respx.get("http://jf.local:8096/Videos/vid1/stream").mock(return_value=httpx.Response(200, content=b"data"))
+
+    client, response = await jellyfin_client.open_video_stream(settings, "w15", "vid1", None)
+    await response.aclose()
+    await client.aclose()
+
+    assert route.called
+    request = route.calls.last.request
+    params = dict(httpx.QueryParams(request.url.query))
+    assert params["static"] == "false"
+    assert params["VideoCodec"] == "h264"
+    assert params["AudioCodec"] == "aac"
+
+
+@respx.mock
 async def test_open_video_stream_direct_mode_requests_static_passthrough():
     settings = {**API_KEY_SETTINGS, "playback_mode": "direct"}
     route = respx.get("http://jf.local:8096/Videos/vid1/stream").mock(return_value=httpx.Response(200, content=b"data"))

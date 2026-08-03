@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { api, type JellyfinItem, type JellyfinTestConnectionResult } from '$lib/api';
 	import JellyfinPlayer from '$lib/components/JellyfinPlayer.svelte';
@@ -14,7 +15,7 @@
 		library_ids: string[];
 		has_api_key: boolean;
 		has_password: boolean;
-		playback_mode: 'compatible' | 'direct';
+		playback_mode: 'compatible' | 'compatible_video' | 'direct';
 	}
 
 	let { data: initialData }: { data: JellyfinDetailData } = $props();
@@ -31,7 +32,6 @@
 	let apiKeyInput = $state('');
 	let usernameInput = $state('');
 	let passwordInput = $state('');
-	let playbackModeInput = $state<'compatible' | 'direct'>('compatible');
 	let saving = $state(false);
 	let error = $state<string | null>(null);
 	let testing = $state(false);
@@ -43,7 +43,49 @@
 	let itemsError = $state<string | null>(null);
 	let playingItem = $state<JellyfinItem | null>(null);
 
+	// Raw override for this device — {} means "inheriting the household
+	// default," which is already reflected in jellyfin.playback_mode itself,
+	// so this is only consulted to tell an override apart from a default.
+	let deviceOverride = $state<Record<string, unknown>>({});
+	let deviceSaving = $state(false);
+	let deviceError = $state<string | null>(null);
+
 	const widgetId = $derived(page.params.id!);
+
+	async function loadDeviceOverride() {
+		try {
+			deviceOverride = await api.getWidgetDeviceSettings(widgetId);
+		} catch {
+			deviceOverride = {};
+		}
+	}
+
+	async function setDevicePlaybackMode(mode: 'compatible' | 'compatible_video' | 'direct') {
+		deviceSaving = true;
+		deviceError = null;
+		try {
+			deviceOverride = await api.updateWidgetDeviceSettings(widgetId, { playback_mode: mode });
+			jellyfin = await api.widgetDetail<JellyfinDetailData>(widgetId);
+		} catch {
+			deviceError = 'Could not save the playback override for this device.';
+		} finally {
+			deviceSaving = false;
+		}
+	}
+
+	async function clearDevicePlaybackMode() {
+		deviceSaving = true;
+		deviceError = null;
+		try {
+			await api.clearWidgetDeviceSettings(widgetId);
+			deviceOverride = {};
+			jellyfin = await api.widgetDetail<JellyfinDetailData>(widgetId);
+		} catch {
+			deviceError = 'Could not reset the playback override for this device.';
+		} finally {
+			deviceSaving = false;
+		}
+	}
 
 	function openEditor() {
 		hostInput = jellyfin.host;
@@ -53,7 +95,6 @@
 		usernameInput = jellyfin.username;
 		apiKeyInput = '';
 		passwordInput = '';
-		playbackModeInput = jellyfin.playback_mode;
 		testResult = null;
 		editing = true;
 	}
@@ -65,7 +106,6 @@
 			use_https: useHttpsInput,
 			auth_mode: authModeInput,
 			username: usernameInput,
-			playback_mode: playbackModeInput,
 		};
 		if (apiKeyInput) settings.api_key = apiKeyInput;
 		if (passwordInput) settings.password = passwordInput;
@@ -146,6 +186,8 @@
 	$effect(() => {
 		if (!editing) loadItems();
 	});
+
+	onMount(loadDeviceOverride);
 </script>
 
 <div class="header">
@@ -211,32 +253,6 @@
 			{/if}
 		{/if}
 
-		<div class="auth-mode">
-			<button
-				type="button"
-				class:active={playbackModeInput === 'compatible'}
-				onclick={() => (playbackModeInput = 'compatible')}
-			>
-				Compatible audio
-			</button>
-			<button
-				type="button"
-				class:active={playbackModeInput === 'direct'}
-				onclick={() => (playbackModeInput = 'direct')}
-			>
-				Direct play
-			</button>
-		</div>
-		<p class="hint">
-			{#if playbackModeInput === 'compatible'}
-				Jellyfin transcodes just the audio track to AAC so sound always works, even for files with surround/lossless
-				audio the browser can't decode. Video is copied without re-encoding, so this stays cheap on the server.
-			{:else}
-				Streams the source file as-is — zero transcoding cost on the Jellyfin server, but playback may be silent for
-				files whose audio codec your browser can't decode.
-			{/if}
-		</p>
-
 		<div class="test-row">
 			<button class="test" disabled={testing} onclick={testConnection}>
 				{testing ? 'Testing…' : 'Test connection'}
@@ -266,6 +282,50 @@
 	{#if !jellyfin.connected}
 		<p class="hint">Not connected yet — tap "Edit connection" to set up Jellyfin.</p>
 	{:else}
+		<div class="device-settings">
+			<h2>Playback (this device)</h2>
+			<div class="auth-mode">
+				<button
+					type="button"
+					disabled={deviceSaving}
+					class:active={jellyfin.playback_mode === 'compatible'}
+					onclick={() => setDevicePlaybackMode('compatible')}
+				>
+					Compatible audio
+				</button>
+				<button
+					type="button"
+					disabled={deviceSaving}
+					class:active={jellyfin.playback_mode === 'compatible_video'}
+					onclick={() => setDevicePlaybackMode('compatible_video')}
+				>
+					Force transcode
+				</button>
+				<button
+					type="button"
+					disabled={deviceSaving}
+					class:active={jellyfin.playback_mode === 'direct'}
+					onclick={() => setDevicePlaybackMode('direct')}
+				>
+					Direct play
+				</button>
+			</div>
+			<p class="hint">
+				{#if deviceOverride.playback_mode}
+					This device has its own playback mode, overriding the household default.
+				{:else}
+					This device is using the household default playback mode. Pick a mode above to override it just for this
+					device.
+				{/if}
+			</p>
+			{#if deviceOverride.playback_mode}
+				<button class="clear" disabled={deviceSaving} onclick={clearDevicePlaybackMode}> Use household default </button>
+			{/if}
+			{#if deviceError}
+				<p class="hint error">{deviceError}</p>
+			{/if}
+		</div>
+
 		<div class="breadcrumbs">
 			<button class="crumb" onclick={goToRoot}>Libraries</button>
 			{#each path as segment, index (segment.id)}
@@ -370,6 +430,23 @@
 		border: 1px solid var(--color-border);
 		background: var(--color-surface);
 		color: var(--color-text);
+	}
+
+	.device-settings {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		max-width: 30rem;
+		margin: 1rem 0;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 0.75rem;
+		padding: 1rem;
+	}
+
+	.device-settings h2 {
+		margin: 0;
+		font-size: 1rem;
 	}
 
 	.auth-mode {
