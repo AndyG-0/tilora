@@ -51,6 +51,55 @@ def test_list_widget_layouts_returns_all_overrides_for_a_user_and_device(tmp_db)
     }
 
 
+def test_has_widget_layout_is_false_when_unset(tmp_db):
+    assert db.has_widget_layout("alice", "tablet") is False
+
+
+def test_has_widget_layout_is_true_once_a_layout_exists(tmp_db):
+    db.save_widget_layout("alice", "tablet", "clock", {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1})
+
+    assert db.has_widget_layout("alice", "tablet") is True
+
+
+def test_copy_widget_layout_copies_rows_to_the_target_device(tmp_db):
+    db.save_widget_layout("alice", "tablet", "clock", {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1})
+    db.save_widget_layout("alice", "tablet", "weather", {"col": 2, "row": 1, "colSpan": 1, "rowSpan": 1})
+
+    db.copy_widget_layout("alice", "tablet", "phone")
+
+    assert db.list_widget_layouts("alice", "phone") == {
+        "clock": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1},
+        "weather": {"col": 2, "row": 1, "colSpan": 1, "rowSpan": 1},
+    }
+    # Source is left untouched.
+    assert db.list_widget_layouts("alice", "tablet") == {
+        "clock": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1},
+        "weather": {"col": 2, "row": 1, "colSpan": 1, "rowSpan": 1},
+    }
+
+
+def test_copy_widget_layout_replaces_preexisting_target_rows(tmp_db):
+    db.save_widget_layout("alice", "tablet", "clock", {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1})
+    db.save_widget_layout("alice", "phone", "weather", {"col": 9, "row": 9, "colSpan": 1, "rowSpan": 1})
+
+    db.copy_widget_layout("alice", "tablet", "phone")
+
+    assert db.list_widget_layouts("alice", "phone") == {
+        "clock": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1},
+    }
+
+
+def test_copy_widget_layout_leaves_other_users_layout_on_the_target_device_untouched(tmp_db):
+    db.save_widget_layout("alice", "tablet", "clock", {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1})
+    db.save_widget_layout("bob", "phone", "clock", {"col": 5, "row": 5, "colSpan": 1, "rowSpan": 1})
+
+    db.copy_widget_layout("alice", "tablet", "phone")
+
+    assert db.list_widget_layouts("bob", "phone") == {
+        "clock": {"col": 5, "row": 5, "colSpan": 1, "rowSpan": 1},
+    }
+
+
 def test_migration_reseats_pre_existing_single_user_layout_under_default_user_and_device(tmp_path, monkeypatch):
     """Simulates upgrading a pre-multi-user install: an old-shape `widget_layout`
     table (widget_id PRIMARY KEY, no user_id/device_id) already has live rows

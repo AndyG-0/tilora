@@ -317,6 +317,38 @@ def list_widget_layouts(user_id: str, device_id: str) -> dict[str, dict[str, Any
     return {row["widget_id"]: json.loads(row["layout"]) for row in rows}
 
 
+def has_widget_layout(user_id: str, device_id: str) -> bool:
+    """Whether a (user, device) has any saved layout overrides at all.
+
+    Used to decide whether a device is "fresh" for this user and should be
+    offered a copy from an existing device, vs. already arranged.
+    """
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM widget_layout WHERE user_id = ? AND device_id = ? LIMIT 1",
+            (user_id, device_id),
+        ).fetchone()
+    return row is not None
+
+
+def copy_widget_layout(user_id: str, source_device_id: str, target_device_id: str) -> None:
+    """Replace a user's layout overrides on the target device with the source device's.
+
+    Full delete-then-insert rather than a merge, matching the "this will
+    replace your current layout" warning shown before the copy is confirmed.
+    """
+    with _connect() as conn:
+        conn.execute("DELETE FROM widget_layout WHERE user_id = ? AND device_id = ?", (user_id, target_device_id))
+        rows = conn.execute(
+            "SELECT widget_id, layout FROM widget_layout WHERE user_id = ? AND device_id = ?",
+            (user_id, source_device_id),
+        ).fetchall()
+        conn.executemany(
+            "INSERT INTO widget_layout (user_id, device_id, widget_id, layout) VALUES (?, ?, ?, ?)",
+            [(user_id, target_device_id, row["widget_id"], row["layout"]) for row in rows],
+        )
+
+
 def begin_photo_index_scan(widget_id: str) -> int:
     """Mints a new generation tag for a background photo-index scan of
     widget_id. Every chunk upserted during this scan must use this
