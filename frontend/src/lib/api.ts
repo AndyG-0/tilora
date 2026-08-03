@@ -511,6 +511,10 @@ export interface DeviceRegisterResult extends DeviceInfo {
 	is_new: boolean;
 }
 
+export interface LayoutStatus {
+	has_layout: boolean;
+}
+
 export interface UserProfile {
 	id: string;
 	name: string;
@@ -686,6 +690,9 @@ export const api = {
 	renameDevice: (name: string) => patchJSON<DeviceInfo>('/api/devices/me', { name }),
 	listDevices: () => getJSON<DeviceListEntry[]>('/api/devices'),
 	deleteDevice: (id: string) => deleteJSON<{ status: string }>(`/api/devices/${id}`),
+	layoutStatus: () => getJSON<LayoutStatus>('/api/devices/me/layout-status'),
+	copyDeviceLayout: (sourceDeviceId: string) =>
+		postJSON<{ status: string }>('/api/devices/me/copy-layout', { source_device_id: sourceDeviceId }),
 	listUsers: () => getJSON<UserProfile[]>('/api/users'),
 	createUser: (name: string, avatar?: string, pin?: string) =>
 		postJSON<CurrentUser>('/api/users', {

@@ -4,6 +4,7 @@
 	import { api, type AppSettings, type VersionInfo, type DeviceListEntry, type HouseholdUser } from '$lib/api';
 	import { user, logout } from '$lib/stores/user';
 	import { device as currentDevice, renameDevice as renameCurrentDevice } from '$lib/stores/device';
+	import { reloadWidgets } from '$lib/stores/widgets';
 
 	let settings = $state<AppSettings | null>(null);
 	let version = $state<VersionInfo | null>(null);
@@ -147,6 +148,10 @@
 	let confirmingForgetDeviceId = $state<string | null>(null);
 	let forgettingDeviceId = $state<string | null>(null);
 	let deviceNameInitialized = false;
+	let copySourceId = $state('');
+	let confirmingCopyLayout = $state(false);
+	let copyingLayout = $state(false);
+	let copyLayoutError = $state<string | null>(null);
 
 	$effect(() => {
 		if ($currentDevice && !deviceNameInitialized) {
@@ -158,6 +163,8 @@
 	async function loadDevices() {
 		try {
 			devices = await api.listDevices();
+			const firstOther = devices.find((d) => d.id !== $currentDevice?.id);
+			if (firstOther) copySourceId = firstOther.id;
 		} catch {
 			devicesError = 'Could not load devices.';
 		}
@@ -321,6 +328,21 @@
 		} finally {
 			forgettingDeviceId = null;
 			confirmingForgetDeviceId = null;
+		}
+	}
+
+	async function copyLayout() {
+		if (!copySourceId) return;
+		copyingLayout = true;
+		copyLayoutError = null;
+		try {
+			await api.copyDeviceLayout(copySourceId);
+			await reloadWidgets();
+			confirmingCopyLayout = false;
+		} catch {
+			copyLayoutError = 'Could not copy layout.';
+		} finally {
+			copyingLayout = false;
 		}
 	}
 </script>
@@ -685,6 +707,39 @@
 						</li>
 					{/each}
 				</ul>
+
+				<label>
+					Copy layout from another device
+					<select bind:value={copySourceId}>
+						{#each devices.filter((d) => d.id !== $currentDevice?.id) as d (d.id)}
+							<option value={d.id}>{d.name}</option>
+						{/each}
+					</select>
+				</label>
+
+				{#if copyLayoutError}
+					<p class="hint error">{copyLayoutError}</p>
+				{/if}
+
+				{#if confirmingCopyLayout}
+					<p class="hint error">
+						This will replace your layout on {$currentDevice?.name} with your layout from {devices.find(
+							(d) => d.id === copySourceId,
+						)?.name}. This can't be undone.
+					</p>
+					<div class="confirm-actions">
+						<button class="cancel" onclick={() => (confirmingCopyLayout = false)} disabled={copyingLayout}>
+							Cancel
+						</button>
+						<button class="danger" onclick={copyLayout} disabled={copyingLayout}>
+							{copyingLayout ? 'Copying…' : 'Copy layout'}
+						</button>
+					</div>
+				{:else}
+					<button class="danger-link" disabled={!copySourceId} onclick={() => (confirmingCopyLayout = true)}>
+						Copy layout to this device…
+					</button>
+				{/if}
 			{/if}
 		</section>
 

@@ -10,6 +10,8 @@
 	import { device, ensureDevice, renameDevice } from '$lib/stores/device';
 	import { user, userLoaded, loadCurrentUser } from '$lib/stores/user';
 	import { needsSetup, setupStatusLoaded, setupStatusError, loadSetupStatus } from '$lib/stores/setup';
+	import { reloadWidgets } from '$lib/stores/widgets';
+	import { api, type DeviceListEntry } from '$lib/api';
 
 	let { children } = $props();
 
@@ -18,6 +20,51 @@
 	// device list later — skippable, defaults to the server's placeholder name.
 	let namingDevice = $state(false);
 	let deviceNameInput = $state('');
+
+	// Offered once a user is known to have zero saved layout on this device —
+	// covers both a genuinely brand-new device and a second household member
+	// logging into an already-set-up shared device for the first time.
+	let offeringLayoutCopy = $state(false);
+	let copySourceDevices = $state<DeviceListEntry[]>([]);
+	let copySourceId = $state('');
+	let copyingLayout = $state(false);
+
+	function layoutSetupDismissedKey(userId: string, deviceId: string) {
+		return `tilora:layout-setup-dismissed:${userId}:${deviceId}`;
+	}
+
+	async function maybeOfferLayoutCopy() {
+		if (!$user || !$device) return;
+		if (localStorage.getItem(layoutSetupDismissedKey($user.id, $device.id))) return;
+
+		const status = await api.layoutStatus().catch(() => null);
+		if (!status || status.has_layout) return;
+
+		const devices = await api.listDevices().catch(() => []);
+		const others = devices.filter((d) => d.id !== $device?.id);
+		if (others.length === 0) return;
+
+		copySourceDevices = others;
+		copySourceId = others[0].id;
+		offeringLayoutCopy = true;
+	}
+
+	async function copyLayoutFromSource() {
+		if (!copySourceId) return;
+		copyingLayout = true;
+		try {
+			await api.copyDeviceLayout(copySourceId);
+			await reloadWidgets();
+			offeringLayoutCopy = false;
+		} finally {
+			copyingLayout = false;
+		}
+	}
+
+	function startFresh() {
+		if ($user && $device) localStorage.setItem(layoutSetupDismissedKey($user.id, $device.id), 'true');
+		offeringLayoutCopy = false;
+	}
 
 	onMount(async () => {
 		const registered = await ensureDevice().catch(() => null);
@@ -30,6 +77,15 @@
 		// decide setup-vs-login before either store's data actually matters.
 		await loadSetupStatus();
 		await loadCurrentUser();
+	});
+
+	// Fires once user + device are both known and the naming modal (if it was
+	// shown at all) has been dismissed — keeps the two modals from stacking.
+	let layoutCopyOfferChecked = false;
+	$effect(() => {
+		if (namingDevice || !$userLoaded || !$user || layoutCopyOfferChecked) return;
+		layoutCopyOfferChecked = true;
+		maybeOfferLayoutCopy();
 	});
 
 	// Three-way redirect: unreachable backend gets its own message (below),
@@ -87,6 +143,26 @@
 		</div>
 	{/if}
 
+	{#if offeringLayoutCopy}
+		<div class="device-modal-backdrop" role="presentation">
+			<div class="device-modal">
+				<h2>Set up this device</h2>
+				<p class="hint">Copy your dashboard layout from one of your other devices, or start with the default layout.</p>
+				<select bind:value={copySourceId}>
+					{#each copySourceDevices as d (d.id)}
+						<option value={d.id}>{d.name}</option>
+					{/each}
+				</select>
+				<div class="layout-copy-actions">
+					<button class="cancel" onclick={startFresh} disabled={copyingLayout}>Start fresh</button>
+					<button class="confirm" onclick={copyLayoutFromSource} disabled={copyingLayout}>
+						{copyingLayout ? 'Copying…' : 'Copy layout'}
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+
 	{@render children()}
 {/if}
 
@@ -134,13 +210,20 @@
 		font-size: 0.9rem;
 	}
 
-	.device-modal input {
+	.device-modal input,
+	.device-modal select {
 		font: inherit;
 		padding: 0.5rem 0.75rem;
 		border-radius: 0.5rem;
 		border: 1px solid var(--color-border);
 		background: var(--color-surface);
 		color: var(--color-text);
+	}
+
+	.layout-copy-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 0.5rem;
 	}
 
 	.confirm {
@@ -150,6 +233,15 @@
 		border: none;
 		border-radius: 0.5rem;
 		padding: 0.5rem 1rem;
+		cursor: pointer;
+	}
+
+	.cancel {
+		background: none;
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		padding: 0.5rem 1rem;
+		color: var(--color-text);
 		cursor: pointer;
 	}
 </style>

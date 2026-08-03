@@ -8,13 +8,25 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from app.auth import DEVICE_COOKIE_NAME, get_current_device, get_current_user, new_token, set_device_cookie
-from app.storage.db import create_device, delete_device, get_device, list_devices, update_device
+from app.storage.db import (
+    copy_widget_layout,
+    create_device,
+    delete_device,
+    get_device,
+    has_widget_layout,
+    list_devices,
+    update_device,
+)
 
 router = APIRouter(prefix="/api/devices", tags=["devices"])
 
 
 class RenameDeviceRequest(BaseModel):
     name: str
+
+
+class CopyLayoutRequest(BaseModel):
+    source_device_id: str
 
 
 def _shape(device: dict[str, Any]) -> dict[str, Any]:
@@ -54,6 +66,30 @@ async def rename_current_device(payload: RenameDeviceRequest, device: dict[str, 
 async def list_all_devices(user: dict[str, Any] = Depends(get_current_user)):
     devices = await asyncio.to_thread(list_devices)
     return [{"id": d["id"], "name": d["name"], "last_seen_at": d["last_seen_at"]} for d in devices]
+
+
+@router.get("/me/layout-status")
+async def layout_status(
+    user: dict[str, Any] = Depends(get_current_user),
+    device: dict[str, Any] = Depends(get_current_device),
+):
+    has_layout = await asyncio.to_thread(has_widget_layout, user["id"], device["id"])
+    return {"has_layout": has_layout}
+
+
+@router.post("/me/copy-layout")
+async def copy_layout_to_current_device(
+    payload: CopyLayoutRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+    device: dict[str, Any] = Depends(get_current_device),
+):
+    if payload.source_device_id == device["id"]:
+        raise HTTPException(status_code=400, detail="Source and target device must differ")
+    source = await asyncio.to_thread(get_device, payload.source_device_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail=f"Unknown device '{payload.source_device_id}'")
+    await asyncio.to_thread(copy_widget_layout, user["id"], payload.source_device_id, device["id"])
+    return {"status": "ok"}
 
 
 @router.delete("/{device_id}")
