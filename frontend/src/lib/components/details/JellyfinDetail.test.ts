@@ -28,6 +28,7 @@ vi.mock('$lib/api', () => ({
 }));
 vi.mock('$app/state', () => ({ page: { params: { id: 'jellyfin' } } }));
 
+import { user } from '$lib/stores/user';
 import JellyfinDetail from './JellyfinDetail.svelte';
 
 const notConnected = {
@@ -54,6 +55,7 @@ describe('JellyfinDetail', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		jellyfinChildren.mockResolvedValue([]);
+		user.set({ id: 'admin-user', name: 'Admin', avatar: null, role: 'admin' });
 	});
 
 	it('shows a not-connected hint and never calls jellyfinChildren', async () => {
@@ -151,5 +153,13 @@ describe('JellyfinDetail', () => {
 
 		await vi.waitFor(() => expect(updateWidgetSettings).toHaveBeenCalled());
 		expect(widgetDetail).toHaveBeenCalledWith('jellyfin');
+	});
+
+	it('hides the edit-connection control for a non-admin', () => {
+		user.set({ id: 'member-user', name: 'Member', avatar: null, role: 'member' });
+
+		render(JellyfinDetail, { props: { data: connected } });
+
+		expect(screen.queryByText('Edit connection')).not.toBeInTheDocument();
 	});
 });

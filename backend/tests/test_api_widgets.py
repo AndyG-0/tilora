@@ -38,15 +38,54 @@ class StubPlugin(Plugin):
         return {"value": "detail"}
 
 
+class StubPersonalPlugin(StubPlugin):
+    """A personal-scope stub whose content reflects its own settings, so a
+    test can tell whether it's serving one user's settings vs. another's."""
+
+    id = "personal-stub"
+    name = "Stub Personal"
+    settings_scope = "personal"
+
+    async def get_summary(self) -> dict[str, Any]:
+        self.summary_calls += 1
+        return {"value": self.config["settings"].get("value", "default")}
+
+    async def get_detail(self) -> dict[str, Any]:
+        self.detail_calls += 1
+        return {"value": self.config["settings"].get("value", "default")}
+
+
 @pytest.fixture
 def client():
     app = FastAPI()
     app.include_router(widgets.router)
-    # These tests exercise widget-list/layout logic, not auth — stub out
-    # who's asking rather than juggling real device/session cookies here
-    # (that's what test_api_auth_flow.py covers end to end).
-    app.dependency_overrides[get_current_user] = lambda: {"id": TEST_USER_ID}
+    # These tests exercise widget-list/layout/settings logic, not auth — stub
+    # out who's asking (as an admin, so network-scope settings writes aren't
+    # blocked by default) rather than juggling real device/session cookies
+    # here (that's what test_api_auth_flow.py covers end to end). Scope/role
+    # gating itself is covered by the dedicated tests further down, which
+    # override this dependency per-test.
+    app.dependency_overrides[get_current_user] = lambda: {"id": TEST_USER_ID, "role": "admin"}
     app.dependency_overrides[get_current_device] = lambda: {"id": TEST_DEVICE_ID}
+    return TestClient(app)
+
+
+@pytest.fixture
+def member_client():
+    """A non-admin household member, to exercise write-access gating."""
+    app = FastAPI()
+    app.include_router(widgets.router)
+    app.dependency_overrides[get_current_user] = lambda: {"id": "member-user", "role": "member"}
+    app.dependency_overrides[get_current_device] = lambda: {"id": TEST_DEVICE_ID}
+    return TestClient(app)
+
+
+@pytest.fixture
+def unauthenticated_client():
+    """No get_current_user override — exercises the real dependency, which
+    401s when there's no session cookie."""
+    app = FastAPI()
+    app.include_router(widgets.router)
     return TestClient(app)
 
 
@@ -245,6 +284,102 @@ def test_update_settings_skips_reindex_for_unrelated_keys(client, dashboard_yaml
     assert calls == []
 
 
+def test_summary_requires_login(unauthenticated_client, dashboard_yaml):
+    registry.register(StubPlugin({}))
+    response = unauthenticated_client.get("/api/widgets/stub/summary")
+    assert response.status_code == 401
+
+
+def test_detail_requires_login(unauthenticated_client, dashboard_yaml):
+    registry.register(StubPlugin({}))
+    response = unauthenticated_client.get("/api/widgets/stub/detail")
+    assert response.status_code == 401
+
+
+def test_update_settings_requires_login(unauthenticated_client, dashboard_yaml):
+    registry.register(StubPlugin({"settings": {}}))
+    response = unauthenticated_client.patch("/api/widgets/stub/settings", json={"a": 1})
+    assert response.status_code == 401
+
+
+def test_run_requires_login(unauthenticated_client, dashboard_yaml):
+    registry.register(StubPlugin({}))
+    response = unauthenticated_client.post("/api/widgets/stub/run")
+    assert response.status_code == 401
+
+
+def test_update_settings_rejects_member_for_network_scope_widget(member_client, dashboard_yaml, tmp_db):
+    plugin = StubPlugin({"settings": {"a": 1}})
+    registry.register(plugin)
+
+    response = member_client.patch("/api/widgets/stub/settings", json={"a": 2})
+
+    assert response.status_code == 403
+    assert plugin.config["settings"] == {"a": 1}
+    assert db.get_widget_settings("stub") is None
+
+
+def test_update_settings_allows_member_for_personal_scope_widget(member_client, dashboard_yaml, tmp_db):
+    plugin = StubPersonalPlugin({"id": "personal-stub", "settings": {"value": "default"}})
+    registry.register(plugin)
+
+    response = member_client.patch("/api/widgets/personal-stub/settings", json={"value": "mine"})
+
+    assert response.status_code == 200
+    assert response.json() == {"value": "mine"}
+    # The shared plugin singleton's baseline settings are untouched — only
+    # this user's own override was written.
+    assert plugin.config["settings"] == {"value": "default"}
+    assert db.get_widget_user_settings("member-user", "personal-stub") == {"value": "mine"}
+
+
+def test_personal_scope_settings_and_summary_are_isolated_per_user(dashboard_yaml, tmp_db):
+    plugin = StubPersonalPlugin({"id": "personal-stub", "settings": {"value": "default"}})
+    registry.register(plugin)
+
+    def make_client(user_id: str) -> TestClient:
+        app = FastAPI()
+        app.include_router(widgets.router)
+        app.dependency_overrides[get_current_user] = lambda uid=user_id: {"id": uid, "role": "member"}
+        return TestClient(app)
+
+    alice, bob = make_client("alice"), make_client("bob")
+
+    assert alice.patch("/api/widgets/personal-stub/settings", json={"value": "alice's"}).json() == {"value": "alice's"}
+    assert bob.patch("/api/widgets/personal-stub/settings", json={"value": "bob's"}).json() == {"value": "bob's"}
+
+    assert alice.get("/api/widgets/personal-stub/summary").json() == {"value": "alice's"}
+    assert bob.get("/api/widgets/personal-stub/summary").json() == {"value": "bob's"}
+    # Never mutated in place — with_settings() built a throwaway instance per request.
+    assert plugin.config["settings"] == {"value": "default"}
+
+
+def test_personal_scope_summary_is_cached_per_user(dashboard_yaml, tmp_db, monkeypatch):
+    plugin = StubPersonalPlugin({"id": "personal-stub", "settings": {"value": "default"}})
+    registry.register(plugin)
+    db.save_widget_user_settings("alice", "personal-stub", {"value": "alice's"})
+
+    lookups: list[str] = []
+    original = db.get_widget_user_settings
+
+    def counting_lookup(user_id: str, widget_id: str):
+        lookups.append(user_id)
+        return original(user_id, widget_id)
+
+    monkeypatch.setattr(widgets, "get_widget_user_settings", counting_lookup)
+
+    app = FastAPI()
+    app.include_router(widgets.router)
+    app.dependency_overrides[get_current_user] = lambda: {"id": "alice", "role": "member"}
+    alice_client = TestClient(app)
+
+    assert alice_client.get("/api/widgets/personal-stub/summary").json() == {"value": "alice's"}
+    assert alice_client.get("/api/widgets/personal-stub/summary").json() == {"value": "alice's"}
+
+    # Second request was served from cache — no repeat per-user settings lookup.
+    assert lookups == ["alice"]
+
+
 def test_run_returns_404_for_unregistered_widget(client, dashboard_yaml):
     response = client.post("/api/widgets/nonexistent/run")
     assert response.status_code == 404
@@ -413,6 +548,16 @@ def test_remove_widget_deletes_photo_index_rows(client, dashboard_yaml, tmp_db):
     assert response.status_code == 200
     assert db.photo_index_photo_ids(plugin.id) == []
     assert db.photo_index_status(plugin.id) is None
+
+
+def test_remove_widget_deletes_per_user_settings(client, dashboard_yaml, tmp_db):
+    registry.register(StubPersonalPlugin({"id": "personal-stub", "settings": {}}))
+    db.save_widget_user_settings(TEST_USER_ID, "personal-stub", {"value": "mine"})
+
+    response = client.delete("/api/widgets/personal-stub")
+
+    assert response.status_code == 200
+    assert db.get_widget_user_settings(TEST_USER_ID, "personal-stub") is None
 
 
 def test_run_invalidates_cached_summary_and_detail(client, dashboard_yaml, tmp_db, monkeypatch):

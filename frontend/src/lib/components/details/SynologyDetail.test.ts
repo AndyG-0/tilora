@@ -9,6 +9,7 @@ const { widgetDetail, updateWidgetSettings, synologyTestConnection } = vi.hoiste
 vi.mock('$lib/api', () => ({ api: { widgetDetail, updateWidgetSettings, synologyTestConnection } }));
 vi.mock('$app/state', () => ({ page: { params: { id: 'synology' } } }));
 
+import { user } from '$lib/stores/user';
 import SynologyDetail from './SynologyDetail.svelte';
 
 const notConnected = {
@@ -43,6 +44,9 @@ const connected = {
 describe('SynologyDetail', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		// The edit-connection controls are admin-only — see settings_scope
+		// "network" in the backend.
+		user.set({ id: 'admin-user', name: 'Admin', avatar: null, role: 'admin' });
 	});
 
 	it('shows a not-connected hint', () => {
@@ -136,5 +140,13 @@ describe('SynologyDetail', () => {
 		await fireEvent.click(screen.getByText('Save'));
 
 		expect(await screen.findByText('Could not save the connection settings.')).toBeInTheDocument();
+	});
+
+	it('hides the edit-connection control for a non-admin', () => {
+		user.set({ id: 'member-user', name: 'Member', avatar: null, role: 'member' });
+
+		render(SynologyDetail, { props: { data: connected } });
+
+		expect(screen.queryByText('Edit connection')).not.toBeInTheDocument();
 	});
 });

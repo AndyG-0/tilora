@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from app.auth import get_current_device, get_current_user
 from app.config import list_widget_configs, load_dashboard_config, resolve_tabs
 from app.plugins.ai_insights.plugin import AIInsightsPlugin
-from app.plugins.base import registry
+from app.plugins.base import Plugin, registry
 from app.plugins.photos.plugin import PhotosPlugin
 from app.plugins.registry_types import PLUGIN_CLASSES_BY_TYPE
 from app.scheduler import run_ai_widget, schedule_ai_widget, schedule_photo_index, unschedule_widget
@@ -19,12 +19,15 @@ from app.storage.db import (
     delete_custom_widget,
     delete_photo_index,
     delete_widget_layout_for_widget,
+    delete_widget_user_settings_for_widget,
+    get_widget_user_settings,
     list_custom_widgets,
     list_widget_layouts,
     mark_widget_removed,
     save_custom_widget,
     save_widget_layout,
     save_widget_settings,
+    save_widget_user_settings,
 )
 
 # Settings keys whose change should trigger an immediate photo re-index —
@@ -156,35 +159,79 @@ def _get_plugin(widget_id: str):
     return plugin
 
 
+def _require_write_access(plugin: Plugin, user: dict[str, Any]) -> None:
+    # "network"-scope settings (NAS/router/media-server credentials, ...) are
+    # shared by the whole household — only an admin may change them. Any
+    # logged-in user may still read them (enforced by the login dependency on
+    # the GET routes below). "personal"-scope settings are each user's own,
+    # so no extra check is needed beyond being logged in as that user.
+    if plugin.settings_scope == "network" and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+
+async def _scoped_plugin(plugin: Plugin, user: dict[str, Any]) -> Plugin:
+    """The plugin instance to read from for this request.
+
+    "network"-scope plugins render the same content for everyone, so the
+    registry singleton is used directly. "personal"-scope plugins get a
+    throwaway instance carrying this user's own settings layered on top of
+    the widget's baseline — see Plugin.with_settings.
+    """
+    if plugin.settings_scope != "personal":
+        return plugin
+    overrides = await asyncio.to_thread(get_widget_user_settings, user["id"], plugin.id) or {}
+    return plugin.with_settings({**plugin.config["settings"], **overrides})
+
+
+def _cache_key(kind: str, plugin: Plugin, user: dict[str, Any]) -> str:
+    if plugin.settings_scope == "personal":
+        return f"{kind}:{plugin.id}:{user['id']}"
+    return f"{kind}:{plugin.id}"
+
+
 @router.get("/{widget_id}/summary")
-async def widget_summary(widget_id: str):
+async def widget_summary(widget_id: str, user: dict[str, Any] = Depends(get_current_user)):
     plugin = _get_plugin(widget_id)
-    cache_key = f"summary:{widget_id}"
+    cache_key = _cache_key("summary", plugin, user)
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
-    data = await plugin.get_summary()
+    scoped = await _scoped_plugin(plugin, user)
+    data = await scoped.get_summary()
     cache.set(cache_key, data, plugin.refresh_interval_seconds)
     return data
 
 
 @router.get("/{widget_id}/detail")
-async def widget_detail(widget_id: str):
+async def widget_detail(widget_id: str, user: dict[str, Any] = Depends(get_current_user)):
     plugin = _get_plugin(widget_id)
-    cache_key = f"detail:{widget_id}"
+    cache_key = _cache_key("detail", plugin, user)
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
-    data = await plugin.get_detail()
+    scoped = await _scoped_plugin(plugin, user)
+    data = await scoped.get_detail()
     cache.set(cache_key, data, plugin.refresh_interval_seconds)
     return data
 
 
 @router.patch("/{widget_id}/settings")
-async def update_widget_settings(widget_id: str, payload: dict[str, Any]):
+async def update_widget_settings(
+    widget_id: str, payload: dict[str, Any], user: dict[str, Any] = Depends(get_current_user)
+):
     plugin = _get_plugin(widget_id)
+
+    if plugin.settings_scope == "personal":
+        current = await asyncio.to_thread(get_widget_user_settings, user["id"], widget_id) or {}
+        merged = {**plugin.config["settings"], **current, **payload}
+        await asyncio.to_thread(save_widget_user_settings, user["id"], widget_id, merged)
+        cache.delete(_cache_key("summary", plugin, user))
+        cache.delete(_cache_key("detail", plugin, user))
+        return merged
+
+    _require_write_access(plugin, user)
     plugin.config["settings"].update(payload)
     await asyncio.to_thread(save_widget_settings, widget_id, plugin.config["settings"])
     # Force the next summary/detail request to reflect the new settings
@@ -197,7 +244,7 @@ async def update_widget_settings(widget_id: str, payload: dict[str, Any]):
 
 
 @router.post("/{widget_id}/run")
-async def run_widget_now(widget_id: str):
+async def run_widget_now(widget_id: str, user: dict[str, Any] = Depends(get_current_user)):
     plugin = _get_plugin(widget_id)
     if not isinstance(plugin, AIInsightsPlugin):
         raise HTTPException(status_code=400, detail=f"Widget '{widget_id}' cannot be run on demand")
@@ -224,6 +271,7 @@ async def remove_widget(widget_id: str):
         # only hidden, the same layering pattern as settings/layout overrides.
         await asyncio.to_thread(mark_widget_removed, widget_id)
     await asyncio.to_thread(delete_widget_layout_for_widget, widget_id)
+    await asyncio.to_thread(delete_widget_user_settings_for_widget, widget_id)
 
     registry.unregister(widget_id)
     unschedule_widget(widget_id)

@@ -8,6 +8,7 @@ const { widgetDetail, updateWidgetSettings } = vi.hoisted(() => ({
 vi.mock('$lib/api', () => ({ api: { widgetDetail, updateWidgetSettings } }));
 vi.mock('$app/state', () => ({ page: { params: { id: 'podman' } } }));
 
+import { user } from '$lib/stores/user';
 import PodmanDetail from './PodmanDetail.svelte';
 
 const notConnected = {
@@ -34,6 +35,7 @@ const connected = {
 describe('PodmanDetail', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		user.set({ id: 'admin-user', name: 'Admin', avatar: null, role: 'admin' });
 	});
 
 	it('shows a not-connected hint', () => {
@@ -91,5 +93,13 @@ describe('PodmanDetail', () => {
 		await fireEvent.click(screen.getByText('Save'));
 
 		expect(await screen.findByText('Could not save the connection settings.')).toBeInTheDocument();
+	});
+
+	it('hides the edit-connection control for a non-admin', () => {
+		user.set({ id: 'member-user', name: 'Member', avatar: null, role: 'member' });
+
+		render(PodmanDetail, { props: { data: connected } });
+
+		expect(screen.queryByText('Edit connection')).not.toBeInTheDocument();
 	});
 });

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { api, type SynologyDetail, type SynologyTestConnectionResult } from '$lib/api';
+	import { user } from '$lib/stores/user';
 
 	let { data: initialData }: { data: SynologyDetail } = $props();
 
@@ -71,9 +72,11 @@
 
 <div class="header">
 	<h1>Synology</h1>
-	<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
-		{editing ? 'Cancel' : 'Edit connection'}
-	</button>
+	{#if $user?.role === 'admin'}
+		<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
+			{editing ? 'Cancel' : 'Edit connection'}
+		</button>
+	{/if}
 </div>
 
 {#if editing}

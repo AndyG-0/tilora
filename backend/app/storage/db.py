@@ -40,6 +40,19 @@ CREATE TABLE IF NOT EXISTS widget_layout (
 );
 CREATE INDEX IF NOT EXISTS idx_widget_layout_widget_id ON widget_layout (widget_id);
 
+-- Per-user overrides for "personal"-scope plugins (e.g. RSS, calendar) whose
+-- content should differ per household member, unlike the shared/global
+-- widget_settings table above which backs "network"-scope plugins (NAS,
+-- router, ...) that are the same for the whole household. See
+-- app.plugins.base.Plugin.settings_scope.
+CREATE TABLE IF NOT EXISTS widget_user_settings (
+    user_id TEXT NOT NULL,
+    widget_id TEXT NOT NULL,
+    settings TEXT NOT NULL,
+    PRIMARY KEY (user_id, widget_id)
+);
+CREATE INDEX IF NOT EXISTS idx_widget_user_settings_widget_id ON widget_user_settings (widget_id);
+
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -203,9 +216,43 @@ def _migration_002_user_roles(conn: sqlite3.Connection) -> None:
             conn.execute("UPDATE users SET role = 'admin' WHERE id = ?", (oldest["id"],))
 
 
+_PERSONAL_SCOPE_WIDGET_TYPES = ("rss", "calendar", "calendar_caldav", "calendar_microsoft")
+
+
+# `rss`/`calendar` moved from global (whole-household) settings to per-user
+# settings (see app.plugins.base.Plugin.settings_scope and the
+# widget_user_settings table above) — this seeds every existing user with a
+# copy of whatever was previously the one shared value, so upgrading doesn't
+# silently blank out anyone's feeds/calendar picks. Detects which
+# widget_settings rows are personal-scope by widget_id convention: a
+# dashboard.yaml-sourced widget keeps the plugin's own id (e.g. "rss"), a
+# UI-added one has a generated id whose type is recorded in custom_widgets.
+# The original widget_settings row is left in place — nothing reads it for
+# these types anymore, but keeping it costs nothing and is an escape hatch if
+# this id-based detection ever misses a dashboard.yaml entry with a
+# non-default `id:` override.
+def _migration_003_seed_personal_widget_settings(conn: sqlite3.Connection) -> None:
+    custom_types = {row["id"]: row["type"] for row in conn.execute("SELECT id, type FROM custom_widgets")}
+    user_ids = [row["id"] for row in conn.execute("SELECT id FROM users")]
+    if not user_ids:
+        return
+
+    for row in conn.execute("SELECT widget_id, settings FROM widget_settings").fetchall():
+        widget_id = row["widget_id"]
+        widget_type = custom_types.get(widget_id, widget_id)
+        if widget_type not in _PERSONAL_SCOPE_WIDGET_TYPES:
+            continue
+        conn.executemany(
+            "INSERT INTO widget_user_settings (user_id, widget_id, settings) VALUES (?, ?, ?) "
+            "ON CONFLICT (user_id, widget_id) DO NOTHING",
+            [(user_id, widget_id, row["settings"]) for user_id in user_ids],
+        )
+
+
 _MIGRATIONS: tuple[str | Callable[[sqlite3.Connection], None], ...] = (
     _MIGRATION_001_USERS_DEVICES,
     _migration_002_user_roles,
+    _migration_003_seed_personal_widget_settings,
 )
 
 
@@ -347,6 +394,41 @@ def copy_widget_layout(user_id: str, source_device_id: str, target_device_id: st
             "INSERT INTO widget_layout (user_id, device_id, widget_id, layout) VALUES (?, ?, ?, ?)",
             [(user_id, target_device_id, row["widget_id"], row["layout"]) for row in rows],
         )
+
+
+def save_widget_user_settings(user_id: str, widget_id: str, settings: dict[str, Any]) -> None:
+    """Persist a (user, widget) settings override, overwriting any prior one.
+
+    Same overwrite-upsert shape as `save_widget_settings`, but scoped to a
+    single household member — for "personal"-scope plugins (RSS, calendar)
+    where the same widget_id should render different content per user.
+    """
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO widget_user_settings (user_id, widget_id, settings) VALUES (?, ?, ?) "
+            "ON CONFLICT (user_id, widget_id) DO UPDATE SET settings = excluded.settings",
+            (user_id, widget_id, json.dumps(settings)),
+        )
+
+
+def get_widget_user_settings(user_id: str, widget_id: str) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT settings FROM widget_user_settings WHERE user_id = ? AND widget_id = ?",
+            (user_id, widget_id),
+        ).fetchone()
+    return None if row is None else json.loads(row["settings"])
+
+
+def delete_widget_user_settings_for_widget(widget_id: str) -> None:
+    """Drop every user's settings override for a widget that's been removed."""
+    with _connect() as conn:
+        conn.execute("DELETE FROM widget_user_settings WHERE widget_id = ?", (widget_id,))
+
+
+def delete_widget_user_settings_for_user(user_id: str) -> None:
+    with _connect() as conn:
+        conn.execute("DELETE FROM widget_user_settings WHERE user_id = ?", (user_id,))
 
 
 def begin_photo_index_scan(widget_id: str) -> int:
@@ -635,6 +717,7 @@ def delete_user(user_id: str) -> None:
     with _connect() as conn:
         conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM widget_layout WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM widget_user_settings WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM user_preferences WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
 

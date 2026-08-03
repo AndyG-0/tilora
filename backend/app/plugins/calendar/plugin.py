@@ -32,6 +32,12 @@ class CalendarPlugin(Plugin):
     id = "calendar"
     name = "Google Calendar"
     refresh_interval_seconds = 300
+    # Which calendars/colors/days-ahead to show is a personal preference, not
+    # a shared household setting — see Plugin.settings_scope. The OAuth
+    # client credentials and CalDAV/iCloud account credentials this plugin
+    # reads via effective_settings() stay app-level/admin-only; only the
+    # per-widget selection below becomes per-user.
+    settings_scope = "personal"
     default_settings = {
         "provider": "google",
         "calendar_id": "primary",

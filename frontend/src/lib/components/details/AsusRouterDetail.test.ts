@@ -9,6 +9,7 @@ const { widgetDetail, updateWidgetSettings, asusRouterTestConnection } = vi.hois
 vi.mock('$lib/api', () => ({ api: { widgetDetail, updateWidgetSettings, asusRouterTestConnection } }));
 vi.mock('$app/state', () => ({ page: { params: { id: 'asus_router' } } }));
 
+import { user } from '$lib/stores/user';
 import AsusRouterDetail from './AsusRouterDetail.svelte';
 
 const notConnected = {
@@ -47,6 +48,7 @@ const connected = {
 describe('AsusRouterDetail', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		user.set({ id: 'admin-user', name: 'Admin', avatar: null, role: 'admin' });
 	});
 
 	it('shows a not-connected hint', () => {
@@ -122,5 +124,13 @@ describe('AsusRouterDetail', () => {
 		await fireEvent.click(screen.getByText('Save'));
 
 		expect(await screen.findByText('Could not save the connection settings.')).toBeInTheDocument();
+	});
+
+	it('hides the edit-connection control for a non-admin', () => {
+		user.set({ id: 'member-user', name: 'Member', avatar: null, role: 'member' });
+
+		render(AsusRouterDetail, { props: { data: connected } });
+
+		expect(screen.queryByText('Edit connection')).not.toBeInTheDocument();
 	});
 });

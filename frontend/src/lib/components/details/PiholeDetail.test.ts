@@ -12,6 +12,7 @@ vi.mock('$lib/api', () => ({
 }));
 vi.mock('$app/state', () => ({ page: { params: { id: 'pihole' } } }));
 
+import { user } from '$lib/stores/user';
 import PiholeDetail from './PiholeDetail.svelte';
 
 const notConnected = {
@@ -50,6 +51,7 @@ const connected = {
 describe('PiholeDetail', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		user.set({ id: 'admin-user', name: 'Admin', avatar: null, role: 'admin' });
 	});
 
 	it('shows a not-connected hint', () => {
@@ -122,5 +124,13 @@ describe('PiholeDetail', () => {
 		await fireEvent.click(screen.getByText('Test connection'));
 
 		expect(await screen.findByText('✗ Pi-hole rejected credentials')).toBeInTheDocument();
+	});
+
+	it('hides the edit-connection control for a non-admin', () => {
+		user.set({ id: 'member-user', name: 'Member', avatar: null, role: 'member' });
+
+		render(PiholeDetail, { props: { data: connected } });
+
+		expect(screen.queryByText('Edit connection')).not.toBeInTheDocument();
 	});
 });
