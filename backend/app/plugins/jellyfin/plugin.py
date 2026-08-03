@@ -21,6 +21,11 @@ class JellyfinPlugin(Plugin):
     id = "jellyfin"
     name = "Jellyfin"
     refresh_interval_seconds = 600
+    # playback_mode depends on the playing device's hardware/browser (e.g. an
+    # iPhone that can't decode a source codec a Mac handles fine), not on
+    # household policy — any user may override it for their own device even
+    # though the rest of this plugin's settings are "network"-scope/admin-only.
+    device_overridable_settings = frozenset({"playback_mode"})
     default_settings = {
         "host": "",
         "port": 8096,
@@ -30,7 +35,8 @@ class JellyfinPlugin(Plugin):
         "username": "",
         "password": "",
         "library_ids": [],  # optional filter; empty = show all libraries
-        "playback_mode": "compatible",  # "compatible" | "direct" — see jellyfin_client.open_video_stream
+        # "compatible" | "compatible_video" | "direct" — see jellyfin_client.open_video_stream
+        "playback_mode": "compatible",
     }
     default_layout = {"colSpan": 2, "rowSpan": 1}
 

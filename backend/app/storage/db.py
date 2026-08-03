@@ -53,6 +53,21 @@ CREATE TABLE IF NOT EXISTS widget_user_settings (
 );
 CREATE INDEX IF NOT EXISTS idx_widget_user_settings_widget_id ON widget_user_settings (widget_id);
 
+-- Per-device overrides for individual settings keys a plugin marks via
+-- Plugin.device_overridable_settings — orthogonal to settings_scope above:
+-- a "network"-scope plugin's shared settings still need an admin to change,
+-- but a specific field (e.g. Jellyfin's playback_mode) can still be tuned
+-- per physical device by any user, since it doesn't touch shared config.
+-- Layered on top of the network/personal value, not a replacement for it —
+-- an unset device falls back to whatever settings_scope already resolved.
+CREATE TABLE IF NOT EXISTS widget_device_settings (
+    device_id TEXT NOT NULL,
+    widget_id TEXT NOT NULL,
+    settings TEXT NOT NULL,
+    PRIMARY KEY (device_id, widget_id)
+);
+CREATE INDEX IF NOT EXISTS idx_widget_device_settings_widget_id ON widget_device_settings (widget_id);
+
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -431,6 +446,43 @@ def delete_widget_user_settings_for_user(user_id: str) -> None:
         conn.execute("DELETE FROM widget_user_settings WHERE user_id = ?", (user_id,))
 
 
+def save_widget_device_settings(device_id: str, widget_id: str, settings: dict[str, Any]) -> None:
+    """Persist a (device, widget) settings override, overwriting any prior one.
+
+    Scoped to a single physical device — for settings keys a plugin lists in
+    `device_overridable_settings` (e.g. Jellyfin's playback_mode), where the
+    right value depends on that device's hardware/browser, not who's logged
+    in or the household's shared default.
+    """
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO widget_device_settings (device_id, widget_id, settings) VALUES (?, ?, ?) "
+            "ON CONFLICT (device_id, widget_id) DO UPDATE SET settings = excluded.settings",
+            (device_id, widget_id, json.dumps(settings)),
+        )
+
+
+def get_widget_device_settings(device_id: str, widget_id: str) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT settings FROM widget_device_settings WHERE device_id = ? AND widget_id = ?",
+            (device_id, widget_id),
+        ).fetchone()
+    return None if row is None else json.loads(row["settings"])
+
+
+def delete_widget_device_settings(device_id: str, widget_id: str) -> None:
+    """Reset a single device's override for a widget back to the household default."""
+    with _connect() as conn:
+        conn.execute("DELETE FROM widget_device_settings WHERE device_id = ? AND widget_id = ?", (device_id, widget_id))
+
+
+def delete_widget_device_settings_for_widget(widget_id: str) -> None:
+    """Drop every device's settings override for a widget that's been removed."""
+    with _connect() as conn:
+        conn.execute("DELETE FROM widget_device_settings WHERE widget_id = ?", (widget_id,))
+
+
 def begin_photo_index_scan(widget_id: str) -> int:
     """Mints a new generation tag for a background photo-index scan of
     widget_id. Every chunk upserted during this scan must use this
@@ -759,6 +811,7 @@ def delete_device(device_id: str) -> None:
     with _connect() as conn:
         conn.execute("DELETE FROM sessions WHERE device_id = ?", (device_id,))
         conn.execute("DELETE FROM widget_layout WHERE device_id = ?", (device_id,))
+        conn.execute("DELETE FROM widget_device_settings WHERE device_id = ?", (device_id,))
         conn.execute("DELETE FROM devices WHERE id = ?", (device_id,))
 
 

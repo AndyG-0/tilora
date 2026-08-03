@@ -3,6 +3,13 @@
 # docker-compose.yml's `build.context`.
 FROM python:3.12-slim
 
+# Required for the HDHomeRun widget's server_transcode playback mode, which
+# shells out to a bare `ffmpeg` on PATH (see app/api/hdhomerun.py) — the
+# slim base image doesn't ship it.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app

@@ -26,5 +26,12 @@ class TTLCache:
     def delete(self, key: str) -> None:
         self._store.pop(key, None)
 
+    def delete_prefix(self, prefix: str) -> None:
+        """Drop every key starting with `prefix` — for invalidating cache
+        entries fanned out across a dimension not known at delete time (e.g.
+        one cached entry per device for a device-overridable setting)."""
+        for key in [k for k in self._store if k.startswith(prefix)]:
+            del self._store[key]
+
 
 cache = TTLCache()

@@ -54,6 +54,16 @@ class Plugin(ABC):
     #: *and* sees their own content on the tile (e.g. RSS feeds, calendar
     #: selection) — see app.api.widgets for how this is enforced/personalized.
     settings_scope: ClassVar[Literal["network", "personal"]] = "network"
+    #: settings keys any logged-in user may override for the specific device
+    #: they're currently on, layered on top of whatever settings_scope above
+    #: already resolved to (network default, or personal). Orthogonal to
+    #: settings_scope, not a replacement for it — e.g. a "network"-scope
+    #: plugin's shared connection info (host/credentials) still needs an
+    #: admin to change, but a field like Jellyfin's playback_mode depends on
+    #: *this device's* hardware/browser, not who's logged in or household
+    #: policy, so any user may tune it for their own device without needing
+    #: admin rights — see app.api.widgets for resolution/persistence.
+    device_overridable_settings: ClassVar[frozenset[str]] = frozenset()
 
     def __init__(self, config: dict[str, Any]):
         self.config = config

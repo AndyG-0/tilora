@@ -231,8 +231,21 @@ async def open_video_stream(
     # stereo, which every browser can decode. This is the same "Direct
     # Stream" playback method Jellyfin's own web client falls back to for
     # this exact situation.
-    if settings.get("playback_mode", "compatible") == "direct":
+    # "compatible_video" additionally re-encodes the video track to H.264 —
+    # real transcode cost on the Jellyfin server, not just a stream-copy —
+    # for source codecs (e.g. some HEVC profiles) a given device's hardware
+    # decoder can't handle even after the audio/container fix above.
+    playback_mode = settings.get("playback_mode", "compatible")
+    if playback_mode == "direct":
         params: dict[str, Any] = {"static": "true"}
+    elif playback_mode == "compatible_video":
+        params = {
+            "static": "false",
+            "VideoCodec": "h264",
+            "AudioCodec": "aac",
+            "MaxAudioChannels": "2",
+            "Container": "mp4",
+        }
     else:
         params = {
             "static": "false",

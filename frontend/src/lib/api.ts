@@ -628,6 +628,11 @@ export const api = {
 	widgetDetail: <T = Record<string, unknown>>(id: string) => getJSON<T>(`/api/widgets/${id}/detail`),
 	updateWidgetSettings: <T = Record<string, unknown>>(id: string, settings: Record<string, unknown>) =>
 		patchJSON<T>(`/api/widgets/${id}/settings`, settings),
+	getWidgetDeviceSettings: <T = Record<string, unknown>>(id: string) =>
+		getJSON<T>(`/api/widgets/${id}/device-settings`),
+	updateWidgetDeviceSettings: <T = Record<string, unknown>>(id: string, settings: Record<string, unknown>) =>
+		patchJSON<T>(`/api/widgets/${id}/device-settings`, settings),
+	clearWidgetDeviceSettings: (id: string) => deleteJSON<{ status: string }>(`/api/widgets/${id}/device-settings`),
 	updateWidgetsLayout: (widgets: { id: string; layout: WidgetLayout }[]) =>
 		putJSON<{ status: string }>('/api/widgets/layout', { widgets }),
 	runAiWidget: <T = Record<string, unknown>>(id: string) => postJSON<T>(`/api/widgets/${id}/run`),

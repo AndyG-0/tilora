@@ -55,6 +55,43 @@ class StubPersonalPlugin(StubPlugin):
         return {"value": self.config["settings"].get("value", "default")}
 
 
+class StubDeviceOverridablePlugin(StubPlugin):
+    """A network-scope stub with one device-overridable key, so a test can
+    tell a household default apart from a per-device override."""
+
+    id = "device-stub"
+    name = "Stub Device Overridable"
+    device_overridable_settings = frozenset({"value"})
+
+    async def get_summary(self) -> dict[str, Any]:
+        self.summary_calls += 1
+        return {"value": self.config["settings"].get("value", "default")}
+
+    async def get_detail(self) -> dict[str, Any]:
+        self.detail_calls += 1
+        return {"value": self.config["settings"].get("value", "default")}
+
+
+class StubPersonalDeviceOverridablePlugin(StubPlugin):
+    """A personal-scope stub with one device-overridable key. No shipped
+    plugin combines these two today, but Plugin.device_overridable_settings
+    documents the combination as supported, so this covers the cache
+    invalidation path for it."""
+
+    id = "personal-device-stub"
+    name = "Stub Personal Device Overridable"
+    settings_scope = "personal"
+    device_overridable_settings = frozenset({"value"})
+
+    async def get_summary(self) -> dict[str, Any]:
+        self.summary_calls += 1
+        return {"value": self.config["settings"].get("value", "default")}
+
+    async def get_detail(self) -> dict[str, Any]:
+        self.detail_calls += 1
+        return {"value": self.config["settings"].get("value", "default")}
+
+
 @pytest.fixture
 def client():
     app = FastAPI()
@@ -341,6 +378,7 @@ def test_personal_scope_settings_and_summary_are_isolated_per_user(dashboard_yam
         app = FastAPI()
         app.include_router(widgets.router)
         app.dependency_overrides[get_current_user] = lambda uid=user_id: {"id": uid, "role": "member"}
+        app.dependency_overrides[get_current_device] = lambda: {"id": TEST_DEVICE_ID}
         return TestClient(app)
 
     alice, bob = make_client("alice"), make_client("bob")
@@ -371,6 +409,7 @@ def test_personal_scope_summary_is_cached_per_user(dashboard_yaml, tmp_db, monke
     app = FastAPI()
     app.include_router(widgets.router)
     app.dependency_overrides[get_current_user] = lambda: {"id": "alice", "role": "member"}
+    app.dependency_overrides[get_current_device] = lambda: {"id": TEST_DEVICE_ID}
     alice_client = TestClient(app)
 
     assert alice_client.get("/api/widgets/personal-stub/summary").json() == {"value": "alice's"}
@@ -575,3 +614,133 @@ def test_run_invalidates_cached_summary_and_detail(client, dashboard_yaml, tmp_d
 
     assert client.get("/api/widgets/ai-insights/summary").json()["text"] == "Fresh briefing"
     assert client.get("/api/widgets/ai-insights/detail").json()["text"] == "Fresh briefing"
+
+
+def test_get_device_settings_returns_empty_when_unset(client, dashboard_yaml, tmp_db):
+    registry.register(StubDeviceOverridablePlugin({"settings": {"value": "default"}}))
+
+    response = client.get("/api/widgets/device-stub/device-settings")
+
+    assert response.status_code == 200
+    assert response.json() == {}
+
+
+def test_get_device_settings_returns_404_for_unregistered_widget(client, dashboard_yaml):
+    response = client.get("/api/widgets/nonexistent/device-settings")
+    assert response.status_code == 404
+
+
+def test_update_device_settings_rejects_keys_not_device_overridable(client, dashboard_yaml, tmp_db):
+    registry.register(StubDeviceOverridablePlugin({"settings": {"value": "default"}}))
+
+    response = client.patch("/api/widgets/device-stub/device-settings", json={"other": "nope"})
+
+    assert response.status_code == 400
+    assert db.get_widget_device_settings(TEST_DEVICE_ID, "device-stub") is None
+
+
+def test_update_device_settings_persists_and_returns_merged_override(client, dashboard_yaml, tmp_db):
+    registry.register(StubDeviceOverridablePlugin({"settings": {"value": "default"}}))
+
+    response = client.patch("/api/widgets/device-stub/device-settings", json={"value": "overridden"})
+
+    assert response.status_code == 200
+    assert response.json() == {"value": "overridden"}
+    assert db.get_widget_device_settings(TEST_DEVICE_ID, "device-stub") == {"value": "overridden"}
+
+
+def test_update_device_settings_invalidates_cached_summary_and_detail(client, dashboard_yaml, tmp_db):
+    plugin = StubDeviceOverridablePlugin({"settings": {"value": "default"}})
+    registry.register(plugin)
+    assert client.get("/api/widgets/device-stub/summary").json() == {"value": "default"}
+
+    client.patch("/api/widgets/device-stub/device-settings", json={"value": "overridden"})
+
+    assert client.get("/api/widgets/device-stub/summary").json() == {"value": "overridden"}
+
+
+def test_device_settings_are_isolated_between_devices(dashboard_yaml, tmp_db):
+    plugin = StubDeviceOverridablePlugin({"settings": {"value": "default"}})
+    registry.register(plugin)
+
+    def make_client(device_id: str) -> TestClient:
+        app = FastAPI()
+        app.include_router(widgets.router)
+        app.dependency_overrides[get_current_user] = lambda: {"id": TEST_USER_ID, "role": "admin"}
+        app.dependency_overrides[get_current_device] = lambda did=device_id: {"id": did}
+        return TestClient(app)
+
+    device_a, device_b = make_client("device-a"), make_client("device-b")
+
+    device_a.patch("/api/widgets/device-stub/device-settings", json={"value": "a's value"})
+
+    assert device_a.get("/api/widgets/device-stub/summary").json() == {"value": "a's value"}
+    assert device_b.get("/api/widgets/device-stub/summary").json() == {"value": "default"}
+    # Never mutated in place — with_settings() built a throwaway instance per request.
+    assert plugin.config["settings"] == {"value": "default"}
+
+
+def test_updating_network_default_invalidates_every_devices_cache(dashboard_yaml, tmp_db):
+    plugin = StubDeviceOverridablePlugin({"settings": {"value": "default"}})
+    registry.register(plugin)
+
+    def make_client(device_id: str) -> TestClient:
+        app = FastAPI()
+        app.include_router(widgets.router)
+        app.dependency_overrides[get_current_user] = lambda: {"id": TEST_USER_ID, "role": "admin"}
+        app.dependency_overrides[get_current_device] = lambda did=device_id: {"id": did}
+        return TestClient(app)
+
+    device_a, device_b = make_client("device-a"), make_client("device-b")
+    # Populate a cached summary for both devices under the old default.
+    device_a.get("/api/widgets/device-stub/summary")
+    device_b.get("/api/widgets/device-stub/summary")
+
+    device_a.patch("/api/widgets/device-stub/settings", json={"value": "new-default"})
+
+    assert device_a.get("/api/widgets/device-stub/summary").json() == {"value": "new-default"}
+    assert device_b.get("/api/widgets/device-stub/summary").json() == {"value": "new-default"}
+
+
+def test_updating_personal_settings_invalidates_every_devices_cache_for_that_user(dashboard_yaml, tmp_db):
+    plugin = StubPersonalDeviceOverridablePlugin({"settings": {"value": "default"}})
+    registry.register(plugin)
+
+    def make_client(device_id: str) -> TestClient:
+        app = FastAPI()
+        app.include_router(widgets.router)
+        app.dependency_overrides[get_current_user] = lambda: {"id": TEST_USER_ID, "role": "admin"}
+        app.dependency_overrides[get_current_device] = lambda did=device_id: {"id": did}
+        return TestClient(app)
+
+    device_a, device_b = make_client("device-a"), make_client("device-b")
+    # Populate a cached summary for both of this user's devices under the old value.
+    device_a.get("/api/widgets/personal-device-stub/summary")
+    device_b.get("/api/widgets/personal-device-stub/summary")
+
+    device_a.patch("/api/widgets/personal-device-stub/settings", json={"value": "mine"})
+
+    assert device_a.get("/api/widgets/personal-device-stub/summary").json() == {"value": "mine"}
+    assert device_b.get("/api/widgets/personal-device-stub/summary").json() == {"value": "mine"}
+
+
+def test_clear_device_settings_falls_back_to_household_default(client, dashboard_yaml, tmp_db):
+    registry.register(StubDeviceOverridablePlugin({"settings": {"value": "default"}}))
+    client.patch("/api/widgets/device-stub/device-settings", json={"value": "overridden"})
+    assert client.get("/api/widgets/device-stub/summary").json() == {"value": "overridden"}
+
+    response = client.delete("/api/widgets/device-stub/device-settings")
+
+    assert response.status_code == 200
+    assert db.get_widget_device_settings(TEST_DEVICE_ID, "device-stub") is None
+    assert client.get("/api/widgets/device-stub/summary").json() == {"value": "default"}
+
+
+def test_remove_widget_deletes_device_settings(client, dashboard_yaml, tmp_db):
+    registry.register(StubDeviceOverridablePlugin({"settings": {"value": "default"}}))
+    db.save_widget_device_settings(TEST_DEVICE_ID, "device-stub", {"value": "mine"})
+
+    response = client.delete("/api/widgets/device-stub")
+
+    assert response.status_code == 200
+    assert db.get_widget_device_settings(TEST_DEVICE_ID, "device-stub") is None
