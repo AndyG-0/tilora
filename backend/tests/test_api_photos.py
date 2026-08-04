@@ -8,6 +8,18 @@ from app.api import photos
 from app.auth import get_current_user
 from app.config import settings
 from app.integrations import icloud_photos, icloud_shared_album, immich_client
+from app.plugins.base import registry
+from app.plugins.photos.plugin import PhotosPlugin
+
+
+def register_plugin(**settings) -> PhotosPlugin:
+    """Registers a photos widget the same way the live registry does (see
+    `app.main.load_plugins`), so `photos.py`'s `_get_plugin` resolves it —
+    mirrors `register_plugin` in test_api_pihole.py/test_api_jellyfin.py.
+    """
+    plugin = PhotosPlugin({"id": "photos", "settings": {**PhotosPlugin.default_settings, **settings}})
+    registry.register(plugin)
+    return plugin
 
 
 @pytest.fixture
@@ -29,24 +41,13 @@ def test_photos_routes_require_a_session(tmp_db):
 
 
 @pytest.fixture
-def photos_dir(tmp_path, monkeypatch):
+def photos_dir(tmp_path):
     directory = tmp_path / "photos"
     directory.mkdir()
     (directory / "a.jpg").write_bytes(b"fake-jpeg-bytes")
     (directory / "notes.txt").write_text("not a photo")
 
-    config_path = tmp_path / "dashboard.yaml"
-    config_path.write_text(
-        f"""
-widgets:
-  - id: photos
-    type: photos
-    enabled: true
-    layout: {{ col: 1, row: 1, colSpan: 1, rowSpan: 1 }}
-    settings: {{ directory: "{directory}" }}
-"""
-    )
-    monkeypatch.setattr("app.config.DASHBOARD_CONFIG_PATH", config_path)
+    register_plugin(directory=str(directory))
     return directory
 
 
@@ -82,7 +83,7 @@ def test_get_photo_rejects_path_traversal(client, photos_dir):
 
 
 @pytest.fixture
-def nested_photos_dir(tmp_path, monkeypatch):
+def nested_photos_dir(tmp_path):
     directory = tmp_path / "photos"
     directory.mkdir()
     (directory / "a.jpg").write_bytes(b"fake-jpeg-bytes")
@@ -90,18 +91,7 @@ def nested_photos_dir(tmp_path, monkeypatch):
     sub.mkdir()
     (sub / "nested.jpg").write_bytes(b"nested-jpeg-bytes")
 
-    config_path = tmp_path / "dashboard.yaml"
-    config_path.write_text(
-        f"""
-widgets:
-  - id: photos
-    type: photos
-    enabled: true
-    layout: {{ col: 1, row: 1, colSpan: 1, rowSpan: 1 }}
-    settings: {{ directory: "{directory}", recursive: true }}
-"""
-    )
-    monkeypatch.setattr("app.config.DASHBOARD_CONFIG_PATH", config_path)
+    register_plugin(directory=str(directory), recursive=True)
     return directory
 
 
@@ -119,19 +109,8 @@ def test_get_photo_rejects_traversal_via_nested_path(client, nested_photos_dir):
 
 
 @pytest.fixture
-def icloud_widget(tmp_path, monkeypatch):
-    config_path = tmp_path / "dashboard.yaml"
-    config_path.write_text(
-        """
-widgets:
-  - id: photos
-    type: photos
-    enabled: true
-    layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 }
-    settings: { provider: icloud_shared, album_token: "tok" }
-"""
-    )
-    monkeypatch.setattr("app.config.DASHBOARD_CONFIG_PATH", config_path)
+def icloud_widget():
+    register_plugin(provider="icloud_shared", album_token="tok")
 
 
 def test_get_photo_redirects_to_icloud_asset_url(client, icloud_widget, monkeypatch):
@@ -164,19 +143,8 @@ def test_get_photo_404s_for_unknown_icloud_guid(client, icloud_widget, monkeypat
 
 
 @pytest.fixture
-def icloud_private_widget(tmp_path, monkeypatch):
-    config_path = tmp_path / "dashboard.yaml"
-    config_path.write_text(
-        """
-widgets:
-  - id: photos
-    type: photos
-    enabled: true
-    layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 }
-    settings: { provider: icloud_private, album_name: "Family" }
-"""
-    )
-    monkeypatch.setattr("app.config.DASHBOARD_CONFIG_PATH", config_path)
+def icloud_private_widget(monkeypatch):
+    register_plugin(provider="icloud_private", album_name="Family")
     monkeypatch.setattr(settings, "icloud_username", "user@example.com")
     monkeypatch.setattr(settings, "icloud_password", "hunter2")
 
@@ -211,19 +179,8 @@ def test_get_photo_404s_for_unknown_private_photo_id(client, icloud_private_widg
     assert response.status_code == 404
 
 
-def test_get_photo_404s_when_private_provider_not_configured(client, tmp_path, monkeypatch):
-    config_path = tmp_path / "dashboard.yaml"
-    config_path.write_text(
-        """
-widgets:
-  - id: photos
-    type: photos
-    enabled: true
-    layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 }
-    settings: { provider: icloud_private }
-"""
-    )
-    monkeypatch.setattr("app.config.DASHBOARD_CONFIG_PATH", config_path)
+def test_get_photo_404s_when_private_provider_not_configured(client, monkeypatch):
+    register_plugin(provider="icloud_private")
     monkeypatch.setattr(settings, "icloud_username", None)
     monkeypatch.setattr(settings, "icloud_password", None)
 
@@ -233,19 +190,13 @@ widgets:
 
 
 @pytest.fixture
-def immich_widget(tmp_path, monkeypatch):
-    config_path = tmp_path / "dashboard.yaml"
-    config_path.write_text(
-        """
-widgets:
-  - id: photos
-    type: photos
-    enabled: true
-    layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 }
-    settings: { provider: immich, base_url: "http://192.168.1.50:2283/api", api_key: "immich-key", album_id: "album-1" }
-"""
+def immich_widget():
+    register_plugin(
+        provider="immich",
+        base_url="http://192.168.1.50:2283/api",
+        api_key="immich-key",
+        album_id="album-1",
     )
-    monkeypatch.setattr("app.config.DASHBOARD_CONFIG_PATH", config_path)
 
 
 def test_get_photo_proxies_immich_asset_bytes(client, immich_widget, monkeypatch):
@@ -262,25 +213,13 @@ def test_get_photo_proxies_immich_asset_bytes(client, immich_widget, monkeypatch
     assert response.headers["content-type"] == "image/jpeg"
 
 
-def test_get_photo_normalizes_immich_base_url_trailing_slash(client, tmp_path, monkeypatch):
-    config_path = tmp_path / "dashboard.yaml"
-    config_path.write_text(
-        """
-widgets:
-  - id: photos
-    type: photos
-    enabled: true
-    layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 }
-    settings:
-      {
-        provider: immich,
-        base_url: "http://192.168.1.50:2283/api/",
-        api_key: "immich-key",
-        album_id: "album-1",
-      }
-"""
+def test_get_photo_normalizes_immich_base_url_trailing_slash(client, monkeypatch):
+    register_plugin(
+        provider="immich",
+        base_url="http://192.168.1.50:2283/api/",
+        api_key="immich-key",
+        album_id="album-1",
     )
-    monkeypatch.setattr("app.config.DASHBOARD_CONFIG_PATH", config_path)
 
     seen_base_urls = []
 
@@ -317,19 +256,8 @@ def test_get_photo_404s_when_immich_client_raises(client, immich_widget, monkeyp
     assert response.status_code == 404
 
 
-def test_get_photo_404s_when_immich_provider_not_configured(client, tmp_path, monkeypatch):
-    config_path = tmp_path / "dashboard.yaml"
-    config_path.write_text(
-        """
-widgets:
-  - id: photos
-    type: photos
-    enabled: true
-    layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 }
-    settings: { provider: immich, base_url: "http://192.168.1.50:2283/api" }
-"""
-    )
-    monkeypatch.setattr("app.config.DASHBOARD_CONFIG_PATH", config_path)
+def test_get_photo_404s_when_immich_provider_not_configured(client):
+    register_plugin(provider="immich", base_url="http://192.168.1.50:2283/api")
 
     response = client.get("/api/photos/photos/asset-1")
 
