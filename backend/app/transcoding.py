@@ -113,7 +113,9 @@ TRANSCODE_PRESETS: dict[str, TranscodePreset] = {
         description=(
             "Hardware decode+encode on Intel CPUs with an iGPU, on Linux with "
             "the intel-media-driver installed and /dev/dri accessible to the "
-            "backend process."
+            "backend process. The Docker image already bundles the driver "
+            "(see backend/Dockerfile); on Docker Compose you still need to "
+            "uncomment the /dev/dri passthrough in docker-compose.yml."
         ),
         input_args=["-hwaccel", "qsv", "-hwaccel_output_format", "qsv"],
         output_args=["-c:v", "h264_qsv", "-preset", "veryfast", "-c:a", "aac", "-ac", "2"],
@@ -123,7 +125,10 @@ TRANSCODE_PRESETS: dict[str, TranscodePreset] = {
         description=(
             "Hardware encode via VAAPI on Linux — Intel iGPUs or AMD GPUs "
             'with Mesa drivers. Assumes /dev/dri/renderD128; use "Custom" '
-            "if your render device path differs."
+            "if your render device path differs. The Docker image already "
+            "bundles the driver (see backend/Dockerfile); on Docker Compose "
+            "you still need to uncomment the /dev/dri passthrough in "
+            "docker-compose.yml."
         ),
         input_args=["-hwaccel", "vaapi", "-hwaccel_output_format", "vaapi", "-vaapi_device", "/dev/dri/renderD128"],
         output_args=["-c:v", "h264_vaapi", "-c:a", "aac", "-ac", "2"],
