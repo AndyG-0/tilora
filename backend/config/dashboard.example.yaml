@@ -293,40 +293,44 @@ widgets:
       hwaccel: software
       custom_ffmpeg_args: ""
 
-  - id: docker
-    type: docker
-    # Disabled by default. `connection` is "socket" (default, targets
-    # `socket_path` — works out of the box if this backend can see the
-    # Docker host's own socket, e.g. bind-mounted in as
-    # `/var/run/docker.sock:/var/run/docker.sock`) or "tcp" (a separate
-    # host's Docker API exposed unauthenticated on the LAN via `dockerd -H
-    # tcp://0.0.0.0:2375`, e.g. `docker.local:2375` below — same trusted-LAN
-    # assumption as the Pi-hole/HDHomeRun widgets, no TLS/auth support).
-    enabled: true
+  - id: container
+    type: container
+    # Disabled by default. `engine` is "docker" or "podman" — both speak
+    # the same Docker-Engine-API-compatible REST shape, so only the
+    # connection settings differ. `connection` is "socket" (targets
+    # `socket_path`) or "tcp" (targets `host`/`port`, unauthenticated over
+    # the LAN — same trusted-LAN assumption as the Pi-hole/HDHomeRun
+    # widgets, no TLS/auth support). Three ways to reach the socket, in
+    # order of preference:
+    #  - connection: tcp against a `socket-proxy` sidecar (see the
+    #    commented service in docker-compose.yml) — recommended: the
+    #    proxy still needs read access to the real socket, but that
+    #    access is contained to it alone, locked down to read-only
+    #    container listing — the backend never touches the socket or
+    #    gains any elevated privilege. On Docker or rootful Podman this
+    #    works out of the box; on *rootless* Podman, set the
+    #    CONTAINER_SOCKET_PATH env var (see docker-compose.yml) to your
+    #    own $XDG_RUNTIME_DIR/podman/podman.sock instead of relying on
+    #    /var/run/docker.sock, which is commonly a symlink to the
+    #    *rootful* socket your rootless user can't read. Settings below
+    #    use this.
+    #  - connection: socket with `socket_path` pointed at rootless
+    #    Podman's own socket ($XDG_RUNTIME_DIR/podman/podman.sock, e.g.
+    #    /run/user/1000/podman/podman.sock) — also no root needed, since
+    #    that socket is owned by the invoking user, not root.
+    #  - connection: socket bind-mounted straight to the host's
+    #    docker.sock or rootful podman.sock (commented lines in
+    #    docker-compose.yml) — simplest, but per Docker's own docs,
+    #    read access to that socket is root-equivalent on the host, so
+    #    only use this if you're fine granting that.
+    enabled: false
     layout: { col: 1, row: 10, colSpan: 2, rowSpan: 1 }
     settings:
-      connection: socket
+      engine: docker
+      connection: tcp
       socket_path: "/var/run/docker.sock"
-      host: "docker.local"
+      host: "socket-proxy"
       port: 2375
-
-  - id: podman
-    type: podman
-    # Disabled by default. Same shape as the `docker` widget above, but
-    # against Podman's Docker-Engine-API-compatible REST API instead.
-    # `connection: socket` targets `socket_path` — the default below is the
-    # rootful socket (`/run/podman/podman.sock`); rootless Podman users
-    # should point this at their own `$XDG_RUNTIME_DIR/podman/podman.sock`
-    # (e.g. `/run/user/1000/podman/podman.sock`) instead. `connection: tcp`
-    # targets a separate host's `podman system service tcp:0.0.0.0:8080`,
-    # unauthenticated over the LAN — same trusted-LAN assumption as Docker.
-    enabled: false
-    layout: { col: 1, row: 11, colSpan: 2, rowSpan: 1 }
-    settings:
-      connection: socket
-      socket_path: "/run/podman/podman.sock"
-      host: "podman.local"
-      port: 8080
 
   - id: sports
     type: sports
