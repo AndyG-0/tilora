@@ -6,8 +6,22 @@ FROM python:3.12-slim
 # Required for the HDHomeRun widget's server_transcode playback mode, which
 # shells out to a bare `ffmpeg` on PATH (see app/api/hdhomerun.py) — the
 # slim base image doesn't ship it.
+#
+# va-driver-all + vainfo back the "qsv"/"vaapi" hwaccel presets in
+# app/transcoding.py. Plain `ffmpeg` alone links against the VA-API/oneVPL
+# *runtime* libraries (libva2/libvpl2, pulled in automatically) but ships no
+# hardware driver, so h264_qsv/h264_vaapi fail at runtime ("Failed to
+# initialise VAAPI connection") even though ffmpeg -encoders lists them.
+# va-driver-all is architecture-aware: on amd64 it pulls intel-media-va-driver
+# (Gen8+) + i965-va-driver (older Gen); on arm64 (Raspberry Pi) those two
+# don't exist and it silently pulls only mesa-va-drivers instead — verified
+# on both, so this is safe to add unconditionally without breaking the Pi
+# build. vainfo is a tiny diagnostic binary for confirming the driver loads
+# (`docker compose exec backend vainfo`) before touching the app at all.
+# None of this makes hwaccel work by itself — the container also needs
+# /dev/dri passed through, see the commented block in docker-compose.yml.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg va-driver-all vainfo \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
