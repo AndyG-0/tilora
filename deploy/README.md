@@ -35,6 +35,17 @@ HDHomeRun widget's `server_transcode` playback mode:
 sudo apt install -y ffmpeg
 ```
 
+For the `qsv`/`vaapi` hardware-acceleration presets (see `hwaccel` in
+`backend/config/dashboard.yaml`), also install a VA-API driver — plain
+`ffmpeg` links against the VA-API/oneVPL runtime libraries but ships no
+hardware driver on its own:
+
+```bash
+sudo apt install -y va-driver-all vainfo
+```
+
+`vainfo` should then list your GPU's supported profiles instead of erroring.
+
 To use a non-default install location, download `install.sh` and invoke it
 with `TILORA_INSTALL_DIR=/your/path bash install.sh`. The one-line command
 uses the invoking user's home directory. First installation must run from an

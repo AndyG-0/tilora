@@ -43,6 +43,25 @@ services:
       # Photos widget's "local" provider — set that same container-side path
       # as the widget's `directory` setting.
       # - /path/to/photos:/app/photos:ro
+    # Uncomment to enable the HDHomeRun widget's "qsv"/"vaapi" hwaccel
+    # presets (app/transcoding.py) — the image bundles the VA-API/QSV
+    # driver packages (see backend/Dockerfile), but a container has no
+    # access to host devices unless one is explicitly passed through, and
+    # not every host even has a GPU render node (e.g. this repo's own
+    # macOS/podman-machine testing has none) — mapping a device that
+    # doesn't exist fails container creation outright, so this can't be
+    # on by default.
+    # devices:
+    #   - /dev/dri:/dev/dri
+    # The backend runs as a fixed non-root user (uid/gid 1000 "tilora", see
+    # Dockerfile) with no supplementary groups, but /dev/dri/renderD128 is
+    # normally owned by the host's "render" group at mode 660 — without
+    # group_add, opening it fails with a permission error even with the
+    # device mapped above. Find the real GID with `getent group render` on
+    # the host (it's host-specific, not something this file can hardcode)
+    # and set it as RENDER_GID, e.g. `RENDER_GID=108 docker compose up -d`.
+    # group_add:
+    #   - "${RENDER_GID:-108}"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]

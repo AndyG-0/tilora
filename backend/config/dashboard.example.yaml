@@ -280,7 +280,9 @@ widgets:
     #   - nvenc: NVIDIA hardware encode (needs current NVIDIA drivers).
     #   - custom: set custom_ffmpeg_args to your own raw ffmpeg arguments.
     # The resolved command is always shown in this widget's detail view, so
-    # you can confirm what's actually running after changing this.
+    # you can confirm what's actually running after changing this. Running
+    # in Docker? qsv/vaapi additionally need the commented /dev/dri block
+    # under the backend service in docker-compose.yml — see README.md.
     enabled: true
     layout: { col: 1, row: 9, colSpan: 2, rowSpan: 1 }
     settings:

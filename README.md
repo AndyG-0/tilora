@@ -176,7 +176,12 @@ capability. Three ways to connect, in order of preference:
 The backend image bundles `ffmpeg`, so the HDHomeRun widget's
 `server_transcode` playback mode works out of the box in both compose files
 above — no extra install step needed (contrast with the bare-metal installer
-below, which intentionally leaves `ffmpeg` out; see `deploy/README.md`).
+below, which intentionally leaves `ffmpeg` out; see `deploy/README.md`). The
+image also bundles the VA-API/Quick Sync driver packages for the `qsv` and
+`vaapi` hwaccel presets, but hardware device access can't be baked into an
+image — uncomment the `/dev/dri` block under the backend service in
+`docker-compose.yml`/`docker-compose.prod.yml` and set `RENDER_GID` (see the
+comment there) to actually use them.
 
 For native Debian, Ubuntu, and Raspberry Pi OS installation, run
 `curl -fsSL https://raw.githubusercontent.com/AndyG-0/tilora/main/deploy/install.sh | bash`.
