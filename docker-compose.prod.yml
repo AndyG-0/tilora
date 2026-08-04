@@ -23,13 +23,21 @@ services:
       - ./backend/config:/app/config
       - ./backend/.env:/app/.env
       - backend-storage:/app/data
-      # Uncomment to enable the Docker widget (backend/app/plugins/docker) —
-      # exposes the host's Docker socket to the container.
+      # Uncomment to enable the Container widget's Docker mode
+      # (backend/app/plugins/container) against a direct socket mount.
+      # Caveat: this socket is normally root:docker-owned, so the backend
+      # (which runs as a non-root user, see backend/Dockerfile) needs
+      # either root or docker-group membership (`group_add:` below) to
+      # read it — and per Docker's own docs, docker-group access is
+      # root-equivalent on the host, not a real privilege reduction. For a
+      # non-privileged setup instead, see the `socket-proxy` service below
+      # (recommended) or use rootless Podman (next line).
       # - /var/run/docker.sock:/var/run/docker.sock:ro
-      # Uncomment to enable the Podman widget (backend/app/plugins/podman) —
-      # path shown is rootful Podman's default; rootless is
-      # $XDG_RUNTIME_DIR/podman/podman.sock (commonly
-      # /run/user/<uid>/podman/podman.sock).
+      # Same, for Podman — path shown is rootful Podman's default (same
+      # root-equivalence caveat as above). Rootless Podman avoids this
+      # entirely: its socket at $XDG_RUNTIME_DIR/podman/podman.sock
+      # (commonly /run/user/<uid>/podman/podman.sock) is owned by the
+      # invoking user, not root, so no group/root access is needed.
       # - /run/podman/podman.sock:/run/podman/podman.sock:ro
       # Uncomment and point at a folder of images on the host to back the
       # Photos widget's "local" provider — set that same container-side path
@@ -65,6 +73,58 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  # Opt-in, recommended way to power the Container widget's Docker mode.
+  # This does NOT make the socket readable without root — this proxy still
+  # needs read access to the real socket, same as a direct mount would.
+  # What changes is *scope*: instead of the whole backend (arbitrary
+  # plugin/AI-tool code, reachable from the LAN) holding that access, only
+  # this small, single-purpose proxy does — and CONTAINERS=1 + POST=0
+  # locks even it down to read-only /containers/json, blocking
+  # start/stop/exec regardless of what any client asks for.
+  #
+  # How that access is obtained differs by engine:
+  #   - Docker, or *rootful* Podman where this whole compose project itself
+  #     runs as root (e.g. `sudo docker/podman compose up`): the socket is
+  #     root-owned, and the proxy's default `USER root` is enough — Docker
+  #     has a persistent rootful daemon that does the actual mount setup
+  #     for you either way, so this works even if `docker compose` itself
+  #     is invoked as a non-root user.
+  #   - Rootless Podman (no sudo, no root daemon at all — e.g. a regular
+  #     user's own `podman-compose up`): there's no privileged daemon
+  #     doing the mount setup on your behalf — the `podman` process
+  #     preparing this container's bind mount runs *as that same
+  #     unprivileged user*, so it can only mount sockets that user can
+  #     already read. `/var/run/docker.sock` is commonly a symlink to
+  #     *rootful* Podman's socket (root-owned) even on a host that also
+  #     runs rootless Podman for your login user — mounting that here will
+  #     fail with a permission error at container-creation time, not
+  #     inside the container. Point CONTAINER_SOCKET_PATH (below) at your
+  #     own rootless socket instead
+  #     ($XDG_RUNTIME_DIR/podman/podman.sock, typically
+  #     /run/user/<uid>/podman/podman.sock — enable it once with
+  #     `systemctl --user enable --now podman.socket`, and
+  #     `loginctl enable-linger <user>` so it survives logout/reboot on a
+  #     headless server) — that socket is owned by your user, so no root
+  #     is needed anywhere in the chain. Its blast radius is smaller than
+  #     the rootful case too: it only controls *that user's own* rootless
+  #     containers, not the whole host.
+  #
+  # No `ports:` published here — Compose's built-in per-project DNS
+  # already resolves other services by name on its default network, so
+  # the backend reaches this at plain `socket-proxy:2375` without any
+  # host/LAN exposure. Set the widget's settings to connection: tcp,
+  # host: socket-proxy, port: 2375 (see backend/config/dashboard.example.yaml)
+  # — no other network wiring needed; the widget also degrades gracefully
+  # and retries every 30s if this service isn't up yet.
+  # socket-proxy:
+  #   image: ghcr.io/tecnativa/docker-socket-proxy:latest
+  #   environment:
+  #     - CONTAINERS=1
+  #     - POST=0
+  #   volumes:
+  #     - ${CONTAINER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock:ro
+  #   restart: unless-stopped
 
 volumes:
   backend-storage:
