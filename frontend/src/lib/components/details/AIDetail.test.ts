@@ -1,12 +1,13 @@
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-const { updateWidgetSettings, widgetDetail, runAiWidget } = vi.hoisted(() => ({
+const { updateWidgetSettings, widgetDetail, runAiWidget, assistantTopics } = vi.hoisted(() => ({
 	updateWidgetSettings: vi.fn(),
 	widgetDetail: vi.fn(),
 	runAiWidget: vi.fn(),
+	assistantTopics: vi.fn(),
 }));
-vi.mock('$lib/api', () => ({ api: { updateWidgetSettings, widgetDetail, runAiWidget } }));
+vi.mock('$lib/api', () => ({ api: { updateWidgetSettings, widgetDetail, runAiWidget, assistantTopics } }));
 vi.mock('$app/state', () => ({ page: { params: { id: 'ai-insights' } } }));
 
 import AIDetail from './AIDetail.svelte';
@@ -18,11 +19,16 @@ const baseData = {
 	history: [],
 	prompt: 'Write a short daily briefing.',
 	cron: '30 6 * * *',
+	topics: [],
 };
 
 describe('AIDetail', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		assistantTopics.mockResolvedValue([
+			{ id: 'calendar', name: 'Calendar' },
+			{ id: 'weather', name: 'Weather' },
+		]);
 	});
 
 	it('renders the latest briefing text', () => {
@@ -39,15 +45,46 @@ describe('AIDetail', () => {
 		render(AIDetail, { props: { data: baseData } });
 
 		await fireEvent.click(screen.getByText('Edit prompt'));
-		const textarea = screen.getByLabelText('Prompt');
+		const textarea = await screen.findByLabelText('Prompt');
 		expect(textarea).toHaveValue('Write a short daily briefing.');
 
 		await fireEvent.input(textarea, { target: { value: 'New prompt text' } });
 		await fireEvent.click(screen.getByText('Save'));
 
 		await vi.waitFor(() => expect(updateWidgetSettings).toHaveBeenCalled());
-		expect(updateWidgetSettings).toHaveBeenCalledWith('ai-insights', { prompt: 'New prompt text' });
+		expect(updateWidgetSettings).toHaveBeenCalledWith('ai-insights', { prompt: 'New prompt text', topics: [] });
 		expect(widgetDetail).toHaveBeenCalledWith('ai-insights');
+	});
+
+	it('lets the user pick topics to cover in the summary', async () => {
+		updateWidgetSettings.mockResolvedValue({});
+		widgetDetail.mockResolvedValue({ ...baseData, topics: ['calendar'] });
+
+		render(AIDetail, { props: { data: baseData } });
+
+		await fireEvent.click(screen.getByText('Edit prompt'));
+		const calendarCheckbox = await screen.findByLabelText('Calendar');
+		expect(calendarCheckbox).not.toBeChecked();
+
+		await fireEvent.click(calendarCheckbox);
+		expect(calendarCheckbox).toBeChecked();
+
+		await fireEvent.click(screen.getByText('Save'));
+
+		await vi.waitFor(() => expect(updateWidgetSettings).toHaveBeenCalled());
+		expect(updateWidgetSettings).toHaveBeenCalledWith('ai-insights', {
+			prompt: 'Write a short daily briefing.',
+			topics: ['calendar'],
+		});
+	});
+
+	it('preselects the widget’s already-configured topics', async () => {
+		render(AIDetail, { props: { data: { ...baseData, topics: ['weather'] } } });
+
+		await fireEvent.click(screen.getByText('Edit prompt'));
+
+		expect(await screen.findByLabelText('Weather')).toBeChecked();
+		expect(screen.getByLabelText('Calendar')).not.toBeChecked();
 	});
 
 	it('regenerates the briefing on demand', async () => {

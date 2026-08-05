@@ -32,11 +32,15 @@ _KEY_BY_MODEL_PREFIX = {
 def _api_key_for_model(model: str, settings: dict[str, Any]) -> str | None:
     prefix = model.split("/", 1)[0]
     key_name = _KEY_BY_MODEL_PREFIX.get(prefix)
-    if key_name and settings.get(key_name):
-        return settings[key_name]
-    # Unknown prefix (or that provider's key isn't set) — fall back to
-    # whichever key is configured, so a custom/test model string still works.
-    return settings.get("anthropic_api_key") or settings.get("openai_api_key") or settings.get("gemini_api_key")
+    if key_name is None:
+        # Unknown/custom provider prefix — fall back to whichever key is
+        # configured, so a custom/test model string still works.
+        return settings.get("anthropic_api_key") or settings.get("openai_api_key") or settings.get("gemini_api_key")
+    # Known provider: only ever use its own key. Falling back to another
+    # provider's key here would send it to the wrong provider's API (e.g. an
+    # OpenAI key sent as `x-api-key` to Anthropic), producing a confusing
+    # auth error instead of a clear "no key configured" one.
+    return settings.get(key_name)
 
 
 class AIProvider:
@@ -44,17 +48,35 @@ class AIProvider:
         self._tools = tool_bridge
         self._model = model or effective_settings()["ai_model"]
 
-    async def run_prompt(self, prompt: str, max_tool_rounds: int = 4) -> str:
-        """Run a prompt to completion, letting the model call tools as needed."""
+    async def run_prompt(self, prompt: str, max_tool_rounds: int = 4, system_prompt: str | None = None) -> str:
+        """Run a prompt to completion, letting the model call tools as needed.
+
+        `system_prompt`, when given, is prepended as a `system` message —
+        used by the voice assistant route to ask for plain, speakable
+        sentences, since its answer goes straight into `SpeechSynthesis`.
+        Scheduled AI-insight widgets (rendered as text on a tile) pass none.
+        """
         # Imported lazily: litellm pulls in the openai SDK, tiktoken,
         # tokenizers, and huggingface_hub (~200MB RSS, ~1s import time), so
         # installs that never use the AI assistant or an ai_insights widget
         # shouldn't pay that cost on every backend start.
         import litellm
 
-        messages: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
+        messages: list[dict[str, Any]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
         tool_schemas = self._tools.schemas()
-        api_key = _api_key_for_model(self._model, effective_settings())
+        settings = effective_settings()
+        api_key = _api_key_for_model(self._model, settings)
+        # `drop_params=True` scopes the leniency to just this one param: if the
+        # configured model doesn't support reasoning_effort, litellm drops it
+        # instead of raising UnsupportedParamsError, so the setting stays safe
+        # to turn on regardless of which model/provider is currently active.
+        reasoning_effort = settings.get("ai_reasoning_effort")
+        extra_kwargs: dict[str, Any] = (
+            {"reasoning_effort": reasoning_effort, "drop_params": True} if reasoning_effort else {}
+        )
 
         for _ in range(max_tool_rounds):
             response = await litellm.acompletion(
@@ -64,6 +86,7 @@ class AIProvider:
                 api_key=api_key,
                 timeout=_REQUEST_TIMEOUT_SECONDS,
                 num_retries=_NUM_RETRIES,
+                **extra_kwargs,
             )
             message = response.choices[0].message
             tool_calls = getattr(message, "tool_calls", None)
@@ -91,5 +114,6 @@ class AIProvider:
             api_key=api_key,
             timeout=_REQUEST_TIMEOUT_SECONDS,
             num_retries=_NUM_RETRIES,
+            **extra_kwargs,
         )
         return response.choices[0].message.content or ""

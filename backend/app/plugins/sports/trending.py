@@ -17,8 +17,8 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from typing import Any
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from app.config import resolve_timezone
 from app.integrations import broadcast_links, espn_client
 from app.storage.cache import cache
 
@@ -72,10 +72,7 @@ async def fetch_trending_games(
     if not leagues:
         return [], []
 
-    try:
-        tz = ZoneInfo(timezone_name)
-    except ZoneInfoNotFoundError:
-        tz = ZoneInfo("UTC")
+    tz = resolve_timezone(timezone_name)
     today = datetime.now(tz).strftime("%Y%m%d")
 
     results = await asyncio.gather(*(_fetch_league(league, today) for league in leagues))

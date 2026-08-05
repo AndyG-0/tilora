@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -31,6 +32,16 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
     gemini_api_key: str | None = None
+
+    # Optional reasoning/thinking effort passed straight through to litellm's
+    # `reasoning_effort` param ("none", "minimal", "low", "medium", "high",
+    # "xhigh"). Applies across providers — litellm maps it to each one's
+    # native mechanism (OpenAI o-series/gpt-5.x reasoning effort, Anthropic
+    # extended thinking, Gemini thinking budgets). Unset means "don't ask for
+    # a specific effort level". Some newer OpenAI reasoning models (e.g.
+    # gpt-5.x) reject function-tool calls unless this is set to something —
+    # see AIProvider.run_prompt.
+    ai_reasoning_effort: str | None = None
 
     # IANA timezone (e.g. "America/Chicago"), used by any widget that
     # renders the current date/time (clock, date, ...).
@@ -106,6 +117,7 @@ settings = Settings()
 # timezone), keyed the same as the `Settings` fields above.
 APP_SETTINGS_KEYS = (
     "ai_model",
+    "ai_reasoning_effort",
     "timezone",
     "anthropic_api_key",
     "openai_api_key",
@@ -133,6 +145,18 @@ def effective_settings() -> dict[str, Any]:
 
     base = {key: getattr(settings, key) for key in APP_SETTINGS_KEYS}
     return {**base, **get_app_settings()}
+
+
+def resolve_timezone(timezone_name: str) -> ZoneInfo:
+    """A `ZoneInfo` for `timezone_name`, falling back to UTC if unrecognized.
+
+    Shared by every plugin that needs to reason about "today" in the
+    dashboard's configured timezone (sports, discord, calendar, clock, date).
+    """
+    try:
+        return ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        return ZoneInfo("UTC")
 
 
 DEFAULT_TABS: list[dict[str, Any]] = [{"id": "default", "name": "Dashboard"}]

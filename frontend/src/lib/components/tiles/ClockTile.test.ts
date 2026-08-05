@@ -16,7 +16,7 @@ describe('ClockTile', () => {
 		vi.useRealTimers();
 	});
 
-	it('renders the time in UTC before the summary resolves', () => {
+	it('renders the digital time in UTC before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
 		render(ClockTile, { props: { widgetId: 'clock' } });
@@ -25,7 +25,7 @@ describe('ClockTile', () => {
 	});
 
 	it('renders the time in the fetched timezone once the summary resolves', async () => {
-		widgetSummary.mockResolvedValue({ timezone: 'America/Chicago' });
+		widgetSummary.mockResolvedValue({ timezone: 'America/Chicago', style: 'digital' });
 
 		render(ClockTile, { props: { widgetId: 'clock' } });
 		await vi.advanceTimersByTimeAsync(0); // flush the onMount fetch
@@ -40,5 +40,14 @@ describe('ClockTile', () => {
 		await vi.advanceTimersByTimeAsync(1000);
 
 		expect(screen.getByText('10:30:16 AM')).toBeInTheDocument();
+	});
+
+	it('renders the fetched style once the summary resolves', async () => {
+		widgetSummary.mockResolvedValue({ timezone: 'UTC', style: 'analog' });
+
+		render(ClockTile, { props: { widgetId: 'clock' } });
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(screen.getByRole('img', { name: 'Analog clock face' })).toBeInTheDocument();
 	});
 });

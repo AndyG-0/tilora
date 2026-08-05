@@ -1,30 +1,87 @@
 from __future__ import annotations
 
-import httpx
-import respx
+from dataclasses import dataclass, field
+
+import asyncssh
 
 from app.plugins.asus_router.plugin import AsusRouterPlugin
 
 CONNECTED_SETTINGS = {
     "host": "router.local",
-    "port": 443,
-    "use_https": True,
+    "ssh_port": 22,
     "username": "admin",
     "password": "secret",
 }
 
-LOGIN_OK = {"asus_token": "tok"}
 
-CLIENTLIST_RESPONSE = {
-    "get_clientlist": {
-        "AA:BB:CC:DD:EE:FF": {"nickName": "Laptop", "ip": "192.168.1.10", "isOnline": "1"},
-        "maclist": ["AA:BB:CC:DD:EE:FF"],
-    }
-}
+@dataclass
+class _FakeCompletedProcess:
+    stdout: str
 
-WAN_RESPONSE = {"wanlink_statusstr": "Connected", "wanlink_ipaddr": "203.0.113.5"}
 
-TRAFFIC_RESPONSE = {"netdev": {"INTERNET_rx": "1024", "INTERNET_tx": "512"}}
+@dataclass
+class _FakeConnection:
+    stdout: str = ""
+    run_error: Exception | None = None
+    run_calls: int = field(default=0, init=False)
+
+    async def run(self, command: str, check: bool = False):
+        self.run_calls += 1
+        if self.run_error is not None:
+            raise self.run_error
+        return _FakeCompletedProcess(stdout=self.stdout)
+
+    def close(self) -> None:
+        pass
+
+    async def wait_closed(self) -> None:
+        pass
+
+
+def _fake_connect(*, stdout: str = "", connect_error: Exception | None = None):
+    connection = _FakeConnection(stdout=stdout)
+
+    async def fake_connect(host, *, port, username, password, known_hosts):
+        if connect_error is not None:
+            raise connect_error
+        return connection
+
+    fake_connect.connection = connection
+    return fake_connect
+
+
+def _build_output(
+    *,
+    wan_state: str = "2",
+    wan_ip: str = "203.0.113.5",
+    wan_ifname: str = "eth0",
+    productid: str = "RT-AX88U",
+    online_client: bool = True,
+) -> str:
+    netdev_lines = [
+        "  lo: 100 1 0 0 0 0 0 0 100 1 0 0 0 0 0 0",
+        "eth0: 1024 10 0 0 0 0 0 0 512 5 0 0 0 0 0 0",
+    ]
+    leases_lines = ["1700000000 aa:bb:cc:dd:ee:ff 192.168.1.10 Laptop 01:aa:bb:cc:dd:ee:ff"]
+    arp_flag = "0x2" if online_client else "0x0"
+    arp_lines = [
+        "IP address       HW type     Flags       HW address            Mask     Device",
+        f"192.168.1.10     0x1         {arp_flag}         aa:bb:cc:dd:ee:ff     *        br0",
+    ]
+    sections = [
+        ("WAN_STATE", [wan_state]),
+        ("WAN_IP", [wan_ip]),
+        ("WAN_IFNAME", [wan_ifname]),
+        ("PRODUCTID", [productid]),
+        ("NETDEV", netdev_lines),
+        ("LEASES", leases_lines),
+        ("ARP", arp_lines),
+    ]
+    lines: list[str] = []
+    for name, section_lines in sections:
+        lines.append(f"@@{name}@@")
+        lines.extend(section_lines)
+    return "\n".join(lines)
 
 
 def make_plugin(**settings) -> AsusRouterPlugin:
@@ -51,15 +108,8 @@ async def test_get_summary_masks_password():
     assert summary["has_password"] is True
 
 
-@respx.mock
-async def test_get_summary_when_connected_reports_wan_and_client_count():
-    respx.post("https://router.local:443/login.cgi").mock(return_value=httpx.Response(200, json=LOGIN_OK))
-    respx.post("https://router.local:443/appGet.cgi").mock(
-        side_effect=[
-            httpx.Response(200, json=WAN_RESPONSE),
-            httpx.Response(200, json=CLIENTLIST_RESPONSE),
-        ]
-    )
+async def test_get_summary_when_connected_reports_wan_and_client_count(monkeypatch):
+    monkeypatch.setattr(asyncssh, "connect", _fake_connect(stdout=_build_output()))
     plugin = make_plugin(**CONNECTED_SETTINGS)
 
     summary = await plugin.get_summary()
@@ -69,9 +119,8 @@ async def test_get_summary_when_connected_reports_wan_and_client_count():
     assert summary["client_count"] == 1
 
 
-@respx.mock
-async def test_get_summary_surfaces_error_without_raising():
-    respx.post("https://router.local:443/login.cgi").mock(side_effect=httpx.ConnectError("refused"))
+async def test_get_summary_surfaces_error_without_raising(monkeypatch):
+    monkeypatch.setattr(asyncssh, "connect", _fake_connect(connect_error=OSError("refused")))
     plugin = make_plugin(**CONNECTED_SETTINGS)
 
     summary = await plugin.get_summary()
@@ -93,20 +142,9 @@ async def test_get_detail_when_not_configured():
     assert detail["tx_bytes"] == 0
 
 
-@respx.mock
-async def test_get_detail_when_connected_reports_clients_and_traffic():
-    respx.post("https://router.local:443/login.cgi").mock(return_value=httpx.Response(200, json=LOGIN_OK))
-    respx.post("https://router.local:443/appGet.cgi").mock(
-        side_effect=[
-            # get_detail calls get_summary() (wan + clients) then re-fetches
-            # wan + clients itself before the traffic call.
-            httpx.Response(200, json=WAN_RESPONSE),
-            httpx.Response(200, json=CLIENTLIST_RESPONSE),
-            httpx.Response(200, json=WAN_RESPONSE),
-            httpx.Response(200, json=CLIENTLIST_RESPONSE),
-            httpx.Response(200, json=TRAFFIC_RESPONSE),
-        ]
-    )
+async def test_get_detail_when_connected_reports_clients_and_traffic(monkeypatch):
+    fake = _fake_connect(stdout=_build_output())
+    monkeypatch.setattr(asyncssh, "connect", fake)
     plugin = make_plugin(**CONNECTED_SETTINGS)
 
     detail = await plugin.get_detail()
@@ -116,11 +154,13 @@ async def test_get_detail_when_connected_reports_clients_and_traffic():
     assert detail["clients"] == [{"name": "Laptop", "ip": "192.168.1.10", "online": True}]
     assert detail["rx_bytes"] == 1024
     assert detail["tx_bytes"] == 512
+    # get_detail's wan+clients+traffic reads all land within the same
+    # short-lived status cache window, so they share a single SSH round trip.
+    assert fake.connection.run_calls == 1
 
 
-@respx.mock
-async def test_get_detail_surfaces_wan_error_without_raising():
-    respx.post("https://router.local:443/login.cgi").mock(side_effect=httpx.ConnectError("refused"))
+async def test_get_detail_surfaces_wan_error_without_raising(monkeypatch):
+    monkeypatch.setattr(asyncssh, "connect", _fake_connect(connect_error=OSError("refused")))
     plugin = make_plugin(**CONNECTED_SETTINGS)
 
     detail = await plugin.get_detail()
@@ -129,30 +169,6 @@ async def test_get_detail_surfaces_wan_error_without_raising():
     assert "error" in detail
     assert detail["clients"] == []
     assert detail["wan_ip"] is None
-
-
-@respx.mock
-async def test_get_detail_surfaces_traffic_error_without_raising():
-    respx.post("https://router.local:443/login.cgi").mock(return_value=httpx.Response(200, json=LOGIN_OK))
-    respx.post("https://router.local:443/appGet.cgi").mock(
-        side_effect=[
-            httpx.Response(200, json=WAN_RESPONSE),
-            httpx.Response(200, json=CLIENTLIST_RESPONSE),
-            httpx.Response(200, json=WAN_RESPONSE),
-            httpx.Response(200, json=CLIENTLIST_RESPONSE),
-            httpx.ConnectError("refused"),
-        ]
-    )
-    plugin = make_plugin(**CONNECTED_SETTINGS)
-
-    detail = await plugin.get_detail()
-
-    assert detail["connected"] is True
-    assert "error" in detail
-    assert detail["wan_ip"] == "203.0.113.5"
-    assert detail["clients"] == [{"name": "Laptop", "ip": "192.168.1.10", "online": True}]
-    assert detail["rx_bytes"] == 0
-    assert detail["tx_bytes"] == 0
 
 
 async def test_get_ai_tools_returns_status_tool():

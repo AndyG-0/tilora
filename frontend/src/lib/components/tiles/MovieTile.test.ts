@@ -18,33 +18,39 @@ describe('MovieTile', () => {
 
 	it('renders only sections that have entries', async () => {
 		widgetSummary.mockResolvedValue({
-			movies: [{ id: 1, title: 'A Movie', poster_url: 'https://example.com/a.jpg' }],
-			tv_shows: [],
-			trending_tv_shows: [],
+			popular_movies: [{ id: 1, title: 'A Movie', poster_url: 'https://example.com/a.jpg' }],
 		});
 
 		render(MovieTile, { props: { widgetId: 'movies' } });
 
-		expect(await screen.findByText('Movies')).toBeInTheDocument();
+		expect(await screen.findByText('Popular Movies')).toBeInTheDocument();
 		expect(screen.getByAltText('A Movie')).toBeInTheDocument();
-		expect(screen.queryByText('Shows')).not.toBeInTheDocument();
-		expect(screen.queryByText('Trending')).not.toBeInTheDocument();
+		expect(screen.queryByText('Popular Shows')).not.toBeInTheDocument();
+		expect(screen.queryByText('Trending Movies')).not.toBeInTheDocument();
+		expect(screen.queryByText('Trending Shows')).not.toBeInTheDocument();
 	});
 
-	it('renders all three sections when populated, skipping entries without a poster', async () => {
+	it('renders all six sections when populated, skipping entries without a poster', async () => {
 		widgetSummary.mockResolvedValue({
-			movies: [{ id: 1, title: 'A Movie', poster_url: 'https://example.com/a.jpg' }],
-			tv_shows: [{ id: 2, title: 'No Poster Show', poster_url: null }],
-			trending_tv_shows: [{ id: 3, title: 'Trending Show', poster_url: 'https://example.com/c.jpg' }],
+			popular_movies: [{ id: 1, title: 'A Movie', poster_url: 'https://example.com/a.jpg' }],
+			popular_tv_shows: [{ id: 2, title: 'No Poster Show', poster_url: null }],
+			trending_movies: [{ id: 3, title: 'Trending Movie', poster_url: 'https://example.com/c.jpg' }],
+			trending_tv_shows: [{ id: 4, title: 'Trending Show', poster_url: 'https://example.com/d.jpg' }],
+			on_streaming_movies: [{ id: 5, title: 'Streaming Movie', poster_url: 'https://example.com/e.jpg' }],
+			on_streaming_tv_shows: [{ id: 6, title: 'Streaming Show', poster_url: 'https://example.com/f.jpg' }],
 		});
 
 		render(MovieTile, { props: { widgetId: 'movies' } });
 
-		expect(await screen.findByText('Movies')).toBeInTheDocument();
-		expect(screen.getByText('Shows')).toBeInTheDocument();
-		expect(screen.getByText('Trending')).toBeInTheDocument();
+		expect(await screen.findByText('Popular Movies')).toBeInTheDocument();
+		expect(screen.getByText('Popular Shows')).toBeInTheDocument();
+		expect(screen.getByText('Trending Movies')).toBeInTheDocument();
+		expect(screen.getByText('Trending Shows')).toBeInTheDocument();
+		expect(screen.getByText('On Streaming: Movies')).toBeInTheDocument();
+		expect(screen.getByText('On Streaming: Shows')).toBeInTheDocument();
 		expect(screen.getByAltText('A Movie')).toBeInTheDocument();
 		expect(screen.queryByAltText('No Poster Show')).not.toBeInTheDocument();
 		expect(screen.getByAltText('Trending Show')).toBeInTheDocument();
+		expect(screen.getByAltText('Streaming Movie')).toBeInTheDocument();
 	});
 });

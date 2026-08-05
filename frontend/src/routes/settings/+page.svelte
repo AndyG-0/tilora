@@ -5,10 +5,13 @@
 	import { user, logout } from '$lib/stores/user';
 	import { device as currentDevice, renameDevice as renameCurrentDevice } from '$lib/stores/device';
 	import { reloadWidgets } from '$lib/stores/widgets';
+	import { getInsecureOriginInfo, type InsecureOriginInfo } from '$lib/network';
 
 	let settings = $state<AppSettings | null>(null);
 	let version = $state<VersionInfo | null>(null);
+	let insecureOriginInfo = $state<InsecureOriginInfo | null>(null);
 	let aiModelInput = $state('');
+	let aiReasoningEffortInput = $state('');
 	let timezoneInput = $state('UTC');
 	let anthropicKeyInput = $state('');
 	let openaiKeyInput = $state('');
@@ -76,6 +79,7 @@
 		try {
 			settings = await api.settings();
 			aiModelInput = settings.ai_model;
+			aiReasoningEffortInput = settings.ai_reasoning_effort;
 			timezoneInput = settings.timezone;
 			caldavUrlInput = settings.caldav_url;
 			caldavUsernameInput = settings.caldav_username;
@@ -189,6 +193,8 @@
 			// leave the update section hidden
 		}
 
+		insecureOriginInfo = getInsecureOriginInfo();
+
 		await loadDevices();
 	});
 
@@ -199,6 +205,7 @@
 		try {
 			const partial: Record<string, string> = {
 				ai_model: aiModelInput,
+				ai_reasoning_effort: aiReasoningEffortInput,
 				timezone: timezoneInput,
 				caldav_url: caldavUrlInput,
 				caldav_username: caldavUsernameInput,
@@ -419,6 +426,24 @@
 					<p class="hint">
 						Follows litellm's "&lt;provider&gt;/&lt;model&gt;" convention, e.g. anthropic/claude-sonnet-5, openai/gpt-5,
 						or gemini/gemini-2.5-flash.
+					</p>
+
+					<label>
+						Reasoning effort
+						<select bind:value={aiReasoningEffortInput}>
+							<option value="">Not set (provider default)</option>
+							<option value="none">None</option>
+							<option value="minimal">Minimal</option>
+							<option value="low">Low</option>
+							<option value="medium">Medium</option>
+							<option value="high">High</option>
+							<option value="xhigh">Extra high</option>
+						</select>
+					</label>
+					<p class="hint">
+						Only affects models that support tunable reasoning (OpenAI o-series/gpt-5.x, Anthropic extended thinking,
+						Gemini thinking) — ignored otherwise. Some OpenAI gpt-5.x models reject tool calls unless this is set to at
+						least "None".
 					</p>
 
 					<label>
@@ -742,6 +767,29 @@
 				{/if}
 			{/if}
 		</section>
+
+		{#if insecureOriginInfo?.needsInsecureOriginFlag}
+			<section>
+				<h3>Microphone access</h3>
+				<p class="hint">
+					This device is reached over plain HTTP at an internal IP address ({insecureOriginInfo.origin}). Chrome blocks
+					microphone access on insecure origins, so the voice assistant won't work here unless you allow it manually.
+					This isn't needed for sites served over HTTPS.
+				</p>
+				{#if insecureOriginInfo.isChrome}
+					<p class="hint">
+						Open <a href="chrome://flags/#unsafely-treat-insecure-origin-as-secure" target="_blank" rel="noreferrer"
+							>chrome://flags/#unsafely-treat-insecure-origin-as-secure</a
+						>, add <code>{insecureOriginInfo.origin}</code> to the list, enable it, and relaunch Chrome.
+					</p>
+				{:else}
+					<p class="hint">
+						In Chrome, open <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>, add
+						<code>{insecureOriginInfo.origin}</code> to the list, enable it, and relaunch Chrome.
+					</p>
+				{/if}
+			</section>
+		{/if}
 
 		{#if version}
 			<section>

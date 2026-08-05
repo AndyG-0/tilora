@@ -14,6 +14,7 @@
 	let platformInput = $state('pc');
 	let saving = $state(false);
 	let error = $state<string | null>(null);
+	let avatarFailed = $state(false);
 
 	const widgetId = $derived(page.params.id!);
 
@@ -121,8 +122,10 @@
 		{#if bf6.player}
 			<h2>Player</h2>
 			<div class="player-card">
-				{#if bf6.player.avatar}
-					<img class="avatar" src={bf6.player.avatar} alt="" />
+				{#if bf6.player.avatar && !avatarFailed}
+					{#key bf6.player.avatar}
+						<img class="avatar" src={bf6.player.avatar} alt="" onerror={() => (avatarFailed = true)} />
+					{/key}
 				{/if}
 				<div class="player-name">{bf6.player.user_name}</div>
 			</div>

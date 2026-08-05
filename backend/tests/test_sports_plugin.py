@@ -1,10 +1,22 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import httpx
 import respx
 
 from app.plugins.sports.plugin import SportsPlugin
 from app.storage.cache import cache
+
+
+def _iso_today(hour: int = 18) -> str:
+    return datetime.now(UTC).replace(hour=hour, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%MZ")
+
+
+def _iso_tomorrow(hour: int = 18) -> str:
+    tomorrow = datetime.now(UTC) + timedelta(days=1)
+    return tomorrow.replace(hour=hour, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%MZ")
+
 
 NFL_SCOREBOARD = {
     "events": [
@@ -349,17 +361,107 @@ async def test_responses_are_cached_between_calls():
     assert route.call_count == 1
 
 
-async def test_get_ai_tools_returns_upcoming_and_trending_games_tools():
+async def test_get_ai_tools_returns_upcoming_trending_and_todays_games_tools(tmp_db):
     cache._store.clear()
     plugin = make_plugin(teams=[])
 
     tools = plugin.get_ai_tools()
 
-    assert [t.name for t in tools] == ["get_upcoming_games_sports", "get_trending_games_sports"]
+    assert [t.name for t in tools] == [
+        "get_upcoming_games_sports",
+        "get_trending_games_sports",
+        "get_todays_games_sports",
+    ]
     result = await tools[0].handler()
     assert result == {"configured": False, "games": [], "trending": []}
     trending_result = await tools[1].handler()
     assert trending_result == {"games": []}
+    todays_result = await tools[2].handler()
+    assert todays_result == {"games": []}
+
+
+@respx.mock
+async def test_get_todays_games_includes_followed_team_game_happening_today(tmp_db):
+    cache._store.clear()
+    schedule = {
+        "team": {"displayName": "Dallas Cowboys"},
+        "events": [
+            {
+                "id": "100",
+                "date": _iso_today(),
+                "competitions": [
+                    {
+                        "date": _iso_today(),
+                        "venue": {"fullName": "AT&T Stadium"},
+                        "competitors": [
+                            {"homeAway": "home", "team": {"displayName": "Dallas Cowboys", "abbreviation": "DAL"}},
+                            {"homeAway": "away", "team": {"displayName": "New York Giants", "abbreviation": "NYG"}},
+                        ],
+                        "broadcasts": [{"market": "national", "names": ["FOX"]}],
+                        "status": {"type": {"state": "pre", "completed": False, "shortDetail": "today"}},
+                    }
+                ],
+            },
+            {
+                "id": "101",
+                "date": _iso_tomorrow(),
+                "competitions": [
+                    {
+                        "date": _iso_tomorrow(),
+                        "venue": {"fullName": "AT&T Stadium"},
+                        "competitors": [
+                            {"homeAway": "home", "team": {"displayName": "Dallas Cowboys", "abbreviation": "DAL"}},
+                            {"homeAway": "away", "team": {"displayName": "Chicago Bears", "abbreviation": "CHI"}},
+                        ],
+                        "broadcasts": [{"market": "national", "names": ["CBS"]}],
+                        "status": {"type": {"state": "pre", "completed": False, "shortDetail": "tomorrow"}},
+                    }
+                ],
+            },
+        ],
+    }
+    respx.get(DAL_URL).mock(return_value=httpx.Response(200, json=schedule))
+    plugin = make_plugin(teams=[{"league": "nfl", "team": "DAL"}])
+
+    result = await plugin._fetch_todays_games()
+
+    assert [g["id"] for g in result["games"]] == ["100"]
+    assert result["games"][0]["broadcast_links"] == [{"name": "FOX", "url": "https://www.fox.com/live"}]
+
+
+@respx.mock
+async def test_get_todays_games_excludes_games_not_happening_today(tmp_db):
+    cache._store.clear()
+    respx.get(DAL_URL).mock(return_value=httpx.Response(200, json=DAL_SCHEDULE))
+    plugin = make_plugin(teams=[{"league": "nfl", "team": "DAL"}])
+
+    result = await plugin._fetch_todays_games()
+
+    # DAL_SCHEDULE's only upcoming game is dated 2026-09-14, not "today".
+    assert result["games"] == []
+
+
+@respx.mock
+async def test_get_todays_games_merges_trending_and_dedupes_by_id(tmp_db):
+    cache._store.clear()
+    respx.get(NFL_SCOREBOARD_URL).mock(return_value=httpx.Response(200, json=NFL_SCOREBOARD))
+    # Same game id as NFL_SCOREBOARD's first event, but dated "today" (real
+    # time) so it passes the followed-team side's today-filter — this is
+    # what should get deduped against trending's copy of the same game.
+    dal_game_today = {
+        **NFL_SCOREBOARD["events"][0],
+        "date": _iso_today(),
+        "competitions": [{**NFL_SCOREBOARD["events"][0]["competitions"][0], "date": _iso_today()}],
+    }
+    dal_schedule = {"team": {"displayName": "Dallas Cowboys"}, "events": [dal_game_today]}
+    respx.get(DAL_URL).mock(return_value=httpx.Response(200, json=dal_schedule))
+    plugin = make_plugin(teams=[{"league": "nfl", "team": "DAL"}], trending_leagues=["nfl"])
+
+    result = await plugin._fetch_todays_games()
+
+    # Game "10" is a followed (DAL) game that also shows up in trending — it
+    # should appear once, and game "11" (trending-only) should still show.
+    assert sorted(g["id"] for g in result["games"]) == ["10", "11"]
 
 
 @respx.mock
