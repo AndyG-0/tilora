@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import httpx
 import respx
 
@@ -106,7 +108,7 @@ async def test_get_detail_uses_calendar_id_setting(tmp_db):
 
 
 @respx.mock
-async def test_get_ai_tools_exposes_upcoming_events_tool(tmp_db):
+async def test_get_ai_tools_exposes_upcoming_and_todays_events_tools(tmp_db):
     db.save_oauth_tokens(
         "google_calendar", refresh_token="r1", access_token="a1", expires_at="2099-01-01T00:00:00+00:00"
     )
@@ -115,11 +117,34 @@ async def test_get_ai_tools_exposes_upcoming_events_tool(tmp_db):
 
     tools = plugin.get_ai_tools()
 
-    assert len(tools) == 1
-    assert tools[0].name == "get_upcoming_events"
+    assert [t.name for t in tools] == ["get_upcoming_events_calendar", "get_todays_events_calendar"]
     result = await tools[0].handler()
     assert result["connected"] is True
     assert result["events"][0]["title"] == "Team sync"
+
+
+@respx.mock
+async def test_get_todays_events_filters_to_events_happening_today(tmp_db):
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    tomorrow = (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%d")
+    events_response = {
+        "items": [
+            {"id": "t1", "summary": "Standup", "start": {"dateTime": f"{today}T10:00:00Z"}},
+            {"id": "t2", "summary": "Holiday", "start": {"date": today}},
+            {"id": "t3", "summary": "Later", "start": {"dateTime": f"{tomorrow}T10:00:00Z"}},
+        ]
+    }
+    db.save_oauth_tokens(
+        "google_calendar", refresh_token="r1", access_token="a1", expires_at="2099-01-01T00:00:00+00:00"
+    )
+    respx.get(EVENTS_URL).mock(return_value=httpx.Response(200, json=events_response))
+    plugin = make_plugin()
+
+    tools = plugin.get_ai_tools()
+    result = await tools[1].handler()
+
+    assert result["connected"] is True
+    assert sorted(e["id"] for e in result["events"]) == ["t1", "t2"]
 
 
 async def test_get_summary_caldav_not_configured(tmp_db):

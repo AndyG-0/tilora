@@ -17,8 +17,7 @@ const notConnected = {
 	wan_connected: false,
 	client_count: 0,
 	host: '',
-	port: 443,
-	use_https: true,
+	ssh_port: 22,
 	username: '',
 	has_password: false,
 	wan_ip: null,
@@ -32,8 +31,7 @@ const connected = {
 	wan_connected: true,
 	client_count: 2,
 	host: 'router.local',
-	port: 443,
-	use_https: true,
+	ssh_port: 22,
 	username: 'admin',
 	has_password: true,
 	wan_ip: '203.0.113.5',
@@ -107,8 +105,7 @@ describe('AsusRouterDetail', () => {
 		await vi.waitFor(() =>
 			expect(updateWidgetSettings).toHaveBeenCalledWith('asus_router', {
 				host: 'newhost.local',
-				port: 443,
-				use_https: true,
+				ssh_port: 22,
 				username: 'admin',
 			}),
 		);

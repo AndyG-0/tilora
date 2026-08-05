@@ -16,6 +16,7 @@ const notConfigured = {
 	current_game: null,
 	recent_games: [],
 	friends: [],
+	news: [],
 	steamid: '',
 	has_api_key: false,
 };
@@ -51,6 +52,20 @@ const configured = {
 			status: 'Offline',
 			online: false,
 			current_game: null,
+		},
+	],
+	news: [
+		{
+			gid: '1',
+			title: 'Half-Life 2 Update Released',
+			url: 'https://example.com/news/1',
+			author: 'Valve',
+			contents: 'Fixed some bugs and issues.',
+			feedlabel: 'Updates',
+			date: 1700000000,
+			is_external_url: true,
+			appid: 220,
+			game_name: 'Half-Life 2',
 		},
 	],
 	steamid: '76561197960435530',
@@ -161,5 +176,23 @@ describe('SteamDetail', () => {
 		await fireEvent.click(screen.getByText('Save'));
 
 		expect(await screen.findByText('Could not save the Steam settings.')).toBeInTheDocument();
+	});
+
+	it('renders news items with title, game tag, and an external link', () => {
+		render(SteamDetail, { props: { data: configured } });
+
+		const link = screen.getByText('Half-Life 2 Update Released');
+		expect(link).toBeInTheDocument();
+		expect(link).toHaveAttribute('href', 'https://example.com/news/1');
+		expect(link).toHaveAttribute('target', '_blank');
+		expect(link).toHaveAttribute('rel', 'noreferrer');
+		expect(screen.getByText('Fixed some bugs and issues.')).toBeInTheDocument();
+		expect(screen.getAllByText('Half-Life 2').length).toBeGreaterThan(0);
+	});
+
+	it('shows an empty-state hint when there is no news', () => {
+		render(SteamDetail, { props: { data: { ...configured, news: [] } } });
+
+		expect(screen.getByText('No recent news.')).toBeInTheDocument();
 	});
 });

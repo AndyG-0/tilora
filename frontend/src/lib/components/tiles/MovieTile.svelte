@@ -11,10 +11,22 @@
 	}
 
 	interface MoviesSummary {
-		movies: Movie[];
-		tv_shows: Movie[];
-		trending_tv_shows: Movie[];
+		popular_movies?: Movie[];
+		popular_tv_shows?: Movie[];
+		trending_movies?: Movie[];
+		trending_tv_shows?: Movie[];
+		on_streaming_movies?: Movie[];
+		on_streaming_tv_shows?: Movie[];
 	}
+
+	const SECTIONS: { key: keyof MoviesSummary; title: string }[] = [
+		{ key: 'popular_movies', title: 'Popular Movies' },
+		{ key: 'trending_movies', title: 'Trending Movies' },
+		{ key: 'popular_tv_shows', title: 'Popular Shows' },
+		{ key: 'trending_tv_shows', title: 'Trending Shows' },
+		{ key: 'on_streaming_movies', title: 'On Streaming: Movies' },
+		{ key: 'on_streaming_tv_shows', title: 'On Streaming: Shows' },
+	];
 
 	let { widgetId }: { widgetId: string } = $props();
 
@@ -36,42 +48,21 @@
 		{#if summary}
 			<div class="scroll-wrap">
 				<div class="list" use:scrollFade={summary}>
-					{#if summary.movies.length}
-						<div class="section">
-							<div class="title">Movies</div>
-							<div class="posters">
-								{#each summary.movies as movie (movie.id)}
-									{#if movie.poster_url}
-										<img class="poster" src={movie.poster_url} alt={movie.title} />
-									{/if}
-								{/each}
+					{#each SECTIONS as section (section.key)}
+						{@const items = summary[section.key]}
+						{#if items?.length}
+							<div class="section">
+								<div class="title">{section.title}</div>
+								<div class="posters">
+									{#each items as movie (movie.id)}
+										{#if movie.poster_url}
+											<img class="poster" src={movie.poster_url} alt={movie.title} />
+										{/if}
+									{/each}
+								</div>
 							</div>
-						</div>
-					{/if}
-					{#if summary.tv_shows.length}
-						<div class="section">
-							<div class="title">Shows</div>
-							<div class="posters">
-								{#each summary.tv_shows as show (show.id)}
-									{#if show.poster_url}
-										<img class="poster" src={show.poster_url} alt={show.title} />
-									{/if}
-								{/each}
-							</div>
-						</div>
-					{/if}
-					{#if summary.trending_tv_shows.length}
-						<div class="section">
-							<div class="title">Trending</div>
-							<div class="posters">
-								{#each summary.trending_tv_shows as show (show.id)}
-									{#if show.poster_url}
-										<img class="poster" src={show.poster_url} alt={show.title} />
-									{/if}
-								{/each}
-							</div>
-						</div>
-					{/if}
+						{/if}
+					{/each}
 				</div>
 			</div>
 		{:else}

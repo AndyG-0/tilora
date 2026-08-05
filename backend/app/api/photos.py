@@ -4,7 +4,11 @@ iCloud Shared Album, or the private iCloud Photos library.
 A dedicated route rather than folding into `widgets.py`, since it streams
 bytes (or redirects to a CDN URL) rather than JSON, and needs the widget's
 `settings` to resolve a safe on-disk path, a fresh CDN URL, or an
-authenticated download.
+authenticated download. Settings are read from the *live* registered plugin
+instance (not `app.config.widget_config`, which only reflects
+`dashboard.yaml` and misses DB-persisted overrides) so a directory/token/key
+just saved from the widget's detail view works immediately — same reasoning
+as `app/api/jellyfin.py` and `app/api/pihole.py`.
 """
 
 from __future__ import annotations
@@ -15,23 +19,25 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import FileResponse, RedirectResponse
 
 from app.auth import get_current_user
-from app.config import effective_settings, widget_config
+from app.config import effective_settings
 from app.integrations import icloud_photos, icloud_shared_album, immich_client
-from app.plugins.photos.plugin import IMAGE_EXTENSIONS
+from app.plugins.base import registry
+from app.plugins.photos.plugin import IMAGE_EXTENSIONS, PhotosPlugin
 
 router = APIRouter(prefix="/api/photos", tags=["photos"], dependencies=[Depends(get_current_user)])
 
 
+def _get_plugin(widget_id: str) -> PhotosPlugin:
+    plugin = registry.get(widget_id)
+    if not isinstance(plugin, PhotosPlugin):
+        raise HTTPException(status_code=404, detail=f"Unknown photos widget '{widget_id}'")
+    return plugin
+
+
 @router.get("/{widget_id}/{filename:path}")
 async def get_photo(widget_id: str, filename: str):
-    try:
-        widget = widget_config(widget_id)
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"Unknown widget '{widget_id}'") from None
-    if widget["type"] != "photos":
-        raise HTTPException(status_code=404, detail=f"Widget '{widget_id}' is not a photos widget")
-
-    settings = widget["settings"]
+    plugin = _get_plugin(widget_id)
+    settings = plugin.config["settings"]
     provider = settings.get("provider")
     if provider == "icloud_shared":
         return await _get_icloud_photo(settings, filename)

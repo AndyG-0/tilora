@@ -24,7 +24,7 @@ scheduler = AsyncIOScheduler()
 
 async def run_ai_widget(plugin: AIInsightsPlugin) -> None:
     try:
-        text = await assistant.ask(plugin.prompt)
+        text = await assistant.ask(plugin.prompt, allowed_widget_ids=plugin.topics or None)
         await asyncio.to_thread(db.record_ai_run, plugin.id, {"text": text})
         logger.info("AI widget '%s' ran successfully", plugin.id)
     except Exception:

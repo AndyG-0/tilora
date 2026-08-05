@@ -59,6 +59,27 @@ async def test_get_detail_includes_prompt_and_cron(tmp_db):
     assert detail["cron"] == "30 6 * * *"
 
 
+async def test_get_detail_includes_topics(tmp_db):
+    plugin = AIInsightsPlugin(
+        {
+            "id": "ai-insights",
+            "settings": {"cron": "30 6 * * *", "prompt": "Say hello", "topics": ["calendar", "weather"]},
+        }
+    )
+
+    detail = await plugin.get_detail()
+
+    assert detail["topics"] == ["calendar", "weather"]
+
+
+async def test_get_detail_defaults_topics_to_empty_list(tmp_db):
+    plugin = make_plugin()
+
+    detail = await plugin.get_detail()
+
+    assert detail["topics"] == []
+
+
 async def test_prompt_and_cron_properties():
     plugin = make_plugin()
     assert plugin.prompt == "Say hello"

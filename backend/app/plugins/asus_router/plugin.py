@@ -1,10 +1,11 @@
 """Asus Router plugin: connected-client count and WAN status from an
-AsusWRT/Merlin router (see `app/integrations/asus_router_client.py` for the
-token-auth flow against the router's `appGet.cgi` hook interface).
+AsusWRT/Merlin router, read over SSH (see
+`app/integrations/asus_router_client.py` for why SSH rather than the
+router's web-UI login, and for the `nvram`/`/proc` data it reads).
 
-Connects via a router admin account's username/password; until connected,
-get_summary/get_detail return a not-connected state rather than raising, so
-the widget degrades gracefully.
+Connects via a router admin account's username/password over SSH; until
+connected, get_summary/get_detail return a not-connected state rather than
+raising, so the widget degrades gracefully.
 """
 
 from __future__ import annotations
@@ -21,8 +22,7 @@ class AsusRouterPlugin(Plugin):
     refresh_interval_seconds = 30
     default_settings: ClassVar[dict[str, Any]] = {
         "host": "",
-        "port": 443,
-        "use_https": True,
+        "ssh_port": 22,
         "username": "",
         "password": "",
     }
@@ -31,8 +31,7 @@ class AsusRouterPlugin(Plugin):
         s = self.config["settings"]
         return {
             "host": s.get("host", ""),
-            "port": s.get("port", 443),
-            "use_https": bool(s.get("use_https", True)),
+            "ssh_port": s.get("ssh_port", 22),
             "username": s.get("username", ""),
             "has_password": bool(s.get("password")),
         }

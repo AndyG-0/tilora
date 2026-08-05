@@ -16,16 +16,31 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 import httpx
 
-from app.config import effective_settings
+from app.config import effective_settings, resolve_timezone
 from app.integrations import caldav_client, google_oauth, microsoft_oauth
 from app.plugins.base import Plugin, ToolDef
 
 _EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/{calendar_id}/events"
 _MICROSOFT_EVENTS_URL = "https://graph.microsoft.com/v1.0/me/calendarView"
 _SUMMARY_EVENT_COUNT = 5
+
+
+def _event_is_today(event: dict[str, Any], tz: ZoneInfo) -> bool:
+    start = event.get("start")
+    if not start:
+        return False
+    today = datetime.now(tz).strftime("%Y-%m-%d")
+    if event.get("all_day"):
+        return start[:10] == today
+    try:
+        event_start = datetime.fromisoformat(start)
+    except ValueError:
+        return False
+    return event_start.astimezone(tz).strftime("%Y-%m-%d") == today
 
 
 class CalendarPlugin(Plugin):
@@ -203,13 +218,26 @@ class CalendarPlugin(Plugin):
         async def get_upcoming_events() -> dict[str, Any]:
             return await self.get_summary()
 
+        async def get_todays_events() -> dict[str, Any]:
+            events = await self._fetch_events()
+            tz = resolve_timezone(effective_settings()["timezone"])
+            todays_events = [event for event in events if _event_is_today(event, tz)]
+            return {"connected": self._is_connected(), "provider": self.provider, "events": todays_events}
+
         return [
             ToolDef(
-                name="get_upcoming_events",
-                description="Get the person's upcoming calendar events.",
+                name=f"get_upcoming_events_{self.id}",
+                description=f"Get the person's upcoming events from their {self.name}.",
                 parameters={"type": "object", "properties": {}},
                 handler=get_upcoming_events,
-            )
+            ),
+            ToolDef(
+                name=f"get_todays_events_{self.id}",
+                description=f"Get the person's {self.name} events happening today. Use this for requests "
+                "like 'what's on my calendar today', 'read my calendar', or 'do I have anything today'.",
+                parameters={"type": "object", "properties": {}},
+                handler=get_todays_events,
+            ),
         ]
 
 

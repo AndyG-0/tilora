@@ -1,128 +1,66 @@
-"""Asus router (AsusWRT/Merlin firmware) HTTP client for the Asus Router
+"""Asus router (AsusWRT/Merlin firmware) SSH client for the Asus Router
 plugin.
 
-Auth is token-based, same cache-until-rejected shape as `synology_client`:
-`POST /login.cgi` with a base64 `user:pass` `login_authorization` field
-returns an `asus_token`, cached in-memory (see `storage/cache.py`) and sent
-as a cookie on every subsequent request until one comes back
-unauthorized, at which point one re-auth-and-retry happens.
+The router's stock web UI only allows one active login session at a time —
+authenticating over HTTP the way a browser tab would meant any second
+Tilora backend (or the user's own browser login to the router's admin UI)
+would silently kick the others back to the login page. SSH is a separate
+login path on Merlin firmware and isn't subject to that same single-session
+limit, so any number of Tilora backends can read status concurrently
+without stepping on each other or on the router's own web admin UI.
 
-Data comes from the router's `appGet.cgi` "hook" endpoint, the same
-JSON-RPC-ish interface the stock web UI uses internally. The exact hook
-names/response shapes below (`get_clientlist`, `wanlink`, `netdev`) are
-long-standing conventions across AsusWRT/Merlin firmware versions but are
-not formally documented by Asus, so treat unexpected response shapes from a
-real router as a firmware-version quirk to account for rather than a bug
-here.
+Each poll opens one SSH connection and runs a single batched shell command
+that echoes `nvram`/`/proc`/`dnsmasq` output for WAN status, connected
+clients, and WAN traffic, all in one round trip (see `_REMOTE_COMMAND`).
+The `nvram` key names and file paths here are long-standing, widely used
+Merlin conventions (the same ones Home Assistant's `asuswrt` integration
+relies on) but aren't formally documented by Asus — treat an unexpected/
+empty parse from a real router as a firmware-version quirk to account for
+rather than a bug here.
+
+"Online" status for a client is approximated from ARP table presence
+(MAC/IP pairs the router has recently resolved) rather than true wireless
+association state — reading `wl`/`dhd` assoc lists is chipset/model
+specific enough that it isn't worth the fragility here.
 """
 
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
-import httpx
+import asyncssh
 
 from app.storage.cache import cache
 
 _LOGGER = logging.getLogger(__name__)
 
-_SESSION_TTL_SECONDS = 1800
+_STATUS_TTL_SECONDS = 20
+_CONNECT_TIMEOUT_SECONDS = 10
+_COMMAND_TIMEOUT_SECONDS = 10
 
-_USER_AGENT = "Mozilla/5.0 (compatible; Tilora)"
+# Each command's output is wrapped between an echoed marker line so one SSH
+# round trip can gather everything a poll needs instead of opening a new
+# connection per data point.
+_REMOTE_SECTIONS = [
+    ("WAN_STATE", "nvram get wan0_state_t"),
+    ("WAN_IP", "nvram get wan0_ipaddr"),
+    ("WAN_IFNAME", "nvram get wan0_ifname"),
+    ("PRODUCTID", "nvram get productid"),
+    ("NETDEV", "cat /proc/net/dev"),
+    ("LEASES", "cat /var/lib/misc/dnsmasq.leases 2>/dev/null"),
+    ("ARP", "cat /proc/net/arp"),
+]
+_REMOTE_COMMAND = "; ".join(f"echo @@{name}@@; {cmd}" for name, cmd in _REMOTE_SECTIONS)
+_SECTION_MARKER_PATTERN = re.compile(r"@@([A-Z_]+)@@")
 
-# Field names/values captured from a real browser's login POST to a Merlin
-# router's Main_Login.asp form (verified via a live DevTools trace against
-# the user's own router). action_mode and next_page must be sent EMPTY, not
-# populated with plausible-looking values ("apply"/"index.asp") — the
-# firmware rejects the login (re-serving the login page instead of
-# validating credentials) when they're anything else, and login_captcha,
-# while always empty on this firmware, must still be present as a field.
-_LOGIN_FORM_FIELDS = {
-    "group_id": "",
-    "action_mode": "",
-    "action_script": "",
-    "action_wait": "5",
-    "current_page": "Main_Login.asp",
-    "next_page": "",
-    "login_captcha": "",
-}
-
-
-# Some hooks (observed on `wanlink()`) don't return JSON at all — they
-# return a blob of JS meant to be eval()'d, defining a bunch of top-level
-# `function name() { return <value>; }` declarations that the stock web UI
-# calls individually to read each field. Extract those name/value pairs
-# directly instead of trying to parse the surrounding (non-JSON, often
-# malformed-looking) wrapper.
-_HOOK_JS_FUNCTION_PATTERN = re.compile(
-    r"function\s+([A-Za-z0-9_]+)\s*\(\s*\)\s*\{\s*return\s+(.*?)\s*;\s*\}", re.DOTALL
-)
-
-
-def _parse_js_literal(raw: str) -> Any:
-    raw = raw.strip()
-    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ("'", '"'):
-        return raw[1:-1]
-    try:
-        return int(raw)
-    except ValueError:
-        pass
-    try:
-        return float(raw)
-    except ValueError:
-        return raw
-
-
-def _parse_js_hook_functions(text: str) -> dict[str, Any] | None:
-    matches = _HOOK_JS_FUNCTION_PATTERN.findall(text)
-    if not matches:
-        return None
-    return {name: _parse_js_literal(value) for name, value in matches}
-
-
-# `netdev(appobj)` returns yet another non-JSON shape: a JS object literal
-# with single-quoted keys and bare (often hex, e.g. `0xc1ea8ae3a` — plain
-# decimal can't hold some of these 64-bit byte counters as a JS float
-# without losing precision) numeric values, nested inside a malformed
-# `{"netdev":{netdev = {...}}}` wrapper. Pull the per-interface rx/tx pairs
-# out directly rather than trying to fix up the wrapper into valid JSON.
-_HOOK_NETDEV_ENTRY_PATTERN = re.compile(
-    r"'([A-Za-z0-9_]+)'\s*:\s*\{\s*rx\s*:\s*(0[xX][0-9a-fA-F]+|\d+)\s*,\s*tx\s*:\s*(0[xX][0-9a-fA-F]+|\d+)\s*\}"
-)
-
-
-def _parse_int_literal(raw: str) -> int:
-    return int(raw, 16) if raw.lower().startswith("0x") else int(raw)
-
-
-def _parse_js_netdev_response(text: str) -> dict[str, Any] | None:
-    matches = _HOOK_NETDEV_ENTRY_PATTERN.findall(text)
-    if not matches:
-        return None
-    netdev: dict[str, int] = {}
-    for iface, rx, tx in matches:
-        netdev[f"{iface}_rx"] = _parse_int_literal(rx)
-        netdev[f"{iface}_tx"] = _parse_int_literal(tx)
-    return {"netdev": netdev}
-
-
-def _html_snippet(html: str) -> str:
-    """Best-effort short description of an HTML page, for error messages.
-
-    Prefers the <title>; falls back to the first chunk of visible text.
-    Not meant to be exhaustive — just enough to tell "login form" apart from
-    "captcha challenge" apart from "device is rebooting" in a bug report.
-    """
-    match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
-    text = match.group(1) if match else html
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text[:80] or "untitled page"
+# Merlin's documented wan0_state_t value for "connected" (WAN_STOPPED = 0,
+# ... WAN_STATE_CONNECTED = 2, ...). The status string equivalent used by
+# the old HTTP hook (`wanlink_statusstr`) isn't available over this path.
+_WAN_STATE_CONNECTED = "2"
 
 
 class AsusRouterError(Exception):
@@ -130,256 +68,188 @@ class AsusRouterError(Exception):
 
 
 @dataclass
-class AsusRouterSession:
-    token: str
+class AsusRouterStatus:
+    wan_connected: bool
+    wan_ip: str | None
+    product_id: str
+    clients: list[dict[str, Any]] = field(default_factory=list)
+    rx_bytes: int = 0
+    tx_bytes: int = 0
 
 
 def is_configured(settings: dict[str, Any]) -> bool:
     return bool(settings.get("host")) and bool(settings.get("username")) and bool(settings.get("password"))
 
 
-def _base_url(settings: dict[str, Any]) -> str:
-    use_https = settings.get("use_https", True)
-    if isinstance(use_https, str):
-        use_https = use_https.strip().lower() not in ("", "0", "false", "no")
-    scheme = "https" if use_https else "http"
-    default_port = 443 if scheme == "https" else 80
+def _ssh_port(settings: dict[str, Any]) -> int:
     # Settings can round-trip through JSON storage/APIs that don't guarantee
-    # `port` stays a native int (e.g. a stringified "80"), so coerce it
-    # rather than comparing raw — see the port-omission comment below for why
-    # a wrong type here silently reintroduces a CSRF-check failure. Check
-    # for unset/blank explicitly rather than falsiness so a literal port 0
-    # isn't mistaken for "not configured" and swapped for the default.
-    raw_port = settings.get("port")
+    # `ssh_port` stays a native int (e.g. a stringified "22").
+    raw_port = settings.get("ssh_port")
     try:
-        port = default_port if raw_port in (None, "") else int(raw_port)
+        return 22 if raw_port in (None, "") else int(raw_port)
     except (TypeError, ValueError):
-        port = default_port
-    host = settings["host"]
-    # Omit the port when it's the scheme's default, matching what a real
-    # browser sends as Origin/Referer/Host (e.g. "http://192.168.50.1", not
-    # "http://192.168.50.1:80"). Some router firmware does a literal
-    # string/prefix check of Origin/Referer against the LAN IP as a CSRF
-    # guard, and a stray ":80"/":443" suffix fails that check — the request
-    # then gets silently bounced back to the login page instead of being
-    # validated, indistinguishable from a rejected password.
-    if port == default_port:
-        return f"{scheme}://{host}"
-    return f"{scheme}://{host}:{port}"
+        return 22
 
 
-async def _authenticate(base_url: str, widget_id: str, username: str, password: str) -> AsusRouterSession:
-    credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
-    request_headers = {
-        "User-Agent": _USER_AGENT,
-        "Referer": f"{base_url}/Main_Login.asp",
-        "Origin": base_url,
-    }
-    async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-        try:
-            response = await client.post(
-                f"{base_url}/login.cgi",
-                data={**_LOGIN_FORM_FIELDS, "login_authorization": credentials},
-                headers=request_headers,
-            )
-        except httpx.HTTPError as exc:
-            raise AsusRouterError(f"Could not reach the router: {exc}") from exc
-
-        # Read from the client's accumulated cookie jar, not just the final
-        # response's own cookies — if the firmware sets asus_token on a 302
-        # and then redirects to a page that doesn't repeat the header,
-        # `response.cookies` alone would miss it once follow_redirects hops
-        # past that first response.
-        token = client.cookies.get("asus_token") or response.cookies.get("asus_token")
-
-    if response.status_code >= 400:
-        raise AsusRouterError(f"Router login failed (HTTP {response.status_code}).")
-
-    body: dict[str, Any] | None = None
-    if not token:
-        try:
-            body = response.json()
-            token = body.get("asus_token")
-        except ValueError:
-            body = None
-    if not token:
-        if body is not None and body.get("error_status"):
-            # Merlin firmware's login-attempt-limit/lockout signal — a
-            # distinct failure from a plain wrong password.
-            raise AsusRouterError(
-                f"Router rejected the login attempt (error_status {body['error_status']}) — it may be "
-                "temporarily locked out after repeated failed attempts."
-            )
-        content_type = response.headers.get("content-type", "")
-        if "text/html" in content_type:
-            snippet = _html_snippet(response.text)
-            # Logged at warning level (not the credentials) so the exact
-            # request this process actually sent is available in the
-            # console the next time this happens, instead of requiring
-            # another manual browser-vs-backend comparison.
-            _LOGGER.warning(
-                "ASUS login POST %s/login.cgi rejected: sent headers=%s form-keys=%s -> status=%s "
-                "content-type=%s body[:200]=%r",
-                base_url,
-                request_headers,
-                sorted(_LOGIN_FORM_FIELDS),
-                response.status_code,
-                content_type,
-                response.text[:200],
-            )
-            raise AsusRouterError(
-                f'Router returned its login page instead of a token (page: "{snippet}") — double check the '
-                "host/port/use_https settings match how the router is actually reached. This can also "
-                "happen if someone is currently logged into the router's own admin page from another "
-                "device — AsusWRT/Merlin only allows one active session, so wait about a minute for that "
-                "session to go idle and this will reconnect on its own. If neither applies, this firmware "
-                "may require a login flow (e.g. a CSRF token from the login page, or a captcha) that isn't "
-                "supported yet."
-            )
-        raise AsusRouterError("Router rejected that username/password.")
-
-    session = AsusRouterSession(token=token)
-    cache.set(f"asus_token:{widget_id}", session, _SESSION_TTL_SECONDS)
-    return session
-
-
-# AsusWRT/Merlin only tracks one active login session at a time, so two
-# concurrent requests racing to re-authenticate (e.g. both hitting a cold
-# cache) would each invalidate the other's freshly-issued token on the
-# router. Serializing per widget_id means only one of them actually calls
-# login.cgi; the rest just read the cache entry it fills in.
-_session_locks: dict[str, asyncio.Lock] = {}
-
-
-def _session_lock(widget_id: str) -> asyncio.Lock:
-    return _session_locks.setdefault(widget_id, asyncio.Lock())
-
-
-async def _resolve_session(
-    settings: dict[str, Any], widget_id: str, *, force_reauth: bool = False
-) -> AsusRouterSession:
-    cache_key = f"asus_token:{widget_id}"
-    if not force_reauth:
-        session = cache.get(cache_key)
-        if session is not None:
-            return session
-    async with _session_lock(widget_id):
-        # Re-check after acquiring the lock — another caller may have
-        # already refreshed the session while we were waiting.
-        session = None if force_reauth else cache.get(cache_key)
-        if session is None:
-            base_url = _base_url(settings)
-            session = await _authenticate(
-                base_url, widget_id, settings.get("username") or "", settings.get("password") or ""
-            )
-        return session
-
-
-async def _hook(hook_call: str, *, settings: dict[str, Any], widget_id: str) -> Any:
-    base_url = _base_url(settings)
-    session = await _resolve_session(settings, widget_id)
-
-    async def send(session: AsusRouterSession) -> httpx.Response:
-        cookies = httpx.Cookies()
-        cookies.set("asus_token", session.token)
-        async with httpx.AsyncClient(timeout=10, cookies=cookies, follow_redirects=True) as client:
-            return await client.post(
-                f"{base_url}/appGet.cgi",
-                data={"hook": hook_call},
-                headers={"User-Agent": _USER_AGENT, "Referer": f"{base_url}/index.asp"},
-            )
-
+async def _connect(settings: dict[str, Any]) -> asyncssh.SSHClientConnection:
+    host = settings.get("host") or ""
     try:
-        response = await send(session)
-    except httpx.HTTPError as exc:
-        raise AsusRouterError(f"Could not reach the router: {exc}") from exc
-
-    if response.status_code in (401, 403):
-        session = await _resolve_session(settings, widget_id, force_reauth=True)
-        try:
-            response = await send(session)
-        except httpx.HTTPError as exc:
-            raise AsusRouterError(f"Could not reach the router: {exc}") from exc
-
-    if response.status_code >= 400:
-        raise AsusRouterError(f"Router request failed (HTTP {response.status_code}).")
-
-    try:
-        return response.json()
-    except ValueError as exc:
-        parsed = _parse_js_hook_functions(response.text) or _parse_js_netdev_response(response.text)
-        if parsed is not None:
-            return parsed
-        # Logged at warning level so the actual (unparseable) body the
-        # router sent back is visible in the console next time, instead of
-        # guessing at the exact shape blind.
-        _LOGGER.warning(
-            "ASUS hook POST %s/appGet.cgi hook=%r -> status=%s content-type=%s body[:300]=%r",
-            base_url,
-            hook_call,
-            response.status_code,
-            response.headers.get("content-type"),
-            response.text[:300],
+        return await asyncio.wait_for(
+            asyncssh.connect(
+                host,
+                port=_ssh_port(settings),
+                username=settings.get("username") or "",
+                password=settings.get("password") or "",
+                # No host-key pinning — matches this client's existing
+                # LAN-only trust model (a home router isn't expected to
+                # have a CA-issued SSH host key to verify against).
+                known_hosts=None,
+            ),
+            timeout=_CONNECT_TIMEOUT_SECONDS,
         )
-        # A 200 with an HTML body at this point (session token already
-        # accepted) is the router bouncing us back to Main_Login.asp anyway —
-        # on Merlin firmware this means it's now requiring a captcha or has
-        # rate-limited logins after repeated failed attempts, not that the
-        # request itself was malformed. Don't retry (another attempt only
-        # digs the lockout deeper); point at the fix that actually works.
-        if "text/html" in response.headers.get("content-type", ""):
-            raise AsusRouterError(
-                "Router redirected this request back to its login page even though the session was "
-                "accepted — this usually means the router is requiring a captcha or has temporarily "
-                "locked out logins after repeated failed attempts. Log into the router's own web "
-                "admin UI directly in a browser, clear any captcha/lockout prompt shown there, then "
-                "try again."
-            ) from exc
-        raise AsusRouterError("Router returned an unexpected response.") from exc
+    except asyncssh.PermissionDenied as exc:
+        raise AsusRouterError(
+            "Router rejected that username/password over SSH — double check the credentials, and that "
+            "'Allow Password login' is enabled under the router's SSH settings."
+        ) from exc
+    except TimeoutError as exc:
+        raise AsusRouterError(
+            f"Could not reach the router over SSH (timed out after {_CONNECT_TIMEOUT_SECONDS}s) — double "
+            "check the host/port and that SSH access is enabled on the router."
+        ) from exc
+    except (OSError, asyncssh.Error) as exc:
+        raise AsusRouterError(f"Could not reach the router over SSH: {exc}") from exc
 
 
-async def test_connection(settings: dict[str, Any], widget_id: str) -> str:
-    data = await _hook("nvram_get(productid)", settings=settings, widget_id=widget_id)
-    return data.get("productid") or "Asus Router"
-
-
-async def get_clients(settings: dict[str, Any], widget_id: str) -> list[dict[str, Any]]:
-    data = await _hook("get_clientlist(appobj)", settings=settings, widget_id=widget_id)
-    entries = (data.get("get_clientlist") or {}) if isinstance(data, dict) else {}
-    clients = []
-    for mac, info in entries.items():
-        if mac == "maclist" or not isinstance(info, dict):
+def _parse_sections(output: str) -> dict[str, str]:
+    sections: dict[str, list[str]] = {}
+    current: str | None = None
+    for line in output.splitlines():
+        match = _SECTION_MARKER_PATTERN.fullmatch(line.strip())
+        if match:
+            current = match.group(1)
+            sections[current] = []
             continue
-        clients.append(
-            {
-                "name": info.get("nickName") or info.get("name") or mac,
-                "ip": info.get("ip") or "",
-                "online": bool(int(info.get("isOnline", 0)))
-                if str(info.get("isOnline", "0")).isdigit()
-                else bool(info.get("isOnline")),
-            }
-        )
+        if current is not None:
+            sections[current].append(line)
+    return {name: "\n".join(lines).strip() for name, lines in sections.items()}
+
+
+def _parse_netdev(text: str) -> dict[str, tuple[int, int]]:
+    """Parse `/proc/net/dev` into `{iface: (rx_bytes, tx_bytes)}`."""
+    result: dict[str, tuple[int, int]] = {}
+    for line in text.splitlines():
+        if ":" not in line:
+            continue
+        iface, rest = line.split(":", 1)
+        iface = iface.strip()
+        fields = rest.split()
+        if not iface or len(fields) < 9:
+            continue
+        try:
+            result[iface] = (int(fields[0]), int(fields[8]))
+        except ValueError:
+            continue
+    return result
+
+
+def _parse_leases(text: str) -> dict[str, str]:
+    """Parse dnsmasq leases (`<expiry> <mac> <ip> <hostname> <client-id>`) into `{mac: hostname}`."""
+    leases: dict[str, str] = {}
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        mac, hostname = parts[1].lower(), parts[3]
+        if hostname and hostname != "*":
+            leases[mac] = hostname
+    return leases
+
+
+def _parse_arp(text: str) -> list[tuple[str, str, bool]]:
+    """Parse `/proc/net/arp` into `[(mac, ip, online)]` — `online` is a proxy
+    from ARP-entry completeness (flag `0x2`), not true wireless association."""
+    entries: list[tuple[str, str, bool]] = []
+    lines = text.splitlines()
+    if lines and lines[0].lower().startswith("ip address"):
+        lines = lines[1:]
+    for line in lines:
+        fields = line.split()
+        if len(fields) < 4:
+            continue
+        ip, flags, mac = fields[0], fields[2], fields[3]
+        entries.append((mac.lower(), ip, flags.lower() not in ("0x0", "")))
+    return entries
+
+
+def _parse_clients(arp_text: str, leases_text: str) -> list[dict[str, Any]]:
+    leases = _parse_leases(leases_text)
+    clients = []
+    for mac, ip, online in _parse_arp(arp_text):
+        if mac in ("00:00:00:00:00:00", "*", ""):
+            continue
+        clients.append({"name": leases.get(mac) or mac.upper(), "ip": ip, "online": online})
     return clients
 
 
+async def _fetch_status(settings: dict[str, Any], widget_id: str, *, use_cache: bool = True) -> AsusRouterStatus:
+    cache_key = f"asus_status:{widget_id}"
+    if use_cache:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+    conn = await _connect(settings)
+    try:
+        try:
+            result = await asyncio.wait_for(conn.run(_REMOTE_COMMAND, check=False), timeout=_COMMAND_TIMEOUT_SECONDS)
+        except TimeoutError as exc:
+            raise AsusRouterError("Could not read status from the router: command timed out.") from exc
+        except (OSError, asyncssh.Error) as exc:
+            raise AsusRouterError(f"Could not read status from the router: {exc}") from exc
+    finally:
+        conn.close()
+        await conn.wait_closed()
+
+    stdout = result.stdout if isinstance(result.stdout, str) else ""
+    sections = _parse_sections(stdout)
+    if not sections:
+        _LOGGER.warning("ASUS SSH command returned no parseable sections; raw output[:300]=%r", stdout[:300])
+
+    wan_ifname = sections.get("WAN_IFNAME", "")
+    rx_bytes, tx_bytes = _parse_netdev(sections.get("NETDEV", "")).get(wan_ifname, (0, 0))
+
+    status = AsusRouterStatus(
+        wan_connected=sections.get("WAN_STATE", "").strip() == _WAN_STATE_CONNECTED,
+        wan_ip=sections.get("WAN_IP") or None,
+        product_id=sections.get("PRODUCTID") or "Asus Router",
+        clients=_parse_clients(sections.get("ARP", ""), sections.get("LEASES", "")),
+        rx_bytes=rx_bytes,
+        tx_bytes=tx_bytes,
+    )
+    if use_cache:
+        cache.set(cache_key, status, _STATUS_TTL_SECONDS)
+    return status
+
+
+async def test_connection(settings: dict[str, Any], widget_id: str) -> str:
+    # Bypasses the cache — this validates not-yet-saved candidate settings
+    # (see app/api/asus_router.py), so a stale cached status from the
+    # currently-saved connection must never mask bad new credentials.
+    status = await _fetch_status(settings, widget_id, use_cache=False)
+    return status.product_id
+
+
 async def get_wan_status(settings: dict[str, Any], widget_id: str) -> dict[str, Any]:
-    data = await _hook("wanlink()", settings=settings, widget_id=widget_id)
-    # `wanlink_status`'s numeric convention isn't consistent across
-    # firmware/hardware (observed a real router report status 1 while its
-    # own `wanlink_statusstr` said "Connected") — the status string is the
-    # one field the firmware itself treats as authoritative for display, so
-    # trust that instead of a hardcoded magic number.
-    connected = str(data.get("wanlink_statusstr") or "").strip().lower() == "connected"
-    return {
-        "connected": connected,
-        "ip": data.get("wanlink_ipaddr") or None,
-    }
+    status = await _fetch_status(settings, widget_id)
+    return {"connected": status.wan_connected, "ip": status.wan_ip}
+
+
+async def get_clients(settings: dict[str, Any], widget_id: str) -> list[dict[str, Any]]:
+    status = await _fetch_status(settings, widget_id)
+    return status.clients
 
 
 async def get_traffic(settings: dict[str, Any], widget_id: str) -> dict[str, Any]:
-    data = await _hook("netdev(appobj)", settings=settings, widget_id=widget_id)
-    netdev = (data.get("netdev") or {}) if isinstance(data, dict) else {}
-    return {
-        "rx_bytes": int(netdev.get("INTERNET_rx", 0) or 0),
-        "tx_bytes": int(netdev.get("INTERNET_tx", 0) or 0),
-    }
+    status = await _fetch_status(settings, widget_id)
+    return {"rx_bytes": status.rx_bytes, "tx_bytes": status.tx_bytes}

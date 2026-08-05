@@ -10,7 +10,7 @@ from typing import Any
 
 import httpx
 
-from app.config import settings
+from app.config import effective_settings, resolve_timezone, settings
 from app.plugins.base import Plugin, ToolDef
 
 DISCORD_API_BASE = "https://discord.com/api/v10"
@@ -58,11 +58,11 @@ class DiscordPlugin(Plugin):
         response.raise_for_status()
         return response.json().get("name", "unknown-channel")
 
-    async def _fetch_messages(self, client: httpx.AsyncClient) -> list[dict[str, Any]]:
+    async def _fetch_messages(self, client: httpx.AsyncClient, limit: int) -> list[dict[str, Any]]:
         response = await client.get(
             f"{DISCORD_API_BASE}/channels/{self._channel_id}/messages",
             headers=self._headers,
-            params={"limit": self._message_limit},
+            params={"limit": limit},
         )
         response.raise_for_status()
         return response.json()
@@ -78,19 +78,32 @@ class DiscordPlugin(Plugin):
             "timestamp": message["timestamp"],
         }
 
-    async def _fetch(self) -> tuple[str, list[dict[str, Any]]]:
+    async def _fetch_raw(self, limit: int) -> tuple[str, list[dict[str, Any]]]:
         async with httpx.AsyncClient(timeout=10) as client:
             channel_name = await self._fetch_channel_name(client)
-            raw_messages = await self._fetch_messages(client)
+            raw_messages = await self._fetch_messages(client, limit)
 
         # Discord returns newest-first; chat logs read oldest -> newest.
-        raw_messages = list(reversed(raw_messages))
+        return channel_name, list(reversed(raw_messages))
+
+    async def _fetch(self) -> tuple[str, list[dict[str, Any]]]:
+        channel_name, raw_messages = await self._fetch_raw(self._message_limit)
 
         time_window_minutes = self._time_window_minutes
         if time_window_minutes is not None:
             cutoff = datetime.now(UTC) - timedelta(minutes=time_window_minutes)
             raw_messages = [m for m in raw_messages if datetime.fromisoformat(m["timestamp"]) >= cutoff]
 
+        return channel_name, [self._message_view(m) for m in raw_messages]
+
+    async def _fetch_since(self, cutoff: datetime) -> tuple[str, list[dict[str, Any]]]:
+        """Messages at or after `cutoff`, fetched at Discord's max page size.
+
+        Used for "today"/"new" voice queries, which need full day coverage
+        rather than the widget's display `message_limit`.
+        """
+        channel_name, raw_messages = await self._fetch_raw(_MAX_MESSAGE_LIMIT)
+        raw_messages = [m for m in raw_messages if datetime.fromisoformat(m["timestamp"]) >= cutoff]
         return channel_name, [self._message_view(m) for m in raw_messages]
 
     def _payload(self, channel_name: str, messages: list[dict[str, Any]]) -> dict[str, Any]:
@@ -123,13 +136,29 @@ class DiscordPlugin(Plugin):
         async def get_recent_discord_messages() -> dict[str, Any]:
             return await self.get_summary()
 
+        async def get_todays_discord_messages() -> dict[str, Any]:
+            if not self._channel_id:
+                return self._payload("", [])
+            tz = resolve_timezone(effective_settings()["timezone"])
+            midnight_local = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
+            channel_name, messages = await self._fetch_since(midnight_local.astimezone(UTC))
+            return self._payload(channel_name, messages)
+
         return [
             ToolDef(
                 name="get_recent_discord_messages",
                 description="Get the most recent messages from the dashboard's configured Discord channel.",
                 parameters={"type": "object", "properties": {}},
                 handler=get_recent_discord_messages,
-            )
+            ),
+            ToolDef(
+                name=f"get_todays_discord_messages_{self.id}",
+                description="Get every message posted today (since local midnight) in the dashboard's "
+                "configured Discord channel. Use this for requests like 'read my new messages', "
+                "'read today's Discord messages', or 'what did I miss on Discord today'.",
+                parameters={"type": "object", "properties": {}},
+                handler=get_todays_discord_messages,
+            ),
         ]
 
 

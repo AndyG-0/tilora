@@ -26,9 +26,11 @@ populated even when no teams are followed.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from typing import Any, ClassVar
+from zoneinfo import ZoneInfo
 
-from app.config import effective_settings
+from app.config import effective_settings, resolve_timezone
 from app.integrations import broadcast_links, espn_client
 from app.plugins.base import Plugin, ToolDef
 from app.plugins.sports import trending
@@ -43,6 +45,16 @@ _DETAIL_TRENDING_GAMES = 12
 
 def _cache_key(league: str, team: str) -> str:
     return f"sports_schedule:{league}:{team.lower()}"
+
+
+def _is_today(date_str: str | None, tz: ZoneInfo) -> bool:
+    if not date_str:
+        return False
+    try:
+        game_date = datetime.fromisoformat(date_str)
+    except ValueError:
+        return False
+    return game_date.astimezone(tz).strftime("%Y%m%d") == datetime.now(tz).strftime("%Y%m%d")
 
 
 def _perspective(team_abbr: str, game: dict[str, Any]) -> dict[str, Any]:
@@ -111,6 +123,42 @@ class SportsPlugin(Plugin):
 
     async def _fetch_all(self) -> list[dict[str, Any]]:
         return list(await asyncio.gather(*(self._fetch_entry(entry) for entry in self._teams())))
+
+    async def _fetch_todays_games(self) -> dict[str, Any]:
+        """Every game today: followed teams playing today, plus today's trending slate.
+
+        Unlike `get_upcoming_games` (next game per team, which may be days
+        away) or `get_trending_games` (only the tracked leagues' most
+        notable games), this answers "what's on today" completely — merging
+        both sources and deduping by game id so a followed team's game that's
+        also nationally televised isn't listed twice.
+        """
+        tz = resolve_timezone(effective_settings()["timezone"])
+        games: list[dict[str, Any]] = []
+
+        if self._is_configured():
+            for entry in await self._fetch_all():
+                for game in entry["games"]:
+                    if not _is_today(game["date"], tz):
+                        continue
+                    games.append(
+                        {
+                            "league": entry["league"],
+                            "league_label": entry["league_label"],
+                            "team": entry["team_name"],
+                            **_perspective(entry["team"], game),
+                        }
+                    )
+
+        trending_games, trending_errors = await self._fetch_trending(_DETAIL_TRENDING_GAMES)
+        seen_ids = {game["id"] for game in games}
+        games.extend(game for game in trending_games if game["id"] not in seen_ids)
+        games.sort(key=lambda g: g["date"] or "")
+
+        result: dict[str, Any] = {"games": games}
+        if trending_errors:
+            result["trending_errors"] = trending_errors
+        return result
 
     async def get_summary(self) -> dict[str, Any]:
         configured = self._is_configured()
@@ -184,6 +232,9 @@ class SportsPlugin(Plugin):
                 result["errors"] = errors
             return result
 
+        async def get_todays_games() -> dict[str, Any]:
+            return await self._fetch_todays_games()
+
         return [
             ToolDef(
                 name=f"get_upcoming_games_{self.id}",
@@ -199,5 +250,14 @@ class SportsPlugin(Plugin):
                 "whether a specific team is followed.",
                 parameters={"type": "object", "properties": {}},
                 handler=get_trending_games,
+            ),
+            ToolDef(
+                name=f"get_todays_games_{self.id}",
+                description="Get every game happening today, combining this widget's followed teams "
+                "with the wider tracked-league slate, including which network or streaming service "
+                "(if any) broadcasts each one. Use this for questions like 'what's on in sports "
+                "today', 'any games on today', 'what's on TV tonight', or 'what channel is the game on'.",
+                parameters={"type": "object", "properties": {}},
+                handler=get_todays_games,
             ),
         ]

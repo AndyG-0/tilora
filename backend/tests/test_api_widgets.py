@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 import app.scheduler as scheduler_module
 from app.api import widgets
 from app.auth import get_current_device, get_current_user
+from app.plugins import scoping
 from app.plugins.ai_insights.plugin import AIInsightsPlugin
 from app.plugins.base import Plugin, registry
 from app.plugins.photos.plugin import PhotosPlugin
@@ -404,7 +405,7 @@ def test_personal_scope_summary_is_cached_per_user(dashboard_yaml, tmp_db, monke
         lookups.append(user_id)
         return original(user_id, widget_id)
 
-    monkeypatch.setattr(widgets, "get_widget_user_settings", counting_lookup)
+    monkeypatch.setattr(scoping, "get_widget_user_settings", counting_lookup)
 
     app = FastAPI()
     app.include_router(widgets.router)

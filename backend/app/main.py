@@ -12,6 +12,7 @@ from app.api import (
     alerts,
     calendar_auth,
     icloud_auth,
+    movies,
     photos,
     theme,
     weather,
@@ -111,6 +112,7 @@ app.include_router(tabs_api.router)
 app.include_router(theme.router)
 app.include_router(photos.router)
 app.include_router(weather.router)
+app.include_router(movies.router)
 app.include_router(settings_api.router)
 app.include_router(version_api.router)
 app.include_router(alerts.router)

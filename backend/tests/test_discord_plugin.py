@@ -102,7 +102,42 @@ async def test_get_ai_tools_exposes_recent_messages_tool():
 
     tools = plugin.get_ai_tools()
 
-    assert len(tools) == 1
-    assert tools[0].name == "get_recent_discord_messages"
+    assert [t.name for t in tools] == ["get_recent_discord_messages", "get_todays_discord_messages_discord"]
     result = await tools[0].handler()
     assert result["messages"][0]["id"] == "1"
+
+
+@respx.mock
+async def test_get_todays_messages_excludes_messages_from_before_midnight(tmp_db):
+    # 26 hours ago is always before today's local midnight, however late in
+    # the day "now" happens to be when the test runs.
+    _mock_discord([_message("today", minutes_ago=1), _message("yesterday", minutes_ago=26 * 60)])
+    plugin = make_plugin()
+
+    tools = plugin.get_ai_tools()
+    result = await tools[1].handler()
+
+    assert [m["id"] for m in result["messages"]] == ["today"]
+
+
+@respx.mock
+async def test_get_todays_messages_ignores_display_message_limit(tmp_db):
+    # message_limit caps the tile's display count, but "today's messages"
+    # should still see every message from today regardless of that setting.
+    messages = [_message(str(i), minutes_ago=i) for i in range(10)]
+    _mock_discord(messages)
+    plugin = make_plugin(message_limit=3)
+
+    tools = plugin.get_ai_tools()
+    result = await tools[1].handler()
+
+    assert len(result["messages"]) == 10
+
+
+async def test_get_todays_messages_returns_empty_when_no_channel_configured(tmp_db):
+    plugin = DiscordPlugin({"id": "discord", "settings": {}})
+
+    tools = plugin.get_ai_tools()
+    result = await tools[1].handler()
+
+    assert result["messages"] == []

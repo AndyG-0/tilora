@@ -14,12 +14,14 @@ import ClockTile from '$lib/components/tiles/ClockTile.svelte';
 import DateTile from '$lib/components/tiles/DateTile.svelte';
 import MessageTile from '$lib/components/tiles/MessageTile.svelte';
 import RSSTile from '$lib/components/tiles/RSSTile.svelte';
+import BookmarksTile from '$lib/components/tiles/BookmarksTile.svelte';
 import AlertTile from '$lib/components/tiles/AlertTile.svelte';
 import CalendarTile from '$lib/components/tiles/CalendarTile.svelte';
 import JellyfinTile from '$lib/components/tiles/JellyfinTile.svelte';
 import HDHomeRunTile from '$lib/components/tiles/HDHomeRunTile.svelte';
 import PiholeTile from '$lib/components/tiles/PiholeTile.svelte';
 import Game2048Tile from '$lib/components/tiles/Game2048Tile.svelte';
+import WordleTile from '$lib/components/tiles/WordleTile.svelte';
 import SystemMonitorTile from '$lib/components/tiles/SystemMonitorTile.svelte';
 import ContainerTile from '$lib/components/tiles/ContainerTile.svelte';
 import SynologyTile from '$lib/components/tiles/SynologyTile.svelte';
@@ -38,12 +40,14 @@ import ClockDetail from '$lib/components/details/ClockDetail.svelte';
 import DateDetail from '$lib/components/details/DateDetail.svelte';
 import MessageDetail from '$lib/components/details/MessageDetail.svelte';
 import RSSDetail from '$lib/components/details/RSSDetail.svelte';
+import BookmarksDetail from '$lib/components/details/BookmarksDetail.svelte';
 import AlertDetail from '$lib/components/details/AlertDetail.svelte';
 import CalendarDetail from '$lib/components/details/CalendarDetail.svelte';
 import JellyfinDetail from '$lib/components/details/JellyfinDetail.svelte';
 import HDHomeRunDetail from '$lib/components/details/HDHomeRunDetail.svelte';
 import PiholeDetail from '$lib/components/details/PiholeDetail.svelte';
 import Game2048Detail from '$lib/components/details/Game2048Detail.svelte';
+import WordleDetail from '$lib/components/details/WordleDetail.svelte';
 import SystemMonitorDetail from '$lib/components/details/SystemMonitorDetail.svelte';
 import ContainerDetail from '$lib/components/details/ContainerDetail.svelte';
 import SynologyDetail from '$lib/components/details/SynologyDetail.svelte';
@@ -63,12 +67,14 @@ type TileComponent =
 	| typeof DateTile
 	| typeof MessageTile
 	| typeof RSSTile
+	| typeof BookmarksTile
 	| typeof AlertTile
 	| typeof CalendarTile
 	| typeof JellyfinTile
 	| typeof HDHomeRunTile
 	| typeof PiholeTile
 	| typeof Game2048Tile
+	| typeof WordleTile
 	| typeof SystemMonitorTile
 	| typeof ContainerTile
 	| typeof SynologyTile
@@ -88,12 +94,14 @@ type DetailComponent =
 	| typeof DateDetail
 	| typeof MessageDetail
 	| typeof RSSDetail
+	| typeof BookmarksDetail
 	| typeof AlertDetail
 	| typeof CalendarDetail
 	| typeof JellyfinDetail
 	| typeof HDHomeRunDetail
 	| typeof PiholeDetail
 	| typeof Game2048Detail
+	| typeof WordleDetail
 	| typeof SystemMonitorDetail
 	| typeof ContainerDetail
 	| typeof SynologyDetail
@@ -113,6 +121,7 @@ export const TILE_COMPONENTS: Record<string, TileComponent> = {
 	date: DateTile,
 	message: MessageTile,
 	rss: RSSTile,
+	bookmarks: BookmarksTile,
 	alert: AlertTile,
 	calendar: CalendarTile,
 	calendar_caldav: CalendarTile,
@@ -121,6 +130,7 @@ export const TILE_COMPONENTS: Record<string, TileComponent> = {
 	hdhomerun: HDHomeRunTile,
 	pihole: PiholeTile,
 	game2048: Game2048Tile,
+	wordle: WordleTile,
 	system_monitor: SystemMonitorTile,
 	container: ContainerTile,
 	synology: SynologyTile,
@@ -141,6 +151,7 @@ export const DETAIL_COMPONENTS: Record<string, DetailComponent> = {
 	date: DateDetail,
 	message: MessageDetail,
 	rss: RSSDetail,
+	bookmarks: BookmarksDetail,
 	alert: AlertDetail,
 	calendar: CalendarDetail,
 	calendar_caldav: CalendarDetail,
@@ -149,6 +160,7 @@ export const DETAIL_COMPONENTS: Record<string, DetailComponent> = {
 	hdhomerun: HDHomeRunDetail,
 	pihole: PiholeDetail,
 	game2048: Game2048Detail,
+	wordle: WordleDetail,
 	system_monitor: SystemMonitorDetail,
 	container: ContainerDetail,
 	synology: SynologyDetail,

@@ -27,7 +27,7 @@ _SECRET_KEYS = (
 # Not secret, but user-editable app settings that aren't ai_model/timezone —
 # returned as-is (unlike _SECRET_KEYS, which only expose a `has_<key>` flag)
 # so the user can see/edit them without retyping.
-_PLAIN_KEYS = ("caldav_url", "caldav_username", "icloud_username")
+_PLAIN_KEYS = ("ai_reasoning_effort", "caldav_url", "caldav_username", "icloud_username")
 # Widgets whose summary/detail is derived entirely from global app settings
 # (not their own per-widget settings) — their cache must be invalidated
 # whenever those settings change, or they'd keep serving a stale value for
@@ -41,6 +41,7 @@ class UpdateSettingsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     ai_model: str | None = None
+    ai_reasoning_effort: str | None = None
     timezone: str | None = None
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None

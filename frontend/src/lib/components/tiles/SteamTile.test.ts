@@ -22,6 +22,7 @@ describe('SteamTile', () => {
 			player: null,
 			current_game: null,
 			recent_games: [],
+			news: [],
 			steamid: '',
 			has_api_key: false,
 		});
@@ -37,6 +38,7 @@ describe('SteamTile', () => {
 			player: null,
 			current_game: null,
 			recent_games: [],
+			news: [],
 			steamid: '76561197960435530',
 			has_api_key: true,
 			error: 'Steam rejected the request — check the API key.',
@@ -69,6 +71,7 @@ describe('SteamTile', () => {
 				},
 				{ appid: 400, name: 'Portal', playtime_2weeks_minutes: 0, playtime_forever_minutes: 300, icon_url: null },
 			],
+			news: [],
 			steamid: '76561197960435530',
 			has_api_key: true,
 		});
@@ -93,6 +96,7 @@ describe('SteamTile', () => {
 			},
 			current_game: null,
 			recent_games: [],
+			news: [],
 			steamid: '76561197960435530',
 			has_api_key: true,
 		});
@@ -100,5 +104,65 @@ describe('SteamTile', () => {
 		render(SteamTile, { props: { widgetId: 'steam' } });
 
 		expect(await screen.findByText('Away')).toBeInTheDocument();
+	});
+
+	it('shows the latest news headline when news is present', async () => {
+		widgetSummary.mockResolvedValue({
+			configured: true,
+			player: {
+				steamid: '76561197960435530',
+				name: 'Robin',
+				avatar: '',
+				status: 'Online',
+				online: true,
+				current_game: null,
+			},
+			current_game: null,
+			recent_games: [],
+			news: [
+				{
+					gid: '1',
+					title: 'Half-Life 2 Update Released',
+					url: 'https://example.com/news/1',
+					author: 'Valve',
+					contents: 'Fixed some bugs.',
+					feedlabel: 'Updates',
+					date: 1700000000,
+					is_external_url: true,
+					appid: 220,
+					game_name: 'Half-Life 2',
+				},
+			],
+			steamid: '76561197960435530',
+			has_api_key: true,
+		});
+
+		render(SteamTile, { props: { widgetId: 'steam' } });
+
+		expect(await screen.findByText('Latest: Half-Life 2 Update Released')).toBeInTheDocument();
+	});
+
+	it('shows no headline when there is no news', async () => {
+		widgetSummary.mockResolvedValue({
+			configured: true,
+			player: {
+				steamid: '76561197960435530',
+				name: 'Robin',
+				avatar: '',
+				status: 'Online',
+				online: true,
+				current_game: null,
+			},
+			current_game: null,
+			recent_games: [],
+			news: [],
+			steamid: '76561197960435530',
+			has_api_key: true,
+		});
+
+		render(SteamTile, { props: { widgetId: 'steam' } });
+
+		await screen.findByText('Robin');
+		expect(screen.queryByText(/^Latest:/)).not.toBeInTheDocument();
 	});
 });

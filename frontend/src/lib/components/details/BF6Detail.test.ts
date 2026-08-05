@@ -151,4 +151,14 @@ describe('BF6Detail', () => {
 
 		expect(await screen.findByText('Could not save the Battlefield 6 settings.')).toBeInTheDocument();
 	});
+
+	it('hides the avatar image if it fails to load, instead of leaving a broken image', async () => {
+		const { container } = render(BF6Detail, { props: { data: configured } });
+
+		const avatar = container.querySelector('img.avatar');
+		expect(avatar).toBeInTheDocument();
+		await fireEvent.error(avatar!);
+
+		expect(container.querySelector('img.avatar')).not.toBeInTheDocument();
+	});
 });

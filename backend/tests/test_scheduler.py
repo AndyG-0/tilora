@@ -45,7 +45,7 @@ async def test_run_ai_widget_records_successful_run(tmp_db, dashboard_yaml, monk
     plugin = make_ai_plugin()
     registry.register(plugin)
 
-    async def fake_run_prompt(self, prompt, max_tool_rounds=4):
+    async def fake_run_prompt(self, prompt, max_tool_rounds=4, system_prompt=None):
         return "Sunny and 75."
 
     monkeypatch.setattr("app.ai.provider.AIProvider.run_prompt", fake_run_prompt)
@@ -54,6 +54,43 @@ async def test_run_ai_widget_records_successful_run(tmp_db, dashboard_yaml, monk
 
     latest = db.latest_ai_run(plugin.id)
     assert latest["text"] == "Sunny and 75."
+
+
+async def test_run_ai_widget_passes_topics_as_allowed_widget_ids(tmp_db, dashboard_yaml, monkeypatch):
+    plugin = AIInsightsPlugin(
+        {
+            "id": "ai-insights",
+            "settings": {"cron": "30 6 * * *", "prompt": "Say hello", "topics": ["calendar", "weather"]},
+        }
+    )
+    registry.register(plugin)
+    captured = {}
+
+    async def fake_ask(text, system_prompt=None, user=None, device=None, allowed_widget_ids=None):
+        captured["allowed_widget_ids"] = allowed_widget_ids
+        return "Sunny and 75."
+
+    monkeypatch.setattr(scheduler_module.assistant, "ask", fake_ask)
+
+    await scheduler_module.run_ai_widget(plugin)
+
+    assert captured["allowed_widget_ids"] == ["calendar", "weather"]
+
+
+async def test_run_ai_widget_passes_none_when_no_topics_selected(tmp_db, dashboard_yaml, monkeypatch):
+    plugin = make_ai_plugin()
+    registry.register(plugin)
+    captured = {}
+
+    async def fake_ask(text, system_prompt=None, user=None, device=None, allowed_widget_ids=None):
+        captured["allowed_widget_ids"] = allowed_widget_ids
+        return "Sunny and 75."
+
+    monkeypatch.setattr(scheduler_module.assistant, "ask", fake_ask)
+
+    await scheduler_module.run_ai_widget(plugin)
+
+    assert captured["allowed_widget_ids"] is None
 
 
 async def test_run_ai_widget_swallows_exceptions(tmp_db, monkeypatch):

@@ -31,8 +31,15 @@ export interface CityResult {
 	longitude: number;
 }
 
+export interface MovieProvider {
+	id: number;
+	name: string;
+	logo_url: string | null;
+}
+
 export interface AppSettings {
 	ai_model: string;
+	ai_reasoning_effort: string;
 	timezone: string;
 	has_anthropic_api_key: boolean;
 	has_openai_api_key: boolean;
@@ -225,8 +232,7 @@ export interface AsusRouterSummary {
 	wan_connected: boolean;
 	client_count: number;
 	host: string;
-	port: number;
-	use_https: boolean;
+	ssh_port: number;
 	username: string;
 	has_password: boolean;
 	error?: string;
@@ -269,6 +275,17 @@ export interface GoodreadsDetail {
 	shelf: string;
 	user_id: string;
 	books: GoodreadsBookDetail[];
+}
+
+export interface BookmarkItem {
+	name: string;
+	url: string;
+	icon?: string;
+}
+
+export interface BookmarksData {
+	title: string;
+	bookmarks: BookmarkItem[];
 }
 
 export interface SystemMonitorSummary {
@@ -435,11 +452,32 @@ export interface SteamGame {
 
 export type SteamFriend = SteamPlayer;
 
+export interface SteamNewsItem {
+	gid: string;
+	title: string;
+	url: string;
+	author: string;
+	contents: string;
+	feedlabel: string;
+	date: number; // unix seconds
+	is_external_url: boolean;
+	appid: number;
+	game_name: string;
+}
+
+export interface SteamNewsError {
+	appid: number;
+	game_name: string;
+	error: string;
+}
+
 export interface SteamSummary {
 	configured: boolean;
 	player: SteamPlayer | null;
 	current_game: string | null;
 	recent_games: SteamGame[];
+	news: SteamNewsItem[];
+	news_errors?: SteamNewsError[];
 	steamid: string;
 	has_api_key: boolean;
 	error?: string;
@@ -638,6 +676,8 @@ export const api = {
 		putJSON<{ status: string }>('/api/widgets/layout', { widgets }),
 	runAiWidget: <T = Record<string, unknown>>(id: string) => postJSON<T>(`/api/widgets/${id}/run`),
 	searchCities: (query: string) => getJSON<CityResult[]>(`/api/weather/search?q=${encodeURIComponent(query)}`),
+	movieProviders: (region: string) =>
+		getJSON<MovieProvider[]>(`/api/movies/providers?region=${encodeURIComponent(region)}`),
 	themes: () => getJSON<{ themes: { id: string; name: string }[]; default: string }>('/api/theme'),
 	tabs: () => getJSON<TabMeta[]>('/api/tabs'),
 	settings: () => getJSON<AppSettings>('/api/settings'),
@@ -653,6 +693,7 @@ export const api = {
 	startIcloudAuth: () => postJSON<IcloudAuthStartResult>('/api/icloud/auth/start'),
 	verifyIcloudAuth: (code: string) => postJSON<IcloudStatus>('/api/icloud/auth/verify', { code }),
 	askAssistant: (text: string) => postJSON<{ text: string }>('/api/assistant/ask', { text }),
+	assistantTopics: () => getJSON<{ id: string; name: string }[]>('/api/assistant/topics'),
 	widgetTypes: () =>
 		getJSON<{ type: string; name: string; default_layout: { colSpan: number; rowSpan: number } }[]>(
 			'/api/widgets/types',

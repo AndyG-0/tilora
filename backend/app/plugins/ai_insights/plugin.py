@@ -22,6 +22,7 @@ class AIInsightsPlugin(Plugin):
         "title": "AI Insights",
         "prompt": "Write a short, friendly good-morning update for the household.",
         "cron": "0 8 * * *",
+        "topics": [],
     }
 
     @property
@@ -31,6 +32,12 @@ class AIInsightsPlugin(Plugin):
     @property
     def cron(self) -> str:
         return self.config["settings"]["cron"]
+
+    @property
+    def topics(self) -> list[str]:
+        # Empty list means "no restriction" — the model gets every plugin's
+        # tools, same as before this setting existed.
+        return self.config["settings"].get("topics", [])
 
     async def get_summary(self) -> dict[str, Any]:
         latest = await asyncio.to_thread(db.latest_ai_run, self.id)
@@ -49,4 +56,5 @@ class AIInsightsPlugin(Plugin):
             "history": await asyncio.to_thread(db.ai_run_history, self.id),
             "prompt": self.prompt,
             "cron": self.cron,
+            "topics": self.topics,
         }

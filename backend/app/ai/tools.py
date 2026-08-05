@@ -34,4 +34,10 @@ class ToolBridge:
         tool = self._tools.get(name)
         if tool is None:
             return {"error": f"Unknown tool '{name}'"}
-        return await tool.handler(**args)
+        try:
+            return await tool.handler(**args)
+        except Exception as exc:
+            # Surfaced to the model as a tool result instead of raised, so one
+            # flaky handler (e.g. a transient network error) doesn't 500 the
+            # whole response — the model can explain the failure instead.
+            return {"error": str(exc)}

@@ -11,8 +11,7 @@
 
 	let editing = $state(false);
 	let hostInput = $state('');
-	let portInput = $state(443);
-	let useHttpsInput = $state(true);
+	let sshPortInput = $state(22);
 	let usernameInput = $state('');
 	let passwordInput = $state('');
 	let saving = $state(false);
@@ -24,8 +23,7 @@
 
 	function openEditor() {
 		hostInput = router.host;
-		portInput = router.port;
-		useHttpsInput = router.use_https;
+		sshPortInput = router.ssh_port;
 		usernameInput = router.username;
 		passwordInput = '';
 		testResult = null;
@@ -35,8 +33,7 @@
 	function currentFormSettings(): Record<string, unknown> {
 		const settings: Record<string, unknown> = {
 			host: hostInput,
-			port: portInput,
-			use_https: useHttpsInput,
+			ssh_port: sshPortInput,
 			username: usernameInput,
 		};
 		if (passwordInput) settings.password = passwordInput;
@@ -98,12 +95,8 @@
 			<input type="text" bind:value={hostInput} placeholder="router.asus.com" />
 		</label>
 		<label>
-			Port
-			<input type="number" min="1" max="65535" bind:value={portInput} />
-		</label>
-		<label class="checkbox">
-			<input type="checkbox" bind:checked={useHttpsInput} />
-			Use HTTPS
+			SSH port
+			<input type="number" min="1" max="65535" bind:value={sshPortInput} />
 		</label>
 		<label>
 			Username
@@ -225,12 +218,6 @@
 		gap: 0.25rem;
 		font-size: 0.9rem;
 		color: var(--color-text-muted);
-	}
-
-	.settings-form label.checkbox {
-		flex-direction: row;
-		align-items: center;
-		gap: 0.5rem;
 	}
 
 	.settings-form input[type='text'],

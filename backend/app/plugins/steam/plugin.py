@@ -1,6 +1,8 @@
 """Steam plugin: the configured Steam user's currently-playing/recently-played
-games and their friends' online/in-game status, via Valve's free Steam Web
-API (see `app/integrations/steam_client.py`).
+games, their friends' online/in-game status, and recent news for their most-
+played games, via Valve's free Steam Web API (see
+`app/integrations/steam_client.py`). News fetching/caching lives in
+`app/plugins/steam/news.py`.
 
 Both the API key and the user's SteamID64 are secrets/identifiers entered
 via the widget's own settings editor (PATCH to the generic widget settings
@@ -20,6 +22,7 @@ from typing import Any, ClassVar
 
 from app.integrations import steam_client
 from app.plugins.base import Plugin, ToolDef
+from app.plugins.steam import news
 from app.storage.cache import cache
 
 # The friends list is the most expensive call (a friend-list fetch plus a
@@ -32,9 +35,20 @@ _FRIENDS_CACHE_TTL_SECONDS = 60
 _SUMMARY_RECENT_GAMES_COUNT = 3
 _DETAIL_RECENT_GAMES_COUNT = 10
 
+# News is fetched for the top few recently-played games, not user-configured
+# — see news.py for the per-appid cache/error-isolation that makes this cheap.
+_NEWS_GAMES_COUNT = 3
+_NEWS_COUNT_PER_GAME = 5
+_SUMMARY_NEWS_COUNT = 1
+_DETAIL_NEWS_COUNT = 8
+
 
 def _friends_cache_key(widget_id: str) -> str:
     return f"steam_friends:{widget_id}"
+
+
+def _news_games(recent: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [{"appid": g["appid"], "name": g["name"]} for g in recent[:_NEWS_GAMES_COUNT]]
 
 
 class SteamPlugin(Plugin):
@@ -112,6 +126,7 @@ class SteamPlugin(Plugin):
             "player": None,
             "current_game": None,
             "recent_games": [],
+            "news": [],
             **self._safe_settings(),
         }
         if not configured:
@@ -121,6 +136,11 @@ class SteamPlugin(Plugin):
         result["player"] = player
         result["current_game"] = player["current_game"] if player else None
         result["recent_games"] = recent[:_SUMMARY_RECENT_GAMES_COUNT]
+
+        news_items, news_errors = await news.fetch_news(_news_games(recent), _NEWS_COUNT_PER_GAME, _SUMMARY_NEWS_COUNT)
+        result["news"] = news_items
+        if news_errors:
+            result["news_errors"] = news_errors
         if error:
             result["error"] = error
         return result
@@ -133,6 +153,7 @@ class SteamPlugin(Plugin):
             "current_game": None,
             "recent_games": [],
             "friends": [],
+            "news": [],
             **self._safe_settings(),
         }
         if not configured:
@@ -146,6 +167,11 @@ class SteamPlugin(Plugin):
         result["recent_games"] = recent[:_DETAIL_RECENT_GAMES_COUNT]
         result["friends"] = self._sort_friends(friends)
 
+        news_items, news_errors = await news.fetch_news(_news_games(recent), _NEWS_COUNT_PER_GAME, _DETAIL_NEWS_COUNT)
+        result["news"] = news_items
+        if news_errors:
+            result["news_errors"] = news_errors
+
         messages = list(dict.fromkeys(m for m in (error, friends_error) if m))
         if messages:
             result["error"] = " ".join(messages)
@@ -154,6 +180,20 @@ class SteamPlugin(Plugin):
     def get_ai_tools(self) -> list[ToolDef]:
         async def get_steam_status() -> dict[str, Any]:
             return await self.get_summary()
+
+        async def get_steam_news() -> dict[str, Any]:
+            if not self._is_configured():
+                return {"news": []}
+            _, recent, error = await self._player_and_recent()
+            if error:
+                return {"news": [], "error": error}
+            news_items, news_errors = await news.fetch_news(
+                _news_games(recent), _NEWS_COUNT_PER_GAME, _DETAIL_NEWS_COUNT
+            )
+            result: dict[str, Any] = {"news": news_items}
+            if news_errors:
+                result["news_errors"] = news_errors
+            return result
 
         return [
             ToolDef(
@@ -165,5 +205,13 @@ class SteamPlugin(Plugin):
                 "the game they're currently playing (if any), and recently played games.",
                 parameters={"type": "object", "properties": {}},
                 handler=get_steam_status,
-            )
+            ),
+            ToolDef(
+                name=f"get_steam_news_{self.id}",
+                description="Get recent news posts (patch notes, updates, announcements) for the "
+                "games this Steam user has recently played. Use for questions like 'what's new for "
+                "my games' or 'any updates for X'.",
+                parameters={"type": "object", "properties": {}},
+                handler=get_steam_news,
+            ),
         ]

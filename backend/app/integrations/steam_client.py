@@ -14,13 +14,16 @@ status-checked before any attempt to parse it as JSON, and 401/403 get a
 specific, actionable error message rather than falling through to the
 generic "non-JSON response" case.
 
-Three endpoints are used:
+Four endpoints are used:
   - ISteamUser/GetPlayerSummaries/v2 — batched, up to ~100 steamids per call
     (used for both the configured user's own profile and their friends'
     profiles).
   - IPlayerService/GetRecentlyPlayedGames/v1 — the configured user's
     recently-played games (last two weeks).
   - ISteamUser/GetFriendList/v1 — the configured user's friend steamids.
+  - ISteamNews/GetNewsForApp/v2 — recent news posts for a given app. Unlike
+    the other three, this one is public: no `key` param, so it works even
+    before the widget is otherwise configured with an API key.
 
 GetFriendList and the friends' GetPlayerSummaries calls will also 401/403 if
 the configured profile's "Game details"/friends-list privacy isn't set to
@@ -31,11 +34,17 @@ unreachable Pi-hole/Docker host.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import httpx
 
 _BASE_URL = "https://api.steampowered.com"
+
+# Steam news posts mix HTML and BBCode markup in `contents`; strip both so
+# API consumers (the frontend and the AI tool) get plain text.
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_BBCODE_TAG_RE = re.compile(r"\[/?[a-zA-Z0-9_]+(?:=[^\]]*)?\]")
 
 # Steam's documented cap on the number of steamids GetPlayerSummaries
 # accepts in one call.
@@ -112,6 +121,25 @@ def _game_dict(game: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _clean_contents(text: str) -> str:
+    text = _BBCODE_TAG_RE.sub("", text)
+    text = _HTML_TAG_RE.sub("", text)
+    return text.strip()
+
+
+def _news_dict(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "gid": item.get("gid", ""),
+        "title": item.get("title", ""),
+        "url": item.get("url", ""),
+        "author": item.get("author", ""),
+        "contents": _clean_contents(item.get("contents", "")),
+        "feedlabel": item.get("feedlabel", ""),
+        "date": item.get("date", 0),
+        "is_external_url": bool(item.get("is_external_url", False)),
+    }
+
+
 async def fetch_player_summaries(settings: dict[str, Any], steamids: list[str]) -> list[dict[str, Any]]:
     """Fetch player summaries for up to `_PLAYER_SUMMARIES_BATCH_SIZE` steamids at once.
 
@@ -185,3 +213,17 @@ async def fetch_friends_status(settings: dict[str, Any], steamid: str) -> list[d
         batch = friend_ids[i : i + _PLAYER_SUMMARIES_BATCH_SIZE]
         players.extend(await fetch_player_summaries(settings, batch))
     return players
+
+
+async def fetch_news_for_app(appid: int, count: int, maxlength: int) -> list[dict[str, Any]]:
+    """Fetch recent news posts for a single app. Public endpoint — no API key needed."""
+    data = await _get(
+        "/ISteamNews/GetNewsForApp/v2/",
+        {"appid": appid, "count": count, "maxlength": maxlength},
+    )
+    newsitems = (data.get("appnews") or {}).get("newsitems")
+    if newsitems is None:
+        newsitems = []
+    if not isinstance(newsitems, list):
+        raise SteamError("Unexpected response shape from the Steam Web API.")
+    return [_news_dict(n) for n in newsitems if isinstance(n, dict)]

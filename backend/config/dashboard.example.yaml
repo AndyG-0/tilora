@@ -87,16 +87,24 @@ widgets:
 
   - id: movies
     type: movies
-    # Requires TMDB_API_KEY in backend/.env. Shows movies, TV shows, and an
-    # always-on "Trending" TV row, each with JustWatch-sourced streaming
-    # availability. `mode` is "popular" (default) or "trending" (this week's
-    # trending titles instead of the all-time popular list) — it only
-    # affects the Movies/Shows rows; Trending is independent of it.
+    # Requires TMDB_API_KEY in backend/.env. `categories` controls which
+    # sections appear on the tile/detail view; omit it (or leave commented
+    # below) to show all five: popular_movies, popular_tv, trending_movies,
+    # trending_tv, and on_streaming (movies+shows currently available via a
+    # flatrate subscription in `region`). `providers` is a list of TMDB
+    # provider IDs (see GET /api/movies/providers) that narrows on_streaming
+    # to just those services — left empty (default), on_streaming shows
+    # anything available on any flatrate service. Both are also editable
+    # from this widget's detail view ("Edit settings"). Note the voice
+    # assistant can always answer popular/trending/on-streaming questions
+    # regardless of which categories are enabled here — categories only
+    # affects the dashboard tile/detail display.
     enabled: true
     layout: { col: 1, row: 2, colSpan: 3, rowSpan: 1 }
     settings:
       region: US
-      mode: popular
+      # categories: [popular_movies, popular_tv, trending_movies, trending_tv, on_streaming]
+      # providers: [8, 337]  # e.g. Netflix, Disney+ — see GET /api/movies/providers for IDs
 
   - id: discord
     type: discord
@@ -119,7 +127,9 @@ widgets:
     type: clock
     enabled: true
     layout: { col: 1, row: 3, colSpan: 1, rowSpan: 1 }
-    settings: {}
+    settings:
+      # One of: digital, analog, binary, word, matrix
+      style: digital
 
   - id: date
     type: date
@@ -414,22 +424,20 @@ widgets:
 
   - id: asus_router
     type: asus_router
-    # Disabled by default. `host`/`port`/`use_https` point at the router's
-    # web admin interface (Merlin firmware defaults to HTTPS on 443, but many
-    # routers — especially on a local IP like 192.168.x.1 — only serve the
-    # admin UI over plain HTTP on port 80; set use_https: false and port: 80
-    # from this widget's detail view in that case). Set the username/password
-    # from this widget's detail view too (not here, so they aren't committed
-    # to this git-tracked file — stored in the backend's local database
-    # instead, same as the Synology/Pi-hole widgets). Shows WAN status and
-    # connected-client count, plus a per-client list and traffic counters in
-    # the detail view.
+    # Connects over SSH (not the router's web admin UI, which only allows
+    # one active session — logging in from a second device/backend would
+    # kick the others). Enable SSH access with password auth on the router
+    # first. `ssh_port` defaults to 22; change it here if you've moved SSH
+    # to a non-standard port. Set the username/password from this widget's
+    # detail view (not here, so they aren't committed to this git-tracked
+    # file — stored in the backend's local database instead, same as the
+    # Synology/Pi-hole widgets). Shows WAN status and connected-client
+    # count, plus a per-client list and traffic counters in the detail view.
     enabled: true
     layout: { col: 3, row: 12, colSpan: 2, rowSpan: 1 }
     settings:
       host: "192.168.50.1"
-      port: 443
-      use_https: true
+      ssh_port: 22
       username: "admin"
 
   - id: goodreads
@@ -445,3 +453,18 @@ widgets:
     settings:
       user_id: "12345678"
       shelf: "currently-reading"
+
+  - id: bookmarks
+    type: bookmarks
+    # Disabled by default. Each logged-in user has their own list — this is
+    # only a demo default for whoever hasn't set their own yet. Real lists
+    # are meant to be edited from the widget's own "Edit bookmarks" view, not
+    # hand-typed here. Icons are auto-derived from each link's domain
+    # favicon; `icon` below is optional and only needed to override that.
+    enabled: false
+    layout: { col: 2, row: 13, colSpan: 1, rowSpan: 2 }
+    settings:
+      title: "Bookmarks"
+      bookmarks:
+        - name: "GitHub"
+          url: "https://github.com"

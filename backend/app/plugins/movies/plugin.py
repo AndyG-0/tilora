@@ -1,6 +1,14 @@
-"""Movies plugin: TMDB popular or trending movies/TV, drilling down into
-JustWatch-sourced streaming availability (TMDB's `/watch/providers` endpoint
-aggregates JustWatch data — no separate JustWatch API key needed).
+"""Movies plugin: TMDB popular, trending, and on-streaming movies/TV, drilling
+down into JustWatch-sourced streaming availability (TMDB's `/watch/providers`
+endpoint aggregates JustWatch data — no separate JustWatch API key needed).
+
+Which sections a widget shows is controlled by the `categories` setting (a
+list of category keys, defaulting to all of them); which streaming services
+narrow the "on streaming" section is controlled by the `providers` setting
+(a list of TMDB provider IDs, see `app.api.movies`). Both are editable from
+the widget's detail view. The AI assistant's tools are NOT gated by
+`categories` — a voice query can always ask about any of the six lists below
+regardless of what's currently visible on the dashboard.
 """
 
 from __future__ import annotations
@@ -16,11 +24,40 @@ from app.plugins.base import Plugin, ToolDef
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 POSTER_BASE_URL = "https://image.tmdb.org/t/p/w342"
 
-# How many of the popular-movies/popular-tv results to enrich with
-# watch-provider data in get_detail — each one is an extra TMDB request, so
-# keep it bounded.
+# How many of each list's results to enrich with watch-provider data in
+# get_detail — each one is an extra TMDB request, so keep it bounded.
 _DETAIL_ITEM_COUNT = 10
 _SUMMARY_ITEM_COUNT = 5
+
+# Settings-facing category keys, in canonical display/response order.
+_ALL_CATEGORIES: tuple[str, ...] = (
+    "popular_movies",
+    "popular_tv",
+    "trending_movies",
+    "trending_tv",
+    "on_streaming",
+)
+
+# response key -> the settings category that enables it. "on_streaming"
+# fans out to two response keys since movie/TV ids aren't unique across
+# each other and every other category is already movie/tv-split.
+_CATEGORY_BY_RESPONSE_KEY: dict[str, str] = {
+    "popular_movies": "popular_movies",
+    "trending_movies": "trending_movies",
+    "popular_tv_shows": "popular_tv",
+    "trending_tv_shows": "trending_tv",
+    "on_streaming_movies": "on_streaming",
+    "on_streaming_tv_shows": "on_streaming",
+}
+
+_MEDIA_TYPE_BY_RESPONSE_KEY: dict[str, str] = {
+    "popular_movies": "movie",
+    "trending_movies": "movie",
+    "on_streaming_movies": "movie",
+    "popular_tv_shows": "tv",
+    "trending_tv_shows": "tv",
+    "on_streaming_tv_shows": "tv",
+}
 
 
 class MoviesPlugin(Plugin):
@@ -33,32 +70,59 @@ class MoviesPlugin(Plugin):
         return self.config["settings"].get("region", "US")
 
     @property
-    def mode(self) -> str:
-        # "popular" (default) or "trending" — which TMDB list to show.
-        return self.config["settings"].get("mode", "popular")
+    def categories(self) -> list[str]:
+        # Defaults to every category when unset. Filters out unrecognized
+        # values defensively, since widget settings have no schema layer.
+        raw = self.config["settings"].get("categories")
+        if raw is None:
+            return list(_ALL_CATEGORIES)
+        enabled = set(raw)
+        return [c for c in _ALL_CATEGORIES if c in enabled]
+
+    @property
+    def providers(self) -> list[int]:
+        # TMDB provider IDs the user picked as their streaming services.
+        # Empty (default) means on_streaming stays generic/unfiltered.
+        return [int(p) for p in self.config["settings"].get("providers", [])]
 
     @property
     def _params(self) -> dict[str, str]:
         return {"api_key": settings.tmdb_api_key or "", "language": "en-US"}
 
-    def _list_path(self, media_type: str) -> str:
-        if self.mode == "trending":
-            return f"trending/{media_type}/week"
-        return f"{media_type}/popular"
+    def _list_request(self, response_key: str) -> tuple[str, dict[str, str]]:
+        if response_key == "popular_movies":
+            return "movie/popular", {}
+        if response_key == "popular_tv_shows":
+            return "tv/popular", {}
+        if response_key == "trending_movies":
+            return "trending/movie/week", {}
+        if response_key == "trending_tv_shows":
+            return "trending/tv/week", {}
+        # on_streaming_movies / on_streaming_tv_shows
+        path = "discover/movie" if response_key == "on_streaming_movies" else "discover/tv"
+        params = {
+            "watch_region": self.region,
+            "with_watch_monetization_types": "flatrate",
+            "sort_by": "popularity.desc",
+        }
+        if self.providers:
+            params["with_watch_providers"] = ",".join(str(p) for p in self.providers)
+        return path, params
 
-    async def _fetch_path(self, client: httpx.AsyncClient, path: str) -> list[dict[str, Any]]:
-        response = await client.get(f"{TMDB_BASE_URL}/{path}", params=self._params)
+    def _enabled_response_keys(self) -> list[str]:
+        enabled = set(self.categories)
+        return [key for key, category in _CATEGORY_BY_RESPONSE_KEY.items() if category in enabled]
+
+    async def _fetch_path(
+        self, client: httpx.AsyncClient, path: str, extra_params: dict[str, str] | None = None
+    ) -> list[dict[str, Any]]:
+        response = await client.get(f"{TMDB_BASE_URL}/{path}", params={**self._params, **(extra_params or {})})
         response.raise_for_status()
         return response.json()["results"]
 
-    async def _fetch_list(self, client: httpx.AsyncClient, media_type: str) -> list[dict[str, Any]]:
-        return await self._fetch_path(client, self._list_path(media_type))
-
-    async def _fetch_trending_tv(self, client: httpx.AsyncClient) -> list[dict[str, Any]]:
-        # Always trending/tv/week regardless of `mode` — a dedicated
-        # "what's trending" section alongside the popular/trending toggle
-        # that already governs the Movies/Shows lists above.
-        return await self._fetch_path(client, "trending/tv/week")
+    async def _fetch_response_list(self, client: httpx.AsyncClient, response_key: str) -> list[dict[str, Any]]:
+        path, extra_params = self._list_request(response_key)
+        return await self._fetch_path(client, path, extra_params)
 
     async def _fetch_providers(self, client: httpx.AsyncClient, media_type: str, item_id: int) -> list[str]:
         response = await client.get(
@@ -83,74 +147,111 @@ class MoviesPlugin(Plugin):
         }
 
     async def get_summary(self) -> dict[str, Any]:
+        keys = self._enabled_response_keys()
         async with httpx.AsyncClient(timeout=10) as client:
-            movies, tv_shows, trending_tv = await asyncio.gather(
-                self._fetch_list(client, "movie"),
-                self._fetch_list(client, "tv"),
-                self._fetch_trending_tv(client),
-            )
+            lists = await asyncio.gather(*(self._fetch_response_list(client, key) for key in keys))
         return {
-            "movies": [self._media_summary(m, "movie") for m in movies[:_SUMMARY_ITEM_COUNT]],
-            "tv_shows": [self._media_summary(t, "tv") for t in tv_shows[:_SUMMARY_ITEM_COUNT]],
-            "trending_tv_shows": [self._media_summary(t, "tv") for t in trending_tv[:_SUMMARY_ITEM_COUNT]],
+            key: [self._media_summary(item, _MEDIA_TYPE_BY_RESPONSE_KEY[key]) for item in items[:_SUMMARY_ITEM_COUNT]]
+            for key, items in zip(keys, lists, strict=True)
         }
 
     async def get_detail(self) -> dict[str, Any]:
+        keys = self._enabled_response_keys()
         async with httpx.AsyncClient(timeout=10) as client:
-            movies, tv_shows, trending_tv = await asyncio.gather(
-                self._fetch_list(client, "movie"),
-                self._fetch_list(client, "tv"),
-                self._fetch_trending_tv(client),
-            )
-            top_movies = movies[:_DETAIL_ITEM_COUNT]
-            top_tv = tv_shows[:_DETAIL_ITEM_COUNT]
-            top_trending_tv = trending_tv[:_DETAIL_ITEM_COUNT]
-            movie_providers, tv_providers, trending_tv_providers = await asyncio.gather(
-                asyncio.gather(*(self._fetch_providers(client, "movie", m["id"]) for m in top_movies)),
-                asyncio.gather(*(self._fetch_providers(client, "tv", t["id"]) for t in top_tv)),
-                asyncio.gather(*(self._fetch_providers(client, "tv", t["id"]) for t in top_trending_tv)),
+            lists = await asyncio.gather(*(self._fetch_response_list(client, key) for key in keys))
+            top_items = {key: items[:_DETAIL_ITEM_COUNT] for key, items in zip(keys, lists, strict=True)}
+            provider_lists = await asyncio.gather(
+                *(
+                    asyncio.gather(
+                        *(self._fetch_providers(client, _MEDIA_TYPE_BY_RESPONSE_KEY[key], item["id"]) for item in items)
+                    )
+                    for key, items in top_items.items()
+                )
             )
 
-        movies_out = [
-            {**self._media_summary(m, "movie"), "overview": m.get("overview", ""), "where_to_watch": p}
-            for m, p in zip(top_movies, movie_providers, strict=True)
-        ]
-        tv_out = [
-            {**self._media_summary(t, "tv"), "overview": t.get("overview", ""), "where_to_watch": p}
-            for t, p in zip(top_tv, tv_providers, strict=True)
-        ]
-        trending_tv_out = [
-            {**self._media_summary(t, "tv"), "overview": t.get("overview", ""), "where_to_watch": p}
-            for t, p in zip(top_trending_tv, trending_tv_providers, strict=True)
-        ]
-        return {
-            "movies": movies_out,
-            "tv_shows": tv_out,
-            "trending_tv_shows": trending_tv_out,
-            "region": self.region,
-        }
+        result: dict[str, Any] = {"region": self.region, "categories": self.categories, "providers": self.providers}
+        for key, item_providers in zip(top_items.keys(), provider_lists, strict=True):
+            media_type = _MEDIA_TYPE_BY_RESPONSE_KEY[key]
+            result[key] = [
+                {**self._media_summary(item, media_type), "overview": item.get("overview", ""), "where_to_watch": p}
+                for item, p in zip(top_items[key], item_providers, strict=True)
+            ]
+        return result
 
     def get_ai_tools(self) -> list[ToolDef]:
+        async def fetch_one(response_key: str) -> list[dict[str, Any]]:
+            async with httpx.AsyncClient(timeout=10) as client:
+                items = await self._fetch_response_list(client, response_key)
+            media_type = _MEDIA_TYPE_BY_RESPONSE_KEY[response_key]
+            return [self._media_summary(item, media_type) for item in items[:_SUMMARY_ITEM_COUNT]]
+
         async def get_popular_movies() -> dict[str, Any]:
-            summary = await self.get_summary()
-            return {"movies": summary["movies"]}
+            return {"movies": await fetch_one("popular_movies")}
+
+        async def get_trending_movies() -> dict[str, Any]:
+            return {"movies": await fetch_one("trending_movies")}
 
         async def get_popular_tv_shows() -> dict[str, Any]:
-            summary = await self.get_summary()
-            return {"tv_shows": summary["tv_shows"]}
+            return {"tv_shows": await fetch_one("popular_tv_shows")}
 
-        list_label = "trending this week" if self.mode == "trending" else "popular"
+        async def get_trending_tv_shows() -> dict[str, Any]:
+            return {"tv_shows": await fetch_one("trending_tv_shows")}
+
+        async def get_on_streaming_movies() -> dict[str, Any]:
+            return {"movies": await fetch_one("on_streaming_movies")}
+
+        async def get_on_streaming_tv_shows() -> dict[str, Any]:
+            return {"tv_shows": await fetch_one("on_streaming_tv_shows")}
+
+        streaming_scope = (
+            f"scoped to the {len(self.providers)} streaming service(s) the user has selected"
+            if self.providers
+            else f"generic — any service offering a flatrate subscription in {self.region}, since no "
+            "streaming services are selected"
+        )
         return [
             ToolDef(
                 name="get_popular_movies",
-                description=f"Get the current list of {list_label} movies from TMDB.",
+                description="Get the all-time popular movies list from TMDB (not this week's trending list).",
                 parameters={"type": "object", "properties": {}},
                 handler=get_popular_movies,
             ),
             ToolDef(
+                name="get_trending_movies",
+                description=(
+                    "Get this week's trending movies from TMDB — the movies people are watching right now, "
+                    "as opposed to the all-time popular list."
+                ),
+                parameters={"type": "object", "properties": {}},
+                handler=get_trending_movies,
+            ),
+            ToolDef(
                 name="get_popular_tv_shows",
-                description=f"Get the current list of {list_label} TV shows from TMDB.",
+                description="Get the all-time popular TV shows list from TMDB (not this week's trending list).",
                 parameters={"type": "object", "properties": {}},
                 handler=get_popular_tv_shows,
+            ),
+            ToolDef(
+                name="get_trending_tv_shows",
+                description=(
+                    "Get this week's trending TV shows from TMDB — the shows people are watching right now, "
+                    "as opposed to the all-time popular list."
+                ),
+                parameters={"type": "object", "properties": {}},
+                handler=get_trending_tv_shows,
+            ),
+            ToolDef(
+                name="get_on_streaming_movies",
+                description=f"Get movies currently available to stream on a flatrate subscription, {streaming_scope}.",
+                parameters={"type": "object", "properties": {}},
+                handler=get_on_streaming_movies,
+            ),
+            ToolDef(
+                name="get_on_streaming_tv_shows",
+                description=(
+                    f"Get TV shows currently available to stream on a flatrate subscription, {streaming_scope}."
+                ),
+                parameters={"type": "object", "properties": {}},
+                handler=get_on_streaming_tv_shows,
             ),
         ]
