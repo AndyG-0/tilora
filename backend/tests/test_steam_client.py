@@ -11,6 +11,7 @@ SETTINGS = {"api_key": "test-key", "steamid": "76561197960435530"}
 PLAYER_SUMMARIES_URL = "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/"
 RECENTLY_PLAYED_URL = "https://api.steampowered.com/IPlayerService/GetRecentlyPlayedGames/v1/"
 FRIEND_LIST_URL = "https://api.steampowered.com/ISteamUser/GetFriendList/v1/"
+NEWS_URL = "https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/"
 
 PLAYER_SUMMARIES_RESPONSE = {
     "response": {
@@ -276,3 +277,103 @@ async def test_fetch_player_summary_raises_on_unexpected_shape():
 
 async def test_fetch_player_summaries_returns_empty_list_for_no_steamids():
     assert await steam_client.fetch_player_summaries(SETTINGS, []) == []
+
+
+NEWS_RESPONSE = {
+    "appnews": {
+        "appid": 220,
+        "newsitems": [
+            {
+                "gid": "123",
+                "title": "Half-Life 2: Update Released",
+                "url": "https://store.steampowered.com/news/app/220/view/123",
+                "author": "Valve",
+                "contents": "Fixed some [b]bugs[/b] and <i>issues</i>.",
+                "feedlabel": "Half-Life 2 Updates",
+                "date": 1700000000,
+                "feedname": "steam_updates",
+                "feed_type": 0,
+                "appid": 220,
+                "is_external_url": True,
+            }
+        ],
+        "count": 1,
+    }
+}
+
+
+@respx.mock
+async def test_fetch_news_for_app_maps_fields():
+    respx.get(NEWS_URL).mock(return_value=httpx.Response(200, json=NEWS_RESPONSE))
+
+    news = await steam_client.fetch_news_for_app(220, count=5, maxlength=300)
+
+    assert len(news) == 1
+    item = news[0]
+    assert item["gid"] == "123"
+    assert item["title"] == "Half-Life 2: Update Released"
+    assert item["url"] == "https://store.steampowered.com/news/app/220/view/123"
+    assert item["author"] == "Valve"
+    assert item["feedlabel"] == "Half-Life 2 Updates"
+    assert item["date"] == 1700000000
+    assert item["is_external_url"] is True
+    assert "feedname" not in item
+    assert "feed_type" not in item
+    assert "appid" not in item
+
+
+@respx.mock
+async def test_fetch_news_for_app_strips_html_and_bbcode_from_contents():
+    respx.get(NEWS_URL).mock(return_value=httpx.Response(200, json=NEWS_RESPONSE))
+
+    news = await steam_client.fetch_news_for_app(220, count=5, maxlength=300)
+
+    assert news[0]["contents"] == "Fixed some bugs and issues."
+
+
+@respx.mock
+async def test_fetch_news_for_app_returns_empty_list_when_no_newsitems_key():
+    respx.get(NEWS_URL).mock(return_value=httpx.Response(200, json={"appnews": {"appid": 220, "count": 0}}))
+
+    news = await steam_client.fetch_news_for_app(220, count=5, maxlength=300)
+
+    assert news == []
+
+
+@respx.mock
+async def test_fetch_news_for_app_raises_on_unexpected_shape():
+    respx.get(NEWS_URL).mock(return_value=httpx.Response(200, json={"appnews": {"newsitems": "oops"}}))
+
+    with pytest.raises(steam_client.SteamError):
+        await steam_client.fetch_news_for_app(220, count=5, maxlength=300)
+
+
+@respx.mock
+async def test_fetch_news_for_app_raises_on_non_json_200_response():
+    respx.get(NEWS_URL).mock(
+        return_value=httpx.Response(200, content=b"not json", headers={"content-type": "text/plain"})
+    )
+
+    with pytest.raises(steam_client.SteamError):
+        await steam_client.fetch_news_for_app(220, count=5, maxlength=300)
+
+
+@respx.mock
+async def test_fetch_news_for_app_raises_on_connect_error():
+    respx.get(NEWS_URL).mock(side_effect=httpx.ConnectError("refused"))
+
+    with pytest.raises(steam_client.SteamError):
+        await steam_client.fetch_news_for_app(220, count=5, maxlength=300)
+
+
+@respx.mock
+async def test_fetch_news_for_app_sends_no_api_key_param():
+    route = respx.get(NEWS_URL).mock(return_value=httpx.Response(200, json=NEWS_RESPONSE))
+
+    await steam_client.fetch_news_for_app(220, count=5, maxlength=300)
+
+    request = route.calls[0].request
+    assert "key" not in request.url.params
+    assert request.url.params["appid"] == "220"
+    assert request.url.params["count"] == "5"
+    assert request.url.params["maxlength"] == "300"

@@ -8,6 +8,11 @@
 		text: string;
 	}
 
+	interface AITopic {
+		id: string;
+		name: string;
+	}
+
 	interface AIDetailData {
 		title: string;
 		text: string;
@@ -15,6 +20,7 @@
 		history: AIRun[];
 		prompt: string;
 		cron: string;
+		topics: string[];
 	}
 
 	let { data: initialData }: { data: AIDetailData } = $props();
@@ -25,20 +31,32 @@
 
 	let editingPrompt = $state(false);
 	let promptInput = $state('');
+	let topicsInput = $state<string[]>([]);
+	let topicCatalog = $state<AITopic[]>([]);
 	let saving = $state(false);
 	let regenerating = $state(false);
 	let error = $state<string | null>(null);
 
-	function openEditor() {
+	async function openEditor() {
 		promptInput = ai.prompt;
+		topicsInput = [...ai.topics];
 		editingPrompt = true;
+		try {
+			topicCatalog = await api.assistantTopics();
+		} catch {
+			topicCatalog = [];
+		}
+	}
+
+	function toggleTopic(id: string) {
+		topicsInput = topicsInput.includes(id) ? topicsInput.filter((t) => t !== id) : [...topicsInput, id];
 	}
 
 	async function savePrompt() {
 		saving = true;
 		error = null;
 		try {
-			await api.updateWidgetSettings(page.params.id!, { prompt: promptInput });
+			await api.updateWidgetSettings(page.params.id!, { prompt: promptInput, topics: topicsInput });
 			ai = await api.widgetDetail<AIDetailData>(page.params.id!);
 			editingPrompt = false;
 		} catch {
@@ -82,6 +100,19 @@
 			Prompt
 			<textarea rows="6" bind:value={promptInput}></textarea>
 		</label>
+
+		<div class="topics">
+			<span class="topics-label">Cover in this summary</span>
+			<p class="hint">Leave all unchecked to let the summary draw on everything voice control can access.</p>
+			<div class="topics-list">
+				{#each topicCatalog as topic (topic.id)}
+					<label class="topic">
+						<input type="checkbox" checked={topicsInput.includes(topic.id)} onchange={() => toggleTopic(topic.id)} />
+						{topic.name}
+					</label>
+				{/each}
+			</div>
+		</div>
 
 		{#if error}
 			<p class="hint error">{error}</p>
@@ -158,6 +189,29 @@
 		gap: 0.25rem;
 		font-size: 0.9rem;
 		color: var(--color-text-muted);
+	}
+
+	.topics-label {
+		font-size: 0.9rem;
+		color: var(--color-text-muted);
+	}
+
+	.topics .hint {
+		font-size: 0.8rem;
+		margin: 0.15rem 0 0.5rem;
+	}
+
+	.topics-list {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem 1rem;
+	}
+
+	.settings-form label.topic {
+		flex-direction: row;
+		align-items: center;
+		gap: 0.4rem;
+		width: auto;
 	}
 
 	.settings-form textarea {

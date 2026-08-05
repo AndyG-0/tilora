@@ -13,6 +13,7 @@ from app.plugins.ai_insights.plugin import AIInsightsPlugin
 from app.plugins.base import Plugin, registry
 from app.plugins.photos.plugin import PhotosPlugin
 from app.plugins.registry_types import PLUGIN_CLASSES_BY_TYPE
+from app.plugins.scoping import scoped_plugin
 from app.scheduler import run_ai_widget, schedule_ai_widget, schedule_photo_index, unschedule_widget
 from app.storage.cache import cache
 from app.storage.db import (
@@ -173,34 +174,6 @@ def _require_write_access(plugin: Plugin, user: dict[str, Any]) -> None:
         raise HTTPException(status_code=403, detail="Admin access required")
 
 
-async def _scoped_plugin(plugin: Plugin, user: dict[str, Any], device: dict[str, Any]) -> Plugin:
-    """The plugin instance to read from for this request.
-
-    "network"-scope plugins render the same content for everyone, so the
-    registry singleton is used directly, unless the plugin also opts specific
-    keys into device_overridable_settings (see below). "personal"-scope
-    plugins get a throwaway instance carrying this user's own settings
-    layered on top of the widget's baseline — see Plugin.with_settings.
-
-    Device overrides layer on top of whichever of the above the settings
-    dict already reflects — network default or personal override — so an
-    unset device just inherits it, no separate fallback logic needed.
-    """
-    settings = None
-    if plugin.settings_scope == "personal":
-        overrides = await asyncio.to_thread(get_widget_user_settings, user["id"], plugin.id) or {}
-        settings = {**plugin.config["settings"], **overrides}
-    if plugin.device_overridable_settings:
-        device_overrides = await asyncio.to_thread(get_widget_device_settings, device["id"], plugin.id) or {}
-        settings = {
-            **(settings if settings is not None else plugin.config["settings"]),
-            **{k: v for k, v in device_overrides.items() if k in plugin.device_overridable_settings},
-        }
-    if settings is None:
-        return plugin
-    return plugin.with_settings(settings)
-
-
 def _cache_key(kind: str, plugin: Plugin, user: dict[str, Any], device: dict[str, Any]) -> str:
     parts = [kind, plugin.id]
     if plugin.settings_scope == "personal":
@@ -222,7 +195,7 @@ async def widget_summary(
     if cached is not None:
         return cached
 
-    scoped = await _scoped_plugin(plugin, user, device)
+    scoped = await scoped_plugin(plugin, user, device)
     data = await scoped.get_summary()
     cache.set(cache_key, data, plugin.refresh_interval_seconds)
     return data
@@ -240,7 +213,7 @@ async def widget_detail(
     if cached is not None:
         return cached
 
-    scoped = await _scoped_plugin(plugin, user, device)
+    scoped = await scoped_plugin(plugin, user, device)
     data = await scoped.get_detail()
     cache.set(cache_key, data, plugin.refresh_interval_seconds)
     return data

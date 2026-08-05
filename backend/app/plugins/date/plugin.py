@@ -1,15 +1,18 @@
 """Date widget: just tells the frontend which timezone to render in.
 
 Same reasoning as `ClockPlugin` — the calendar date is computed client-side
-from the timezone, not polled from the backend every tick.
+from the timezone, not polled from the backend every tick. The AI tool below
+is the exception, for the same reason as `ClockPlugin`'s: a voice query needs
+an actual formatted date back from the backend, not just a timezone.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
-from app.config import effective_settings
-from app.plugins.base import Plugin
+from app.config import effective_settings, resolve_timezone
+from app.plugins.base import Plugin, ToolDef
 
 
 class DatePlugin(Plugin):
@@ -22,3 +25,19 @@ class DatePlugin(Plugin):
 
     async def get_detail(self) -> dict[str, Any]:
         return await self.get_summary()
+
+    def get_ai_tools(self) -> list[ToolDef]:
+        async def get_current_date() -> dict[str, Any]:
+            timezone_name = effective_settings()["timezone"]
+            now = datetime.now(resolve_timezone(timezone_name))
+            return {"date": f"{now:%A, %B} {now.day}, {now.year}", "timezone": timezone_name}
+
+        return [
+            ToolDef(
+                name=f"get_current_date_{self.id}",
+                description="Get today's calendar date in the dashboard's configured timezone. Use "
+                "this for requests like 'what's today's date' or 'what day is it'.",
+                parameters={"type": "object", "properties": {}},
+                handler=get_current_date,
+            )
+        ]

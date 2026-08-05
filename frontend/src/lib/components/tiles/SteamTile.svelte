@@ -49,6 +49,9 @@
 				{/each}
 			</ul>
 		{/if}
+		{#if summary.news.length > 0}
+			<div class="latest-news">Latest: {summary.news[0].title}</div>
+		{/if}
 	{/if}
 </TileCard>
 
@@ -120,6 +123,15 @@
 	}
 
 	.recent li {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.latest-news {
+		font-size: 0.8rem;
+		color: var(--color-text-muted);
+		margin-top: 0.35rem;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;

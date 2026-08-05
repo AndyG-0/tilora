@@ -1,429 +1,217 @@
 from __future__ import annotations
 
-import asyncio
+from dataclasses import dataclass, field
 
-import httpx
+import asyncssh
 import pytest
-import respx
 
 from app.integrations import asus_router_client
-from app.storage.cache import cache
 
-SETTINGS = {"host": "router.local", "port": 443, "use_https": True, "username": "admin", "password": "secret"}
-SETTINGS_HTTP = {"host": "192.168.50.1", "port": 80, "use_https": False, "username": "admin", "password": "secret"}
-SETTINGS_NONDEFAULT_PORT = {
-    "host": "router.local",
-    "port": 8443,
-    "use_https": True,
-    "username": "admin",
-    "password": "secret",
-}
+SETTINGS = {"host": "router.local", "ssh_port": 22, "username": "admin", "password": "secret"}
 
 
-def test_is_configured_true_when_host_and_username_set():
+@dataclass
+class _FakeCompletedProcess:
+    stdout: str
+
+
+@dataclass
+class _FakeConnection:
+    stdout: str = ""
+    run_error: Exception | None = None
+    run_calls: int = field(default=0, init=False)
+    closed: bool = field(default=False, init=False)
+
+    async def run(self, command: str, check: bool = False):
+        self.run_calls += 1
+        if self.run_error is not None:
+            raise self.run_error
+        return _FakeCompletedProcess(stdout=self.stdout)
+
+    def close(self) -> None:
+        self.closed = True
+
+    async def wait_closed(self) -> None:
+        pass
+
+
+def _fake_connect(*, stdout: str = "", connect_error: Exception | None = None, run_error: Exception | None = None):
+    calls: list[dict] = []
+    connection = _FakeConnection(stdout=stdout, run_error=run_error)
+
+    async def fake_connect(host, *, port, username, password, known_hosts):
+        calls.append({"host": host, "port": port, "username": username, "password": password})
+        if connect_error is not None:
+            raise connect_error
+        return connection
+
+    fake_connect.calls = calls
+    fake_connect.connection = connection
+    return fake_connect
+
+
+def _build_output(
+    *,
+    wan_state: str = "2",
+    wan_ip: str = "203.0.113.5",
+    wan_ifname: str = "eth0",
+    productid: str = "RT-AX88U",
+    netdev_lines: list[str] | None = None,
+    leases_lines: list[str] | None = None,
+    arp_lines: list[str] | None = None,
+) -> str:
+    # /proc/net/dev: 8 receive fields (bytes first) then 8 transmit fields
+    # (bytes first, at index 8) per "iface: ..." line.
+    if netdev_lines is None:
+        netdev_lines = [
+            "  lo: 100 1 0 0 0 0 0 0 100 1 0 0 0 0 0 0",
+            "eth0: 1024 10 0 0 0 0 0 0 512 5 0 0 0 0 0 0",
+        ]
+    if leases_lines is None:
+        leases_lines = ["1700000000 aa:bb:cc:dd:ee:ff 192.168.1.10 Laptop 01:aa:bb:cc:dd:ee:ff"]
+    if arp_lines is None:
+        arp_lines = [
+            "IP address       HW type     Flags       HW address            Mask     Device",
+            "192.168.1.10     0x1         0x2         aa:bb:cc:dd:ee:ff     *        br0",
+            "192.168.1.11     0x1         0x0         11:22:33:44:55:66     *        br0",
+        ]
+    sections = [
+        ("WAN_STATE", [wan_state]),
+        ("WAN_IP", [wan_ip]),
+        ("WAN_IFNAME", [wan_ifname]),
+        ("PRODUCTID", [productid]),
+        ("NETDEV", netdev_lines),
+        ("LEASES", leases_lines),
+        ("ARP", arp_lines),
+    ]
+    lines: list[str] = []
+    for name, section_lines in sections:
+        lines.append(f"@@{name}@@")
+        lines.extend(section_lines)
+    return "\n".join(lines)
+
+
+def test_is_configured_true_when_host_username_password_set():
     assert asus_router_client.is_configured(SETTINGS)
 
 
 def test_is_configured_false_without_username():
-    assert not asus_router_client.is_configured({"host": "router.local"})
+    assert not asus_router_client.is_configured({"host": "router.local", "password": "secret"})
 
 
 def test_is_configured_false_without_password():
     assert not asus_router_client.is_configured({"host": "router.local", "username": "admin"})
 
 
-@respx.mock
-async def test_authenticate_caches_session_from_cookie():
-    route = respx.post("https://router.local:443/login.cgi").mock(
-        return_value=httpx.Response(200, headers={"set-cookie": "asus_token=tok1; Path=/"})
-    )
-
-    session = await asus_router_client._resolve_session(SETTINGS, "r1")
-
-    assert route.called
-    assert session.token == "tok1"
-    assert cache.get("asus_token:r1").token == "tok1"
-
-
-@respx.mock
-async def test_authenticate_falls_back_to_json_body_token():
-    respx.post("https://router.local:443/login.cgi").mock(return_value=httpx.Response(200, json={"asus_token": "tok2"}))
-
-    session = await asus_router_client._resolve_session(SETTINGS, "r2")
-
-    assert session.token == "tok2"
-
-
-@respx.mock
-async def test_resolve_session_reuses_cached_session():
-    route = respx.post("https://router.local:443/login.cgi").mock(
-        return_value=httpx.Response(200, json={"asus_token": "tok3"})
-    )
-
-    await asus_router_client._resolve_session(SETTINGS, "r3")
-    await asus_router_client._resolve_session(SETTINGS, "r3")
-
-    assert route.call_count == 1
-
-
-@respx.mock
-async def test_resolve_session_serializes_concurrent_cold_cache_calls():
-    # AsusWRT/Merlin only tracks one active session at a time, so two
-    # concurrent logins from our own process would invalidate each other's
-    # token on the router. On a cold cache, concurrent resolvers must
-    # serialize down to a single login.cgi call instead of racing.
-    route = respx.post("https://router.local:443/login.cgi").mock(
-        return_value=httpx.Response(200, json={"asus_token": "tok-concurrent"})
-    )
-
-    results = await asyncio.gather(
-        asus_router_client._resolve_session(SETTINGS, "r33-concurrent"),
-        asus_router_client._resolve_session(SETTINGS, "r33-concurrent"),
-        asus_router_client._resolve_session(SETTINGS, "r33-concurrent"),
-    )
-
-    assert route.call_count == 1
-    assert {session.token for session in results} == {"tok-concurrent"}
-
-
-@respx.mock
-async def test_authenticate_rejects_missing_token():
-    respx.post("https://router.local:443/login.cgi").mock(return_value=httpx.Response(200, json={}))
-
-    with pytest.raises(asus_router_client.AsusRouterError):
-        await asus_router_client._resolve_session(SETTINGS, "r4")
-
-
-@respx.mock
-async def test_authenticate_raises_on_http_error_status():
-    respx.post("https://router.local:443/login.cgi").mock(return_value=httpx.Response(500))
-
-    with pytest.raises(asus_router_client.AsusRouterError):
-        await asus_router_client._resolve_session(SETTINGS, "r5")
-
-
-@respx.mock
-async def test_authenticate_over_plain_http():
-    route = respx.post("http://192.168.50.1:80/login.cgi").mock(
-        return_value=httpx.Response(200, json={"asus_token": "tok-http"})
-    )
-
-    session = await asus_router_client._resolve_session(SETTINGS_HTTP, "r12")
-
-    assert route.called
-    assert session.token == "tok-http"
-
-
-@respx.mock
-async def test_authenticate_follows_redirect_and_keeps_cookie():
-    respx.post("https://router.local:443/login.cgi").mock(
-        return_value=httpx.Response(
-            302,
-            headers={"set-cookie": "asus_token=tok-redirect; Path=/", "location": "/index.asp"},
-        )
-    )
-    respx.get("https://router.local:443/index.asp").mock(return_value=httpx.Response(200, html="<html></html>"))
-
-    session = await asus_router_client._resolve_session(SETTINGS, "r13")
-
-    assert session.token == "tok-redirect"
-
-
-@respx.mock
-async def test_authenticate_reports_login_page_returned():
-    respx.post("https://router.local:443/login.cgi").mock(
-        return_value=httpx.Response(200, html="<html>login form</html>")
-    )
-
-    with pytest.raises(asus_router_client.AsusRouterError, match="login page"):
-        await asus_router_client._resolve_session(SETTINGS, "r14")
-
-
-@respx.mock
-async def test_authenticate_reports_login_page_returned_includes_title():
-    respx.post("https://router.local:443/login.cgi").mock(
-        return_value=httpx.Response(200, html="<html><head><title>ASUS Login</title></head></html>")
-    )
-
-    with pytest.raises(asus_router_client.AsusRouterError, match="ASUS Login"):
-        await asus_router_client._resolve_session(SETTINGS, "r16")
-
-
-@respx.mock
-async def test_authenticate_sends_login_form_fields_matching_real_browser():
-    route = respx.post("https://router.local:443/login.cgi").mock(
-        return_value=httpx.Response(200, json={"asus_token": "tok"})
-    )
-
-    await asus_router_client._resolve_session(SETTINGS, "r17")
-
-    sent = dict(httpx.QueryParams(route.calls.last.request.content.decode()))
-    assert sent["current_page"] == "Main_Login.asp"
-    # Captured from a live browser trace: the firmware rejects the login
-    # (re-serves the login page) unless these are empty, not populated with
-    # plausible-looking values.
-    assert sent["action_mode"] == ""
-    assert sent["next_page"] == ""
-    assert sent["login_captcha"] == ""
-    assert "login_authorization" in sent
-
-    # Default port (443 for https) must be omitted from Origin/Referer,
-    # matching what a real browser sends — some firmware CSRF-checks these
-    # against the LAN host with a literal string/prefix match.
-    request_headers = route.calls.last.request.headers
-    assert request_headers["referer"] == "https://router.local/Main_Login.asp"
-    assert request_headers["origin"] == "https://router.local"
-
-
-@respx.mock
-async def test_authenticate_keeps_non_default_port_in_origin_and_referer():
-    route = respx.post("https://router.local:8443/login.cgi").mock(
-        return_value=httpx.Response(200, json={"asus_token": "tok"})
-    )
-
-    await asus_router_client._resolve_session(SETTINGS_NONDEFAULT_PORT, "r18")
-
-    request_headers = route.calls.last.request.headers
-    assert request_headers["referer"] == "https://router.local:8443/Main_Login.asp"
-    assert request_headers["origin"] == "https://router.local:8443"
-
-
-@respx.mock
-async def test_authenticate_omits_default_port_when_port_is_a_string():
-    # Settings can round-trip through JSON storage that doesn't guarantee
-    # `port` stays a native int — a stringified "443" must still be treated
-    # as the default and omitted from Origin/Referer (see _base_url).
-    settings = {**SETTINGS, "port": "443"}
-    route = respx.post("https://router.local/login.cgi").mock(
-        return_value=httpx.Response(200, json={"asus_token": "tok"})
-    )
-
-    await asus_router_client._resolve_session(settings, "r30")
-
-    request_headers = route.calls.last.request.headers
-    assert request_headers["referer"] == "https://router.local/Main_Login.asp"
-    assert request_headers["origin"] == "https://router.local"
-
-
-@respx.mock
-async def test_authenticate_omits_default_port_when_port_is_none():
-    settings = {**SETTINGS, "port": None}
-    route = respx.post("https://router.local/login.cgi").mock(
-        return_value=httpx.Response(200, json={"asus_token": "tok"})
-    )
-
-    await asus_router_client._resolve_session(settings, "r31")
-
-    request_headers = route.calls.last.request.headers
-    assert request_headers["referer"] == "https://router.local/Main_Login.asp"
-    assert request_headers["origin"] == "https://router.local"
-
-
-@respx.mock
-async def test_authenticate_keeps_explicit_port_zero():
-    # An explicit port of 0 must not be mistaken for "unset" and silently
-    # swapped for the scheme default — falsy-coercion (`port or default`)
-    # would do exactly that, since 0 is falsy.
-    settings = {**SETTINGS, "port": 0}
-    route = respx.post("https://router.local:0/login.cgi").mock(
-        return_value=httpx.Response(200, json={"asus_token": "tok"})
-    )
-
-    await asus_router_client._resolve_session(settings, "r34")
-
-    request_headers = route.calls.last.request.headers
-    assert request_headers["referer"] == "https://router.local:0/Main_Login.asp"
-    assert request_headers["origin"] == "https://router.local:0"
-
-
-@respx.mock
-async def test_authenticate_treats_string_use_https_false_as_http():
-    settings = {**SETTINGS_HTTP, "use_https": "false"}
-    route = respx.post("http://192.168.50.1/login.cgi").mock(
-        return_value=httpx.Response(200, json={"asus_token": "tok"})
-    )
-
-    await asus_router_client._resolve_session(settings, "r32")
-
-    request_headers = route.calls.last.request.headers
-    assert request_headers["referer"] == "http://192.168.50.1/Main_Login.asp"
-    assert request_headers["origin"] == "http://192.168.50.1"
-
-
-@respx.mock
-async def test_authenticate_reports_error_status_lockout():
-    respx.post("https://router.local:443/login.cgi").mock(return_value=httpx.Response(200, json={"error_status": "3"}))
-
-    with pytest.raises(asus_router_client.AsusRouterError, match="error_status 3"):
-        await asus_router_client._resolve_session(SETTINGS, "r15")
-
-
-@respx.mock
-async def test_test_connection_returns_product_id():
-    respx.post("https://router.local:443/login.cgi").mock(return_value=httpx.Response(200, json={"asus_token": "tok"}))
-    respx.post("https://router.local:443/appGet.cgi").mock(
-        return_value=httpx.Response(200, json={"productid": "RT-AX88U"})
-    )
-
-    product_id = await asus_router_client.test_connection(SETTINGS, "r6")
+async def test_test_connection_returns_product_id(monkeypatch):
+    fake = _fake_connect(stdout=_build_output(productid="RT-AX88U"))
+    monkeypatch.setattr(asyncssh, "connect", fake)
+
+    product_id = await asus_router_client.test_connection(SETTINGS, "test-widget")
 
     assert product_id == "RT-AX88U"
+    assert fake.calls == [{"host": "router.local", "port": 22, "username": "admin", "password": "secret"}]
 
 
-@respx.mock
-async def test_hook_retries_once_on_401():
-    auth_route = respx.post("https://router.local:443/login.cgi").mock(
-        side_effect=[
-            httpx.Response(200, json={"asus_token": "stale"}),
-            httpx.Response(200, json={"asus_token": "fresh"}),
-        ]
-    )
-    hook_route = respx.post("https://router.local:443/appGet.cgi").mock(
-        side_effect=[
-            httpx.Response(401),
-            httpx.Response(200, json={"productid": "RT-AX88U"}),
-        ]
-    )
+async def test_connect_coerces_string_ssh_port(monkeypatch):
+    fake = _fake_connect(stdout=_build_output())
+    monkeypatch.setattr(asyncssh, "connect", fake)
 
-    product_id = await asus_router_client.test_connection(SETTINGS, "r7")
+    await asus_router_client.test_connection({**SETTINGS, "ssh_port": "2222"}, "test-widget")
 
-    assert product_id == "RT-AX88U"
-    assert auth_route.call_count == 2
-    assert hook_route.call_count == 2
+    assert fake.calls[0]["port"] == 2222
 
 
-@respx.mock
-async def test_hook_raises_after_retry_still_fails():
-    respx.post("https://router.local:443/login.cgi").mock(return_value=httpx.Response(200, json={"asus_token": "tok"}))
-    respx.post("https://router.local:443/appGet.cgi").mock(return_value=httpx.Response(403))
+async def test_test_connection_bypasses_cache(monkeypatch):
+    fake = _fake_connect(stdout=_build_output())
+    monkeypatch.setattr(asyncssh, "connect", fake)
 
-    with pytest.raises(asus_router_client.AsusRouterError):
-        await asus_router_client.test_connection(SETTINGS, "r8")
+    await asus_router_client.get_wan_status(SETTINGS, "test-widget")
+    await asus_router_client.test_connection(SETTINGS, "test-widget")
 
-
-@respx.mock
-async def test_hook_reports_login_page_bounce_without_retrying():
-    # A 200 with HTML back from the hook endpoint (not 401/403) means the
-    # router accepted the session token but is bouncing every request back
-    # to Main_Login.asp anyway — Merlin firmware does this when it's
-    # requiring a captcha or has rate-limited logins after repeated failed
-    # attempts. This must not trigger the 401/403 re-auth-and-retry path:
-    # retrying a login here only makes an active lockout worse.
-    auth_route = respx.post("https://router.local:443/login.cgi").mock(
-        return_value=httpx.Response(200, json={"asus_token": "tok"})
-    )
-    hook_route = respx.post("https://router.local:443/appGet.cgi").mock(
-        return_value=httpx.Response(
-            200, html="<html><script>window.top.location.href='/Main_Login.asp';</script></html>"
-        )
-    )
-
-    with pytest.raises(asus_router_client.AsusRouterError, match="requiring a captcha"):
-        await asus_router_client.test_connection(SETTINGS, "r33")
-
-    assert auth_route.call_count == 1
-    assert hook_route.call_count == 1
+    # get_wan_status primes the cache; test_connection must still hit the
+    # router directly since it's validating not-yet-saved candidate settings.
+    assert fake.connection.run_calls == 2
 
 
-@respx.mock
-async def test_get_clients_maps_fields():
-    respx.post("https://router.local:443/login.cgi").mock(return_value=httpx.Response(200, json={"asus_token": "tok"}))
-    respx.post("https://router.local:443/appGet.cgi").mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "get_clientlist": {
-                    "AA:BB:CC:DD:EE:FF": {"nickName": "Laptop", "ip": "192.168.1.10", "isOnline": "1"},
-                    "11:22:33:44:55:66": {"name": "Phone", "ip": "192.168.1.11", "isOnline": "0"},
-                    "maclist": ["AA:BB:CC:DD:EE:FF", "11:22:33:44:55:66"],
-                }
-            },
-        )
-    )
+async def test_poll_calls_share_one_ssh_round_trip_within_cache_ttl(monkeypatch):
+    fake = _fake_connect(stdout=_build_output())
+    monkeypatch.setattr(asyncssh, "connect", fake)
 
-    clients = await asus_router_client.get_clients(SETTINGS, "r9")
+    await asus_router_client.get_wan_status(SETTINGS, "test-widget")
+    await asus_router_client.get_clients(SETTINGS, "test-widget")
+    await asus_router_client.get_traffic(SETTINGS, "test-widget")
 
-    assert {"name": "Laptop", "ip": "192.168.1.10", "online": True} in clients
-    assert {"name": "Phone", "ip": "192.168.1.11", "online": False} in clients
-    assert len(clients) == 2
+    assert len(fake.calls) == 1
+    assert fake.connection.run_calls == 1
 
 
-@respx.mock
-async def test_get_wan_status_maps_fields():
-    respx.post("https://router.local:443/login.cgi").mock(return_value=httpx.Response(200, json={"asus_token": "tok"}))
-    respx.post("https://router.local:443/appGet.cgi").mock(
-        return_value=httpx.Response(200, json={"wanlink_statusstr": "Connected", "wanlink_ipaddr": "203.0.113.5"})
-    )
+async def test_get_wan_status_connected(monkeypatch):
+    fake = _fake_connect(stdout=_build_output(wan_state="2", wan_ip="203.0.113.5"))
+    monkeypatch.setattr(asyncssh, "connect", fake)
 
-    status = await asus_router_client.get_wan_status(SETTINGS, "r10")
+    status = await asus_router_client.get_wan_status(SETTINGS, "test-widget")
 
     assert status == {"connected": True, "ip": "203.0.113.5"}
 
 
-@respx.mock
-async def test_get_wan_status_disconnected_when_statusstr_not_connected():
-    respx.post("https://router.local:443/login.cgi").mock(return_value=httpx.Response(200, json={"asus_token": "tok"}))
-    respx.post("https://router.local:443/appGet.cgi").mock(
-        return_value=httpx.Response(
-            200, json={"wanlink_status": 2, "wanlink_statusstr": "Disconnected", "wanlink_ipaddr": None}
-        )
-    )
+async def test_get_wan_status_disconnected_for_non_connected_state(monkeypatch):
+    fake = _fake_connect(stdout=_build_output(wan_state="4", wan_ip=""))
+    monkeypatch.setattr(asyncssh, "connect", fake)
 
-    status = await asus_router_client.get_wan_status(SETTINGS, "r19")
+    status = await asus_router_client.get_wan_status(SETTINGS, "test-widget")
 
-    # wanlink_status's numeric convention isn't trusted anymore — only the
-    # status string is, since a real router was observed reporting status 1
-    # while its own statusstr said "Connected", contradicting the old == 2
-    # assumption.
     assert status == {"connected": False, "ip": None}
 
 
-@respx.mock
-async def test_hook_parses_js_function_literal_response():
-    respx.post("https://router.local:443/login.cgi").mock(return_value=httpx.Response(200, json={"asus_token": "tok"}))
-    js_body = (
-        '{\n"wanlink":function wanlink_status() { return 1;}\n'
-        "function wanlink_statusstr() { return 'Connected';}\n"
-        "function wanlink_type() { return 'dhcp';}\n"
-        "function wanlink_ipaddr() { return '71.35.0.81';}\n"
-        "function wanlink_netmask() { return '255.255.224.0';}\n"
-        "function wanlink_gateway() { return '71.35.0.1';}\n"
-    )
-    respx.post("https://router.local:443/appGet.cgi").mock(
-        return_value=httpx.Response(200, content=js_body, headers={"content-type": "text/html"})
-    )
+async def test_get_clients_joins_arp_with_leases_and_marks_online(monkeypatch):
+    fake = _fake_connect(stdout=_build_output())
+    monkeypatch.setattr(asyncssh, "connect", fake)
 
-    status = await asus_router_client.get_wan_status(SETTINGS, "r20")
+    clients = await asus_router_client.get_clients(SETTINGS, "test-widget")
 
-    assert status == {"connected": True, "ip": "71.35.0.81"}
+    assert {"name": "Laptop", "ip": "192.168.1.10", "online": True} in clients
+    assert {"name": "11:22:33:44:55:66", "ip": "192.168.1.11", "online": False} in clients
+    assert len(clients) == 2
 
 
-@respx.mock
-async def test_get_traffic_maps_fields():
-    respx.post("https://router.local:443/login.cgi").mock(return_value=httpx.Response(200, json={"asus_token": "tok"}))
-    respx.post("https://router.local:443/appGet.cgi").mock(
-        return_value=httpx.Response(200, json={"netdev": {"INTERNET_rx": "1024", "INTERNET_tx": "512"}})
-    )
+async def test_get_traffic_reads_wan_interface_counters(monkeypatch):
+    fake = _fake_connect(stdout=_build_output(wan_ifname="eth0"))
+    monkeypatch.setattr(asyncssh, "connect", fake)
 
-    traffic = await asus_router_client.get_traffic(SETTINGS, "r11")
+    traffic = await asus_router_client.get_traffic(SETTINGS, "test-widget")
 
     assert traffic == {"rx_bytes": 1024, "tx_bytes": 512}
 
 
-@respx.mock
-async def test_get_traffic_parses_js_object_literal_response():
-    respx.post("https://router.local:443/login.cgi").mock(return_value=httpx.Response(200, json={"asus_token": "tok"}))
-    js_body = (
-        '{\n"netdev":{\nnetdev = {\n'
-        " 'BRIDGE':{rx:0xc1ea8ae3a,tx:0x3f60851e09}\n"
-        ",'INTERNET':{rx:0x3fb206ad05,tx:0xc170ee181}\n"
-        ",'WIRED':{rx:0x1eda6f1ba7,tx:0x466a77106f}\n"
-        "}}\n}\n"
-    )
-    respx.post("https://router.local:443/appGet.cgi").mock(
-        return_value=httpx.Response(200, content=js_body, headers={"content-type": "text/html"})
-    )
+async def test_get_traffic_defaults_to_zero_for_unknown_interface(monkeypatch):
+    fake = _fake_connect(stdout=_build_output(wan_ifname="vlan99"))
+    monkeypatch.setattr(asyncssh, "connect", fake)
 
-    traffic = await asus_router_client.get_traffic(SETTINGS, "r21")
+    traffic = await asus_router_client.get_traffic(SETTINGS, "test-widget")
 
-    assert traffic == {"rx_bytes": 0x3FB206AD05, "tx_bytes": 0xC170EE181}
+    assert traffic == {"rx_bytes": 0, "tx_bytes": 0}
+
+
+async def test_raises_on_bad_credentials(monkeypatch):
+    fake = _fake_connect(connect_error=asyncssh.PermissionDenied("auth failed"))
+    monkeypatch.setattr(asyncssh, "connect", fake)
+
+    with pytest.raises(asus_router_client.AsusRouterError, match="username/password"):
+        await asus_router_client.test_connection(SETTINGS, "test-widget")
+
+
+async def test_raises_when_router_unreachable(monkeypatch):
+    fake = _fake_connect(connect_error=OSError("no route to host"))
+    monkeypatch.setattr(asyncssh, "connect", fake)
+
+    with pytest.raises(asus_router_client.AsusRouterError, match="Could not reach"):
+        await asus_router_client.test_connection(SETTINGS, "test-widget")
+
+
+async def test_raises_when_command_fails(monkeypatch):
+    fake = _fake_connect(run_error=asyncssh.Error(0, "channel closed"))
+    monkeypatch.setattr(asyncssh, "connect", fake)
+
+    with pytest.raises(asus_router_client.AsusRouterError, match="Could not read status"):
+        await asus_router_client.test_connection(SETTINGS, "test-widget")

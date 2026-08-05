@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import httpx
+from dataclasses import dataclass
+
+import asyncssh
 import pytest
-import respx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -24,40 +25,73 @@ def client():
     return TestClient(app)
 
 
+@dataclass
+class _FakeCompletedProcess:
+    stdout: str
+
+
+def _productid_output(productid: str) -> str:
+    sections = [
+        ("WAN_STATE", "4"),
+        ("WAN_IP", ""),
+        ("WAN_IFNAME", "eth0"),
+        ("PRODUCTID", productid),
+        ("NETDEV", ""),
+        ("LEASES", ""),
+        ("ARP", ""),
+    ]
+    lines = [line for name, value in sections for line in (f"@@{name}@@", value)]
+    return "\n".join(lines)
+
+
+def _fake_connect_by_host(productid_by_host: dict[str, str]):
+    async def fake_connect(host, *, port, username, password, known_hosts):
+        class _Conn:
+            async def run(self, command, check=False):
+                return _FakeCompletedProcess(stdout=_productid_output(productid_by_host[host]))
+
+            def close(self):
+                pass
+
+            async def wait_closed(self):
+                pass
+
+        return _Conn()
+
+    return fake_connect
+
+
 def test_unknown_widget_returns_404(client):
     response = client.post("/api/asus-router/nope/test-connection", json={})
     assert response.status_code == 404
 
 
-@respx.mock
-def test_test_connection_ok(client):
+def test_test_connection_ok(client, monkeypatch):
+    monkeypatch.setattr(asyncssh, "connect", _fake_connect_by_host({"router.local": "RT-AX88U"}))
     register_plugin(host="router.local", username="admin", password="secret")
-    respx.post("https://router.local/login.cgi").mock(return_value=httpx.Response(200, json={"asus_token": "tok1"}))
-    respx.post("https://router.local/appGet.cgi").mock(return_value=httpx.Response(200, json={"productid": "RT-AX88U"}))
 
     response = client.post("/api/asus-router/ar1/test-connection", json={})
 
     assert response.json() == {"ok": True, "product_id": "RT-AX88U", "error": None}
 
 
-@respx.mock
-def test_test_connection_uses_candidate_settings_override(client):
-    register_plugin(host="router.local", username="admin", password="secret")
-    respx.post("https://other.local/login.cgi").mock(return_value=httpx.Response(200, json={"asus_token": "tok2"}))
-    route = respx.post("https://other.local/appGet.cgi").mock(
-        return_value=httpx.Response(200, json={"productid": "RT-AX86U"})
+def test_test_connection_uses_candidate_settings_override(client, monkeypatch):
+    monkeypatch.setattr(
+        asyncssh, "connect", _fake_connect_by_host({"router.local": "RT-AX88U", "other.local": "RT-AX86U"})
     )
+    register_plugin(host="router.local", username="admin", password="secret")
 
     response = client.post("/api/asus-router/ar1/test-connection", json={"host": "other.local"})
 
-    assert route.called
     assert response.json()["product_id"] == "RT-AX86U"
 
 
-@respx.mock
-def test_test_connection_reports_failure_without_raising(client):
+def test_test_connection_reports_failure_without_raising(client, monkeypatch):
+    async def fake_connect(host, *, port, username, password, known_hosts):
+        raise asyncssh.PermissionDenied("auth failed")
+
+    monkeypatch.setattr(asyncssh, "connect", fake_connect)
     register_plugin(host="router.local", username="admin", password="wrong")
-    respx.post("https://router.local/login.cgi").mock(return_value=httpx.Response(200, json={}))
 
     response = client.post("/api/asus-router/ar1/test-connection", json={})
 

@@ -48,6 +48,15 @@
 		const hours = minutes / 60;
 		return hours >= 1 ? `${hours.toFixed(1)} hrs` : `${minutes} min`;
 	}
+
+	function formatNewsDate(unixSeconds: number): string {
+		return new Date(unixSeconds * 1000).toLocaleString(undefined, {
+			month: 'short',
+			day: 'numeric',
+			hour: 'numeric',
+			minute: '2-digit',
+		});
+	}
 </script>
 
 <div class="header">
@@ -149,6 +158,26 @@
 						<span class="dot" class:on={friend.online}></span>
 						<span class="friend-name">{friend.name}</span>
 						<span class="friend-status">{friend.current_game ?? friend.status}</span>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+
+		<h2>News</h2>
+		{#if steam.news.length === 0}
+			<p class="hint">No recent news.</p>
+		{:else}
+			<ul class="news">
+				{#each steam.news as item (item.gid)}
+					<li>
+						<div class="news-header">
+							<span class="news-game">{item.game_name}</span>
+							<span class="news-date">{formatNewsDate(item.date)}</span>
+						</div>
+						<a class="news-title" href={item.url} target="_blank" rel="noreferrer">{item.title}</a>
+						{#if item.contents}
+							<p class="news-contents">{item.contents}</p>
+						{/if}
 					</li>
 				{/each}
 			</ul>
@@ -339,5 +368,42 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.news {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.news li {
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		padding: 0.6rem 0.75rem;
+	}
+
+	.news-header {
+		display: flex;
+		justify-content: space-between;
+		gap: 0.6rem;
+		font-size: 0.8rem;
+		color: var(--color-text-muted);
+	}
+
+	.news-title {
+		display: block;
+		font-weight: 600;
+		color: var(--color-accent);
+		margin-top: 0.2rem;
+	}
+
+	.news-contents {
+		margin: 0.3rem 0 0;
+		color: var(--color-text-muted);
+		font-size: 0.85rem;
 	}
 </style>
