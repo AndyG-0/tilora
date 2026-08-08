@@ -15,14 +15,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.auth import get_current_user, require_write_access
 from app.integrations import pihole_client
 from app.plugins.base import registry
 from app.plugins.pihole.plugin import PiholePlugin
 from app.storage.cache import cache
 
-router = APIRouter(prefix="/api/pihole", tags=["pihole"])
+router = APIRouter(prefix="/api/pihole", tags=["pihole"], dependencies=[Depends(get_current_user)])
 
 
 def _get_plugin(widget_id: str) -> PiholePlugin:
@@ -33,8 +34,9 @@ def _get_plugin(widget_id: str) -> PiholePlugin:
 
 
 @router.post("/{widget_id}/test-connection")
-async def test_connection(widget_id: str, payload: dict[str, Any]):
+async def test_connection(widget_id: str, payload: dict[str, Any], user: dict[str, Any] = Depends(get_current_user)):
     plugin = _get_plugin(widget_id)
+    require_write_access(plugin, user)
     candidate_settings = {**plugin.config["settings"], **payload}
     try:
         version = await pihole_client.test_connection(candidate_settings, widget_id)
@@ -44,8 +46,9 @@ async def test_connection(widget_id: str, payload: dict[str, Any]):
 
 
 @router.post("/{widget_id}/blocking")
-async def set_blocking(widget_id: str, payload: dict[str, Any]):
+async def set_blocking(widget_id: str, payload: dict[str, Any], user: dict[str, Any] = Depends(get_current_user)):
     plugin = _get_plugin(widget_id)
+    require_write_access(plugin, user)
     try:
         result = await pihole_client.set_blocking(
             plugin.config["settings"], widget_id, bool(payload["enabled"]), payload.get("timer")

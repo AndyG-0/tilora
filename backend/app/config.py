@@ -20,6 +20,11 @@ DB_PATH = Path(os.environ.get("DB_PATH", str(BACKEND_ROOT / "storage.db")))
 # Photos provider, so a backend restart doesn't need a fresh 2FA prompt.
 # Overridable via env for the same reason as DB_PATH (Docker volume mounts).
 ICLOUD_SESSION_DIR = Path(os.environ.get("ICLOUD_SESSION_DIR", str(BACKEND_ROOT / "icloud_session")))
+# Symmetric key used to encrypt secret app_settings values at rest (see
+# app.crypto). Overridable via env for the same reason as DB_PATH — must
+# live in the same persistent volume as the database, or a redeploy that
+# loses this file would strand every encrypted secret it holds.
+SECRET_KEY_PATH = Path(os.environ.get("SECRET_KEY_PATH", str(BACKEND_ROOT / "secret.key")))
 
 
 class Settings(BaseSettings):
@@ -32,6 +37,29 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
     gemini_api_key: str | None = None
+
+    # Cloud text-to-speech (OpenAI TTS), via litellm's speech passthrough
+    # (litellm.aspeech). Reuses openai_api_key above rather than a dedicated
+    # key — an admin enabling this almost certainly already has an OpenAI key
+    # configured, and openai_tts_enabled is independent of ai_model possibly
+    # being a different provider (an admin might run the assistant's brain on
+    # Anthropic/Gemini but still want OpenAI's voice). Modeled as a string
+    # ("" | "true"), not bool, so it round-trips through the app_settings
+    # TEXT store using the same "empty string clears the override"
+    # convention as every other APP_SETTINGS_KEYS field — see
+    # app/api/settings.py.
+    openai_tts_enabled: str = ""
+    openai_tts_model: str = "gpt-4o-mini-tts"
+
+    # Self-hosted Piper (https://github.com/rhasspy/piper) neural TTS. No
+    # universal voice-discovery API exists across Piper server variants, so
+    # rather than guessing at one, the admin lists the voice ids their server
+    # has installed as a comma-separated string, each optionally followed by
+    # "|Display Name" (e.g. "en_US-lessac-medium|Lessac,en_US-amy-medium") —
+    # see app/tts/piper_tts.py's _parse_voices.
+    piper_tts_enabled: str = ""
+    piper_server_url: str | None = None
+    piper_voices: str | None = None
 
     # Optional reasoning/thinking effort passed straight through to litellm's
     # `reasoning_effort` param ("none", "minimal", "low", "medium", "high",
@@ -52,6 +80,13 @@ class Settings(BaseSettings):
 
     # Discord bot token, used by the discord plugin (discord.com/developers/applications).
     discord_bot_token: str | None = None
+
+    # 17Track API key, used by the packages plugin (17track.net/en/api).
+    track17_api_key: str | None = None
+
+    # NASA API key, used by the nasa_apod plugin (api.nasa.gov). Falls back
+    # to NASA's shared "DEMO_KEY" (low rate limit) when unset.
+    nasa_api_key: str | None = None
 
     # Google Calendar OAuth client (console.cloud.google.com), used by the
     # calendar plugin. The redirect URI registered with Google must be
@@ -106,6 +141,10 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     cookie_samesite: str = "lax"
 
+    # Root logger level (standard `logging` names: "DEBUG", "INFO", "WARNING",
+    # "ERROR"). See app/logging_config.py.
+    log_level: str = "INFO"
+
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origin.split(",") if origin.strip()]
@@ -122,6 +161,11 @@ APP_SETTINGS_KEYS = (
     "anthropic_api_key",
     "openai_api_key",
     "gemini_api_key",
+    "openai_tts_enabled",
+    "openai_tts_model",
+    "piper_tts_enabled",
+    "piper_server_url",
+    "piper_voices",
     "google_calendar_client_id",
     "google_calendar_client_secret",
     "microsoft_calendar_client_id",
@@ -130,6 +174,23 @@ APP_SETTINGS_KEYS = (
     "caldav_username",
     "caldav_password",
     "icloud_username",
+    "icloud_password",
+)
+
+# The subset of APP_SETTINGS_KEYS that hold credentials/tokens rather than
+# plain preferences — encrypted at rest by app.storage.db (see app.crypto)
+# and never echoed back verbatim by the settings API (see
+# app.api.settings._public_shape, which only exposes a `has_<key>` flag for
+# these).
+SECRET_APP_SETTINGS_KEYS = (
+    "anthropic_api_key",
+    "openai_api_key",
+    "gemini_api_key",
+    "google_calendar_client_id",
+    "google_calendar_client_secret",
+    "microsoft_calendar_client_id",
+    "microsoft_calendar_client_secret",
+    "caldav_password",
     "icloud_password",
 )
 

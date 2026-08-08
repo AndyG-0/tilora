@@ -2,6 +2,7 @@
 	import { pollWidget } from '$lib/polling';
 	import { api, type AsusRouterSummary } from '$lib/api';
 	import TileCard from '$lib/components/TileCard.svelte';
+	import { _ } from 'svelte-i18n';
 
 	let { widgetId }: { widgetId: string } = $props();
 
@@ -21,18 +22,18 @@
 <TileCard {widgetId}>
 	<div class="title">Router</div>
 	{#if !summary}
-		<div class="hint">Loading…</div>
+		<div class="hint">{$_('common.loading')}</div>
 	{:else if !summary.connected}
-		<div class="hint">Not connected</div>
+		<div class="hint">{$_('common.not_connected')}</div>
 	{:else if summary.error}
 		<div class="hint error">{summary.error}</div>
 	{:else}
 		<div class="stats">
 			<div class="wan">
 				<span class="dot" class:down={!summary.wan_connected}></span>
-				{summary.wan_connected ? 'WAN up' : 'WAN down'}
+				{summary.wan_connected ? $_('asus_router.tile.wan_up') : $_('asus_router.tile.wan_down')}
 			</div>
-			<div class="clients">{summary.client_count} client{summary.client_count === 1 ? '' : 's'}</div>
+			<div class="clients">{$_('asus_router.tile.clients', { values: { count: summary.client_count } })}</div>
 		</div>
 	{/if}
 </TileCard>

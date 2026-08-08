@@ -45,7 +45,7 @@ describe('AsusRouterTile', () => {
 		render(AsusRouterTile, { props: { widgetId: 'asus_router' } });
 
 		expect(await screen.findByText('WAN up')).toBeInTheDocument();
-		expect(screen.getByText('3 clients')).toBeInTheDocument();
+		expect(screen.getByText('3 connected')).toBeInTheDocument();
 	});
 
 	it('shows WAN down and singular client count', async () => {
@@ -62,7 +62,7 @@ describe('AsusRouterTile', () => {
 		render(AsusRouterTile, { props: { widgetId: 'asus_router' } });
 
 		expect(await screen.findByText('WAN down')).toBeInTheDocument();
-		expect(screen.getByText('1 client')).toBeInTheDocument();
+		expect(screen.getByText('1 connected')).toBeInTheDocument();
 	});
 
 	it('shows an error line when the plugin surfaces a fetch error', async () => {

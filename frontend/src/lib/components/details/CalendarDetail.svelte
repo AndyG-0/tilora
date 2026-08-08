@@ -2,6 +2,8 @@
 	import { env } from '$env/dynamic/public';
 	import { page } from '$app/state';
 	import { api, type CaldavCalendar } from '$lib/api';
+	import { _, locale } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	interface CalendarEvent {
 		id: string;
@@ -50,7 +52,7 @@
 				availableCalendars.map((c) => [c.id, calendarData.calendar_colors?.[c.id] ?? c.color]),
 			);
 		} catch {
-			error = 'Could not load calendars.';
+			error = get(_)('calendar.detail.load_calendars_error');
 		} finally {
 			loadingCalendars = false;
 		}
@@ -77,7 +79,7 @@
 			calendarData = await api.widgetDetail<CalendarDetailData>(page.params.id!);
 			managingCalendars = false;
 		} catch {
-			error = 'Could not update calendars.';
+			error = get(_)('calendar.detail.update_calendars_error');
 		} finally {
 			saving = false;
 		}
@@ -88,7 +90,7 @@
 	<h1>Calendar</h1>
 	{#if calendarData.provider === 'caldav' && calendarData.connected}
 		<button class="manage-calendars" onclick={toggleManageCalendars}>
-			{managingCalendars ? 'Cancel' : 'Manage calendars'}
+			{managingCalendars ? $_('common.cancel') : $_('calendar.detail.manage_calendars')}
 		</button>
 	{/if}
 </div>
@@ -96,7 +98,7 @@
 {#if managingCalendars}
 	<div class="calendar-picker">
 		{#if loadingCalendars}
-			<p class="hint">Loading calendars…</p>
+			<p class="hint">{$_('calendar.detail.loading_calendars')}</p>
 		{:else if error}
 			<p class="hint error">{error}</p>
 		{:else}
@@ -122,7 +124,7 @@
 				{/each}
 			</ul>
 			<button class="save-calendars" disabled={saving} onclick={saveCalendars}>
-				{saving ? 'Saving…' : 'Save'}
+				{saving ? $_('common.saving') : $_('common.save')}
 			</button>
 		{/if}
 	</div>
@@ -131,33 +133,33 @@
 {#if !calendarData.connected}
 	<div class="connect">
 		{#if calendarData.provider === 'caldav'}
-			<p class="hint">Add your CalDAV server URL, username, and password in Settings to see upcoming events here.</p>
-			<a class="connect-button" href="/settings">Open settings</a>
+			<p class="hint">{$_('calendar.detail.caldav_hint')}</p>
+			<a class="connect-button" href="/settings">{$_('calendar.detail.open_settings')}</a>
 		{:else if calendarData.provider === 'microsoft'}
-			<p class="hint">Connect your Outlook / Microsoft 365 calendar to see upcoming events here.</p>
+			<p class="hint">{$_('calendar.detail.microsoft_hint')}</p>
 			<a class="connect-button" href={`${env.PUBLIC_API_BASE_URL}/api/calendar/auth/microsoft/start`}>
-				Connect Outlook Calendar
+				{$_('calendar.detail.connect_outlook')}
 			</a>
 		{:else}
-			<p class="hint">Connect your Google Calendar to see upcoming events here.</p>
+			<p class="hint">{$_('calendar.detail.google_hint')}</p>
 			<a class="connect-button" href={`${env.PUBLIC_API_BASE_URL}/api/calendar/auth/start`}>
-				Connect Google Calendar
+				{$_('calendar.detail.connect_google')}
 			</a>
 		{/if}
 	</div>
 {:else}
 	<div class="list">
-		{#each calendarData.events as event (event.id)}
+		{#each calendarData.events as event (event.id + event.start)}
 			<div class="item">
 				<h2><span class="dot" style:background={event.color ?? 'transparent'}></span>{event.title}</h2>
 				<p class="meta">
-					{event.all_day ? event.start : new Date(event.start).toLocaleString()}
+					{event.all_day ? event.start : new Date(event.start).toLocaleString($locale ?? undefined)}
 					{event.location ? ` · ${event.location}` : ''}
 					{showCalendarLabel && event.calendar ? ` · ${event.calendar}` : ''}
 				</p>
 			</div>
 		{:else}
-			<p class="hint">No upcoming events.</p>
+			<p class="hint">{$_('calendar.detail.no_events')}</p>
 		{/each}
 	</div>
 {/if}

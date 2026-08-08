@@ -4,6 +4,8 @@
 	import { api, type HDHomeRunTestConnectionResult, type HDHomeRunTranscodePreset } from '$lib/api';
 	import HDHomeRunPlayer from '$lib/components/HDHomeRunPlayer.svelte';
 	import { user } from '$lib/stores/user';
+	import { _ } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	interface HDHomeRunGuideEntry {
 		title: string;
@@ -219,7 +221,7 @@
 		try {
 			tunerTestResult = await api.hdhomerunTestTunerConnection(widgetId, currentFormSettings());
 		} catch {
-			tunerTestResult = { ok: false, name: null, error: 'Could not reach the backend.' };
+			tunerTestResult = { ok: false, name: null, error: get(_)('common.backend_unreachable') };
 		} finally {
 			testingTuner = false;
 		}
@@ -231,7 +233,7 @@
 		try {
 			dvrTestResult = await api.hdhomerunTestDvrConnection(widgetId, currentFormSettings());
 		} catch {
-			dvrTestResult = { ok: false, name: null, error: 'Could not reach the backend.' };
+			dvrTestResult = { ok: false, name: null, error: get(_)('common.backend_unreachable') };
 		} finally {
 			testingDvr = false;
 		}
@@ -245,14 +247,14 @@
 			hdhomerun = await api.widgetDetail<HDHomeRunDetailData>(widgetId);
 			editing = false;
 		} catch {
-			error = 'Could not save the connection settings.';
+			error = get(_)('common.connection_save_error');
 		} finally {
 			saving = false;
 		}
 	}
 
 	function formatBytes(bytes: number | null): string {
-		if (bytes === null) return 'unknown';
+		if (bytes === null) return get(_)('common.unknown');
 		const gb = bytes / 1_000_000_000;
 		return `${gb.toFixed(1)} GB`;
 	}
@@ -267,60 +269,61 @@
 	<h1>HDHomeRun</h1>
 	{#if $user?.role === 'admin'}
 		<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
-			{editing ? 'Cancel' : 'Edit connection'}
+			{editing ? $_('common.cancel') : $_('common.edit_connection')}
 		</button>
 	{/if}
 </div>
 
 {#if editing}
 	<div class="settings-form">
-		<h2>Tuner</h2>
+		<h2>{$_('hdhomerun.detail.tuner_heading')}</h2>
 		<label>
-			Host
+			{$_('hdhomerun.detail.host_label')}
 			<input type="text" bind:value={tunerHostInput} placeholder="hdhomerun.local" />
 		</label>
 		<label>
-			Port
+			{$_('hdhomerun.detail.port_label')}
 			<input type="number" min="1" max="65535" bind:value={tunerPortInput} />
 		</label>
 		<div class="test-row">
 			<button class="test" disabled={testingTuner} onclick={testTunerConnection}>
-				{testingTuner ? 'Testing…' : 'Test connection'}
+				{testingTuner ? $_('common.testing') : $_('common.test_connection')}
 			</button>
 			{#if tunerTestResult}
 				{#if tunerTestResult.ok}
-					<span class="test-result ok">✓ Connected to {tunerTestResult.name}</span>
+					<span class="test-result ok"
+						>{$_('hdhomerun.detail.test_ok', { values: { name: tunerTestResult.name } })}</span
+					>
 				{:else}
 					<span class="test-result fail">✗ {tunerTestResult.error}</span>
 				{/if}
 			{/if}
 		</div>
 
-		<h2>Playback</h2>
+		<h2>{$_('hdhomerun.detail.playback_heading')}</h2>
 		<div class="auth-mode">
 			<button
 				type="button"
 				class:active={playbackModeInput === 'server_transcode'}
 				onclick={() => (playbackModeInput = 'server_transcode')}
 			>
-				Server transcode
+				{$_('hdhomerun.detail.mode_server_transcode')}
 			</button>
 			<button
 				type="button"
 				class:active={playbackModeInput === 'external'}
 				onclick={() => (playbackModeInput = 'external')}
 			>
-				External player only
+				{$_('hdhomerun.detail.mode_external')}
 			</button>
 		</div>
 		{#if playbackModeInput === 'server_transcode'}
 			<p class="hint">
-				The backend runs ffmpeg to transcode the raw stream to H.264 so it plays in-app. Works with any tuner model, but
-				adds real CPU load per viewer on whatever device is running the backend.
+				{$_('hdhomerun.detail.server_transcode_hint')}
 			</p>
 
 			<label>
-				Transcode hardware
+				{$_('hdhomerun.detail.transcode_hardware_label')}
 				<select bind:value={hwaccelInput}>
 					{#each transcodePresets as preset (preset.id)}
 						<option value={preset.id}>{preset.label}</option>
@@ -333,7 +336,7 @@
 
 			{#if hwaccelInput === 'custom'}
 				<label>
-					Custom ffmpeg arguments
+					{$_('hdhomerun.detail.custom_ffmpeg_label')}
 					<textarea bind:value={customFfmpegArgsInput} rows="2" placeholder="-c:v h264_v4l2m2m -b:v 4M -c:a aac"
 					></textarea>
 				</label>
@@ -344,37 +347,37 @@
 			</p>
 		{:else}
 			<p class="hint">
-				No in-app player — channels only offer a raw stream link to open in an external player like VLC.
+				{$_('hdhomerun.detail.external_only_hint')}
 			</p>
 		{/if}
 
-		<h2>Program guide <span class="optional">(optional)</span></h2>
+		<h2>{$_('hdhomerun.detail.guide_heading')} <span class="optional">{$_('hdhomerun.detail.optional')}</span></h2>
 		<label>
-			XMLTV URL
+			{$_('hdhomerun.detail.xmltv_url_label')}
 			<input type="text" bind:value={epgUrlInput} placeholder="http://example.com/guide.xml" />
 		</label>
 		<p class="hint">
-			"Now playing" titles are tried first from a HDHomeRun DVR subscription. If you don't have one, set an XMLTV guide
-			URL here instead (the format used by Plex, Channels DVR, TVheadend, etc.) — its channel ids must match your
-			HDHomeRun channel numbers (e.g. "4.1").
+			{$_('hdhomerun.detail.xmltv_hint')}
 		</p>
 
-		<h2>DVR recording engine <span class="optional">(optional)</span></h2>
+		<h2>
+			{$_('hdhomerun.detail.dvr_settings_heading')} <span class="optional">{$_('hdhomerun.detail.optional')}</span>
+		</h2>
 		<label>
-			Host
+			{$_('hdhomerun.detail.host_label')}
 			<input type="text" bind:value={dvrHostInput} placeholder="dvr.local" />
 		</label>
 		<label>
-			Port
+			{$_('hdhomerun.detail.port_label')}
 			<input type="number" min="1" max="65535" bind:value={dvrPortInput} />
 		</label>
 		<div class="test-row">
 			<button class="test" disabled={testingDvr} onclick={testDvrConnection}>
-				{testingDvr ? 'Testing…' : 'Test connection'}
+				{testingDvr ? $_('common.testing') : $_('common.test_connection')}
 			</button>
 			{#if dvrTestResult}
 				{#if dvrTestResult.ok}
-					<span class="test-result ok">✓ Connected to {dvrTestResult.name}</span>
+					<span class="test-result ok">{$_('hdhomerun.detail.test_ok', { values: { name: dvrTestResult.name } })}</span>
 				{:else}
 					<span class="test-result fail">✗ {dvrTestResult.error}</span>
 				{/if}
@@ -386,7 +389,7 @@
 		{/if}
 
 		<button class="save" disabled={saving} onclick={saveSettings}>
-			{saving ? 'Saving…' : 'Save'}
+			{saving ? $_('common.saving') : $_('common.save')}
 		</button>
 	</div>
 {:else if error}
@@ -395,13 +398,15 @@
 
 {#if !editing}
 	{#if !hdhomerun.tuner_connected && !hdhomerun.dvr_connected}
-		<p class="hint">Not connected yet — tap "Edit connection" to set up HDHomeRun.</p>
+		<p class="hint">{$_('hdhomerun.detail.not_connected_hint')}</p>
 	{:else}
 		{#if hdhomerun.tuner_connected && hdhomerun.tuner_info}
 			<p class="tuner-info">
 				{hdhomerun.tuner_info.friendly_name}
 				{#if hdhomerun.tuner_info.model_number}· {hdhomerun.tuner_info.model_number}{/if}
-				{#if hdhomerun.tuner_info.tuner_count}· {hdhomerun.tuner_info.tuner_count} tuners{/if}
+				{#if hdhomerun.tuner_info.tuner_count}
+					· {$_('hdhomerun.detail.tuner_count', { values: { count: hdhomerun.tuner_info.tuner_count } })}
+				{/if}
 			</p>
 		{/if}
 
@@ -415,14 +420,16 @@
 			<div class="tuners">
 				{#each hdhomerun.tuners as tuner (tuner.index)}
 					<div class="tuner">
-						<span class="tuner-index">Tuner {tuner.index}</span>
+						<span class="tuner-index">{$_('hdhomerun.detail.tuner_label', { values: { index: tuner.index } })}</span>
 						{#if tuner.in_use}
 							<span class="tuner-channel">{tuner.channel_number} {tuner.channel_name}</span>
 							{#if tuner.signal_strength_percent !== null}
-								<span class="tuner-signal">Signal {tuner.signal_strength_percent}%</span>
+								<span class="tuner-signal"
+									>{$_('hdhomerun.detail.tuner_signal', { values: { percent: tuner.signal_strength_percent } })}</span
+								>
 							{/if}
 						{:else}
-							<span class="tuner-idle">Idle</span>
+							<span class="tuner-idle">{$_('hdhomerun.detail.tuner_idle')}</span>
 						{/if}
 					</div>
 				{/each}
@@ -432,12 +439,12 @@
 		{#if hdhomerun.tuner_connected}
 			{#if !hdhomerun.guide_available}
 				<p class="hint">
-					Guide unavailable — showing channel lineup only. Program titles require an HDHomeRun DVR subscription.
+					{$_('hdhomerun.detail.guide_unavailable_hint')}
 				</p>
 			{/if}
 
 			{#if favoriteList.length > 0}
-				<h2>Favorites — Now Playing</h2>
+				<h2>{$_('hdhomerun.detail.favorites_heading')}</h2>
 				<div class="channels favorites">
 					{#each favoriteList as channel (channel.channel_number)}
 						<div class="channel">
@@ -448,17 +455,24 @@
 							</div>
 							{#if channel.now}
 								<p class="guide-now">
-									Now: {channel.now.title}{#if channel.now.episode_title}
-										— {channel.now.episode_title}{/if}
+									{#if channel.now.episode_title}
+										{$_('hdhomerun.detail.guide_now_episode', {
+											values: { title: channel.now.title, episode: channel.now.episode_title },
+										})}
+									{:else}
+										{$_('hdhomerun.detail.guide_now', { values: { title: channel.now.title } })}
+									{/if}
 								</p>
 							{:else}
-								<p class="hint">No guide data</p>
+								<p class="hint">{$_('hdhomerun.detail.no_guide_data')}</p>
 							{/if}
 							{#if channel.next}
-								<p class="guide-next">Next: {channel.next.title}</p>
+								<p class="guide-next">{$_('hdhomerun.detail.guide_next', { values: { title: channel.next.title } })}</p>
 							{/if}
 							<div class="channel-actions">
-								<button class="watch" onclick={() => watchChannel(channel)}>▶ Watch</button>
+								<button class="watch" onclick={() => watchChannel(channel)}
+									>{$_('hdhomerun.detail.watch_button')}</button
+								>
 							</div>
 						</div>
 					{/each}
@@ -474,7 +488,9 @@
 								class:active={favoriteChannels.has(channel.channel_number)}
 								disabled={savingFavorite}
 								onclick={() => toggleFavorite(channel.channel_number)}
-								aria-label={favoriteChannels.has(channel.channel_number) ? 'Remove from favorites' : 'Add to favorites'}
+								aria-label={favoriteChannels.has(channel.channel_number)
+									? $_('hdhomerun.detail.remove_favorite')
+									: $_('hdhomerun.detail.add_favorite')}
 							>
 								{favoriteChannels.has(channel.channel_number) ? '★' : '☆'}
 							</button>
@@ -484,16 +500,23 @@
 						</div>
 						{#if channel.now}
 							<p class="guide-now">
-								Now: {channel.now.title}{#if channel.now.episode_title}
-									— {channel.now.episode_title}{/if}
+								{#if channel.now.episode_title}
+									{$_('hdhomerun.detail.guide_now_episode', {
+										values: { title: channel.now.title, episode: channel.now.episode_title },
+									})}
+								{:else}
+									{$_('hdhomerun.detail.guide_now', { values: { title: channel.now.title } })}
+								{/if}
 							</p>
 						{/if}
 						{#if channel.next}
-							<p class="guide-next">Next: {channel.next.title}</p>
+							<p class="guide-next">{$_('hdhomerun.detail.guide_next', { values: { title: channel.next.title } })}</p>
 						{/if}
 						<div class="channel-actions">
 							{#if channel.playback_url}
-								<button class="watch" onclick={() => (playingChannel = channel)}> ▶ Watch </button>
+								<button class="watch" onclick={() => (playingChannel = channel)}>
+									{$_('hdhomerun.detail.watch_button')}
+								</button>
 							{/if}
 							<a
 								class="open-external"
@@ -501,7 +524,7 @@
 								target="_blank"
 								rel="noopener noreferrer"
 							>
-								Open in external player
+								{$_('hdhomerun.detail.open_external')}
 							</a>
 						</div>
 					</div>
@@ -510,27 +533,35 @@
 		{/if}
 
 		{#if hdhomerun.dvr_connected}
-			<h2>DVR</h2>
+			<h2>{$_('hdhomerun.detail.dvr_section_heading')}</h2>
 			{#if hdhomerun.dvr_info}
-				<p class="hint">Free space: {formatBytes(hdhomerun.dvr_info.free_space_bytes)}</p>
+				<p class="hint">
+					{$_('hdhomerun.detail.free_space', { values: { value: formatBytes(hdhomerun.dvr_info.free_space_bytes) } })}
+				</p>
 			{/if}
 			{#if hdhomerun.recordings_in_progress.length > 0}
 				<div class="recordings">
 					{#each hdhomerun.recordings_in_progress as recording, i (i)}
 						<div class="recording">
-							<span class="rec-badge">● Recording</span>
+							<span class="rec-badge">{$_('hdhomerun.tile.recording_badge')}</span>
 							<span class="rec-title">{recording.title}</span>
 							{#if recording.channel_name}<span class="rec-channel">{recording.channel_name}</span>{/if}
 							{#if recording.record_end}
-								<span class="rec-end">until {formatTime(recording.record_end)}</span>
+								<span class="rec-end"
+									>{$_('hdhomerun.detail.recording_until', {
+										values: { time: formatTime(recording.record_end) },
+									})}</span
+								>
 							{/if}
 						</div>
 					{/each}
 				</div>
 			{:else}
-				<p class="hint">No recordings in progress.</p>
+				<p class="hint">{$_('hdhomerun.detail.no_recordings')}</p>
 			{/if}
-			<p class="hint">{hdhomerun.upcoming_recording_rules_count} upcoming recording rules.</p>
+			<p class="hint">
+				{$_('hdhomerun.detail.upcoming_rules', { values: { count: hdhomerun.upcoming_recording_rules_count } })}
+			</p>
 		{/if}
 	{/if}
 {/if}

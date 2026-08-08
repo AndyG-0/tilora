@@ -7,32 +7,38 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict
 
 from app.auth import get_current_admin
-from app.config import APP_SETTINGS_KEYS, effective_settings
+from app.config import APP_SETTINGS_KEYS, SECRET_APP_SETTINGS_KEYS, effective_settings
+from app.integrations.icloud_photos import invalidate_service_cache
 from app.storage.cache import cache
 from app.storage.db import save_app_settings
 
 router = APIRouter(prefix="/api/settings", tags=["settings"], dependencies=[Depends(get_current_admin)])
 
-_SECRET_KEYS = (
-    "anthropic_api_key",
-    "openai_api_key",
-    "gemini_api_key",
-    "google_calendar_client_id",
-    "google_calendar_client_secret",
-    "microsoft_calendar_client_id",
-    "microsoft_calendar_client_secret",
-    "caldav_password",
-    "icloud_password",
-)
+_SECRET_KEYS = SECRET_APP_SETTINGS_KEYS
 # Not secret, but user-editable app settings that aren't ai_model/timezone —
 # returned as-is (unlike _SECRET_KEYS, which only expose a `has_<key>` flag)
 # so the user can see/edit them without retyping.
-_PLAIN_KEYS = ("ai_reasoning_effort", "caldav_url", "caldav_username", "icloud_username")
+_PLAIN_KEYS = (
+    "ai_reasoning_effort",
+    "caldav_url",
+    "caldav_username",
+    "icloud_username",
+    "openai_tts_enabled",
+    "openai_tts_model",
+    "piper_tts_enabled",
+    "piper_server_url",
+    "piper_voices",
+)
 # Widgets whose summary/detail is derived entirely from global app settings
 # (not their own per-widget settings) — their cache must be invalidated
 # whenever those settings change, or they'd keep serving a stale value for
 # up to `refresh_interval_seconds`.
 _GLOBAL_SETTINGS_WIDGET_IDS = ("clock", "date")
+# Changing either of these means a different Apple ID — the private iCloud
+# Photos provider's cached authenticated session (and photo list) belongs to
+# the *previous* account and must not keep serving requests under the new
+# one. See app.integrations.icloud_photos.invalidate_service_cache.
+_ICLOUD_ACCOUNT_KEYS = frozenset({"icloud_username", "icloud_password"})
 
 
 class UpdateSettingsRequest(BaseModel):
@@ -46,6 +52,11 @@ class UpdateSettingsRequest(BaseModel):
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
     gemini_api_key: str | None = None
+    openai_tts_enabled: str | None = None
+    openai_tts_model: str | None = None
+    piper_tts_enabled: str | None = None
+    piper_server_url: str | None = None
+    piper_voices: str | None = None
     google_calendar_client_id: str | None = None
     google_calendar_client_secret: str | None = None
     microsoft_calendar_client_id: str | None = None
@@ -89,4 +100,6 @@ async def update_settings(payload: UpdateSettingsRequest):
     for widget_id in _GLOBAL_SETTINGS_WIDGET_IDS:
         cache.delete(f"summary:{widget_id}")
         cache.delete(f"detail:{widget_id}")
+    if _ICLOUD_ACCOUNT_KEYS & payload.model_fields_set:
+        invalidate_service_cache()
     return _public_shape(effective_settings())

@@ -29,12 +29,15 @@ from `playback_mode` instead:
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
 from app import transcoding
 from app.integrations import hdhomerun_client
 from app.plugins.base import Plugin, ToolDef
+
+logger = logging.getLogger(__name__)
 
 
 class HDHomeRunPlugin(Plugin):
@@ -82,6 +85,7 @@ class HDHomeRunPlugin(Plugin):
         try:
             channels, guide_available = await hdhomerun_client.build_lineup_with_guide(self._settings(), self.id)
         except hdhomerun_client.HDHomeRunError:
+            logger.warning("Could not build channel lineup for HDHomeRun widget '%s'", self.id, exc_info=True)
             return [], False
         for channel in channels:
             channel["playback_url"] = self._playback_url(channel)
@@ -168,6 +172,7 @@ class HDHomeRunPlugin(Plugin):
                     "tuner_count": discover.get("TunerCount"),
                 }
             except hdhomerun_client.HDHomeRunError:
+                logger.warning("Could not fetch tuner discover info for HDHomeRun widget '%s'", self.id, exc_info=True)
                 tuner_info = None
             tuners = await hdhomerun_client.fetch_tuner_status(self._settings())
 
@@ -177,6 +182,7 @@ class HDHomeRunPlugin(Plugin):
             try:
                 dvr_info = await hdhomerun_client.fetch_dvr_info(self._settings())
             except hdhomerun_client.HDHomeRunError:
+                logger.warning("Could not fetch DVR info for HDHomeRun widget '%s'", self.id, exc_info=True)
                 dvr_info = None
             recording_rules = await hdhomerun_client.fetch_dvr_recording_rules(self._settings())
 

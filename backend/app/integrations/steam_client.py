@@ -39,6 +39,8 @@ from typing import Any
 
 import httpx
 
+from app.i18n import t
+
 _BASE_URL = "https://api.steampowered.com"
 
 # Steam news posts mix HTML and BBCode markup in `contents`; strip both so
@@ -50,14 +52,14 @@ _BBCODE_TAG_RE = re.compile(r"\[/?[a-zA-Z0-9_]+(?:=[^\]]*)?\]")
 # accepts in one call.
 _PLAYER_SUMMARIES_BATCH_SIZE = 100
 
-_PERSONA_STATES = {
-    0: "Offline",
-    1: "Online",
-    2: "Busy",
-    3: "Away",
-    4: "Snooze",
-    5: "Looking to trade",
-    6: "Looking to play",
+_PERSONA_STATE_KEYS = {
+    0: "steam.status.offline",
+    1: "steam.status.online",
+    2: "steam.status.busy",
+    3: "steam.status.away",
+    4: "steam.status.snooze",
+    5: "steam.status.looking_to_trade",
+    6: "steam.status.looking_to_play",
 }
 
 
@@ -93,13 +95,14 @@ async def _get(path: str, params: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-def _player_dict(player: dict[str, Any]) -> dict[str, Any]:
+def _player_dict(player: dict[str, Any], locale: str) -> dict[str, Any]:
     persona_state = player.get("personastate", 0)
+    status_key = _PERSONA_STATE_KEYS.get(persona_state, _PERSONA_STATE_KEYS[0])
     return {
         "steamid": player.get("steamid", ""),
         "name": player.get("personaname", ""),
         "avatar": player.get("avatarfull", ""),
-        "status": _PERSONA_STATES.get(persona_state, "Offline"),
+        "status": t(status_key, locale),
         "online": persona_state != 0,
         "current_game": player.get("gameextrainfo"),
     }
@@ -140,7 +143,7 @@ def _news_dict(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def fetch_player_summaries(settings: dict[str, Any], steamids: list[str]) -> list[dict[str, Any]]:
+async def fetch_player_summaries(settings: dict[str, Any], steamids: list[str], locale: str) -> list[dict[str, Any]]:
     """Fetch player summaries for up to `_PLAYER_SUMMARIES_BATCH_SIZE` steamids at once.
 
     Callers with more steamids than that (e.g. `fetch_friends_status` on a
@@ -157,14 +160,14 @@ async def fetch_player_summaries(settings: dict[str, Any], steamids: list[str]) 
         players = []
     if not isinstance(players, list):
         raise SteamError("Unexpected response shape from the Steam Web API.")
-    return [_player_dict(p) for p in players if isinstance(p, dict)]
+    return [_player_dict(p, locale) for p in players if isinstance(p, dict)]
 
 
-async def fetch_player_summary(settings: dict[str, Any], steamid: str) -> dict[str, Any]:
+async def fetch_player_summary(settings: dict[str, Any], steamid: str, locale: str) -> dict[str, Any]:
     """Fetch a single player's summary (the configured user's own profile)."""
     if not steamid:
         raise SteamError("No SteamID64 configured.")
-    players = await fetch_player_summaries(settings, [steamid])
+    players = await fetch_player_summaries(settings, [steamid], locale)
     if not players:
         raise SteamError("Steam profile not found — check the configured SteamID64.")
     return players[0]
@@ -186,7 +189,7 @@ async def fetch_recently_played(settings: dict[str, Any], steamid: str) -> list[
     return [_game_dict(g) for g in games if isinstance(g, dict)]
 
 
-async def fetch_friends_status(settings: dict[str, Any], steamid: str) -> list[dict[str, Any]]:
+async def fetch_friends_status(settings: dict[str, Any], steamid: str, locale: str) -> list[dict[str, Any]]:
     """Fetch each of the configured user's friends' online/in-game status.
 
     Two calls under the hood: the friend list (steamids only), then one or
@@ -211,7 +214,7 @@ async def fetch_friends_status(settings: dict[str, Any], steamid: str) -> list[d
     players: list[dict[str, Any]] = []
     for i in range(0, len(friend_ids), _PLAYER_SUMMARIES_BATCH_SIZE):
         batch = friend_ids[i : i + _PLAYER_SUMMARIES_BATCH_SIZE]
-        players.extend(await fetch_player_summaries(settings, batch))
+        players.extend(await fetch_player_summaries(settings, batch, locale))
     return players
 
 

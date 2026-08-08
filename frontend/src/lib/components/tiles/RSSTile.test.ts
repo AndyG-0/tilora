@@ -19,9 +19,15 @@ describe('RSSTile', () => {
 	it('renders the fetched headlines under their widget title', async () => {
 		widgetSummary.mockResolvedValue({
 			title: 'Tech News',
-			items: [
-				{ title: 'First headline', link: 'https://example.com/1', source: 'Feed One' },
-				{ title: 'Second headline', link: 'https://example.com/2', source: 'Feed One' },
+			feed_groups: [
+				{
+					feed_id: 1,
+					name: 'Feed One',
+					items: [
+						{ title: 'First headline', link: 'https://example.com/1', source: 'Feed One' },
+						{ title: 'Second headline', link: 'https://example.com/2', source: 'Feed One' },
+					],
+				},
 			],
 		});
 
@@ -34,11 +40,58 @@ describe('RSSTile', () => {
 
 	it('falls back to "Headlines" when no title is set', async () => {
 		widgetSummary.mockResolvedValue({
-			items: [{ title: 'First headline', link: 'https://example.com/1', source: 'Feed One' }],
+			feed_groups: [
+				{
+					feed_id: 1,
+					name: 'Feed One',
+					items: [{ title: 'First headline', link: 'https://example.com/1', source: 'Feed One' }],
+				},
+			],
 		});
 
 		render(RSSTile, { props: { widgetId: 'rss' } });
 
 		expect(await screen.findByText('Headlines')).toBeInTheDocument();
+	});
+
+	it('labels each group with its feed name when a tile shows multiple feeds', async () => {
+		widgetSummary.mockResolvedValue({
+			title: 'News',
+			feed_groups: [
+				{
+					feed_id: 1,
+					name: 'Feed One',
+					items: [{ title: 'From one', link: 'https://example.com/1', source: 'Feed One' }],
+				},
+				{
+					feed_id: 2,
+					name: 'Feed Two',
+					items: [{ title: 'From two', link: 'https://example.com/2', source: 'Feed Two' }],
+				},
+			],
+		});
+
+		render(RSSTile, { props: { widgetId: 'rss' } });
+
+		expect(await screen.findByText('Feed One')).toBeInTheDocument();
+		expect(screen.getByText('Feed Two')).toBeInTheDocument();
+	});
+
+	it('does not show a group label when the tile has only one feed', async () => {
+		widgetSummary.mockResolvedValue({
+			title: 'News',
+			feed_groups: [
+				{
+					feed_id: 1,
+					name: 'Feed One',
+					items: [{ title: 'From one', link: 'https://example.com/1', source: 'Feed One' }],
+				},
+			],
+		});
+
+		render(RSSTile, { props: { widgetId: 'rss' } });
+
+		await screen.findByText('From one');
+		expect(screen.queryByText('Feed One')).not.toBeInTheDocument();
 	});
 });

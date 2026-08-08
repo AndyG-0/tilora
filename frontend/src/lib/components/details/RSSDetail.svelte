@@ -1,26 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { api } from '$lib/api';
-
-	interface RSSItem {
-		title: string;
-		link: string;
-		published: string | null;
-		summary: string;
-		source: string;
-	}
-
-	interface RSSFeed {
-		url: string;
-		name?: string;
-	}
-
-	interface RSSDetailData {
-		title: string;
-		feeds: RSSFeed[];
-		item_limit: number;
-		items: RSSItem[];
-	}
+	import type { RSSDetail as RSSDetailData, RSSItem, RSSFeed } from '$lib/api';
+	import { _ } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	let { data: initialData }: { data: RSSDetailData } = $props();
 
@@ -30,77 +13,149 @@
 
 	let editing = $state(false);
 	let titleInput = $state('');
-	let itemLimitInput = $state(5);
-	let feedInputs = $state<RSSFeed[]>([]);
+	let selectedFeedIds = $state<Set<number>>(new Set());
 	let saving = $state(false);
 	let error = $state<string | null>(null);
 
+	let managing = $state(false);
+	let newFeedUrl = $state('');
+	let newFeedName = $state('');
+	let newFeedItemLimit = $state(10);
+	let manageError = $state<string | null>(null);
+	let editingFeedId = $state<number | null>(null);
+	let editFeedName = $state('');
+	let editFeedItemLimit = $state(10);
+
 	function openEditor() {
 		titleInput = rss.title;
-		itemLimitInput = rss.item_limit;
-		feedInputs = rss.feeds.map((feed) => ({ ...feed }));
+		selectedFeedIds = new Set(rss.feed_ids);
 		editing = true;
 	}
 
-	function addFeedRow() {
-		feedInputs = [...feedInputs, { url: '', name: '' }];
-	}
-
-	function removeFeedRow(index: number) {
-		feedInputs = feedInputs.filter((_, i) => i !== index);
+	function toggleFeed(id: number) {
+		const next = new Set(selectedFeedIds);
+		if (next.has(id)) {
+			next.delete(id);
+		} else {
+			next.add(id);
+		}
+		selectedFeedIds = next;
 	}
 
 	async function saveSettings() {
 		saving = true;
 		error = null;
 		try {
-			const feeds = feedInputs
-				.map((feed) => ({ url: feed.url.trim(), name: feed.name?.trim() || undefined }))
-				.filter((feed) => feed.url.length > 0);
 			await api.updateWidgetSettings(page.params.id!, {
 				title: titleInput,
-				item_limit: itemLimitInput,
-				feeds,
+				feed_ids: [...selectedFeedIds],
 			});
 			rss = await api.widgetDetail<RSSDetailData>(page.params.id!);
 			editing = false;
 		} catch {
-			error = 'Could not update the feeds.';
+			error = get(_)('rss.detail.update_feeds_error');
 		} finally {
 			saving = false;
 		}
 	}
+
+	async function refreshFeeds() {
+		rss = { ...rss, all_feeds: await api.listRSSFeeds() };
+	}
+
+	async function addFeed() {
+		const url = newFeedUrl.trim();
+		if (!url) return;
+		manageError = null;
+		try {
+			await api.addRSSFeed(url, newFeedName.trim() || undefined, newFeedItemLimit);
+			newFeedUrl = '';
+			newFeedName = '';
+			newFeedItemLimit = 10;
+			await refreshFeeds();
+		} catch {
+			manageError = get(_)('rss.detail.add_feed_error');
+		}
+	}
+
+	function startEditFeed(feed: RSSFeed) {
+		editingFeedId = feed.id;
+		editFeedName = feed.name ?? '';
+		editFeedItemLimit = feed.item_limit;
+	}
+
+	async function saveEditFeed(id: number) {
+		manageError = null;
+		try {
+			await api.updateRSSFeed(id, editFeedName.trim() || null, editFeedItemLimit);
+			editingFeedId = null;
+			await refreshFeeds();
+		} catch {
+			manageError = get(_)('rss.detail.update_feed_error');
+		}
+	}
+
+	async function removeFeed(id: number) {
+		manageError = null;
+		try {
+			await api.deleteRSSFeed(id);
+			const next = new Set(selectedFeedIds);
+			next.delete(id);
+			selectedFeedIds = next;
+			await refreshFeeds();
+		} catch {
+			manageError = get(_)('rss.detail.remove_feed_error');
+		}
+	}
+
+	let groups = $derived(rss.feed_groups.filter((group) => group.items.length > 0));
 </script>
+
+{#snippet mediaList(items: RSSItem[])}
+	<div class="list">
+		{#each items as item (item.link)}
+			<a class="item" href={item.link} target="_blank" rel="noreferrer">
+				{#if item.image}
+					<img class="thumb" src={item.image} alt="" loading="lazy" decoding="async" />
+				{/if}
+				<div class="info">
+					<h2>{item.title}</h2>
+					<p class="meta">{item.source}{item.published ? ` · ${item.published}` : ''}</p>
+					{#if item.summary}
+						<p class="summary">{item.summary}</p>
+					{/if}
+				</div>
+			</a>
+		{/each}
+	</div>
+{/snippet}
 
 <div class="header">
 	<h1>{rss.title || 'Headlines'}</h1>
 	<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
-		{editing ? 'Cancel' : 'Edit feeds'}
+		{editing ? $_('common.cancel') : $_('rss.detail.edit_feeds')}
 	</button>
 </div>
 
 {#if editing}
 	<div class="settings-form">
 		<label>
-			Title
+			{$_('rss.detail.title_label')}
 			<input type="text" bind:value={titleInput} />
 		</label>
-		<label>
-			Items to show
-			<input type="number" min="1" max="20" bind:value={itemLimitInput} />
-		</label>
 
-		<div class="feeds">
-			{#each feedInputs as feed, index (index)}
-				<div class="feed-row">
-					<input type="text" placeholder="Feed URL" bind:value={feed.url} />
-					<input type="text" placeholder="Name (optional)" bind:value={feed.name} />
-					<button class="remove-feed" onclick={() => removeFeedRow(index)} aria-label="Remove feed"> ✕ </button>
-				</div>
+		<div class="feed-checklist">
+			<p class="label">{$_('rss.detail.show_feeds_label')}</p>
+			{#if rss.all_feeds.length === 0}
+				<p class="hint">{$_('rss.detail.no_feeds_catalog_hint')}</p>
 			{:else}
-				<p class="hint">No feeds yet — add one below.</p>
-			{/each}
-			<button class="add-feed" onclick={addFeedRow}>+ Add feed</button>
+				{#each rss.all_feeds as feed (feed.id)}
+					<label class="feed-checkbox">
+						<input type="checkbox" checked={selectedFeedIds.has(feed.id)} onchange={() => toggleFeed(feed.id)} />
+						{feed.name || feed.url}
+					</label>
+				{/each}
+			{/if}
 		</div>
 
 		{#if error}
@@ -108,30 +163,64 @@
 		{/if}
 
 		<button class="save" disabled={saving} onclick={saveSettings}>
-			{saving ? 'Saving…' : 'Save'}
+			{saving ? $_('common.saving') : $_('common.save')}
 		</button>
+
+		<button class="manage-toggle" onclick={() => (managing = !managing)}>
+			{managing ? $_('rss.detail.hide_feeds') : $_('rss.detail.manage_feeds')}
+		</button>
+
+		{#if managing}
+			<div class="manage-feeds">
+				{#each rss.all_feeds as feed (feed.id)}
+					<div class="feed-row">
+						{#if editingFeedId === feed.id}
+							<input type="text" placeholder={$_('rss.detail.name_placeholder')} bind:value={editFeedName} />
+							<input type="number" min="1" max="30" bind:value={editFeedItemLimit} />
+							<button class="row-action" onclick={() => saveEditFeed(feed.id)}>{$_('common.save')}</button>
+							<button class="row-action" onclick={() => (editingFeedId = null)}>{$_('common.cancel')}</button>
+						{:else}
+							<div class="feed-summary">
+								<span class="feed-name">{feed.name || feed.url}</span>
+								<span class="feed-meta">{feed.url} · {feed.item_limit} items</span>
+							</div>
+							<button class="row-action" onclick={() => startEditFeed(feed)}>{$_('common.edit')}</button>
+							<button class="row-action remove" onclick={() => removeFeed(feed.id)}>{$_('common.remove')}</button>
+						{/if}
+					</div>
+				{:else}
+					<p class="hint">{$_('rss.detail.no_feeds_hint')}</p>
+				{/each}
+
+				<div class="add-feed-row">
+					<input type="text" placeholder={$_('rss.detail.feed_url_placeholder')} bind:value={newFeedUrl} />
+					<input type="text" placeholder={$_('rss.detail.name_placeholder')} bind:value={newFeedName} />
+					<input type="number" min="1" max="30" bind:value={newFeedItemLimit} />
+					<button class="row-action" onclick={addFeed}>{$_('rss.detail.add_feed')}</button>
+				</div>
+
+				{#if manageError}
+					<p class="hint error">{manageError}</p>
+				{/if}
+			</div>
+		{/if}
 	</div>
 {:else if error}
 	<p class="hint error">{error}</p>
 {/if}
 
-<div class="list">
-	{#if rss.items.length > 0}
-		{#each rss.items as item (item.link)}
-			<a class="item" href={item.link} target="_blank" rel="noreferrer">
-				<h2>{item.title}</h2>
-				<p class="meta">{item.source}{item.published ? ` · ${item.published}` : ''}</p>
-				{#if item.summary}
-					<p class="summary">{item.summary}</p>
-				{/if}
-			</a>
-		{/each}
-	{:else if rss.feeds.length === 0}
-		<p class="hint">No feeds configured yet — tap "Edit feeds" to add one.</p>
-	{:else}
-		<p class="hint">No items yet.</p>
-	{/if}
-</div>
+{#if groups.length > 0}
+	{#each groups as group (group.feed_id)}
+		{#if groups.length > 1}
+			<h2 class="group-heading">{group.name}</h2>
+		{/if}
+		{@render mediaList(group.items)}
+	{/each}
+{:else if rss.feed_ids.length === 0}
+	<p class="hint">{$_('rss.detail.no_feeds_selected_hint')}</p>
+{:else}
+	<p class="hint">{$_('rss.detail.no_items')}</p>
+{/if}
 
 <style>
 	.header {
@@ -174,7 +263,8 @@
 		color: var(--color-text-muted);
 	}
 
-	.settings-form input {
+	.settings-form input[type='text'],
+	.settings-form input[type='number'] {
 		font: inherit;
 		padding: 0.5rem 0.75rem;
 		border-radius: 0.5rem;
@@ -183,42 +273,22 @@
 		color: var(--color-text);
 	}
 
-	.feeds {
+	.feed-checklist {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 0.4rem;
 	}
 
-	.feed-row {
-		display: flex;
-		gap: 0.5rem;
+	.feed-checklist .label {
+		margin: 0;
+		font-size: 0.9rem;
+		color: var(--color-text-muted);
+	}
+
+	.settings-form label.feed-checkbox {
+		flex-direction: row;
 		align-items: center;
-	}
-
-	.feed-row input {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.remove-feed {
-		flex-shrink: 0;
-		width: 1.75rem;
-		height: 1.75rem;
-		border-radius: 50%;
-		border: 1px solid var(--color-border);
-		background: var(--color-surface);
-		color: var(--color-text);
-		cursor: pointer;
-	}
-
-	.add-feed {
-		align-self: flex-start;
-		background: none;
-		border: 1px dashed var(--color-border);
-		border-radius: 0.5rem;
-		padding: 0.4rem 0.75rem;
-		color: var(--color-accent);
-		cursor: pointer;
+		gap: 0.5rem;
 	}
 
 	.save {
@@ -231,6 +301,83 @@
 		cursor: pointer;
 	}
 
+	.manage-toggle {
+		align-self: flex-start;
+		background: none;
+		border: 1px dashed var(--color-border);
+		border-radius: 0.5rem;
+		padding: 0.4rem 0.75rem;
+		color: var(--color-accent);
+		cursor: pointer;
+	}
+
+	.manage-feeds {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		border-top: 1px solid var(--color-border);
+		padding-top: 0.75rem;
+	}
+
+	.feed-row,
+	.add-feed-row {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+		flex-wrap: wrap;
+	}
+
+	.feed-summary {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.feed-name {
+		font-weight: 600;
+	}
+
+	.feed-meta {
+		font-size: 0.8rem;
+		color: var(--color-text-muted);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.add-feed-row input[type='text'] {
+		flex: 1;
+		min-width: 8rem;
+	}
+
+	.add-feed-row input[type='number'] {
+		width: 4.5rem;
+	}
+
+	.row-action {
+		flex-shrink: 0;
+		background: none;
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		padding: 0.3rem 0.6rem;
+		color: var(--color-accent);
+		cursor: pointer;
+	}
+
+	.row-action.remove {
+		color: var(--color-error);
+	}
+
+	.group-heading {
+		margin: 1.5rem 0 0.75rem;
+		font-size: 1.1rem;
+	}
+
+	.group-heading:first-of-type {
+		margin-top: 0;
+	}
+
 	.list {
 		display: flex;
 		flex-direction: column;
@@ -238,7 +385,8 @@
 	}
 
 	.item {
-		display: block;
+		display: flex;
+		gap: 0.75rem;
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
 		border-radius: 1rem;
@@ -249,6 +397,18 @@
 
 	.item:active {
 		background: var(--color-surface-hover);
+	}
+
+	.thumb {
+		flex-shrink: 0;
+		width: 5rem;
+		height: 5rem;
+		border-radius: 0.5rem;
+		object-fit: cover;
+	}
+
+	.info {
+		min-width: 0;
 	}
 
 	.item h2 {

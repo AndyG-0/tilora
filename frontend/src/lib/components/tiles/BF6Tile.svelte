@@ -2,6 +2,7 @@
 	import { pollWidget } from '$lib/polling';
 	import { api, type BF6Summary } from '$lib/api';
 	import TileCard from '$lib/components/TileCard.svelte';
+	import { _ } from 'svelte-i18n';
 
 	let { widgetId }: { widgetId: string } = $props();
 
@@ -23,25 +24,29 @@
 <TileCard {widgetId}>
 	<div class="title">Battlefield 6</div>
 	{#if !summary}
-		<div class="hint">Loading…</div>
+		<div class="hint">{$_('common.loading')}</div>
 	{:else if !summary.configured}
-		<div class="hint">Not configured</div>
+		<div class="hint">{$_('common.not_configured')}</div>
 	{:else if summary.error && !summary.server && !summary.player}
 		<div class="hint error">{summary.error}</div>
 	{:else}
 		{#if summary.server}
 			<div class="server">
 				<span class="pop">{summary.server.player_count}/{summary.server.max_players}</span>
-				<span class="label">players</span>
+				<span class="label">{$_('bf6.tile.players_label')}</span>
 			</div>
-			<div class="map">{summary.server.mode} on {summary.server.map}</div>
+			<div class="map">
+				{$_('bf6.tile.mode_on_map', { values: { mode: summary.server.mode, map: summary.server.map } })}
+			</div>
 		{/if}
 		{#if summary.player}
 			<div class="player">
 				<span class="name">{summary.player.user_name}</span>
-				<span class="kd">{summary.player.kill_death.toFixed(2)} K/D</span>
+				<span class="kd">{summary.player.kill_death.toFixed(2)} {$_('bf6.detail.stat_kd')}</span>
 				{#if summary.player.win_percent}
-					<span class="win">{summary.player.win_percent} win</span>
+					<span class="win">
+						{$_('bf6.tile.win_percent', { values: { percent: summary.player.win_percent } })}
+					</span>
 				{/if}
 			</div>
 		{/if}

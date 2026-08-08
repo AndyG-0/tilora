@@ -1,5 +1,6 @@
 <script lang="ts">
 	import TileCard from '$lib/components/TileCard.svelte';
+	import { _ } from 'svelte-i18n';
 
 	let { widgetId }: { widgetId: string } = $props();
 </script>
@@ -11,7 +12,7 @@
 		<span class="tile">4</span>
 		<span class="tile">8</span>
 	</div>
-	<div class="hint">Tap to play</div>
+	<div class="hint">{$_('game2048.tile.hint')}</div>
 </TileCard>
 
 <style>

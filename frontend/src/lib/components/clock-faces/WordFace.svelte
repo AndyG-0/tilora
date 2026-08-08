@@ -11,7 +11,7 @@
 
 <style>
 	.word {
-		font-size: 1.5rem;
+		font-size: clamp(1.1rem, 20cqh, 1.8rem);
 		font-weight: 600;
 		line-height: 1.2;
 	}

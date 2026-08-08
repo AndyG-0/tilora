@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { api } from '$lib/api';
+	import { renderDiscordMarkdown, toggleSpoiler, toggleSpoilerKey } from '$lib/discordMarkdown';
+	import { _, locale } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	interface DiscordMessage {
 		id: string;
@@ -64,7 +67,7 @@
 			discord = await api.widgetDetail<DiscordDetailData>(page.params.id!);
 			editingSettings = false;
 		} catch {
-			error = 'Could not update the settings.';
+			error = get(_)('discord.detail.save_error');
 		} finally {
 			saving = false;
 		}
@@ -74,39 +77,44 @@
 <div class="header">
 	<h1>#{discord.channel_name}</h1>
 	<button class="edit-settings" onclick={() => (editingSettings ? (editingSettings = false) : openEditor())}>
-		{editingSettings ? 'Cancel' : 'Edit settings'}
+		{editingSettings ? $_('common.cancel') : $_('common.edit_settings')}
 	</button>
 </div>
 
 {#if editingSettings}
 	<div class="settings-form">
 		<label>
-			Display mode
+			{$_('discord.detail.display_mode_label')}
 			<select bind:value={displayMode}>
-				<option value="static">Static (scrollable list)</option>
-				<option value="marquee">Marquee (continuous scroll)</option>
-				<option value="fade">Fade (one message at a time)</option>
+				<option value="static">{$_('discord.detail.mode_static')}</option>
+				<option value="marquee">{$_('discord.detail.mode_marquee')}</option>
+				<option value="fade">{$_('discord.detail.mode_fade')}</option>
 			</select>
 		</label>
 
 		<label>
-			Message count
+			{$_('discord.detail.message_count_label')}
 			<input type="number" min="1" max="100" bind:value={messageLimitInput} />
 		</label>
 
 		<label>
-			Time window (minutes, blank = no limit)
-			<input type="number" min="1" bind:value={timeWindowInput} placeholder="No limit" />
+			{$_('discord.detail.time_window_label')}
+			<input
+				type="number"
+				min="1"
+				bind:value={timeWindowInput}
+				placeholder={$_('discord.detail.no_limit_placeholder')}
+			/>
 		</label>
 
 		{#if displayMode === 'marquee'}
 			<label>
-				Scroll duration (seconds)
+				{$_('discord.detail.scroll_speed_label')}
 				<input type="number" min="1" bind:value={marqueeSpeedInput} />
 			</label>
 		{:else if displayMode === 'fade'}
 			<label>
-				Seconds per message
+				{$_('discord.detail.seconds_per_message_label')}
 				<input type="number" min="1" bind:value={fadeIntervalInput} />
 			</label>
 		{/if}
@@ -116,7 +124,7 @@
 		{/if}
 
 		<button class="save" disabled={saving} onclick={saveSettings}>
-			{saving ? 'Saving…' : 'Save'}
+			{saving ? $_('common.saving') : $_('common.save')}
 		</button>
 	</div>
 {/if}
@@ -130,13 +138,17 @@
 			<div class="body">
 				<div class="meta">
 					<span class="author">{message.author}</span>
-					<span class="timestamp">{new Date(message.timestamp).toLocaleString()}</span>
+					<span class="timestamp">{new Date(message.timestamp).toLocaleString(get(locale) ?? undefined)}</span>
 				</div>
-				<div class="content">{message.content}</div>
+				<!-- svelte-ignore a11y_no_static_element_interactions -- delegation container for the `.spoiler` spans injected via {@html}; they carry their own role/tabindex. -->
+				<div class="content" onclick={toggleSpoiler} onkeydown={toggleSpoilerKey}>
+					<!-- eslint-disable-next-line svelte/no-at-html-tags -- renderDiscordMarkdown sanitizes with DOMPurify against an explicit tag/attribute allowlist before this reaches the DOM. -->
+					{@html renderDiscordMarkdown(message.content)}
+				</div>
 			</div>
 		</div>
 	{:else}
-		<p class="hint">No recent messages.</p>
+		<p class="hint">{$_('discord.no_messages')}</p>
 	{/each}
 </div>
 
@@ -249,7 +261,81 @@
 
 	.content {
 		margin-top: 0.15rem;
-		white-space: pre-wrap;
 		overflow-wrap: break-word;
+	}
+
+	.content :global(p) {
+		margin: 0.3rem 0;
+	}
+
+	.content :global(p:first-child) {
+		margin-top: 0;
+	}
+
+	.content :global(p:last-child) {
+		margin-bottom: 0;
+	}
+
+	.content :global(strong) {
+		font-weight: 700;
+	}
+
+	.content :global(code) {
+		background: var(--color-bg);
+		border: 1px solid var(--color-border);
+		border-radius: 0.25rem;
+		padding: 0.1rem 0.3rem;
+		font-size: 0.9em;
+	}
+
+	.content :global(pre) {
+		background: var(--color-bg);
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		padding: 0.5rem 0.75rem;
+		overflow-x: auto;
+	}
+
+	.content :global(pre code) {
+		background: none;
+		border: none;
+		padding: 0;
+	}
+
+	.content :global(blockquote) {
+		margin: 0.3rem 0;
+		padding-left: 0.75rem;
+		border-left: 3px solid var(--color-border);
+		color: var(--color-text-muted);
+	}
+
+	.content :global(ul),
+	.content :global(ol) {
+		margin: 0.3rem 0;
+		padding-left: 1.5rem;
+	}
+
+	.content :global(a) {
+		color: var(--color-accent);
+	}
+
+	.content :global(h1),
+	.content :global(h2),
+	.content :global(h3) {
+		margin: 0.4rem 0;
+		font-size: 1.05em;
+	}
+
+	.content :global(.spoiler) {
+		background: var(--color-border);
+		color: transparent;
+		border-radius: 0.25rem;
+		cursor: pointer;
+	}
+
+	.content :global(.spoiler.revealed) {
+		background: var(--color-surface-hover);
+		color: inherit;
+		cursor: text;
 	}
 </style>

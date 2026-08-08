@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api';
 	import TileCard from '$lib/components/TileCard.svelte';
+	import { _ } from 'svelte-i18n';
 
 	interface NowPlayingEntry {
 		channel_number: string;
@@ -40,16 +41,18 @@
 		<div class="title">
 			HDHomeRun
 			{#if summary?.active_recordings_count}
-				<span class="recording-badge">● Recording</span>
+				<span class="recording-badge">{$_('hdhomerun.tile.recording_badge')}</span>
 			{/if}
 		</div>
 		{#if !summary}
-			<div class="hint">Loading…</div>
+			<div class="hint">{$_('common.loading')}</div>
 		{:else if !summary.tuner_connected && !summary.dvr_connected}
-			<div class="hint">Not connected</div>
+			<div class="hint">{$_('common.not_connected')}</div>
 		{:else}
 			{#if summary.tuner_connected}
-				<div class="channel-count">{summary.channel_count} channels</div>
+				<div class="channel-count">
+					{$_('hdhomerun.tile.channel_count', { values: { count: summary.channel_count } })}
+				</div>
 			{/if}
 			{#if summary.guide_available}
 				<ul class="now-playing">
@@ -73,7 +76,7 @@
 					{/each}
 				</ul>
 			{:else if summary.tuner_connected}
-				<div class="hint">Guide unavailable — showing channel lineup only</div>
+				<div class="hint">{$_('hdhomerun.tile.guide_unavailable')}</div>
 			{/if}
 		{/if}
 	</div>

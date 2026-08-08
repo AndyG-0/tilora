@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { api, type SteamDetail } from '$lib/api';
+	import { _, locale } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	let { data: initialData }: { data: SteamDetail } = $props();
 
@@ -38,7 +40,7 @@
 			steam = await api.widgetDetail<SteamDetail>(widgetId);
 			editing = false;
 		} catch {
-			error = 'Could not save the Steam settings.';
+			error = get(_)('steam.detail.save_error');
 		} finally {
 			saving = false;
 		}
@@ -46,11 +48,15 @@
 
 	function formatPlaytime(minutes: number): string {
 		const hours = minutes / 60;
-		return hours >= 1 ? `${hours.toFixed(1)} hrs` : `${minutes} min`;
+		const time =
+			hours >= 1
+				? get(_)('steam.detail.hours_value', { values: { hours: hours.toFixed(1) } })
+				: get(_)('steam.detail.minutes_value', { values: { minutes } });
+		return time;
 	}
 
 	function formatNewsDate(unixSeconds: number): string {
-		return new Date(unixSeconds * 1000).toLocaleString(undefined, {
+		return new Date(unixSeconds * 1000).toLocaleString(get(locale) ?? undefined, {
 			month: 'short',
 			day: 'numeric',
 			hour: 'numeric',
@@ -62,28 +68,28 @@
 <div class="header">
 	<h1>Steam</h1>
 	<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
-		{editing ? 'Cancel' : 'Edit settings'}
+		{editing ? $_('common.cancel') : $_('common.edit_settings')}
 	</button>
 </div>
 
 {#if editing}
 	<div class="settings-form">
 		<label>
-			SteamID64
+			{$_('steam.detail.steamid_label')}
 			<input type="text" bind:value={steamidInput} placeholder="76561197960435530" />
 		</label>
 		<label>
-			API key
+			{$_('steam.detail.api_key_label')}
 			<input
 				type="password"
 				bind:value={apiKeyInput}
-				placeholder={steam.has_api_key ? 'Set — enter a new value to replace it' : 'Not set'}
+				placeholder={steam.has_api_key ? $_('common.password_set_hint') : $_('common.password_not_set')}
 			/>
 		</label>
 		<p class="hint">
-			Get a free API key from
+			{$_('steam.detail.api_key_hint_prefix')}
 			<a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noreferrer">steamcommunity.com/dev/apikey</a
-			>. Friends' status requires the profile's "Game details" privacy set to Public.
+			>. {$_('steam.detail.api_key_hint_suffix')}
 		</p>
 
 		{#if error}
@@ -91,7 +97,7 @@
 		{/if}
 
 		<button class="save" disabled={saving} onclick={saveSettings}>
-			{saving ? 'Saving…' : 'Save'}
+			{saving ? $_('common.saving') : $_('common.save')}
 		</button>
 	</div>
 {:else if error}
@@ -100,7 +106,7 @@
 
 {#if !editing}
 	{#if !steam.configured}
-		<p class="hint">Not configured yet — tap "Edit settings" to add a Steam API key and SteamID64.</p>
+		<p class="hint">{$_('steam.detail.not_configured_hint')}</p>
 	{:else}
 		{#if steam.error}
 			<p class="hint error">{steam.error}</p>
@@ -118,7 +124,7 @@
 					</div>
 					<div class="player-status">
 						{#if steam.current_game}
-							Playing <span class="game">{steam.current_game}</span>
+							{$_('steam.tile.playing_prefix')} <span class="game">{steam.current_game}</span>
 						{:else}
 							{steam.player.status}
 						{/if}
@@ -127,9 +133,9 @@
 			</div>
 		{/if}
 
-		<h2>Recently played</h2>
+		<h2>{$_('steam.detail.recently_played')}</h2>
 		{#if steam.recent_games.length === 0}
-			<p class="hint">No recently played games.</p>
+			<p class="hint">{$_('steam.detail.no_recent_games')}</p>
 		{:else}
 			<ul class="games">
 				{#each steam.recent_games as game (game.appid)}
@@ -138,16 +144,20 @@
 							<img class="icon" src={game.icon_url} alt="" />
 						{/if}
 						<span class="game-name">{game.name}</span>
-						<span class="playtime">{formatPlaytime(game.playtime_2weeks_minutes)} / 2 wks</span>
-						<span class="playtime total">{formatPlaytime(game.playtime_forever_minutes)} total</span>
+						<span class="playtime">
+							{$_('steam.detail.playtime_2weeks', { values: { time: formatPlaytime(game.playtime_2weeks_minutes) } })}
+						</span>
+						<span class="playtime total">
+							{$_('steam.detail.playtime_total', { values: { time: formatPlaytime(game.playtime_forever_minutes) } })}
+						</span>
 					</li>
 				{/each}
 			</ul>
 		{/if}
 
-		<h2>Friends</h2>
+		<h2>{$_('steam.detail.friends')}</h2>
 		{#if steam.friends.length === 0}
-			<p class="hint">No friends data available.</p>
+			<p class="hint">{$_('steam.detail.no_friends_data')}</p>
 		{:else}
 			<ul class="friends">
 				{#each steam.friends as friend (friend.steamid)}
@@ -163,9 +173,9 @@
 			</ul>
 		{/if}
 
-		<h2>News</h2>
+		<h2>{$_('steam.detail.news')}</h2>
 		{#if steam.news.length === 0}
-			<p class="hint">No recent news.</p>
+			<p class="hint">{$_('steam.detail.no_news')}</p>
 		{:else}
 			<ul class="news">
 				{#each steam.news as item (item.gid)}

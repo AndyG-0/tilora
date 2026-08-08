@@ -53,6 +53,7 @@ class SynologyPlugin(Plugin):
         try:
             volumes = await synology_client.get_storage(self.config["settings"], self.id)
         except synology_client.SynologyError as exc:
+            _LOGGER.warning("Could not fetch storage volumes for widget '%s': %s", self.id, exc)
             return [], str(exc)
         return volumes, None
 
@@ -84,6 +85,7 @@ class SynologyPlugin(Plugin):
         try:
             system_info = await synology_client.get_system_info(self.config["settings"], self.id)
         except synology_client.SynologyError as exc:
+            _LOGGER.warning("Could not fetch system info for widget '%s': %s", self.id, exc)
             return {**summary, "error": str(exc), "volumes": volumes, **self._empty_system_info()}
 
         if system_info.get("temperature_celsius") is None:

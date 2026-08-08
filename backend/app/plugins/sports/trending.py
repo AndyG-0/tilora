@@ -15,12 +15,15 @@ league's ESPN failure doesn't prevent the others from showing.
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime
 from typing import Any
 
 from app.config import resolve_timezone
 from app.integrations import broadcast_links, espn_client
 from app.storage.cache import cache
+
+logger = logging.getLogger(__name__)
 
 _CACHE_TTL_SECONDS = 900  # 15 minutes — matches plugin.py's schedule cache TTL
 
@@ -52,9 +55,19 @@ async def _fetch_league(league: str, date: str) -> tuple[list[dict[str, Any]], d
     except espn_client.ESPNError as exc:
         # Not cached — a transient failure shouldn't lock in an error state
         # for the full TTL window.
+        logger.warning("Could not fetch trending scoreboard for league '%s': %s", league, exc)
         return [], {"league": league, "error": str(exc)}
 
-    games = [{**game, "league": league, "league_label": league_label} for game in espn_client.parse_scoreboard(data)]
+    games = [
+        {
+            **game,
+            "league": league,
+            "league_label": league_label,
+            "home_espn_url": espn_client.team_page_url(league, game["home_abbreviation"]),
+            "away_espn_url": espn_client.team_page_url(league, game["away_abbreviation"]),
+        }
+        for game in espn_client.parse_scoreboard(data)
+    ]
     cache.set(cache_key, games, _CACHE_TTL_SECONDS)
     return games, None
 

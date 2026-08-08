@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { api, type MovieProvider } from '$lib/api';
+	import { _ } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	interface Movie {
 		id: number;
@@ -9,7 +11,7 @@
 		rating: number | null;
 		poster_url: string | null;
 		overview: string;
-		where_to_watch: string[];
+		where_to_watch: { name: string; logo_url: string | null; url: string | null }[];
 	}
 
 	interface MoviesDetailData {
@@ -32,21 +34,21 @@
 		| 'on_streaming_movies'
 		| 'on_streaming_tv_shows';
 
-	const SECTIONS: { key: MediaListKey; title: string }[] = [
-		{ key: 'popular_movies', title: 'Popular Movies' },
-		{ key: 'trending_movies', title: 'Trending Movies' },
-		{ key: 'popular_tv_shows', title: 'Popular Shows' },
-		{ key: 'trending_tv_shows', title: 'Trending Shows' },
-		{ key: 'on_streaming_movies', title: 'On Streaming: Movies' },
-		{ key: 'on_streaming_tv_shows', title: 'On Streaming: Shows' },
+	const SECTIONS: { key: MediaListKey; titleKey: string }[] = [
+		{ key: 'popular_movies', titleKey: 'movies.section.popular_movies' },
+		{ key: 'trending_movies', titleKey: 'movies.section.trending_movies' },
+		{ key: 'popular_tv_shows', titleKey: 'movies.section.popular_tv_shows' },
+		{ key: 'trending_tv_shows', titleKey: 'movies.section.trending_tv_shows' },
+		{ key: 'on_streaming_movies', titleKey: 'movies.section.on_streaming_movies' },
+		{ key: 'on_streaming_tv_shows', titleKey: 'movies.section.on_streaming_tv_shows' },
 	];
 
 	const CATEGORY_OPTIONS = [
-		{ key: 'popular_movies', label: 'Popular Movies' },
-		{ key: 'popular_tv', label: 'Popular Shows' },
-		{ key: 'trending_movies', label: 'Trending Movies' },
-		{ key: 'trending_tv', label: 'Trending Shows' },
-		{ key: 'on_streaming', label: 'On Streaming (Movies & Shows)' },
+		{ key: 'popular_movies', labelKey: 'movies.section.popular_movies' },
+		{ key: 'popular_tv', labelKey: 'movies.section.popular_tv_shows' },
+		{ key: 'trending_movies', labelKey: 'movies.section.trending_movies' },
+		{ key: 'trending_tv', labelKey: 'movies.section.trending_tv_shows' },
+		{ key: 'on_streaming', labelKey: 'movies.category.on_streaming' },
 	];
 
 	let { data: initialData }: { data: MoviesDetailData } = $props();
@@ -95,7 +97,7 @@
 			data = await api.widgetDetail<MoviesDetailData>(page.params.id!);
 			editingSettings = false;
 		} catch {
-			error = 'Could not update settings.';
+			error = get(_)('movies.detail.save_error');
 		} finally {
 			saving = false;
 		}
@@ -112,16 +114,33 @@
 				<div class="info">
 					<h2>{item.title}</h2>
 					<p class="meta">
-						{item.release_date ?? 'Unknown release date'}
+						{item.release_date ?? $_('movies.detail.unknown_release_date')}
 						{#if item.rating}· {item.rating.toFixed(1)}★{/if}
 					</p>
 					<p class="overview">{item.overview}</p>
 					{#if item.where_to_watch.length > 0}
-						<p class="providers">
-							Streaming in {data.region} on: {item.where_to_watch.join(', ')}
-						</p>
+						<p class="providers-label">{$_('movies.detail.streaming_in', { values: { region: data.region } })}</p>
+						<div class="provider-chips">
+							{#each item.where_to_watch as provider (provider.name)}
+								{#if provider.url}
+									<a class="chip" href={provider.url} target="_blank" rel="noreferrer">
+										{#if provider.logo_url}
+											<img src={provider.logo_url} alt="" />
+										{/if}
+										{provider.name}
+									</a>
+								{:else}
+									<span class="chip">
+										{#if provider.logo_url}
+											<img src={provider.logo_url} alt="" />
+										{/if}
+										{provider.name}
+									</span>
+								{/if}
+							{/each}
+						</div>
 					{:else}
-						<p class="providers muted">Not currently streaming in {data.region}</p>
+						<p class="providers muted">{$_('movies.detail.not_streaming_in', { values: { region: data.region } })}</p>
 					{/if}
 				</div>
 			</div>
@@ -132,14 +151,14 @@
 <div class="header">
 	<h1>Movies & Shows</h1>
 	<button class="edit-settings" onclick={() => (editingSettings ? (editingSettings = false) : openEditor())}>
-		{editingSettings ? 'Cancel' : 'Edit settings'}
+		{editingSettings ? $_('common.cancel') : $_('common.edit_settings')}
 	</button>
 </div>
 
 {#if editingSettings}
 	<div class="settings-form">
 		<div class="categories">
-			<span class="section-label">Sections to show</span>
+			<span class="section-label">{$_('movies.detail.sections_label')}</span>
 			<div class="categories-list">
 				{#each CATEGORY_OPTIONS as option (option.key)}
 					<label class="category">
@@ -148,17 +167,17 @@
 							checked={categoriesInput.includes(option.key)}
 							onchange={() => toggleCategory(option.key)}
 						/>
-						{option.label}
+						{$_(option.labelKey)}
 					</label>
 				{/each}
 			</div>
 		</div>
 
 		<div class="providers-picker">
-			<span class="section-label">Your streaming services</span>
-			<p class="hint">Leave none selected to show anything available on any service.</p>
+			<span class="section-label">{$_('movies.detail.streaming_services_label')}</span>
+			<p class="hint">{$_('movies.detail.providers_hint')}</p>
 			{#if loadingProviders}
-				<p class="hint">Loading providers…</p>
+				<p class="hint">{$_('movies.detail.loading_providers')}</p>
 			{:else}
 				<div class="provider-chips">
 					{#each providerCatalog as provider (provider.id)}
@@ -183,7 +202,7 @@
 		{/if}
 
 		<button class="save" disabled={saving} onclick={saveSettings}>
-			{saving ? 'Saving…' : 'Save'}
+			{saving ? $_('common.saving') : $_('common.save')}
 		</button>
 	</div>
 {:else if error}
@@ -193,7 +212,7 @@
 {#each SECTIONS as section (section.key)}
 	{@const items = data[section.key]}
 	{#if items?.length}
-		<h1>{section.title}</h1>
+		<h1>{$_(section.titleKey)}</h1>
 		{@render mediaList(items)}
 	{/if}
 {/each}
@@ -274,6 +293,7 @@
 		font: inherit;
 		font-size: 0.85rem;
 		cursor: pointer;
+		text-decoration: none;
 	}
 
 	.chip img {
@@ -359,5 +379,10 @@
 
 	.providers.muted {
 		color: var(--color-text-muted);
+	}
+
+	.providers-label {
+		font-size: 0.9rem;
+		margin: 0 0 0.4rem;
 	}
 </style>

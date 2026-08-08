@@ -4,6 +4,8 @@
 	import { page } from '$app/state';
 	import favicon from '$lib/assets/favicon.svg';
 	import '../app.css';
+	import { _ } from 'svelte-i18n';
+	import { waitLocale, loadLocaleFromServer } from '$lib/i18n';
 	// Imported for its side effect: subscribing keeps document.documentElement's
 	// data-theme attribute (and localStorage) in sync with the store.
 	import { loadThemeFromServer } from '$lib/stores/theme';
@@ -11,9 +13,16 @@
 	import { user, userLoaded, loadCurrentUser } from '$lib/stores/user';
 	import { needsSetup, setupStatusLoaded, setupStatusError, loadSetupStatus } from '$lib/stores/setup';
 	import { reloadWidgets } from '$lib/stores/widgets';
+	import { screensaverSettings, loadScreensaverSettings, forceScreensaverPreview } from '$lib/stores/screensaver';
+	import { loadVoiceSelectionFromServer } from '$lib/stores/voice';
+	import Screensaver from '$lib/components/Screensaver.svelte';
 	import { api, type DeviceListEntry } from '$lib/api';
 
 	let { children } = $props();
+
+	// Gates rendering until the initial locale's catalog has loaded, so no
+	// raw translation key (e.g. "layout.fatal_title") ever flashes on first load.
+	let i18nReady = $state(false);
 
 	// Shown once, right after a brand-new device cookie is minted, so a
 	// household can tell "Kitchen Tablet" apart from "Alice's Phone" in the
@@ -28,6 +37,41 @@
 	let copySourceDevices = $state<DeviceListEntry[]>([]);
 	let copySourceId = $state('');
 	let copyingLayout = $state(false);
+
+	// True once idle_timeout_seconds has elapsed with no activity and the
+	// screensaver overlay should show; any activity (see the listeners set up
+	// in the second onMount below) clears it immediately.
+	let idle = $state(false);
+	let idleTimer: ReturnType<typeof setTimeout> | undefined;
+
+	function clearIdleTimer() {
+		if (idleTimer !== undefined) {
+			clearTimeout(idleTimer);
+			idleTimer = undefined;
+		}
+	}
+
+	// Re-armed on every activity event and whenever the settings/user/route
+	// dependencies below change. Forces `idle` false whenever the screensaver
+	// shouldn't be armed at all (disabled, no user yet, or on the login/setup
+	// routes where a PIN entry or first-run flow shouldn't be interrupted).
+	function armIdleTimer() {
+		clearIdleTimer();
+		const settings = $screensaverSettings;
+		const suppressedRoute = page.url.pathname === '/login' || page.url.pathname === '/setup';
+		if (!settings?.enabled || !$user || suppressedRoute) {
+			idle = false;
+			return;
+		}
+		idleTimer = setTimeout(() => {
+			idle = true;
+		}, settings.idle_timeout_seconds * 1000);
+	}
+
+	function handleActivity() {
+		idle = false;
+		armIdleTimer();
+	}
 
 	function layoutSetupDismissedKey(userId: string, deviceId: string) {
 		return `tilora:layout-setup-dismissed:${userId}:${deviceId}`;
@@ -67,6 +111,9 @@
 	}
 
 	onMount(async () => {
+		await waitLocale();
+		i18nReady = true;
+
 		const registered = await ensureDevice().catch(() => null);
 		if (registered?.is_new) {
 			namingDevice = true;
@@ -111,7 +158,28 @@
 	});
 
 	$effect(() => {
-		if ($user) loadThemeFromServer();
+		if ($user) {
+			loadThemeFromServer();
+			loadLocaleFromServer();
+			loadScreensaverSettings();
+			loadVoiceSelectionFromServer();
+		}
+	});
+
+	// Re-arms (or disarms) the idle timer whenever any of its inputs change —
+	// e.g. settings finish loading, the logged-in user switches on a shared
+	// device, or navigation moves onto/off of the suppressed login/setup routes.
+	$effect(() => {
+		armIdleTimer();
+	});
+
+	onMount(() => {
+		const events = ['pointerdown', 'pointermove', 'keydown', 'touchstart', 'wheel'] as const;
+		for (const evt of events) window.addEventListener(evt, handleActivity, { passive: true });
+		return () => {
+			for (const evt of events) window.removeEventListener(evt, handleActivity);
+			clearIdleTimer();
+		};
 	});
 
 	function confirmDeviceName() {
@@ -126,44 +194,56 @@
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
-{#if $setupStatusError}
-	<div class="fatal-error">
-		<h2>Could not reach the Tilora backend</h2>
-		<p class="hint">Check that the backend is running and reachable, then reload this page.</p>
-	</div>
-{:else}
-	{#if namingDevice}
-		<div class="device-modal-backdrop" role="presentation">
-			<div class="device-modal">
-				<h2>Name this device</h2>
-				<p class="hint">Helps tell it apart in the device list — e.g. "Kitchen Tablet" or "Living Room TV".</p>
-				<input type="text" bind:value={deviceNameInput} maxlength="40" />
-				<button class="confirm" onclick={confirmDeviceName}>Done</button>
-			</div>
+{#if i18nReady}
+	{#if $setupStatusError}
+		<div class="fatal-error">
+			<h2>{$_('layout.fatal_title')}</h2>
+			<p class="hint">{$_('layout.fatal_hint')}</p>
 		</div>
-	{/if}
-
-	{#if offeringLayoutCopy}
-		<div class="device-modal-backdrop" role="presentation">
-			<div class="device-modal">
-				<h2>Set up this device</h2>
-				<p class="hint">Copy your dashboard layout from one of your other devices, or start with the default layout.</p>
-				<select bind:value={copySourceId}>
-					{#each copySourceDevices as d (d.id)}
-						<option value={d.id}>{d.name}</option>
-					{/each}
-				</select>
-				<div class="layout-copy-actions">
-					<button class="cancel" onclick={startFresh} disabled={copyingLayout}>Start fresh</button>
-					<button class="confirm" onclick={copyLayoutFromSource} disabled={copyingLayout}>
-						{copyingLayout ? 'Copying…' : 'Copy layout'}
-					</button>
+	{:else}
+		{#if namingDevice}
+			<div class="device-modal-backdrop" role="presentation">
+				<div class="device-modal">
+					<h2>{$_('layout.name_device_title')}</h2>
+					<p class="hint">{$_('layout.name_device_hint')}</p>
+					<input type="text" bind:value={deviceNameInput} maxlength="40" />
+					<button class="confirm" onclick={confirmDeviceName}>{$_('layout.done')}</button>
 				</div>
 			</div>
-		</div>
-	{/if}
+		{/if}
 
-	{@render children()}
+		{#if offeringLayoutCopy}
+			<div class="device-modal-backdrop" role="presentation">
+				<div class="device-modal">
+					<h2>{$_('layout.setup_device_title')}</h2>
+					<p class="hint">{$_('layout.setup_device_hint')}</p>
+					<select bind:value={copySourceId}>
+						{#each copySourceDevices as d (d.id)}
+							<option value={d.id}>{d.name}</option>
+						{/each}
+					</select>
+					<div class="layout-copy-actions">
+						<button class="cancel" onclick={startFresh} disabled={copyingLayout}>{$_('layout.start_fresh')}</button>
+						<button class="confirm" onclick={copyLayoutFromSource} disabled={copyingLayout}>
+							{copyingLayout ? $_('layout.copying') : $_('layout.copy_layout')}
+						</button>
+					</div>
+				</div>
+			</div>
+		{/if}
+
+		{@render children()}
+
+		{#if (idle || $forceScreensaverPreview) && $screensaverSettings}
+			<Screensaver
+				settings={$screensaverSettings}
+				ondismiss={() => {
+					idle = false;
+					forceScreensaverPreview.set(false);
+				}}
+			/>
+		{/if}
+	{/if}
 {/if}
 
 <style>

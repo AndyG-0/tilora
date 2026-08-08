@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { locale } from 'svelte-i18n';
+
 	interface DateDetailData {
 		timezone: string;
 	}
@@ -13,7 +15,7 @@
 	});
 
 	const formatted = $derived(
-		new Intl.DateTimeFormat(undefined, {
+		new Intl.DateTimeFormat($locale ?? undefined, {
 			timeZone: data.timezone,
 			weekday: 'long',
 			month: 'long',

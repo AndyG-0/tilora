@@ -15,7 +15,10 @@ const baseData = {
 	location_name: 'Fort Worth, TX',
 	temperature: 72.4,
 	condition: 'Mainly clear',
-	daily_forecast: [{ date: '2026-07-24', high: 85, low: 68, condition: 'Mainly clear' }],
+	weather_code: 1,
+	is_day: true,
+	daily_forecast: [{ date: '2026-07-24', high: 85, low: 68, condition: 'Mainly clear', weather_code: 1 }],
+	severe_weather_alerts: true,
 };
 
 describe('WeatherDetail', () => {
@@ -29,6 +32,7 @@ describe('WeatherDetail', () => {
 
 		expect(screen.getByText('Fort Worth, TX')).toBeInTheDocument();
 		expect(screen.getByText('72° · Mainly clear')).toBeInTheDocument();
+		expect(screen.getAllByRole('img', { name: 'Mainly clear' })).toHaveLength(2);
 	});
 
 	it('searches cities after typing and lets the user pick one', async () => {
@@ -70,5 +74,82 @@ describe('WeatherDetail', () => {
 		await vi.advanceTimersByTimeAsync(300);
 
 		expect(searchCities).not.toHaveBeenCalled();
+	});
+
+	it('does not render an air quality section when air_quality is absent', () => {
+		render(WeatherDetail, { props: { data: baseData } });
+
+		expect(screen.queryByText('Air Quality')).not.toBeInTheDocument();
+	});
+
+	it('renders the AQI badge and pollutant values when air_quality is present', () => {
+		render(WeatherDetail, {
+			props: {
+				data: {
+					...baseData,
+					air_quality: {
+						us_aqi: 42,
+						us_aqi_category: 'Good',
+						pm2_5: 8.1,
+						pm10: 15,
+						ozone: 30,
+						primary_pollutant: 'pm2_5',
+					},
+				},
+			},
+		});
+
+		expect(screen.getByText('Air Quality')).toBeInTheDocument();
+		expect(screen.getByText('42')).toBeInTheDocument();
+		expect(screen.getByText('Good')).toBeInTheDocument();
+		expect(screen.getByText('8.1 µg/m³')).toBeInTheDocument();
+		expect(screen.queryByText('Pollen')).not.toBeInTheDocument();
+	});
+
+	it('renders the pollen section only when pollen data is present', () => {
+		render(WeatherDetail, {
+			props: {
+				data: {
+					...baseData,
+					air_quality: {
+						us_aqi: 42,
+						us_aqi_category: 'Good',
+						pm2_5: 8.1,
+						pm10: 15,
+						ozone: 30,
+						primary_pollutant: 'pm2_5',
+						pollen: { birch_pollen: 12.5 },
+					},
+				},
+			},
+		});
+
+		expect(screen.getByText('Pollen')).toBeInTheDocument();
+		expect(screen.getByText('Birch')).toBeInTheDocument();
+		expect(screen.getByText('12.5 grains/m³')).toBeInTheDocument();
+	});
+
+	it('toggles severe weather alerts and persists the setting', async () => {
+		updateWidgetSettings.mockResolvedValue({});
+		render(WeatherDetail, { props: { data: baseData } });
+
+		const checkbox = screen.getByLabelText('Severe weather alerts') as HTMLInputElement;
+		expect(checkbox.checked).toBe(true);
+
+		await fireEvent.click(checkbox);
+
+		await vi.waitFor(() =>
+			expect(updateWidgetSettings).toHaveBeenCalledWith('weather', { severe_weather_alerts: false }),
+		);
+	});
+
+	it('reverts the toggle if saving the setting fails', async () => {
+		updateWidgetSettings.mockRejectedValue(new Error('boom'));
+		render(WeatherDetail, { props: { data: baseData } });
+
+		const checkbox = screen.getByLabelText('Severe weather alerts') as HTMLInputElement;
+		await fireEvent.click(checkbox);
+
+		await vi.waitFor(() => expect(checkbox.checked).toBe(true));
 	});
 });

@@ -12,14 +12,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
+from app.auth import get_current_user, require_write_access
 from app.integrations import jellyfin_client
 from app.plugins.base import registry
 from app.plugins.jellyfin.plugin import JellyfinPlugin
 
-router = APIRouter(prefix="/api/jellyfin", tags=["jellyfin"])
+router = APIRouter(prefix="/api/jellyfin", tags=["jellyfin"], dependencies=[Depends(get_current_user)])
 
 _FORWARDED_STREAM_HEADERS = ("content-type", "content-length", "content-range", "accept-ranges")
 
@@ -32,8 +33,9 @@ def _get_plugin(widget_id: str) -> JellyfinPlugin:
 
 
 @router.post("/{widget_id}/test-connection")
-async def test_connection(widget_id: str, payload: dict[str, Any]):
+async def test_connection(widget_id: str, payload: dict[str, Any], user: dict[str, Any] = Depends(get_current_user)):
     plugin = _get_plugin(widget_id)
+    require_write_access(plugin, user)
     candidate_settings = {**plugin.config["settings"], **payload}
     try:
         server_name = await jellyfin_client.test_connection(candidate_settings, widget_id)

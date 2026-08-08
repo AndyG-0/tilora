@@ -23,6 +23,36 @@ from app.plugins.base import Plugin, ToolDef
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 POSTER_BASE_URL = "https://image.tmdb.org/t/p/w342"
+PROVIDER_LOGO_BASE_URL = "https://image.tmdb.org/t/p/w45"
+
+# TMDB's /watch/providers endpoint doesn't return a per-provider deep link —
+# only a single aggregated attribution page for the whole title. Rather than
+# send every provider chip to that same shared link, point each known
+# provider at its own service homepage; providers not in this map render as
+# non-clickable chips instead of guessing a URL.
+_PROVIDER_HOME_URLS: dict[str, str] = {
+    "Netflix": "https://www.netflix.com",
+    "Hulu": "https://www.hulu.com",
+    "Disney Plus": "https://www.disneyplus.com",
+    "Max": "https://www.max.com",
+    "HBO Max": "https://www.max.com",
+    "Amazon Prime Video": "https://www.amazon.com/gp/video/storefront",
+    "Apple TV Plus": "https://tv.apple.com",
+    "Apple TV+": "https://tv.apple.com",
+    "Paramount Plus": "https://www.paramountplus.com",
+    "Peacock": "https://www.peacocktv.com",
+    "Peacock Premium": "https://www.peacocktv.com",
+    "YouTube": "https://www.youtube.com",
+    "ESPN Plus": "https://plus.espn.com",
+    "Starz": "https://www.starz.com",
+    "Showtime": "https://www.showtime.com",
+    "fuboTV": "https://www.fubo.tv",
+    "Crunchyroll": "https://www.crunchyroll.com",
+    "Tubi": "https://tubitv.com",
+    "Pluto TV": "https://pluto.tv",
+    "AMC+": "https://www.amcplus.com",
+    "discovery+": "https://www.discoveryplus.com",
+}
 
 # How many of each list's results to enrich with watch-provider data in
 # get_detail — each one is an extra TMDB request, so keep it bounded.
@@ -124,14 +154,21 @@ class MoviesPlugin(Plugin):
         path, extra_params = self._list_request(response_key)
         return await self._fetch_path(client, path, extra_params)
 
-    async def _fetch_providers(self, client: httpx.AsyncClient, media_type: str, item_id: int) -> list[str]:
+    async def _fetch_providers(self, client: httpx.AsyncClient, media_type: str, item_id: int) -> list[dict[str, Any]]:
         response = await client.get(
             f"{TMDB_BASE_URL}/{media_type}/{item_id}/watch/providers",
             params={"api_key": settings.tmdb_api_key or ""},
         )
         response.raise_for_status()
         region_data = response.json().get("results", {}).get(self.region, {})
-        return sorted({p["provider_name"] for p in region_data.get("flatrate", [])})
+        return [
+            {
+                "name": p["provider_name"],
+                "logo_url": f"{PROVIDER_LOGO_BASE_URL}{p['logo_path']}" if p.get("logo_path") else None,
+                "url": _PROVIDER_HOME_URLS.get(p["provider_name"]),
+            }
+            for p in sorted(region_data.get("flatrate", []), key=lambda p: p["provider_name"])
+        ]
 
     def _media_summary(self, item: dict[str, Any], media_type: str) -> dict[str, Any]:
         # TV objects use `name`/`first_air_date` instead of movies'

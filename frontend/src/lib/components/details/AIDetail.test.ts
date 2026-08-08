@@ -20,6 +20,7 @@ const baseData = {
 	prompt: 'Write a short daily briefing.',
 	cron: '30 6 * * *',
 	topics: [],
+	language: 'en',
 };
 
 describe('AIDetail', () => {
@@ -38,6 +39,24 @@ describe('AIDetail', () => {
 		expect(screen.getByText('Sunny today, bring a jacket.')).toBeInTheDocument();
 	});
 
+	it('renders markdown in the briefing and history text', () => {
+		render(AIDetail, {
+			props: {
+				data: {
+					...baseData,
+					text: '**Sunny** today.',
+					history: [
+						{ ran_at: '2026-07-24T06:30:00Z', text: '**Sunny** today.' },
+						{ ran_at: '2026-07-23T06:30:00Z', text: 'Cloudy with *light* rain.' },
+					],
+				},
+			},
+		});
+
+		expect(screen.getByText('Sunny', { selector: 'strong' })).toBeInTheDocument();
+		expect(screen.getByText('light', { selector: 'em' })).toBeInTheDocument();
+	});
+
 	it('lets the user edit and save the prompt', async () => {
 		updateWidgetSettings.mockResolvedValue({});
 		widgetDetail.mockResolvedValue({ ...baseData, prompt: 'New prompt text' });
@@ -52,8 +71,33 @@ describe('AIDetail', () => {
 		await fireEvent.click(screen.getByText('Save'));
 
 		await vi.waitFor(() => expect(updateWidgetSettings).toHaveBeenCalled());
-		expect(updateWidgetSettings).toHaveBeenCalledWith('ai-insights', { prompt: 'New prompt text', topics: [] });
+		expect(updateWidgetSettings).toHaveBeenCalledWith('ai-insights', {
+			prompt: 'New prompt text',
+			topics: [],
+			language: 'en',
+		});
 		expect(widgetDetail).toHaveBeenCalledWith('ai-insights');
+	});
+
+	it('lets the user change the response language', async () => {
+		updateWidgetSettings.mockResolvedValue({});
+		widgetDetail.mockResolvedValue({ ...baseData, language: 'es' });
+
+		render(AIDetail, { props: { data: baseData } });
+
+		await fireEvent.click(screen.getByText('Edit prompt'));
+		const languageSelect = await screen.findByLabelText('Response language');
+		expect(languageSelect).toHaveValue('en');
+
+		await fireEvent.change(languageSelect, { target: { value: 'es' } });
+		await fireEvent.click(screen.getByText('Save'));
+
+		await vi.waitFor(() => expect(updateWidgetSettings).toHaveBeenCalled());
+		expect(updateWidgetSettings).toHaveBeenCalledWith('ai-insights', {
+			prompt: 'Write a short daily briefing.',
+			topics: [],
+			language: 'es',
+		});
 	});
 
 	it('lets the user pick topics to cover in the summary', async () => {
@@ -75,6 +119,7 @@ describe('AIDetail', () => {
 		expect(updateWidgetSettings).toHaveBeenCalledWith('ai-insights', {
 			prompt: 'Write a short daily briefing.',
 			topics: ['calendar'],
+			language: 'en',
 		});
 	});
 

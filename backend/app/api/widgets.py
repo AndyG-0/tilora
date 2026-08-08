@@ -1,20 +1,30 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import time
 from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.auth import get_current_device, get_current_user
+from app.auth import get_current_device, get_current_user, require_write_access
 from app.config import list_widget_configs, load_dashboard_config, resolve_tabs
 from app.plugins.ai_insights.plugin import AIInsightsPlugin
 from app.plugins.base import Plugin, registry
 from app.plugins.photos.plugin import PhotosPlugin
 from app.plugins.registry_types import PLUGIN_CLASSES_BY_TYPE
 from app.plugins.scoping import scoped_plugin
-from app.scheduler import run_ai_widget, schedule_ai_widget, schedule_photo_index, unschedule_widget
+from app.plugins.speedtest.plugin import SpeedtestPlugin
+from app.scheduler import (
+    run_ai_widget,
+    run_speedtest_widget,
+    schedule_ai_widget,
+    schedule_photo_index,
+    schedule_speedtest_widget,
+    unschedule_widget,
+)
 from app.storage.cache import cache
 from app.storage.db import (
     delete_custom_widget,
@@ -23,6 +33,7 @@ from app.storage.db import (
     delete_widget_device_settings_for_widget,
     delete_widget_layout_for_widget,
     delete_widget_user_settings_for_widget,
+    get_user_preferences,
     get_widget_device_settings,
     get_widget_user_settings,
     list_custom_widgets,
@@ -71,6 +82,8 @@ class AddWidgetRequest(BaseModel):
     layout: WidgetLayout
     tab: str | None = None
 
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/widgets", tags=["widgets"])
 
@@ -126,10 +139,15 @@ async def update_widgets_layout(
 
 
 @router.post("")
-async def add_widget(payload: AddWidgetRequest):
+async def add_widget(payload: AddWidgetRequest, user: dict[str, Any] = Depends(get_current_user)):
     plugin_cls = PLUGIN_CLASSES_BY_TYPE.get(payload.type)
     if plugin_cls is None:
         raise HTTPException(status_code=400, detail=f"Unknown widget type '{payload.type}'")
+    # No plugin instance exists yet to check via require_write_access, but
+    # settings_scope is a ClassVar, so the class attribute is enough to
+    # decide whether adding this widget type is an admin-only action.
+    if plugin_cls.settings_scope == "network" and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
 
     widget_id = f"{payload.type}-{uuid4().hex[:8]}"
     while registry.get(widget_id) is not None:
@@ -152,6 +170,8 @@ async def add_widget(payload: AddWidgetRequest):
         schedule_ai_widget(plugin)
     elif isinstance(plugin, PhotosPlugin):
         schedule_photo_index(plugin)
+    elif isinstance(plugin, SpeedtestPlugin):
+        schedule_speedtest_widget(plugin)
 
     default_tab = resolve_tabs(load_dashboard_config())[0]["id"]
     return {"id": widget_id, "type": payload.type, "layout": layout, "tab": tab or default_tab}
@@ -164,23 +184,42 @@ def _get_plugin(widget_id: str):
     return plugin
 
 
-def _require_write_access(plugin: Plugin, user: dict[str, Any]) -> None:
-    # "network"-scope settings (NAS/router/media-server credentials, ...) are
-    # shared by the whole household — only an admin may change them. Any
-    # logged-in user may still read them (enforced by the login dependency on
-    # the GET routes below). "personal"-scope settings are each user's own,
-    # so no extra check is needed beyond being logged in as that user.
-    if plugin.settings_scope == "network" and user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-
-
-def _cache_key(kind: str, plugin: Plugin, user: dict[str, Any], device: dict[str, Any]) -> str:
+def _cache_key_prefix(kind: str, plugin: Plugin, user: dict[str, Any], device: dict[str, Any]) -> str:
     parts = [kind, plugin.id]
     if plugin.settings_scope == "personal":
         parts.append(user["id"])
     if plugin.device_overridable_settings:
         parts.append(device["id"])
-    return ":".join(parts)
+    return ":".join(parts) + ":"
+
+
+async def _timed_call(kind: str, plugin: Plugin, call: Any) -> Any:
+    """Await a plugin's get_summary()/get_detail() call, logging its latency
+    and — separately — any exception it raises, tagged with the widget id
+    and plugin class so slow/failing plugins are identifiable in logs
+    without needing per-plugin instrumentation.
+    """
+    plugin_label = f"{plugin.id} ({type(plugin).__name__})"
+    start = time.monotonic()
+    try:
+        result = await call
+    except Exception:
+        elapsed_ms = (time.monotonic() - start) * 1000
+        logger.exception("widget %s %s failed after %.1fms", plugin_label, kind, elapsed_ms)
+        raise
+    elapsed_ms = (time.monotonic() - start) * 1000
+    logger.info("widget %s %s took %.1fms", plugin_label, kind, elapsed_ms)
+    return result
+
+
+def _cache_key(kind: str, plugin: Plugin, user: dict[str, Any], device: dict[str, Any], locale: str) -> str:
+    # locale is always the final segment — plugin output can be
+    # locale-dependent (see app.i18n), so caching one locale's response and
+    # serving it to a request for another locale would be a correctness bug,
+    # not just cosmetic. Keeping it last (rather than interleaved with
+    # user/device) means every prefix-based invalidation below still sweeps
+    # every locale variant for a widget without needing locale-aware changes.
+    return _cache_key_prefix(kind, plugin, user, device) + locale
 
 
 @router.get("/{widget_id}/summary")
@@ -190,13 +229,14 @@ async def widget_summary(
     device: dict[str, Any] = Depends(get_current_device),
 ):
     plugin = _get_plugin(widget_id)
-    cache_key = _cache_key("summary", plugin, user, device)
+    locale = (await asyncio.to_thread(get_user_preferences, user["id"])).get("locale", "en")
+    cache_key = _cache_key("summary", plugin, user, device, locale)
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
-    scoped = await scoped_plugin(plugin, user, device)
-    data = await scoped.get_summary()
+    scoped = await scoped_plugin(plugin, user, device, locale)
+    data = await _timed_call("summary", plugin, scoped.get_summary())
     cache.set(cache_key, data, plugin.refresh_interval_seconds)
     return data
 
@@ -208,13 +248,14 @@ async def widget_detail(
     device: dict[str, Any] = Depends(get_current_device),
 ):
     plugin = _get_plugin(widget_id)
-    cache_key = _cache_key("detail", plugin, user, device)
+    locale = (await asyncio.to_thread(get_user_preferences, user["id"])).get("locale", "en")
+    cache_key = _cache_key("detail", plugin, user, device, locale)
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
-    scoped = await scoped_plugin(plugin, user, device)
-    data = await scoped.get_detail()
+    scoped = await scoped_plugin(plugin, user, device, locale)
+    data = await _timed_call("detail", plugin, scoped.get_detail())
     cache.set(cache_key, data, plugin.refresh_interval_seconds)
     return data
 
@@ -236,25 +277,24 @@ async def update_widget_settings(
             cache.delete_prefix(f"summary:{widget_id}:{user['id']}:")
             cache.delete_prefix(f"detail:{widget_id}:{user['id']}:")
         else:
-            cache.delete(_cache_key("summary", plugin, user, device))
-            cache.delete(_cache_key("detail", plugin, user, device))
+            cache.delete_prefix(_cache_key_prefix("summary", plugin, user, device))
+            cache.delete_prefix(_cache_key_prefix("detail", plugin, user, device))
         return merged
 
-    _require_write_access(plugin, user)
+    require_write_access(plugin, user)
     plugin.config["settings"].update(payload)
     await asyncio.to_thread(save_widget_settings, widget_id, plugin.config["settings"])
     # Force the next summary/detail request to reflect the new settings
-    # instead of serving a stale cached response. A plugin with
-    # device_overridable_settings fans its cache entries out by device
-    # (_cache_key appends device["id"]), so the plain widget-level key alone
-    # won't catch them — sweep every "{kind}:{widget_id}:*" entry too.
-    cache.delete(f"summary:{widget_id}")
-    cache.delete(f"detail:{widget_id}")
-    if plugin.device_overridable_settings:
-        cache.delete_prefix(f"summary:{widget_id}:")
-        cache.delete_prefix(f"detail:{widget_id}:")
+    # instead of serving a stale cached response. Every cache entry for this
+    # widget starts with "{kind}:{widget_id}:" (locale is always appended,
+    # plus user/device for scoped plugins), so a single prefix sweep per
+    # kind catches every variant regardless of scope.
+    cache.delete_prefix(f"summary:{widget_id}:")
+    cache.delete_prefix(f"detail:{widget_id}:")
     if isinstance(plugin, PhotosPlugin) and _PHOTO_INDEX_RELEVANT_SETTINGS & payload.keys():
         schedule_photo_index(plugin)
+    elif isinstance(plugin, SpeedtestPlugin) and "interval_minutes" in payload:
+        schedule_speedtest_widget(plugin)
     return plugin.config["settings"]
 
 
@@ -287,8 +327,8 @@ async def update_widget_device_settings_route(
     current = await asyncio.to_thread(get_widget_device_settings, device["id"], widget_id) or {}
     merged = {**current, **payload}
     await asyncio.to_thread(save_widget_device_settings, device["id"], widget_id, merged)
-    cache.delete(_cache_key("summary", plugin, user, device))
-    cache.delete(_cache_key("detail", plugin, user, device))
+    cache.delete_prefix(_cache_key_prefix("summary", plugin, user, device))
+    cache.delete_prefix(_cache_key_prefix("detail", plugin, user, device))
     return merged
 
 
@@ -300,29 +340,38 @@ async def clear_widget_device_settings_route(
 ):
     plugin = _get_plugin(widget_id)
     await asyncio.to_thread(delete_widget_device_settings, device["id"], widget_id)
-    cache.delete(_cache_key("summary", plugin, user, device))
-    cache.delete(_cache_key("detail", plugin, user, device))
+    cache.delete_prefix(_cache_key_prefix("summary", plugin, user, device))
+    cache.delete_prefix(_cache_key_prefix("detail", plugin, user, device))
     return {"status": "ok"}
 
 
 @router.post("/{widget_id}/run")
 async def run_widget_now(widget_id: str, user: dict[str, Any] = Depends(get_current_user)):
     plugin = _get_plugin(widget_id)
-    if not isinstance(plugin, AIInsightsPlugin):
+    if isinstance(plugin, AIInsightsPlugin):
+        await run_ai_widget(plugin)
+    elif isinstance(plugin, SpeedtestPlugin):
+        await run_speedtest_widget(plugin)
+    else:
         raise HTTPException(status_code=400, detail=f"Widget '{widget_id}' cannot be run on demand")
 
-    await run_ai_widget(plugin)
-    cache.delete(f"summary:{widget_id}")
-    cache.delete(f"detail:{widget_id}")
+    cache.delete_prefix(f"summary:{widget_id}:")
+    cache.delete_prefix(f"detail:{widget_id}:")
 
     data = await plugin.get_detail()
-    cache.set(f"detail:{widget_id}", data, plugin.refresh_interval_seconds)
+    # Neither AI-generated text nor speedtest numbers are locale-translated
+    # (see TODO.md), so this always runs at the base singleton's default
+    # locale ("en") — cache it under that same key so an "en"-locale GET
+    # request can reuse it; other locales simply miss and recompute, same as
+    # before this endpoint had a dedicated pre-warm at all.
+    cache.set(f"detail:{widget_id}:en", data, plugin.refresh_interval_seconds)
     return data
 
 
 @router.delete("/{widget_id}")
-async def remove_widget(widget_id: str):
+async def remove_widget(widget_id: str, user: dict[str, Any] = Depends(get_current_user)):
     plugin = _get_plugin(widget_id)
+    require_write_access(plugin, user)
 
     custom_widgets = await asyncio.to_thread(list_custom_widgets)
     custom_ids = {w["id"] for w in custom_widgets}
@@ -340,9 +389,6 @@ async def remove_widget(widget_id: str):
     unschedule_widget(widget_id)
     if isinstance(plugin, PhotosPlugin):
         await asyncio.to_thread(delete_photo_index, widget_id)
-    cache.delete(f"summary:{widget_id}")
-    cache.delete(f"detail:{widget_id}")
-    if plugin.device_overridable_settings:
-        cache.delete_prefix(f"summary:{widget_id}:")
-        cache.delete_prefix(f"detail:{widget_id}:")
+    cache.delete_prefix(f"summary:{widget_id}:")
+    cache.delete_prefix(f"detail:{widget_id}:")
     return {"status": "ok"}

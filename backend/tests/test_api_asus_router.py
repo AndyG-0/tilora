@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api import asus_router
+from app.auth import get_current_user
 from app.plugins.asus_router.plugin import AsusRouterPlugin
 from app.plugins.base import registry
 
@@ -20,6 +21,22 @@ def register_plugin(**settings) -> AsusRouterPlugin:
 
 @pytest.fixture
 def client():
+    app = FastAPI()
+    app.include_router(asus_router.router)
+    app.dependency_overrides[get_current_user] = lambda: {"id": "admin", "role": "admin"}
+    return TestClient(app)
+
+
+@pytest.fixture
+def member_client():
+    app = FastAPI()
+    app.include_router(asus_router.router)
+    app.dependency_overrides[get_current_user] = lambda: {"id": "member", "role": "member"}
+    return TestClient(app)
+
+
+@pytest.fixture
+def unauthenticated_client():
     app = FastAPI()
     app.include_router(asus_router.router)
     return TestClient(app)
@@ -64,6 +81,18 @@ def _fake_connect_by_host(productid_by_host: dict[str, str]):
 def test_unknown_widget_returns_404(client):
     response = client.post("/api/asus-router/nope/test-connection", json={})
     assert response.status_code == 404
+
+
+def test_test_connection_requires_login(unauthenticated_client):
+    register_plugin(host="router.local")
+    response = unauthenticated_client.post("/api/asus-router/ar1/test-connection", json={})
+    assert response.status_code == 401
+
+
+def test_test_connection_rejects_member(member_client):
+    register_plugin(host="router.local")
+    response = member_client.post("/api/asus-router/ar1/test-connection", json={})
+    assert response.status_code == 403
 
 
 def test_test_connection_ok(client, monkeypatch):

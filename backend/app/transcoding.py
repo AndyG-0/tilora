@@ -26,6 +26,13 @@ from typing import Any
 DEFAULT_PRESET = "software"
 
 
+class InvalidCustomFfmpegArgsError(ValueError):
+    """A saved `custom_ffmpeg_args` string couldn't be parsed as shell-style
+    arguments (e.g. an unbalanced quote) — lets callers turn this into a
+    clean 400 instead of a raw `shlex` `ValueError`/crash reaching the user.
+    """
+
+
 @dataclass(frozen=True)
 class TranscodePreset:
     label: str
@@ -117,7 +124,7 @@ TRANSCODE_PRESETS: dict[str, TranscodePreset] = {
             "(see backend/Dockerfile); on Docker Compose you still need to "
             "uncomment the /dev/dri passthrough in docker-compose.yml."
         ),
-        input_args=["-hwaccel", "qsv", "-hwaccel_output_format", "qsv"],
+        input_args=["-qsv_device", "/dev/dri/renderD128", "-hwaccel", "qsv", "-hwaccel_output_format", "qsv"],
         output_args=["-c:v", "h264_qsv", "-preset", "veryfast", "-c:a", "aac", "-ac", "2"],
     ),
     "vaapi": TranscodePreset(
@@ -130,7 +137,7 @@ TRANSCODE_PRESETS: dict[str, TranscodePreset] = {
             "you still need to uncomment the /dev/dri passthrough in "
             "docker-compose.yml."
         ),
-        input_args=["-hwaccel", "vaapi", "-hwaccel_output_format", "vaapi", "-vaapi_device", "/dev/dri/renderD128"],
+        input_args=["-vaapi_device", "/dev/dri/renderD128", "-hwaccel", "vaapi", "-hwaccel_output_format", "vaapi"],
         output_args=["-c:v", "h264_vaapi", "-c:a", "aac", "-ac", "2"],
     ),
     "nvenc": TranscodePreset(
@@ -157,7 +164,11 @@ def resolve_preset(hwaccel: str) -> TranscodePreset:
 def _output_args(settings: dict[str, Any]) -> list[str]:
     hwaccel = settings.get("hwaccel", DEFAULT_PRESET)
     if hwaccel == "custom":
-        custom = shlex.split(settings.get("custom_ffmpeg_args", "") or "")
+        raw = settings.get("custom_ffmpeg_args", "") or ""
+        try:
+            custom = shlex.split(raw)
+        except ValueError as exc:
+            raise InvalidCustomFfmpegArgsError(f"Invalid custom ffmpeg arguments: {exc}") from exc
         return custom or TRANSCODE_PRESETS[DEFAULT_PRESET].output_args
     return resolve_preset(hwaccel).output_args
 
@@ -181,5 +192,16 @@ def build_ffmpeg_args(settings: dict[str, Any], input_url: str) -> list[str]:
 
 
 def command_preview(settings: dict[str, Any], stream_placeholder: str = "<channel stream>") -> str:
-    """The exact command `/stream` will run, for display in the UI."""
-    return shlex.join(["ffmpeg", *build_ffmpeg_args(settings, stream_placeholder)])
+    """The exact command `/stream` will run, for display in the UI.
+
+    Degrades to an inline error message instead of raising when
+    custom_ffmpeg_args is unparseable — this is called unconditionally while
+    rendering the widget's summary/detail (see
+    HDHomeRunPlugin._settings_view), so raising here would take down the
+    whole widget over a typo in a field the user hasn't gotten to fix yet.
+    """
+    try:
+        args = build_ffmpeg_args(settings, stream_placeholder)
+    except InvalidCustomFfmpegArgsError as exc:
+        return f"<invalid custom ffmpeg arguments: {exc}>"
+    return shlex.join(["ffmpeg", *args])

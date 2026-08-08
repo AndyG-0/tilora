@@ -2,6 +2,8 @@
 	import { page } from '$app/state';
 	import { api, type ContainerDetail } from '$lib/api';
 	import { user } from '$lib/stores/user';
+	import { _ } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	let { data: initialData }: { data: ContainerDetail } = $props();
 
@@ -59,7 +61,7 @@
 			container = await api.widgetDetail<ContainerDetail>(widgetId);
 			editing = false;
 		} catch {
-			error = 'Could not save the connection settings.';
+			error = get(_)('common.connection_save_error');
 		} finally {
 			saving = false;
 		}
@@ -70,7 +72,7 @@
 	<h1>{title}</h1>
 	{#if $user?.role === 'admin'}
 		<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
-			{editing ? 'Cancel' : 'Edit connection'}
+			{editing ? $_('common.cancel') : $_('common.edit_connection')}
 		</button>
 	{/if}
 </div>
@@ -78,31 +80,31 @@
 {#if editing}
 	<div class="settings-form">
 		<label>
-			Engine
+			{$_('container.detail.engine_label')}
 			<select value={engineInput} onchange={(e) => onEngineChange(e.currentTarget.value as 'docker' | 'podman')}>
 				<option value="docker">Docker</option>
 				<option value="podman">Podman</option>
 			</select>
 		</label>
 		<label>
-			Connection
+			{$_('container.detail.connection_label')}
 			<select bind:value={connectionInput}>
-				<option value="socket">Local socket</option>
-				<option value="tcp">Remote (TCP)</option>
+				<option value="socket">{$_('container.detail.local_socket')}</option>
+				<option value="tcp">{$_('container.detail.remote_tcp')}</option>
 			</select>
 		</label>
 		{#if connectionInput === 'socket'}
 			<label>
-				Socket path
+				{$_('container.detail.socket_path_label')}
 				<input type="text" bind:value={socketPathInput} placeholder={enginePlaceholders.socketPath} />
 			</label>
 		{:else}
 			<label>
-				Host
+				{$_('container.detail.host_label')}
 				<input type="text" bind:value={hostInput} placeholder={enginePlaceholders.host} />
 			</label>
 			<label>
-				Port
+				{$_('container.detail.port_label')}
 				<input type="number" min="1" max="65535" bind:value={portInput} />
 			</label>
 		{/if}
@@ -112,7 +114,7 @@
 		{/if}
 
 		<button class="save" disabled={saving} onclick={saveSettings}>
-			{saving ? 'Saving…' : 'Save'}
+			{saving ? $_('common.saving') : $_('common.save')}
 		</button>
 	</div>
 {:else if error}
@@ -121,7 +123,7 @@
 
 {#if !editing}
 	{#if !container.connected}
-		<p class="hint">Not connected yet — tap "Edit connection" to set up {title}.</p>
+		<p class="hint">{$_('container.detail.not_connected_hint', { values: { title } })}</p>
 	{:else}
 		{#if container.error}
 			<p class="hint error">{container.error}</p>
@@ -130,20 +132,20 @@
 		<div class="counts">
 			<div class="count">
 				<div class="count-value">{container.running_count}</div>
-				<div class="count-label">Running</div>
+				<div class="count-label">{$_('container.detail.running_label')}</div>
 			</div>
 			<div class="count">
 				<div class="count-value">{container.stopped_count}</div>
-				<div class="count-label">Stopped</div>
+				<div class="count-label">{$_('container.detail.stopped_label')}</div>
 			</div>
 			<div class="count">
 				<div class="count-value">{container.total_count}</div>
-				<div class="count-label">Total</div>
+				<div class="count-label">{$_('container.detail.total_label')}</div>
 			</div>
 		</div>
 
 		{#if container.containers.length === 0}
-			<p class="hint">No containers found.</p>
+			<p class="hint">{$_('container.detail.empty')}</p>
 		{:else}
 			<ul class="containers">
 				{#each container.containers as item (item.id)}

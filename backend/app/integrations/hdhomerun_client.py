@@ -23,6 +23,7 @@ channel lineup instead of breaking.
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 from datetime import UTC, datetime, timedelta, timezone
@@ -32,6 +33,8 @@ from xml.etree import ElementTree
 import httpx
 
 from app.storage.cache import cache
+
+logger = logging.getLogger(__name__)
 
 _GUIDE_URL = "https://api.hdhomerun.com/api/guide.php"
 _DISCOVER_CACHE_TTL_SECONDS = 3600
@@ -134,6 +137,7 @@ async def fetch_tuner_status(settings: dict[str, Any]) -> list[dict[str, Any]]:
     try:
         data = await _get_json(f"{_tuner_base_url(settings)}/status.json")
     except HDHomeRunError:
+        logger.debug("Could not fetch tuner status.json", exc_info=True)
         return []
     if not isinstance(data, list):
         return []
@@ -156,6 +160,7 @@ async def fetch_guide(settings: dict[str, Any], widget_id: str) -> list[dict[str
         try:
             discover = await fetch_discover(settings)
         except HDHomeRunError:
+            logger.debug("Could not fetch discover.json for cloud guide lookup", exc_info=True)
             return None
         cache.set(cache_key, discover, _DISCOVER_CACHE_TTL_SECONDS)
 
@@ -170,6 +175,7 @@ async def fetch_guide(settings: dict[str, Any], widget_id: str) -> list[dict[str
             return None
         data = response.json()
     except (httpx.HTTPError, ValueError):
+        logger.debug("Could not fetch cloud program guide", exc_info=True)
         return None
 
     if not isinstance(data, list):
@@ -220,6 +226,7 @@ async def _fetch_and_parse_xmltv(epg_url: str) -> dict[str, list[dict[str, Any]]
             return None
         root = ElementTree.fromstring(response.content)
     except (httpx.HTTPError, ElementTree.ParseError):
+        logger.debug("Could not fetch/parse XMLTV guide from '%s'", epg_url, exc_info=True)
         return None
 
     programmes_by_channel: dict[str, list[dict[str, Any]]] = {}
@@ -323,6 +330,7 @@ async def fetch_dvr_recordings(settings: dict[str, Any]) -> list[dict[str, Any]]
             return []
         data = await _get_json(storage_url)
     except HDHomeRunError:
+        logger.debug("Could not fetch DVR recordings", exc_info=True)
         return []
     if not isinstance(data, list):
         return []
@@ -333,6 +341,7 @@ async def fetch_dvr_recording_rules(settings: dict[str, Any]) -> list[dict[str, 
     try:
         data = await _get_json(f"{_dvr_base_url(settings)}/recording_rules.json")
     except HDHomeRunError:
+        logger.debug("Could not fetch DVR recording rules", exc_info=True)
         return []
     if not isinstance(data, list):
         return []

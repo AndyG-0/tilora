@@ -51,6 +51,8 @@ const notConnected = {
 	has_api_key: false,
 	has_password: false,
 	playback_mode: 'compatible' as const,
+	content_mode: 'added' as const,
+	resume_available: false,
 };
 
 const connected = {
@@ -212,6 +214,40 @@ describe('JellyfinDetail', () => {
 			expect(updateWidgetDeviceSettings).toHaveBeenCalledWith('jellyfin', { playback_mode: 'direct' }),
 		);
 		expect(widgetDetail).toHaveBeenCalledWith('jellyfin');
+	});
+
+	it('changes the tile content mode and refetches detail', async () => {
+		updateWidgetSettings.mockResolvedValue({ status: 'ok' });
+		widgetDetail.mockResolvedValue({ ...connected, content_mode: 'played' });
+
+		render(JellyfinDetail, { props: { data: { ...connected, resume_available: true } } });
+		await screen.findByText('Tile content');
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Continue watching' }));
+
+		await vi.waitFor(() => expect(updateWidgetSettings).toHaveBeenCalledWith('jellyfin', { content_mode: 'played' }));
+		expect(widgetDetail).toHaveBeenCalledWith('jellyfin');
+	});
+
+	it('disables played/both content modes and shows a hint when resume is unavailable', async () => {
+		render(JellyfinDetail, { props: { data: { ...connected, resume_available: false } } });
+
+		await screen.findByText('Tile content');
+
+		expect(screen.getByRole('button', { name: 'Continue watching' })).toBeDisabled();
+		expect(screen.getByRole('button', { name: 'Both' })).toBeDisabled();
+		expect(
+			screen.getByText('Continue Watching needs username/password auth — switch the auth mode above to enable it.'),
+		).toBeInTheDocument();
+	});
+
+	it('hides the tile content controls for a non-admin', async () => {
+		user.set({ id: 'member-user', name: 'Member', avatar: null, role: 'member' });
+
+		render(JellyfinDetail, { props: { data: connected } });
+
+		await screen.findByText('Playback (this device)');
+		expect(screen.queryByText('Tile content')).not.toBeInTheDocument();
 	});
 
 	it('shows an active override and resets it to the household default', async () => {

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from app import transcoding
 
 
@@ -59,6 +61,17 @@ def test_build_ffmpeg_args_custom_blank_falls_back_to_software_output_args():
     args = transcoding.build_ffmpeg_args({"hwaccel": "custom", "custom_ffmpeg_args": ""}, "url")
 
     assert args == transcoding.build_ffmpeg_args({"hwaccel": "software"}, "url")
+
+
+def test_build_ffmpeg_args_custom_with_unbalanced_quote_raises():
+    with pytest.raises(transcoding.InvalidCustomFfmpegArgsError):
+        transcoding.build_ffmpeg_args({"hwaccel": "custom", "custom_ffmpeg_args": '-c:v "libx264'}, "url")
+
+
+def test_command_preview_degrades_gracefully_for_unparseable_custom_args():
+    preview = transcoding.command_preview({"hwaccel": "custom", "custom_ffmpeg_args": '-c:v "libx264'})
+
+    assert "invalid custom ffmpeg arguments" in preview.lower()
 
 
 def test_command_preview_uses_placeholder_and_ffmpeg_prefix():

@@ -4,6 +4,8 @@
 	import { api, type JellyfinItem, type JellyfinTestConnectionResult } from '$lib/api';
 	import JellyfinPlayer from '$lib/components/JellyfinPlayer.svelte';
 	import { user } from '$lib/stores/user';
+	import { _ } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	interface JellyfinDetailData {
 		connected: boolean;
@@ -16,6 +18,8 @@
 		has_api_key: boolean;
 		has_password: boolean;
 		playback_mode: 'compatible' | 'compatible_video' | 'direct';
+		content_mode: 'added' | 'played' | 'both';
+		resume_available: boolean;
 	}
 
 	let { data: initialData }: { data: JellyfinDetailData } = $props();
@@ -50,6 +54,9 @@
 	let deviceSaving = $state(false);
 	let deviceError = $state<string | null>(null);
 
+	let contentModeSaving = $state(false);
+	let contentModeError = $state<string | null>(null);
+
 	const widgetId = $derived(page.params.id!);
 
 	async function loadDeviceOverride() {
@@ -67,7 +74,7 @@
 			deviceOverride = await api.updateWidgetDeviceSettings(widgetId, { playback_mode: mode });
 			jellyfin = await api.widgetDetail<JellyfinDetailData>(widgetId);
 		} catch {
-			deviceError = 'Could not save the playback override for this device.';
+			deviceError = get(_)('jellyfin.detail.save_device_override_error');
 		} finally {
 			deviceSaving = false;
 		}
@@ -81,9 +88,22 @@
 			deviceOverride = {};
 			jellyfin = await api.widgetDetail<JellyfinDetailData>(widgetId);
 		} catch {
-			deviceError = 'Could not reset the playback override for this device.';
+			deviceError = get(_)('jellyfin.detail.reset_device_override_error');
 		} finally {
 			deviceSaving = false;
+		}
+	}
+
+	async function setContentMode(mode: 'added' | 'played' | 'both') {
+		contentModeSaving = true;
+		contentModeError = null;
+		try {
+			await api.updateWidgetSettings(widgetId, { content_mode: mode });
+			jellyfin = await api.widgetDetail<JellyfinDetailData>(widgetId);
+		} catch {
+			contentModeError = get(_)('jellyfin.detail.save_content_mode_error');
+		} finally {
+			contentModeSaving = false;
 		}
 	}
 
@@ -118,7 +138,7 @@
 		try {
 			testResult = await api.jellyfinTestConnection(widgetId, currentFormSettings());
 		} catch {
-			testResult = { ok: false, server_name: null, error: 'Could not reach the backend.' };
+			testResult = { ok: false, server_name: null, error: get(_)('common.backend_unreachable') };
 		} finally {
 			testing = false;
 		}
@@ -134,7 +154,7 @@
 			path = [];
 			await loadItems();
 		} catch {
-			error = 'Could not save the connection settings.';
+			error = get(_)('common.connection_save_error');
 		} finally {
 			saving = false;
 		}
@@ -146,7 +166,7 @@
 			await api.updateWidgetSettings(widgetId, { [key]: '' });
 			jellyfin = await api.widgetDetail<JellyfinDetailData>(widgetId);
 		} catch {
-			error = 'Could not clear the credential.';
+			error = get(_)('jellyfin.detail.clear_credential_error');
 		}
 	}
 
@@ -157,7 +177,7 @@
 		try {
 			items = await api.jellyfinChildren(widgetId, path.at(-1)?.id);
 		} catch {
-			itemsError = 'Could not load library items.';
+			itemsError = get(_)('jellyfin.detail.load_items_error');
 			items = [];
 		} finally {
 			itemsLoading = false;
@@ -194,7 +214,7 @@
 	<h1>Jellyfin</h1>
 	{#if $user?.role === 'admin'}
 		<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
-			{editing ? 'Cancel' : 'Edit connection'}
+			{editing ? $_('common.cancel') : $_('common.edit_connection')}
 		</button>
 	{/if}
 </div>
@@ -202,64 +222,66 @@
 {#if editing}
 	<div class="settings-form">
 		<label>
-			Host
+			{$_('jellyfin.detail.host_label')}
 			<input type="text" bind:value={hostInput} placeholder="jellyfin.local" />
 		</label>
 		<label>
-			Port
+			{$_('jellyfin.detail.port_label')}
 			<input type="number" min="1" max="65535" bind:value={portInput} />
 		</label>
 		<label class="checkbox">
 			<input type="checkbox" bind:checked={useHttpsInput} />
-			Use HTTPS
+			{$_('jellyfin.detail.use_https_label')}
 		</label>
 
 		<div class="auth-mode">
 			<button type="button" class:active={authModeInput === 'api_key'} onclick={() => (authModeInput = 'api_key')}>
-				API key
+				{$_('jellyfin.detail.auth_mode_api_key')}
 			</button>
 			<button type="button" class:active={authModeInput === 'password'} onclick={() => (authModeInput = 'password')}>
-				Username / password
+				{$_('jellyfin.detail.auth_mode_password')}
 			</button>
 		</div>
 
 		{#if authModeInput === 'api_key'}
 			<label>
-				API key
+				{$_('jellyfin.detail.auth_mode_api_key')}
 				<input
 					type="password"
 					bind:value={apiKeyInput}
-					placeholder={jellyfin.has_api_key ? 'Set — enter a new value to replace it' : 'Not set'}
+					placeholder={jellyfin.has_api_key ? $_('common.password_set_hint') : $_('common.password_not_set')}
 				/>
 			</label>
 			{#if jellyfin.has_api_key}
-				<button class="clear" onclick={() => clearSecret('api_key')}>Clear key</button>
+				<button class="clear" onclick={() => clearSecret('api_key')}>{$_('jellyfin.detail.clear_key')}</button>
 			{/if}
 		{:else}
 			<label>
-				Username
+				{$_('jellyfin.detail.username_label')}
 				<input type="text" bind:value={usernameInput} />
 			</label>
 			<label>
-				Password
+				{$_('jellyfin.detail.password_label')}
 				<input
 					type="password"
 					bind:value={passwordInput}
-					placeholder={jellyfin.has_password ? 'Set — enter a new value to replace it' : 'Not set'}
+					placeholder={jellyfin.has_password ? $_('common.password_set_hint') : $_('common.password_not_set')}
 				/>
 			</label>
 			{#if jellyfin.has_password}
-				<button class="clear" onclick={() => clearSecret('password')}>Clear password</button>
+				<button class="clear" onclick={() => clearSecret('password')}>{$_('jellyfin.detail.clear_password')}</button>
 			{/if}
 		{/if}
 
 		<div class="test-row">
 			<button class="test" disabled={testing} onclick={testConnection}>
-				{testing ? 'Testing…' : 'Test connection'}
+				{testing ? $_('common.testing') : $_('common.test_connection')}
 			</button>
 			{#if testResult}
 				{#if testResult.ok}
-					<span class="test-result ok">✓ Connected to {testResult.server_name}</span>
+					<span class="test-result ok"
+						>{$_('jellyfin.detail.test_ok', { values: { name: testResult.server_name } })}</span
+					>
 				{:else}
 					<span class="test-result fail">✗ {testResult.error}</span>
 				{/if}
@@ -271,7 +293,7 @@
 		{/if}
 
 		<button class="save" disabled={saving} onclick={saveSettings}>
-			{saving ? 'Saving…' : 'Save'}
+			{saving ? $_('common.saving') : $_('common.save')}
 		</button>
 	</div>
 {:else if error}
@@ -280,10 +302,48 @@
 
 {#if !editing}
 	{#if !jellyfin.connected}
-		<p class="hint">Not connected yet — tap "Edit connection" to set up Jellyfin.</p>
+		<p class="hint">{$_('jellyfin.detail.not_connected_hint')}</p>
 	{:else}
+		{#if $user?.role === 'admin'}
+			<div class="device-settings">
+				<h2>{$_('jellyfin.detail.tile_content_heading')}</h2>
+				<div class="auth-mode">
+					<button
+						type="button"
+						disabled={contentModeSaving}
+						class:active={jellyfin.content_mode === 'added'}
+						onclick={() => setContentMode('added')}
+					>
+						{$_('jellyfin.detail.content_added')}
+					</button>
+					<button
+						type="button"
+						disabled={contentModeSaving || !jellyfin.resume_available}
+						class:active={jellyfin.content_mode === 'played'}
+						onclick={() => setContentMode('played')}
+					>
+						{$_('jellyfin.detail.content_played')}
+					</button>
+					<button
+						type="button"
+						disabled={contentModeSaving || !jellyfin.resume_available}
+						class:active={jellyfin.content_mode === 'both'}
+						onclick={() => setContentMode('both')}
+					>
+						{$_('jellyfin.detail.content_both')}
+					</button>
+				</div>
+				{#if !jellyfin.resume_available}
+					<p class="hint">{$_('jellyfin.detail.resume_unavailable_hint')}</p>
+				{/if}
+				{#if contentModeError}
+					<p class="hint error">{contentModeError}</p>
+				{/if}
+			</div>
+		{/if}
+
 		<div class="device-settings">
-			<h2>Playback (this device)</h2>
+			<h2>{$_('jellyfin.detail.playback_heading')}</h2>
 			<div class="auth-mode">
 				<button
 					type="button"
@@ -291,7 +351,7 @@
 					class:active={jellyfin.playback_mode === 'compatible'}
 					onclick={() => setDevicePlaybackMode('compatible')}
 				>
-					Compatible audio
+					{$_('jellyfin.detail.playback_compatible')}
 				</button>
 				<button
 					type="button"
@@ -299,7 +359,7 @@
 					class:active={jellyfin.playback_mode === 'compatible_video'}
 					onclick={() => setDevicePlaybackMode('compatible_video')}
 				>
-					Force transcode
+					{$_('jellyfin.detail.playback_compatible_video')}
 				</button>
 				<button
 					type="button"
@@ -307,19 +367,20 @@
 					class:active={jellyfin.playback_mode === 'direct'}
 					onclick={() => setDevicePlaybackMode('direct')}
 				>
-					Direct play
+					{$_('jellyfin.detail.playback_direct')}
 				</button>
 			</div>
 			<p class="hint">
 				{#if deviceOverride.playback_mode}
-					This device has its own playback mode, overriding the household default.
+					{$_('jellyfin.detail.override_active_hint')}
 				{:else}
-					This device is using the household default playback mode. Pick a mode above to override it just for this
-					device.
+					{$_('jellyfin.detail.override_inactive_hint')}
 				{/if}
 			</p>
 			{#if deviceOverride.playback_mode}
-				<button class="clear" disabled={deviceSaving} onclick={clearDevicePlaybackMode}> Use household default </button>
+				<button class="clear" disabled={deviceSaving} onclick={clearDevicePlaybackMode}>
+					{$_('jellyfin.detail.use_household_default')}
+				</button>
 			{/if}
 			{#if deviceError}
 				<p class="hint error">{deviceError}</p>
@@ -327,7 +388,7 @@
 		</div>
 
 		<div class="breadcrumbs">
-			<button class="crumb" onclick={goToRoot}>Libraries</button>
+			<button class="crumb" onclick={goToRoot}>{$_('jellyfin.detail.libraries_root')}</button>
 			{#each path as segment, index (segment.id)}
 				<span class="sep">/</span>
 				<button class="crumb" onclick={() => goToBreadcrumb(index)}>{segment.name}</button>
@@ -335,11 +396,11 @@
 		</div>
 
 		{#if itemsLoading}
-			<p class="hint">Loading…</p>
+			<p class="hint">{$_('common.loading')}</p>
 		{:else if itemsError}
 			<p class="hint error">{itemsError}</p>
 		{:else if items.length === 0}
-			<p class="hint">Nothing here.</p>
+			<p class="hint">{$_('jellyfin.detail.nothing_here')}</p>
 		{:else}
 			<div class="grid">
 				{#each items as item (item.id)}
@@ -353,7 +414,9 @@
 							<h2>{item.name}</h2>
 							<p class="meta">
 								{#if item.year}{item.year}{/if}
-								{#if item.runtime_minutes}· {item.runtime_minutes} min{/if}
+								{#if item.runtime_minutes}
+									· {$_('jellyfin.detail.runtime_minutes', { values: { minutes: item.runtime_minutes } })}
+								{/if}
 							</p>
 							{#if item.overview}
 								<p class="overview">{item.overview}</p>

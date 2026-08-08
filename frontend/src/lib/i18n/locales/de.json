@@ -1,0 +1,858 @@
+{
+	"layout": {
+		"fatal_title": "Tilora-Backend nicht erreichbar",
+		"fatal_hint": "Stelle sicher, dass das Backend läuft und erreichbar ist, und lade diese Seite dann neu.",
+		"name_device_title": "Dieses Gerät benennen",
+		"name_device_hint": "Hilft, es in der Geräteliste zu unterscheiden — z. B. „Küchen-Tablet“ oder „Wohnzimmer-TV“.",
+		"done": "Fertig",
+		"setup_device_title": "Dieses Gerät einrichten",
+		"setup_device_hint": "Übernimm dein Dashboard-Layout von einem deiner anderen Geräte, oder starte mit dem Standardlayout.",
+		"start_fresh": "Neu beginnen",
+		"copy_layout": "Layout übernehmen",
+		"copying": "Wird übernommen…"
+	},
+	"settings": {
+		"language": {
+			"title": "Sprache"
+		},
+		"appearance": {
+			"title": "Erscheinungsbild"
+		},
+		"page": {
+			"title": "Einstellungen"
+		},
+		"your_settings": {
+			"title": "Deine Einstellungen",
+			"subtitle": "Spezifisch für dein Profil auf diesem Gerät."
+		},
+		"profile": {
+			"heading": "Profil",
+			"name_label": "Name",
+			"avatar_label": "Avatar (Emoji, optional)",
+			"pin_label": "PIN",
+			"pin_not_set": "Nicht festgelegt — optional",
+			"clear_pin": "PIN löschen",
+			"pin_invalid": "Die PIN muss 4-8 Ziffern haben.",
+			"save": "Profil speichern",
+			"save_error": "Profil konnte nicht gespeichert werden.",
+			"clear_pin_error": "PIN konnte nicht gelöscht werden.",
+			"delete_confirm": "Dieses Profil löschen? Layout und Einstellungen gehen auf allen Geräten verloren.",
+			"deleting": "Wird gelöscht…",
+			"delete": "Profil löschen",
+			"delete_link": "Dieses Profil löschen",
+			"delete_error": "Profil konnte nicht gelöscht werden — es könnte das letzte verbleibende sein."
+		},
+		"devices": {
+			"heading": "Geräte",
+			"this_device_label": "Dieses Gerät",
+			"rename": "Dieses Gerät umbenennen",
+			"rename_error": "Gerät konnte nicht umbenannt werden.",
+			"load_error": "Geräte konnten nicht geladen werden.",
+			"forgetting": "Wird entfernt…",
+			"forget": "Entfernen",
+			"forget_device": "Gerät entfernen",
+			"forget_error": "Gerät konnte nicht entfernt werden.",
+			"copy_from_label": "Layout von einem anderen Gerät kopieren",
+			"copy_confirm": "Dadurch wird dein Layout auf {target} durch dein Layout von {source} ersetzt. Dies kann nicht rückgängig gemacht werden.",
+			"copying": "Wird kopiert…",
+			"copy_layout": "Layout kopieren",
+			"copy_layout_link": "Layout auf dieses Gerät kopieren…",
+			"copy_error": "Layout konnte nicht kopiert werden."
+		},
+		"screensaver": {
+			"heading": "Bildschirmschoner",
+			"enable_label": "Auf diesem Gerät aktivieren",
+			"idle_timeout_label": "Leerlaufzeit (Sekunden)",
+			"rotation_interval_label": "Rotationsintervall (Sekunden)",
+			"animation_label": "Animation des Text-Widgets",
+			"animation_marquee": "Laufschrift (rollender Text)",
+			"animation_matrix": "Matrix (digitaler Regen)",
+			"animation_flipboard": "Flipboard (Klapptafel)",
+			"animation_led_dots": "LED-Punktmatrix",
+			"reading_pause_label": "Lesepause (Sekunden)",
+			"reading_pause_hint": "Wie lange jeder vollständig angezeigte Textbildschirm stillsteht, bevor es weitergeht.",
+			"led_color_label": "Farbe der LED-Punktmatrix",
+			"flipboard_pattern_label": "Flipboard-Muster",
+			"pattern_top_to_bottom": "Von oben nach unten",
+			"pattern_random": "Zufällig",
+			"widgets_hint": "Widgets zum Durchwechseln:",
+			"no_widgets_hint": "Füge zuerst Widgets zu deinem Dashboard hinzu, um sie hier einzuschließen.",
+			"save": "Bildschirmschoner-Einstellungen speichern",
+			"save_error": "Bildschirmschoner-Einstellungen konnten nicht gespeichert werden.",
+			"test": "Bildschirmschoner testen"
+		},
+		"voice": {
+			"heading": "Stimme",
+			"source_label": "Stimmquelle",
+			"provider_browser": "Integrierte Stimmen dieses Geräts",
+			"provider_openai": "OpenAI (Cloud)",
+			"provider_piper": "Piper (selbst gehostet)",
+			"voice_label": "Stimme",
+			"no_voices_hint": "Für diese Quelle sind noch keine Stimmen verfügbar.",
+			"preview": "Stimme testen",
+			"preview_text": "Dies ist eine Vorschau der ausgewählten Stimme.",
+			"save": "Stimme speichern",
+			"save_error": "Deine Stimmauswahl konnte nicht gespeichert werden."
+		},
+		"microphone": {
+			"heading": "Mikrofonzugriff",
+			"intro": "Dieses Gerät wird über einfaches HTTP unter einer internen IP-Adresse ({origin}) erreicht. Chrome blockiert den Mikrofonzugriff bei unsicheren Ursprüngen, daher funktioniert der Sprachassistent hier nicht, es sei denn, du erlaubst es manuell. Dies ist für über HTTPS bereitgestellte Seiten nicht erforderlich.",
+			"open_prefix": "Öffne",
+			"in_chrome_open": "Öffne in Chrome",
+			"after_link": ", füge",
+			"list_suffix": "zur Liste hinzu, aktiviere es und starte Chrome neu."
+		},
+		"update": {
+			"heading": "Software-Update",
+			"running_version": "Version {version} wird ausgeführt.",
+			"available": "Update verfügbar: v{version}",
+			"view_release": "Release ansehen"
+		}
+	},
+	"common": {
+		"loading": "Wird geladen…",
+		"not_connected": "Nicht verbunden",
+		"no_data": "Noch keine Daten.",
+		"cancel": "Abbrechen",
+		"save": "Speichern",
+		"saving": "Wird gespeichert…",
+		"edit": "Bearbeiten",
+		"remove": "Entfernen",
+		"add": "Hinzufügen",
+		"retry": "Erneut versuchen",
+		"edit_connection": "Verbindung bearbeiten",
+		"test_connection": "Verbindung testen",
+		"testing": "Wird getestet…",
+		"connection_save_error": "Die Verbindungseinstellungen konnten nicht gespeichert werden.",
+		"backend_unreachable": "Das Backend konnte nicht erreicht werden.",
+		"password_set_hint": "Festgelegt — neuen Wert eingeben, um es zu ersetzen",
+		"password_not_set": "Nicht festgelegt",
+		"unknown": "Unbekannt",
+		"all_done": "Alles erledigt!",
+		"add_item_placeholder": "Eintrag hinzufügen…",
+		"add_item_error": "Der Eintrag konnte nicht hinzugefügt werden.",
+		"update_item_error": "Der Eintrag konnte nicht aktualisiert werden.",
+		"remove_item_error": "Der Eintrag konnte nicht entfernt werden.",
+		"remove_item_aria": "Eintrag entfernen",
+		"no_items_hint": "Noch keine Einträge — füge oben einen hinzu.",
+		"not_configured": "Nicht konfiguriert",
+		"edit_settings": "Einstellungen bearbeiten",
+		"saved": "Gespeichert.",
+		"back": "← Zurück",
+		"dismiss": "Verwerfen"
+	},
+	"weather": {
+		"tile": {
+			"loading": "Wetter wird geladen…"
+		},
+		"detail": {
+			"change_city": "Stadt ändern",
+			"cancel": "Abbrechen",
+			"search_placeholder": "Nach einer Stadt suchen…",
+			"searching": "Suche läuft…",
+			"search_failed": "Stadtsuche fehlgeschlagen.",
+			"no_cities_found": "Keine Städte gefunden.",
+			"update_failed": "Standort konnte nicht aktualisiert werden.",
+			"severe_weather_alerts": "Unwetterwarnungen",
+			"air_quality_title": "Luftqualität",
+			"pollen_title": "Pollen",
+			"pollen": {
+				"alder": "Erle",
+				"birch": "Birke",
+				"grass": "Gräser",
+				"mugwort": "Beifuß",
+				"olive": "Olive",
+				"ragweed": "Traubenkraut"
+			}
+		}
+	},
+	"sports": {
+		"tile_title": "Sport",
+		"loading": "Wird geladen…",
+		"not_configured": "Kein Team konfiguriert",
+		"today_title": "Spiele meines Teams heute",
+		"trending_title": "Top-Spiele heute",
+		"upcoming_title": "Kommende Spiele meines Teams",
+		"no_upcoming": "Keine kommenden Spiele",
+		"vs": "gegen",
+		"live_status": "Live — {status}",
+		"couldnt_load": "Laden fehlgeschlagen:",
+		"detail": {
+			"title": "Sportplan",
+			"edit_settings": "Einstellungen bearbeiten",
+			"cancel": "Abbrechen",
+			"no_teams_yet": "Noch keine Teams — füge unten eines hinzu.",
+			"add_team": "+ Team hinzufügen",
+			"remove_team": "Team entfernen",
+			"loading_teams": "Teams werden geladen…",
+			"select_team": "Team auswählen",
+			"track_trending": "Für Trends verfolgen",
+			"trending_hint": "Ligen, die unter „Top-Spiele heute“ angezeigt werden, unabhängig von verfolgten Teams.",
+			"save": "Speichern",
+			"saving": "Wird gespeichert…",
+			"save_failed": "Sport-Einstellungen konnten nicht aktualisiert werden.",
+			"no_teams_configured": "Noch keine Teams konfiguriert — tippe auf „Teams bearbeiten“, um eines zu verfolgen.",
+			"no_upcoming_scheduled": "Keine kommenden Spiele geplant."
+		},
+		"screensaver": {
+			"no_games": "Keine Spiele geplant."
+		}
+	},
+	"flights": {
+		"tile": {
+			"loading": "Flüge werden geladen…",
+			"count": "{count} in der Nähe",
+			"empty": "Keine Flugzeuge in der Nähe"
+		},
+		"detail": {
+			"change_location": "Standort ändern",
+			"cancel": "Abbrechen",
+			"search_placeholder": "Nach einer Stadt suchen…",
+			"searching": "Suche läuft…",
+			"search_failed": "Stadtsuche fehlgeschlagen.",
+			"no_cities_found": "Keine Städte gefunden.",
+			"update_failed": "Standort konnte nicht aktualisiert werden.",
+			"radius_label": "Suchradius (nm)",
+			"empty": "Keine Flugzeuge in der Nähe.",
+			"column_flight": "Flug",
+			"column_type": "Typ",
+			"column_altitude": "Höhe",
+			"column_speed": "Geschwindigkeit",
+			"column_distance": "Entfernung"
+		},
+		"screensaver": {
+			"no_aircraft": "KEINE FLUGZEUGE IN DER NÄHE"
+		}
+	},
+	"game2048": {
+		"tile": {
+			"hint": "Zum Spielen tippen"
+		},
+		"detail": {
+			"score": "Punkte",
+			"best": "Bestwert",
+			"new_game": "Neues Spiel",
+			"game_over": "Spiel vorbei",
+			"try_again": "Erneut versuchen",
+			"won": "Du hast 2048 erreicht!",
+			"keep_playing": "Weiterspielen",
+			"hint": "Wische oder nutze die Pfeiltasten, um zu spielen."
+		}
+	},
+	"wordle": {
+		"tile": {
+			"hint": "Zum Spielen tippen"
+		},
+		"detail": {
+			"played": "Gespielt",
+			"streak": "Serie",
+			"new_game": "Neues Spiel",
+			"won": "Geschafft!",
+			"lost": "Das Wort war {word}",
+			"backspace": "Rücktaste",
+			"hint": "Buchstaben tippen. Eingabetaste zum Bestätigen, Rücktaste zum Löschen."
+		}
+	},
+	"speedtest": {
+		"tile": {
+			"loading": "Speedtest wird geladen…",
+			"no_results": "Noch keine Ergebnisse"
+		},
+		"detail": {
+			"run_now": "Jetzt testen",
+			"running": "Test läuft…",
+			"edit_interval": "Intervall bearbeiten",
+			"interval_label": "Ausführen alle (Minuten)",
+			"save_error": "Das Speedtest-Intervall konnte nicht gespeichert werden.",
+			"run_error": "Der Speedtest konnte nicht ausgeführt werden.",
+			"no_results_hint": "Noch keine Ergebnisse — tippe auf „Jetzt testen“, um deine Verbindung zu messen.",
+			"download": "Download",
+			"upload": "Upload",
+			"ping": "Ping",
+			"history": "Verlauf",
+			"column_when": "Wann",
+			"column_server": "Server"
+		}
+	},
+	"packages": {
+		"tile": {
+			"arriving_today": "Kommen heute an",
+			"in_transit": "{count} unterwegs",
+			"nothing_tracked": "Nichts wird verfolgt"
+		},
+		"detail": {
+			"tracking_placeholder": "Sendungsnummer…",
+			"label_placeholder": "Bezeichnung (optional)…",
+			"add_error": "Diese Sendungsnummer konnte nicht hinzugefügt werden.",
+			"remove_error": "Das Paket konnte nicht entfernt werden.",
+			"delivered": "Zugestellt",
+			"awaiting_status": "Status ausstehend",
+			"eta": "Voraussichtliche Ankunft {date}",
+			"remove_aria": "Paket entfernen",
+			"empty_hint": "Noch keine Pakete verfolgt — füge oben eine Sendungsnummer hinzu."
+		}
+	},
+	"nasa_apod": {
+		"tile": {
+			"unavailable": "Bild des Tages nicht verfügbar"
+		},
+		"detail": {
+			"unavailable": "Das Bild des Tages ist gerade nicht verfügbar."
+		}
+	},
+	"bookmarks": {
+		"tile": {
+			"loading": "Lesezeichen werden geladen…",
+			"empty": "Noch keine Lesezeichen"
+		},
+		"detail": {
+			"edit": "Lesezeichen bearbeiten",
+			"title_label": "Titel",
+			"name_placeholder": "Name",
+			"url_placeholder": "URL",
+			"icon_placeholder": "Symbol-URL (optional)",
+			"remove_aria": "Lesezeichen entfernen",
+			"empty_editing_hint": "Noch keine Lesezeichen — füge unten eines hinzu.",
+			"add_bookmark": "+ Lesezeichen hinzufügen",
+			"save_error": "Die Lesezeichen konnten nicht aktualisiert werden.",
+			"empty_hint": "Noch keine Lesezeichen konfiguriert — tippe auf „Lesezeichen bearbeiten“, um eines hinzuzufügen."
+		}
+	},
+	"alert": {
+		"tile": {
+			"empty": "Keine aktiven Warnungen"
+		},
+		"detail": {
+			"dismiss": "Verwerfen",
+			"empty": "Keine aktiven Warnungen.",
+			"new_alert": "Neue Warnung",
+			"message_placeholder": "Warnmeldung…",
+			"severity_info": "Info",
+			"severity_warning": "Warnung",
+			"severity_critical": "Kritisch",
+			"add_alert": "Warnung hinzufügen",
+			"create_error": "Die Warnung konnte nicht erstellt werden.",
+			"dismiss_error": "Die Warnung konnte nicht verworfen werden."
+		}
+	},
+	"pihole": {
+		"tile": {
+			"loading": "Pi-hole wird geladen…",
+			"enabled": "● Aktiviert",
+			"paused": "⏸ Pausiert",
+			"blocked_summary": "{blocked} / {queries} blockiert"
+		},
+		"detail": {
+			"host_label": "Host",
+			"port_label": "Port",
+			"use_https_label": "HTTPS verwenden",
+			"password_label": "Passwort",
+			"clear_password": "Passwort löschen",
+			"connected_result": "✓ Verbunden (Pi-hole {version})",
+			"clear_password_error": "Das Passwort konnte nicht gelöscht werden.",
+			"not_connected_hint": "Noch nicht verbunden — tippe auf „Verbindung bearbeiten“, um Pi-hole einzurichten.",
+			"blocking_enabled": "● Blockierung aktiviert",
+			"blocking_paused": "⏸ Blockierung pausiert",
+			"pause_30s": "30 s pausieren",
+			"pause_5m": "5 Min. pausieren",
+			"disable": "Deaktivieren",
+			"enable": "Aktivieren",
+			"blocking_error": "Der Blockierstatus konnte nicht geändert werden.",
+			"stat_queries_today": "Anfragen heute",
+			"stat_blocked_today": "Blockiert heute",
+			"stat_percent_blocked": "Prozent blockiert",
+			"stat_active_clients": "Aktive Clients",
+			"stat_domains_blocked": "Domains auf der Sperrliste",
+			"blocklist_updated": "Sperrliste zuletzt aktualisiert am {timestamp}.",
+			"unknown_timestamp": "unbekannt",
+			"top_blocked": "Meistblockierte Domains",
+			"top_permitted": "Meisterlaubte Domains"
+		}
+	},
+	"system_monitor": {
+		"tile": {
+			"loading": "Systemstatistiken werden geladen…",
+			"cpu": "CPU",
+			"ram": "RAM",
+			"disk": "Speicher"
+		},
+		"detail": {
+			"cpu_label": "CPU ({count} Kerne)",
+			"ram_label": "RAM — {used} / {total} GB",
+			"disk_label": "Speicher — {used} / {total} GB",
+			"uptime": "Laufzeit",
+			"per_core_cpu": "CPU pro Kern",
+			"network_heading": "Netzwerk (kumuliert seit dem Start)",
+			"network_summary": "↑ {sent} GB gesendet · ↓ {recv} GB empfangen",
+			"load_average": "Durchschnittslast: {avg} (1 Min. / 5 Min. / 15 Min.)"
+		}
+	},
+	"container": {
+		"tile": {
+			"running": "{count} aktiv",
+			"stopped": "{count} gestoppt"
+		},
+		"detail": {
+			"engine_label": "Engine",
+			"connection_label": "Verbindung",
+			"local_socket": "Lokaler Socket",
+			"remote_tcp": "Remote (TCP)",
+			"socket_path_label": "Socket-Pfad",
+			"host_label": "Host",
+			"port_label": "Port",
+			"not_connected_hint": "Noch nicht verbunden — tippe auf „Verbindung bearbeiten“, um {title} einzurichten.",
+			"running_label": "Aktiv",
+			"stopped_label": "Gestoppt",
+			"total_label": "Gesamt",
+			"empty": "Keine Container gefunden."
+		}
+	},
+	"synology": {
+		"tile": {
+			"no_volumes": "Keine Volumes gefunden"
+		},
+		"detail": {
+			"host_label": "Host",
+			"port_label": "Port",
+			"use_https_label": "HTTPS verwenden",
+			"username_label": "Benutzername",
+			"password_label": "Passwort",
+			"connected_result": "✓ Verbunden ({model})",
+			"not_connected_hint": "Noch nicht verbunden — tippe auf „Verbindung bearbeiten“, um Synology einzurichten.",
+			"model_label": "Modell",
+			"uptime_label": "Laufzeit",
+			"temp_label": "CPU-Temperatur",
+			"temp_hint": "DSM gibt diesen Wert bei Nicht-Administratorkonten möglicherweise nicht frei",
+			"no_volumes": "Keine Volumes gefunden."
+		}
+	},
+	"asus_router": {
+		"tile": {
+			"wan_up": "WAN aktiv",
+			"wan_down": "WAN getrennt",
+			"clients": "{count} verbunden"
+		},
+		"detail": {
+			"host_label": "Host",
+			"ssh_port_label": "SSH-Port",
+			"username_label": "Benutzername",
+			"password_label": "Passwort",
+			"connected_result": "✓ Verbunden ({product_id})",
+			"not_connected_hint": "Noch nicht verbunden — tippe auf „Verbindung bearbeiten“, um deinen Router einzurichten.",
+			"wan_status_label": "WAN-Status",
+			"wan_ip_label": "WAN-IP",
+			"download_label": "Download",
+			"upload_label": "Upload",
+			"connected": "Verbunden",
+			"down": "Getrennt",
+			"no_clients": "Keine verbundenen Clients gefunden."
+		}
+	},
+	"goodreads": {
+		"tile": {
+			"empty": "Keine Bücher in diesem Regal"
+		},
+		"detail": {
+			"edit_shelf": "Regal bearbeiten",
+			"user_id_label": "Goodreads-Benutzer-ID",
+			"shelf_label": "Regal",
+			"save_error": "Die Regaleinstellungen konnten nicht aktualisiert werden.",
+			"your_rating": "Deine Bewertung: {rating}/5",
+			"average_rating": "Durchschnittliche Bewertung: {rating}",
+			"no_shelf_hint": "Noch kein Regal konfiguriert — tippe auf „Regal bearbeiten“, um deine Goodreads-Benutzer-ID hinzuzufügen.",
+			"empty_hint": "Noch keine Bücher in diesem Regal."
+		}
+	},
+	"shopping": {
+		"detail": {
+			"checked_by": "abgehakt von {name}",
+			"added_by": "hinzugefügt von {name}"
+		}
+	},
+	"rss": {
+		"tile": {
+			"loading": "Schlagzeilen werden geladen…"
+		},
+		"detail": {
+			"edit_feeds": "Feeds bearbeiten",
+			"title_label": "Titel",
+			"show_feeds_label": "Feeds anzeigen",
+			"no_feeds_catalog_hint": "Noch keine Feeds in deinem Katalog — füge unten einen hinzu.",
+			"update_feeds_error": "Die ausgewählten Feeds konnten nicht aktualisiert werden.",
+			"manage_feeds": "Meine Feeds verwalten",
+			"hide_feeds": "Meine Feeds ausblenden",
+			"no_feeds_hint": "Noch keine Feeds — füge unten einen hinzu.",
+			"add_feed_error": "Dieser Feed konnte nicht hinzugefügt werden.",
+			"update_feed_error": "Dieser Feed konnte nicht aktualisiert werden.",
+			"remove_feed_error": "Dieser Feed konnte nicht entfernt werden.",
+			"feed_url_placeholder": "Feed-URL",
+			"name_placeholder": "Name (optional)",
+			"add_feed": "+ Feed hinzufügen",
+			"no_feeds_selected_hint": "Noch keine Feeds ausgewählt — tippe auf „Feeds bearbeiten\", um einen auszuwählen.",
+			"no_items": "Noch keine Einträge."
+		},
+		"screensaver": {
+			"no_headlines": "Noch keine Schlagzeilen."
+		}
+	},
+	"steam": {
+		"tile": {
+			"playing_prefix": "Spielt gerade",
+			"latest_prefix": "Neueste:"
+		},
+		"detail": {
+			"steamid_label": "SteamID64",
+			"api_key_label": "API-Schlüssel",
+			"api_key_hint_prefix": "Hol dir einen kostenlosen API-Schlüssel unter",
+			"api_key_hint_suffix": "Der Status der Freunde erfordert, dass die Profil-Privatsphäre für „Spieldetails\" auf Öffentlich eingestellt ist.",
+			"not_configured_hint": "Noch nicht konfiguriert — tippe auf „Einstellungen bearbeiten\", um einen Steam-API-Schlüssel und eine SteamID64 hinzuzufügen.",
+			"save_error": "Die Steam-Einstellungen konnten nicht gespeichert werden.",
+			"recently_played": "Kürzlich gespielt",
+			"no_recent_games": "Keine kürzlich gespielten Spiele.",
+			"friends": "Freunde",
+			"no_friends_data": "Keine Freundesdaten verfügbar.",
+			"news": "Neuigkeiten",
+			"no_news": "Keine aktuellen Neuigkeiten.",
+			"hours_value": "{hours} Std.",
+			"minutes_value": "{minutes} Min.",
+			"playtime_2weeks": "{time} / 2 Wo.",
+			"playtime_total": "{time} insgesamt"
+		}
+	},
+	"movies": {
+		"section": {
+			"popular_movies": "Beliebte Filme",
+			"trending_movies": "Trend-Filme",
+			"popular_tv_shows": "Beliebte Serien",
+			"trending_tv_shows": "Trend-Serien",
+			"on_streaming_movies": "Im Streaming: Filme",
+			"on_streaming_tv_shows": "Im Streaming: Serien"
+		},
+		"category": {
+			"on_streaming": "Im Streaming (Filme & Serien)"
+		},
+		"detail": {
+			"sections_label": "Anzuzeigende Abschnitte",
+			"streaming_services_label": "Deine Streaming-Dienste",
+			"providers_hint": "Nichts auswählen, um alles anzuzeigen, was auf einem beliebigen Dienst verfügbar ist.",
+			"loading_providers": "Anbieter werden geladen…",
+			"save_error": "Die Einstellungen konnten nicht aktualisiert werden.",
+			"unknown_release_date": "Unbekanntes Erscheinungsdatum",
+			"streaming_in": "Streaming in {region} verfügbar auf:",
+			"not_streaming_in": "Derzeit nicht verfügbar im Streaming in {region}"
+		}
+	},
+	"bf6": {
+		"tile": {
+			"players_label": "Spieler",
+			"mode_on_map": "{mode} auf {map}",
+			"win_percent": "{percent} Siege"
+		},
+		"detail": {
+			"server_name_label": "Servername",
+			"player_name_label": "Spielername",
+			"platform_label": "Spielerplattform",
+			"hint_prefix": "Der Servername wird per unscharfer Teilstring-Suche mit Live-Servern abgeglichen — eine exakte Übereinstimmung ist nicht nötig. Die Spielerplattform muss mit der Plattform übereinstimmen, unter der die Statistiken des Spielers tatsächlich erfasst werden, sonst meldet die Suche „Spieler nicht gefunden\". Beide Felder sind optional und unabhängig voneinander — verfolge nur einen Server, nur einen Spieler oder beides. Bereitgestellt durch die kostenlose, inoffizielle",
+			"hint_suffix": "API.",
+			"save_error": "Die Battlefield-6-Einstellungen konnten nicht gespeichert werden.",
+			"not_configured_hint": "Noch nicht konfiguriert — tippe auf „Einstellungen bearbeiten\", um einen Servernamen und/oder Spielernamen zum Verfolgen hinzuzufügen.",
+			"server_heading": "Server",
+			"player_heading": "Spieler",
+			"no_server_data": "Keine Serverdaten verfügbar.",
+			"no_player_stats": "Keine Spielerstatistiken verfügbar.",
+			"player_count": "{count}/{max} Spieler",
+			"stat_kills": "Kills",
+			"stat_deaths": "Tode",
+			"stat_kd": "K/D",
+			"stat_wins": "Siege",
+			"stat_losses": "Niederlagen",
+			"stat_win_percent": "Siegquote",
+			"stat_accuracy": "Genauigkeit",
+			"stat_headshots": "Kopfschüsse",
+			"stat_score": "Punktzahl",
+			"stat_matches": "Spiele",
+			"stat_time_played": "Spielzeit"
+		}
+	},
+	"qbittorrent": {
+		"tile": {
+			"loading": "qBittorrent wird geladen…",
+			"torrent_count": "{count} Torrents",
+			"status": "{downloading} wird heruntergeladen · {seeding} wird geseedet"
+		},
+		"detail": {
+			"host_label": "Host",
+			"port_label": "Port",
+			"use_https_label": "HTTPS verwenden",
+			"username_label": "Benutzername",
+			"password_label": "Passwort",
+			"clear_password": "Passwort löschen",
+			"clear_password_error": "Das Passwort konnte nicht gelöscht werden.",
+			"test_ok": "Verbunden (qBittorrent {version})",
+			"not_connected_hint": "Noch nicht verbunden — tippe auf „Verbindung bearbeiten“, um qBittorrent einzurichten.",
+			"stat_torrents": "Torrents",
+			"stat_downloading": "Wird heruntergeladen",
+			"stat_seeding": "Wird geseedet",
+			"stat_download_speed": "Download-Geschwindigkeit",
+			"stat_upload_speed": "Upload-Geschwindigkeit",
+			"torrents_heading": "Torrents",
+			"no_torrents": "Keine Torrents.",
+			"progress_of_size": "{percent}% von {size}",
+			"torrent_speed_eta": "↓ {download} ↑ {upload} · ETA {eta}"
+		}
+	},
+	"ai_insights": {
+		"tile": {
+			"loading": "Kurzbericht wird geladen…"
+		},
+		"detail": {
+			"regenerating": "Wird neu generiert…",
+			"regenerate_now": "Jetzt neu generieren",
+			"read_aloud": "🔊 Vorlesen",
+			"edit_prompt": "Prompt bearbeiten",
+			"prompt_label": "Prompt",
+			"topics_label": "In dieser Zusammenfassung berücksichtigen",
+			"topics_hint": "Lasse alles unmarkiert, damit die Zusammenfassung alles nutzt, worauf die Sprachsteuerung zugreifen kann.",
+			"language_label": "Antwortsprache",
+			"save_error": "Der Prompt konnte nicht aktualisiert werden.",
+			"regenerate_error": "Der Kurzbericht konnte nicht neu generiert werden.",
+			"last_updated": "Zuletzt aktualisiert: {date}",
+			"history_heading": "Verlauf"
+		},
+		"screensaver": {
+			"no_briefing": "Noch keine Zusammenfassung."
+		}
+	},
+	"calendar": {
+		"tile": {
+			"loading": "Termine werden geladen…",
+			"no_events": "Keine anstehenden Termine"
+		},
+		"detail": {
+			"manage_calendars": "Kalender verwalten",
+			"loading_calendars": "Kalender werden geladen…",
+			"load_calendars_error": "Die Kalender konnten nicht geladen werden.",
+			"update_calendars_error": "Die Kalender konnten nicht aktualisiert werden.",
+			"caldav_hint": "Füge deine CalDAV-Server-URL, Benutzername und Passwort in den Einstellungen hinzu, um hier anstehende Termine zu sehen.",
+			"open_settings": "Einstellungen öffnen",
+			"microsoft_hint": "Verbinde deinen Outlook- / Microsoft-365-Kalender, um hier anstehende Termine zu sehen.",
+			"connect_outlook": "Outlook-Kalender verbinden",
+			"google_hint": "Verbinde deinen Google Kalender, um hier anstehende Termine zu sehen.",
+			"connect_google": "Google Kalender verbinden",
+			"no_events": "Keine anstehenden Termine."
+		},
+		"screensaver": {
+			"not_connected": "Kein Kalender verbunden — verbinde einen in den Einstellungen, um bevorstehende Termine hier zu sehen."
+		}
+	},
+	"discord": {
+		"no_messages": "Keine aktuellen Nachrichten.",
+		"tile": {
+			"loading": "Nachrichten werden geladen…"
+		},
+		"detail": {
+			"display_mode_label": "Anzeigemodus",
+			"mode_static": "Statisch (scrollbare Liste)",
+			"mode_marquee": "Laufschrift (kontinuierliches Scrollen)",
+			"mode_fade": "Überblenden (eine Nachricht auf einmal)",
+			"message_count_label": "Anzahl der Nachrichten",
+			"time_window_label": "Zeitfenster (Minuten, leer = kein Limit)",
+			"no_limit_placeholder": "Kein Limit",
+			"scroll_speed_label": "Scroll-Geschwindigkeit (höher = langsamer, 40 = normal)",
+			"seconds_per_message_label": "Sekunden pro Nachricht",
+			"save_error": "Die Einstellungen konnten nicht aktualisiert werden."
+		}
+	},
+	"photos": {
+		"tile": {
+			"count": "{count} Fotos",
+			"indexing": "Wird indiziert…",
+			"no_photos": "Keine Fotos gefunden"
+		},
+		"detail": {
+			"source_label": "Fotoquelle",
+			"provider_local": "Lokaler Ordner",
+			"provider_icloud_shared": "iCloud-geteiltes Album",
+			"provider_icloud_private": "iCloud (private Mediathek)",
+			"provider_immich": "Immich",
+			"change_folder": "Ordner ändern",
+			"set_folder": "Ordner festlegen",
+			"change_album_link": "Albumlink ändern",
+			"set_album_link": "Albumlink festlegen",
+			"change_immich_settings": "Immich-Einstellungen ändern",
+			"set_up_immich": "Immich einrichten",
+			"folder_placeholder": "/pfad/zu/fotos",
+			"include_subfolders": "Unterordner einbeziehen",
+			"album_link_placeholder": "https://www.icloud.com/sharedalbum/#...",
+			"immich_base_url_placeholder": "http://192.168.1.50:2283/api",
+			"immich_api_key_placeholder": "API-Schlüssel",
+			"immich_album_id_placeholder": "Album-ID",
+			"switch_provider_error": "Anbieter konnte nicht gewechselt werden.",
+			"save_folder_error": "Der Ordnerpfad konnte nicht gespeichert werden.",
+			"save_album_link_error": "Der Albumlink konnte nicht gespeichert werden.",
+			"save_immich_error": "Die Immich-Einstellungen konnten nicht gespeichert werden.",
+			"shared_album_warning": "Links zu geteilten Alben sind öffentlich — jeder mit dem Link kann diese Fotos ansehen.",
+			"verify_code_hint": "Gib den Bestätigungscode ein, der an deine Apple-Geräte gesendet wurde.",
+			"verify": "Bestätigen",
+			"verifying": "Wird überprüft…",
+			"connect_hint": "Verbinde dein iCloud-Konto, um hier deine private Fotomediathek zu sehen.",
+			"connect_icloud": "iCloud verbinden",
+			"connecting": "Verbindung wird hergestellt…",
+			"settings_hint_prefix": "Apple-ID und Passwort werden auf der ",
+			"settings_hint_link": "Einstellungsseite",
+			"settings_hint_suffix": " festgelegt.",
+			"connect_error": "Verbindung fehlgeschlagen — überprüfe Apple-ID und Passwort in den Einstellungen.",
+			"incorrect_code_error": "Falscher Code — versuche es erneut.",
+			"verify_code_error": "Der Code konnte nicht überprüft werden.",
+			"caption": "{index} / {count}",
+			"no_photos": "Keine Fotos gefunden.",
+			"previous_photo": "Vorheriges Foto",
+			"next_photo": "Nächstes Foto"
+		}
+	},
+	"jellyfin": {
+		"tile": {
+			"nothing_to_show": "Noch nichts zum Anzeigen",
+			"play_aria": "{name} abspielen"
+		},
+		"detail": {
+			"host_label": "Host",
+			"port_label": "Port",
+			"use_https_label": "HTTPS verwenden",
+			"auth_mode_api_key": "API-Schlüssel",
+			"auth_mode_password": "Benutzername / Passwort",
+			"clear_key": "Schlüssel löschen",
+			"username_label": "Benutzername",
+			"password_label": "Passwort",
+			"clear_password": "Passwort löschen",
+			"test_ok": "✓ Verbunden mit {name}",
+			"not_connected_hint": "Noch nicht verbunden — tippe auf „Verbindung bearbeiten“, um Jellyfin einzurichten.",
+			"tile_content_heading": "Kachelinhalt",
+			"content_added": "Kürzlich hinzugefügt",
+			"content_played": "Weiterschauen",
+			"content_both": "Beides",
+			"resume_unavailable_hint": "„Weiterschauen“ benötigt Benutzername/Passwort-Authentifizierung — wechsle oben den Authentifizierungsmodus, um es zu aktivieren.",
+			"playback_heading": "Wiedergabe (dieses Gerät)",
+			"playback_compatible": "Kompatibles Audio",
+			"playback_compatible_video": "Transcodierung erzwingen",
+			"playback_direct": "Direkte Wiedergabe",
+			"override_active_hint": "Dieses Gerät hat einen eigenen Wiedergabemodus, der die Haushaltsvorgabe überschreibt.",
+			"override_inactive_hint": "Dieses Gerät verwendet den Standard-Wiedergabemodus des Haushalts. Wähle oben einen Modus, um ihn nur für dieses Gerät zu überschreiben.",
+			"use_household_default": "Haushaltsvorgabe verwenden",
+			"save_device_override_error": "Die Wiedergabe-Überschreibung für dieses Gerät konnte nicht gespeichert werden.",
+			"reset_device_override_error": "Die Wiedergabe-Überschreibung für dieses Gerät konnte nicht zurückgesetzt werden.",
+			"save_content_mode_error": "Die Kachelinhaltseinstellung konnte nicht gespeichert werden.",
+			"libraries_root": "Bibliotheken",
+			"load_items_error": "Die Bibliothekselemente konnten nicht geladen werden.",
+			"nothing_here": "Hier gibt es nichts.",
+			"clear_credential_error": "Die Anmeldedaten konnten nicht gelöscht werden.",
+			"runtime_minutes": "{minutes} Min."
+		}
+	},
+	"hdhomerun": {
+		"tile": {
+			"recording_badge": "● Aufnahme",
+			"channel_count": "{count} Kanäle",
+			"guide_unavailable": "Programmführer nicht verfügbar — nur Kanalliste wird angezeigt"
+		},
+		"detail": {
+			"tuner_heading": "Tuner",
+			"host_label": "Host",
+			"port_label": "Port",
+			"test_ok": "✓ Verbunden mit {name}",
+			"playback_heading": "Wiedergabe",
+			"mode_server_transcode": "Server-Transcodierung",
+			"mode_external": "Nur externer Player",
+			"server_transcode_hint": "Das Backend führt ffmpeg aus, um den Rohstream in H.264 umzuwandeln, damit er in der App abgespielt werden kann. Funktioniert mit jedem Tuner-Modell, verursacht aber echte CPU-Last pro Zuschauer auf dem Gerät, das das Backend ausführt.",
+			"transcode_hardware_label": "Transcodierungs-Hardware",
+			"custom_ffmpeg_label": "Benutzerdefinierte ffmpeg-Argumente",
+			"external_only_hint": "Kein integrierter Player — Kanäle bieten nur einen Rohstream-Link zum Öffnen in einem externen Player wie VLC.",
+			"guide_heading": "Programmführer",
+			"optional": "(optional)",
+			"xmltv_url_label": "XMLTV-URL",
+			"xmltv_hint": "„Läuft gerade“-Titel werden zuerst über ein HDHomeRun-DVR-Abonnement versucht. Falls du keines hast, lege stattdessen hier eine XMLTV-Guide-URL fest (das von Plex, Channels DVR, TVheadend usw. verwendete Format) — deren Kanal-IDs müssen deinen HDHomeRun-Kanalnummern entsprechen (z. B. „4.1“).",
+			"dvr_settings_heading": "DVR-Aufnahme-Engine",
+			"not_connected_hint": "Noch nicht verbunden — tippe auf „Verbindung bearbeiten“, um HDHomeRun einzurichten.",
+			"tuner_count": "{count} Tuner",
+			"tuner_label": "Tuner {index}",
+			"tuner_signal": "Signal {percent}%",
+			"tuner_idle": "Inaktiv",
+			"guide_unavailable_hint": "Programmführer nicht verfügbar — nur Kanalliste wird angezeigt. Programmtitel erfordern ein HDHomeRun-DVR-Abonnement.",
+			"favorites_heading": "Favoriten — Läuft gerade",
+			"guide_now": "Jetzt: {title}",
+			"guide_now_episode": "Jetzt: {title} — {episode}",
+			"no_guide_data": "Keine Guide-Daten",
+			"guide_next": "Als Nächstes: {title}",
+			"watch_button": "▶ Ansehen",
+			"remove_favorite": "Aus Favoriten entfernen",
+			"add_favorite": "Zu Favoriten hinzufügen",
+			"open_external": "In externem Player öffnen",
+			"dvr_section_heading": "DVR",
+			"free_space": "Freier Speicher: {value}",
+			"recording_until": "bis {time}",
+			"no_recordings": "Keine laufenden Aufnahmen.",
+			"upcoming_rules": "{count} bevorstehende Aufnahmeregeln.",
+			"playback_failed_hint": "Wiedergabe fehlgeschlagen — dieser Tuner unterstützt diesen Wiedergabemodus möglicherweise nicht. Versuche stattdessen „{action}“."
+		}
+	},
+	"screensaver": {
+		"empty": "Bildschirmschoner"
+	},
+	"player": {
+		"close": "Player schließen"
+	},
+	"clock": {
+		"aria_analog": "Analoges Zifferblatt",
+		"aria_binary": "Binäres Zifferblatt"
+	},
+	"message": {
+		"empty_placeholder": "(leere Nachricht)",
+		"detail": {
+			"edit_message": "Nachricht bearbeiten",
+			"title_label": "Titel",
+			"text_label": "Text",
+			"markdown_hint": "Unterstützt einfaches Markdown.",
+			"save_error": "Die Nachricht konnte nicht aktualisiert werden."
+		}
+	},
+	"dashboard": {
+		"ask_question": "Eine Frage stellen",
+		"update_available": "Update verfügbar",
+		"change_theme": "Design wechseln",
+		"done_rearranging": "Anordnen beenden",
+		"rearrange_widgets": "Widgets anordnen",
+		"switch_profile": "Profil wechseln",
+		"log_out": "Abmelden",
+		"listening": "Hört zu…",
+		"thinking": "Denkt nach…",
+		"remove_widget": "Widget entfernen",
+		"resize_widget": "Widget-Größe ändern",
+		"add_widget": "+ Widget hinzufügen",
+		"mic_no_match": "Das wurde nicht verstanden.",
+		"assistant_error": "Es konnte keine Antwort abgerufen werden."
+	},
+	"widget_detail": {
+		"unknown_widget": "Unbekanntes Widget"
+	},
+	"setup": {
+		"title": "Willkommen bei Tilora",
+		"intro": "Lass uns dein Konto erstellen. Als erstes Profil bist du der Haushaltsadministrator.",
+		"pin_label": "PIN (optional)",
+		"pin_placeholder": "4-8 Ziffern",
+		"creating": "Wird erstellt…",
+		"create_account": "Konto erstellen",
+		"create_error": "Dein Konto konnte nicht erstellt werden. Bitte versuche es erneut."
+	},
+	"login": {
+		"title": "Wer schaut zu?",
+		"load_error": "Profile konnten nicht geladen werden.",
+		"backend_unreachable": "Das Tilora-Backend konnte nicht erreicht werden.",
+		"pin_incorrect": "Falsche PIN.",
+		"pin_prompt": "PIN für {name} eingeben",
+		"backspace_aria": "Rückschritt",
+		"submit_pin_aria": "PIN bestätigen",
+		"create": "Erstellen",
+		"add_error": "Profil konnte nicht erstellt werden.",
+		"add_profile": "Profil hinzufügen"
+	}
+}

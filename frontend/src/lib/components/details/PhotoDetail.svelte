@@ -3,7 +3,11 @@
 	import { env } from '$env/dynamic/public';
 	import { page } from '$app/state';
 	import { api } from '$lib/api';
+	import { logger } from '$lib/logger';
 	import { resolveSwipe } from '$lib/tabNavigation';
+	import { user } from '$lib/stores/user';
+	import { _ } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	interface Photo {
 		filename: string;
@@ -104,6 +108,35 @@
 		}
 	});
 
+	// --- provider switcher ---
+	const PROVIDER_LABELS = $derived<Record<string, string>>({
+		local: $_('photos.detail.provider_local'),
+		icloud_shared: $_('photos.detail.provider_icloud_shared'),
+		icloud_private: $_('photos.detail.provider_icloud_private'),
+		immich: $_('photos.detail.provider_immich'),
+	});
+	let changingProvider = $state(false);
+	let providerError = $state<string | null>(null);
+
+	async function changeProvider(newProvider: string) {
+		if (!(newProvider in PROVIDER_LABELS) || newProvider === photoData.provider) return;
+		changingProvider = true;
+		providerError = null;
+		try {
+			await api.updateWidgetSettings(page.params.id!, { provider: newProvider });
+			photoData = await api.widgetDetail<PhotoDetailData>(page.params.id!);
+			index = 0;
+			editingDirectory = false;
+			editingAlbumLink = false;
+			editingImmich = false;
+		} catch (err) {
+			logger.error('Failed to switch photo provider', err);
+			providerError = get(_)('photos.detail.switch_provider_error');
+		} finally {
+			changingProvider = false;
+		}
+	}
+
 	// --- local: editable folder path + recursive toggle ---
 	let editingDirectory = $state(false);
 	let directoryInput = $state('');
@@ -131,8 +164,9 @@
 			photoData = await api.widgetDetail<PhotoDetailData>(page.params.id!);
 			index = 0;
 			editingDirectory = false;
-		} catch {
-			directoryError = 'Could not save the folder path.';
+		} catch (err) {
+			logger.error('Failed to save photo directory settings', err);
+			directoryError = get(_)('photos.detail.save_folder_error');
 		} finally {
 			savingDirectory = false;
 		}
@@ -159,7 +193,7 @@
 			index = 0;
 			editingAlbumLink = false;
 		} catch {
-			albumLinkError = 'Could not save the album link.';
+			albumLinkError = get(_)('photos.detail.save_album_link_error');
 		} finally {
 			savingAlbumLink = false;
 		}
@@ -200,7 +234,7 @@
 			index = 0;
 			editingImmich = false;
 		} catch {
-			immichError = 'Could not save the Immich settings.';
+			immichError = get(_)('photos.detail.save_immich_error');
 		} finally {
 			savingImmich = false;
 		}
@@ -222,10 +256,11 @@
 			} else if (result.connected) {
 				photoData = await api.widgetDetail<PhotoDetailData>(page.params.id!);
 			} else {
-				connectError = 'Could not connect — check the Apple ID and password in Settings.';
+				connectError = get(_)('photos.detail.connect_error');
 			}
-		} catch {
-			connectError = 'Could not connect — check the Apple ID and password in Settings.';
+		} catch (err) {
+			logger.error('Failed to start iCloud auth', err);
+			connectError = get(_)('photos.detail.connect_error');
 		} finally {
 			connecting = false;
 		}
@@ -241,10 +276,10 @@
 				codeInput = '';
 				photoData = await api.widgetDetail<PhotoDetailData>(page.params.id!);
 			} else {
-				connectError = 'Incorrect code — try again.';
+				connectError = get(_)('photos.detail.incorrect_code_error');
 			}
 		} catch {
-			connectError = 'Could not verify the code.';
+			connectError = get(_)('photos.detail.verify_code_error');
 		} finally {
 			connecting = false;
 		}
@@ -253,89 +288,136 @@
 
 <svelte:window onkeydown={onPhotoKeydown} />
 
-<div class="header">
-	<h1>Photos</h1>
-	{#if photoData.provider === 'local'}
-		<button class="manage" onclick={toggleEditDirectory}>
-			{editingDirectory ? 'Cancel' : photoData.directory ? 'Change folder' : 'Set folder'}
-		</button>
-	{:else if photoData.provider === 'icloud_shared'}
-		<button class="manage" onclick={toggleEditAlbumLink}>
-			{editingAlbumLink ? 'Cancel' : photoData.album_token ? 'Change album link' : 'Set album link'}
-		</button>
-	{:else if photoData.provider === 'immich'}
-		<button class="manage" onclick={toggleEditImmich}>
-			{editingImmich ? 'Cancel' : photoData.immich_base_url ? 'Change Immich settings' : 'Set up Immich'}
-		</button>
-	{/if}
-</div>
-
-{#if editingDirectory}
-	<div class="album-link-form">
-		<input type="text" bind:value={directoryInput} placeholder="/path/to/photos" />
-		<label class="checkbox-label">
-			<input type="checkbox" bind:checked={recursiveInput} />
-			Include subfolders
-		</label>
-		<button disabled={savingDirectory} onclick={saveDirectory}>
-			{savingDirectory ? 'Saving…' : 'Save'}
-		</button>
-		{#if directoryError}
-			<p class="hint error">{directoryError}</p>
+{#if $user?.role === 'admin'}
+	<div class="header">
+		<h1>Photos</h1>
+		<select
+			class="provider-select"
+			aria-label={$_('photos.detail.source_label')}
+			value={photoData.provider}
+			disabled={changingProvider}
+			onchange={(e) => changeProvider(e.currentTarget.value)}
+		>
+			{#each Object.entries(PROVIDER_LABELS) as [id, label] (id)}
+				<option value={id}>{label}</option>
+			{/each}
+		</select>
+		{#if photoData.provider === 'local'}
+			<button class="manage" onclick={toggleEditDirectory}>
+				{editingDirectory
+					? $_('common.cancel')
+					: photoData.directory
+						? $_('photos.detail.change_folder')
+						: $_('photos.detail.set_folder')}
+			</button>
+		{:else if photoData.provider === 'icloud_shared'}
+			<button class="manage" onclick={toggleEditAlbumLink}>
+				{editingAlbumLink
+					? $_('common.cancel')
+					: photoData.album_token
+						? $_('photos.detail.change_album_link')
+						: $_('photos.detail.set_album_link')}
+			</button>
+		{:else if photoData.provider === 'immich'}
+			<button class="manage" onclick={toggleEditImmich}>
+				{editingImmich
+					? $_('common.cancel')
+					: photoData.immich_base_url
+						? $_('photos.detail.change_immich_settings')
+						: $_('photos.detail.set_up_immich')}
+			</button>
 		{/if}
+	</div>
+
+	{#if providerError}
+		<p class="hint error">{providerError}</p>
+	{/if}
+
+	{#if editingDirectory}
+		<div class="album-link-form">
+			<input type="text" bind:value={directoryInput} placeholder={$_('photos.detail.folder_placeholder')} />
+			<label class="checkbox-label">
+				<input type="checkbox" bind:checked={recursiveInput} />
+				{$_('photos.detail.include_subfolders')}
+			</label>
+			<button disabled={savingDirectory} onclick={saveDirectory}>
+				{savingDirectory ? $_('common.saving') : $_('common.save')}
+			</button>
+			{#if directoryError}
+				<p class="hint error">{directoryError}</p>
+			{/if}
+		</div>
+	{/if}
+
+	{#if editingAlbumLink}
+		<div class="album-link-form">
+			<input type="text" bind:value={albumTokenInput} placeholder={$_('photos.detail.album_link_placeholder')} />
+			<button disabled={savingAlbumLink} onclick={saveAlbumLink}>
+				{savingAlbumLink ? $_('common.saving') : $_('common.save')}
+			</button>
+			{#if albumLinkError}
+				<p class="hint error">{albumLinkError}</p>
+			{/if}
+		</div>
+	{/if}
+
+	{#if editingImmich}
+		<div class="album-link-form">
+			<input
+				type="text"
+				bind:value={immichBaseUrlInput}
+				placeholder={$_('photos.detail.immich_base_url_placeholder')}
+			/>
+			<input
+				type="password"
+				bind:value={immichApiKeyInput}
+				placeholder={photoData.has_immich_api_key
+					? $_('common.password_set_hint')
+					: $_('photos.detail.immich_api_key_placeholder')}
+			/>
+			<input
+				type="text"
+				bind:value={immichAlbumIdInput}
+				placeholder={$_('photos.detail.immich_album_id_placeholder')}
+			/>
+			<button disabled={savingImmich} onclick={saveImmich}>
+				{savingImmich ? $_('common.saving') : $_('common.save')}
+			</button>
+			{#if immichError}
+				<p class="hint error">{immichError}</p>
+			{/if}
+		</div>
+	{/if}
+{:else}
+	<div class="header">
+		<h1>Photos</h1>
 	</div>
 {/if}
 
 {#if photoData.provider === 'icloud_shared'}
-	<p class="hint warning">Shared Album links are public — anyone with the link can view these photos.</p>
-{/if}
-
-{#if editingAlbumLink}
-	<div class="album-link-form">
-		<input type="text" bind:value={albumTokenInput} placeholder="https://www.icloud.com/sharedalbum/#..." />
-		<button disabled={savingAlbumLink} onclick={saveAlbumLink}>
-			{savingAlbumLink ? 'Saving…' : 'Save'}
-		</button>
-		{#if albumLinkError}
-			<p class="hint error">{albumLinkError}</p>
-		{/if}
-	</div>
-{/if}
-
-{#if editingImmich}
-	<div class="album-link-form">
-		<input type="text" bind:value={immichBaseUrlInput} placeholder="http://192.168.1.50:2283/api" />
-		<input
-			type="password"
-			bind:value={immichApiKeyInput}
-			placeholder={photoData.has_immich_api_key ? 'Set — enter a new value to replace it' : 'API key'}
-		/>
-		<input type="text" bind:value={immichAlbumIdInput} placeholder="Album ID" />
-		<button disabled={savingImmich} onclick={saveImmich}>
-			{savingImmich ? 'Saving…' : 'Save'}
-		</button>
-		{#if immichError}
-			<p class="hint error">{immichError}</p>
-		{/if}
-	</div>
+	<p class="hint warning">{$_('photos.detail.shared_album_warning')}</p>
 {/if}
 
 {#if photoData.provider === 'icloud_private' && !photoData.connected}
 	<div class="connect">
 		{#if awaiting2fa}
-			<p class="hint">Enter the verification code sent to your Apple devices.</p>
+			<p class="hint">{$_('photos.detail.verify_code_hint')}</p>
 			<div class="album-link-form">
 				<input type="text" inputmode="numeric" bind:value={codeInput} placeholder="123456" />
 				<button disabled={connecting} onclick={verifyCode}>
-					{connecting ? 'Verifying…' : 'Verify'}
+					{connecting ? $_('photos.detail.verifying') : $_('photos.detail.verify')}
 				</button>
 			</div>
 		{:else}
-			<p class="hint">Connect your iCloud account to see your private Photos library here.</p>
+			<p class="hint">{$_('photos.detail.connect_hint')}</p>
 			<button class="connect-button" disabled={connecting} onclick={startConnect}>
-				{connecting ? 'Connecting…' : 'Connect iCloud'}
+				{connecting ? $_('photos.detail.connecting') : $_('photos.detail.connect_icloud')}
 			</button>
-			<p class="hint">Apple ID and password are set from the <a href="/settings">Settings page</a>.</p>
+			<p class="hint">
+				{$_('photos.detail.settings_hint_prefix')}<a href="/settings">{$_('photos.detail.settings_hint_link')}</a>{$_(
+					'photos.detail.settings_hint_suffix',
+				)}
+			</p>
 		{/if}
 		{#if connectError}
 			<p class="hint error">{connectError}</p>
@@ -344,20 +426,20 @@
 {:else if photoData.photos.length > 0}
 	<div class="slideshow" role="presentation" ontouchstart={onSlideTouchStart} ontouchend={onSlideTouchEnd}>
 		{#if photoData.photos.length > 1}
-			<button class="nav prev" aria-label="Previous photo" onclick={prevPhoto}>‹</button>
+			<button class="nav prev" aria-label={$_('photos.detail.previous_photo')} onclick={prevPhoto}>‹</button>
 		{/if}
 		<img src={`${env.PUBLIC_API_BASE_URL}${photoData.photos[index].url}`} alt={photoData.photos[index].filename} />
 		{#if photoData.photos.length > 1}
-			<button class="nav next" aria-label="Next photo" onclick={nextPhoto}>›</button>
+			<button class="nav next" aria-label={$_('photos.detail.next_photo')} onclick={nextPhoto}>›</button>
 		{/if}
 	</div>
-	<p class="caption">{index + 1} / {photoData.photos.length}</p>
+	<p class="caption">{$_('photos.detail.caption', { values: { index: index + 1, count: photoData.photos.length } })}</p>
 {:else if photoData.indexing}
-	<p class="hint">Indexing…</p>
+	<p class="hint">{$_('photos.tile.indexing')}</p>
 {:else if photoData.index_error}
 	<p class="hint error">{photoData.index_error}</p>
 {:else}
-	<p class="hint">No photos found.</p>
+	<p class="hint">{$_('photos.detail.no_photos')}</p>
 {/if}
 
 <style>
@@ -379,6 +461,20 @@
 		padding: 0.4rem 0.75rem;
 		color: var(--color-accent);
 		cursor: pointer;
+	}
+
+	.provider-select {
+		font: inherit;
+		padding: 0.4rem 0.75rem;
+		border-radius: 0.5rem;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface);
+		color: var(--color-text);
+	}
+
+	.provider-select:disabled {
+		opacity: 0.6;
+		cursor: default;
 	}
 
 	.album-link-form {

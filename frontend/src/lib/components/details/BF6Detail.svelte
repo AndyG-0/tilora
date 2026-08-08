@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { api, type BF6Detail } from '$lib/api';
+	import { _ } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	let { data: initialData }: { data: BF6Detail } = $props();
 
@@ -44,7 +46,7 @@
 			bf6 = await api.widgetDetail<BF6Detail>(widgetId);
 			editing = false;
 		} catch {
-			error = 'Could not save the Battlefield 6 settings.';
+			error = get(_)('bf6.detail.save_error');
 		} finally {
 			saving = false;
 		}
@@ -54,22 +56,22 @@
 <div class="header">
 	<h1>Battlefield 6</h1>
 	<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
-		{editing ? 'Cancel' : 'Edit settings'}
+		{editing ? $_('common.cancel') : $_('common.edit_settings')}
 	</button>
 </div>
 
 {#if editing}
 	<div class="settings-form">
 		<label>
-			Server name
+			{$_('bf6.detail.server_name_label')}
 			<input type="text" bind:value={serverNameInput} placeholder="e.g. Tsuru Reef" />
 		</label>
 		<label>
-			Player name
+			{$_('bf6.detail.player_name_label')}
 			<input type="text" bind:value={playerNameInput} placeholder="e.g. LevelCap" />
 		</label>
 		<label>
-			Player platform
+			{$_('bf6.detail.platform_label')}
 			<select bind:value={platformInput}>
 				{#each PLATFORMS as platform (platform)}
 					<option value={platform}>{platform}</option>
@@ -77,11 +79,9 @@
 			</select>
 		</label>
 		<p class="hint">
-			Server name is matched with a fuzzy substring search against live servers — no exact match needed. Player platform
-			must match the platform the player's stats are actually tracked under, or the lookup will report "player not
-			found". Both fields are optional and independent — track just a server, just a player, or both. Powered by the
-			free, unofficial
-			<a href="https://gametools.network" target="_blank" rel="noreferrer">gametools.network</a> API.
+			{$_('bf6.detail.hint_prefix')}
+			<a href="https://gametools.network" target="_blank" rel="noreferrer">gametools.network</a>
+			{$_('bf6.detail.hint_suffix')}
 		</p>
 
 		{#if error}
@@ -89,7 +89,7 @@
 		{/if}
 
 		<button class="save" disabled={saving} onclick={saveSettings}>
-			{saving ? 'Saving…' : 'Save'}
+			{saving ? $_('common.saving') : $_('common.save')}
 		</button>
 	</div>
 {:else if error}
@@ -98,29 +98,33 @@
 
 {#if !editing}
 	{#if !bf6.configured}
-		<p class="hint">Not configured yet — tap "Edit settings" to add a server name and/or player name to track.</p>
+		<p class="hint">{$_('bf6.detail.not_configured_hint')}</p>
 	{:else}
 		{#if bf6.error}
 			<p class="hint error">{bf6.error}</p>
 		{/if}
 
 		{#if bf6.server}
-			<h2>Server</h2>
+			<h2>{$_('bf6.detail.server_heading')}</h2>
 			<div class="server-card">
 				<div class="server-name">{bf6.server.name}</div>
 				<div class="server-stats">
-					<span class="pop">{bf6.server.player_count}/{bf6.server.max_players} players</span>
-					<span class="map">{bf6.server.mode} on {bf6.server.map}</span>
+					<span class="pop">
+						{$_('bf6.detail.player_count', { values: { count: bf6.server.player_count, max: bf6.server.max_players } })}
+					</span>
+					<span class="map">
+						{$_('bf6.tile.mode_on_map', { values: { mode: bf6.server.mode, map: bf6.server.map } })}
+					</span>
 					<span class="region">{bf6.server.region}</span>
 				</div>
 			</div>
 		{:else if bf6.server_name}
-			<h2>Server</h2>
-			<p class="hint">No server data available.</p>
+			<h2>{$_('bf6.detail.server_heading')}</h2>
+			<p class="hint">{$_('bf6.detail.no_server_data')}</p>
 		{/if}
 
 		{#if bf6.player}
-			<h2>Player</h2>
+			<h2>{$_('bf6.detail.player_heading')}</h2>
 			<div class="player-card">
 				{#if bf6.player.avatar && !avatarFailed}
 					{#key bf6.player.avatar}
@@ -130,41 +134,69 @@
 				<div class="player-name">{bf6.player.user_name}</div>
 			</div>
 			<ul class="stats-grid">
-				<li><span class="stat-label">Kills</span><span class="stat-value">{bf6.player.kills}</span></li>
-				<li><span class="stat-label">Deaths</span><span class="stat-value">{bf6.player.deaths}</span></li>
 				<li>
-					<span class="stat-label">K/D</span><span class="stat-value">{bf6.player.kill_death.toFixed(2)}</span>
+					<span class="stat-label">{$_('bf6.detail.stat_kills')}</span><span class="stat-value">{bf6.player.kills}</span
+					>
 				</li>
-				<li><span class="stat-label">Wins</span><span class="stat-value">{bf6.player.wins}</span></li>
-				<li><span class="stat-label">Losses</span><span class="stat-value">{bf6.player.loses}</span></li>
+				<li>
+					<span class="stat-label">{$_('bf6.detail.stat_deaths')}</span><span class="stat-value"
+						>{bf6.player.deaths}</span
+					>
+				</li>
+				<li>
+					<span class="stat-label">{$_('bf6.detail.stat_kd')}</span><span class="stat-value"
+						>{bf6.player.kill_death.toFixed(2)}</span
+					>
+				</li>
+				<li>
+					<span class="stat-label">{$_('bf6.detail.stat_wins')}</span><span class="stat-value">{bf6.player.wins}</span>
+				</li>
+				<li>
+					<span class="stat-label">{$_('bf6.detail.stat_losses')}</span><span class="stat-value"
+						>{bf6.player.loses}</span
+					>
+				</li>
 				{#if bf6.player.win_percent}
 					<li>
-						<span class="stat-label">Win %</span><span class="stat-value">{bf6.player.win_percent}</span>
+						<span class="stat-label">{$_('bf6.detail.stat_win_percent')}</span><span class="stat-value"
+							>{bf6.player.win_percent}</span
+						>
 					</li>
 				{/if}
 				{#if bf6.player.accuracy}
 					<li>
-						<span class="stat-label">Accuracy</span><span class="stat-value">{bf6.player.accuracy}</span>
+						<span class="stat-label">{$_('bf6.detail.stat_accuracy')}</span><span class="stat-value"
+							>{bf6.player.accuracy}</span
+						>
 					</li>
 				{/if}
 				{#if bf6.player.headshots}
 					<li>
-						<span class="stat-label">Headshots</span><span class="stat-value">{bf6.player.headshots}</span>
+						<span class="stat-label">{$_('bf6.detail.stat_headshots')}</span><span class="stat-value"
+							>{bf6.player.headshots}</span
+						>
 					</li>
 				{/if}
-				<li><span class="stat-label">Score</span><span class="stat-value">{bf6.player.score}</span></li>
 				<li>
-					<span class="stat-label">Matches</span><span class="stat-value">{bf6.player.matches_played}</span>
+					<span class="stat-label">{$_('bf6.detail.stat_score')}</span><span class="stat-value">{bf6.player.score}</span
+					>
+				</li>
+				<li>
+					<span class="stat-label">{$_('bf6.detail.stat_matches')}</span><span class="stat-value"
+						>{bf6.player.matches_played}</span
+					>
 				</li>
 				{#if bf6.player.time_played}
 					<li>
-						<span class="stat-label">Time played</span><span class="stat-value">{bf6.player.time_played}</span>
+						<span class="stat-label">{$_('bf6.detail.stat_time_played')}</span><span class="stat-value"
+							>{bf6.player.time_played}</span
+						>
 					</li>
 				{/if}
 			</ul>
 		{:else if bf6.player_name}
-			<h2>Player</h2>
-			<p class="hint">No player stats available.</p>
+			<h2>{$_('bf6.detail.player_heading')}</h2>
+			<p class="hint">{$_('bf6.detail.no_player_stats')}</p>
 		{/if}
 	{/if}
 {/if}

@@ -2,6 +2,7 @@
 	import { pollWidget } from '$lib/polling';
 	import { api, type SteamSummary } from '$lib/api';
 	import TileCard from '$lib/components/TileCard.svelte';
+	import { _ } from 'svelte-i18n';
 
 	let { widgetId }: { widgetId: string } = $props();
 
@@ -23,13 +24,13 @@
 <TileCard {widgetId}>
 	<div class="title">Steam</div>
 	{#if !summary}
-		<div class="hint">Loading…</div>
+		<div class="hint">{$_('common.loading')}</div>
 	{:else if !summary.configured}
-		<div class="hint">Not configured</div>
+		<div class="hint">{$_('common.not_configured')}</div>
 	{:else if summary.error}
 		<div class="hint error">{summary.error}</div>
 	{:else if !summary.player}
-		<div class="hint">No data yet</div>
+		<div class="hint">{$_('common.no_data')}</div>
 	{:else}
 		<div class="player">
 			<span class="dot" class:on={summary.player.online}></span>
@@ -37,7 +38,7 @@
 		</div>
 		<div class="status">
 			{#if summary.current_game}
-				Playing <span class="game">{summary.current_game}</span>
+				{$_('steam.tile.playing_prefix')} <span class="game">{summary.current_game}</span>
 			{:else}
 				{summary.player.status}
 			{/if}
@@ -50,7 +51,7 @@
 			</ul>
 		{/if}
 		{#if summary.news.length > 0}
-			<div class="latest-news">Latest: {summary.news[0].title}</div>
+			<div class="latest-news">{$_('steam.tile.latest_prefix')} {summary.news[0].title}</div>
 		{/if}
 	{/if}
 </TileCard>

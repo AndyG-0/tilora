@@ -23,11 +23,15 @@ share one fetch path.
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any, ClassVar
 
+from app.i18n import t
 from app.integrations import gametools_client
 from app.plugins.base import Plugin, ToolDef
 from app.storage.cache import cache
+
+logger = logging.getLogger(__name__)
 
 # Server population/current map change fast — short TTL, matching the
 # plugin's own 60s refresh interval (same cadence as Steam's presence data).
@@ -83,10 +87,11 @@ class BF6Plugin(Plugin):
         except gametools_client.GameToolsError as exc:
             # Not cached — a transient failure shouldn't lock in an error
             # state for the full TTL window.
+            logger.warning("Could not search BF6 servers matching '%s': %s", server_name, exc)
             return None, str(exc)
 
         if not servers:
-            return None, f"No server found matching '{server_name}'."
+            return None, t("bf6.error.server_not_found", self.locale, server_name=server_name)
 
         server = servers[0]
         cache.set(cache_key, server, _CACHE_TTL_SECONDS)
@@ -106,6 +111,7 @@ class BF6Plugin(Plugin):
         try:
             stats = await gametools_client.fetch_player_stats(player_name, platform)
         except gametools_client.GameToolsError as exc:
+            logger.warning("Could not fetch BF6 player stats for '%s': %s", player_name, exc)
             return None, str(exc)
 
         cache.set(cache_key, stats, _CACHE_TTL_SECONDS)

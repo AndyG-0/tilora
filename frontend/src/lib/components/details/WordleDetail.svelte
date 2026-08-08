@@ -10,6 +10,7 @@
 		scoreGuess,
 		type GuessResult,
 	} from '$lib/wordle';
+	import { _ } from 'svelte-i18n';
 
 	interface WordleDetailData {
 		title: string;
@@ -144,14 +145,14 @@
 
 <div class="scoreboard">
 	<div class="score-box">
-		<div class="label">Played</div>
+		<div class="label">{$_('wordle.detail.played')}</div>
 		<div class="value">{stats.played}</div>
 	</div>
 	<div class="score-box">
-		<div class="label">Streak</div>
+		<div class="label">{$_('wordle.detail.streak')}</div>
 		<div class="value">{stats.currentStreak}</div>
 	</div>
-	<button class="new-game" onclick={reset}>New Game</button>
+	<button class="new-game" onclick={reset}>{$_('wordle.detail.new_game')}</button>
 </div>
 
 <div class="board" class:shake={invalidShake}>
@@ -167,8 +168,8 @@
 
 	{#if gameOver}
 		<div class="overlay">
-			<p>{won ? 'You got it!' : `The word was ${answer}`}</p>
-			<button onclick={reset}>New Game</button>
+			<p>{won ? $_('wordle.detail.won') : $_('wordle.detail.lost', { values: { word: answer } })}</p>
+			<button onclick={reset}>{$_('wordle.detail.new_game')}</button>
 		</div>
 	{/if}
 </div>
@@ -181,7 +182,7 @@
 					class="key"
 					data-wide={key.length > 1 || undefined}
 					data-status={keyboardState[key]}
-					aria-label={key === '⌫' ? 'Backspace' : key}
+					aria-label={key === '⌫' ? $_('wordle.detail.backspace') : key}
 					onclick={() => (key === 'ENTER' ? pressEnter() : key === '⌫' ? pressBackspace() : pressLetter(key))}
 				>
 					{key}
@@ -191,7 +192,7 @@
 	{/each}
 </div>
 
-<p class="hint">Type or tap letters. Enter to submit, Backspace to delete.</p>
+<p class="hint">{$_('wordle.detail.hint')}</p>
 
 <style>
 	h1 {

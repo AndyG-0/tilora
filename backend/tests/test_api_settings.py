@@ -99,6 +99,47 @@ def test_patch_settings_icloud_username_round_trips_but_password_is_hidden(clien
     assert body["has_icloud_password"] is True
 
 
+def test_patch_settings_persists_tts_provider_fields(client, tmp_db):
+    response = client.patch(
+        "/api/settings",
+        json={
+            "openai_tts_enabled": "true",
+            "openai_tts_model": "gpt-4o-mini-tts",
+            "piper_tts_enabled": "true",
+            "piper_server_url": "http://piper.local:5000",
+            "piper_voices": "en_US-amy-medium|Amy",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["openai_tts_enabled"] == "true"
+    assert body["openai_tts_model"] == "gpt-4o-mini-tts"
+    assert body["piper_tts_enabled"] == "true"
+    assert body["piper_server_url"] == "http://piper.local:5000"
+    assert body["piper_voices"] == "en_US-amy-medium|Amy"
+
+
+def test_patch_settings_invalidates_icloud_service_cache_on_username_change(client, tmp_db):
+    from app.integrations import icloud_photos
+
+    icloud_photos.cache.set(icloud_photos._SERVICE_CACHE_KEY, object(), 60)
+
+    client.patch("/api/settings", json={"icloud_username": "new@example.com"})
+
+    assert icloud_photos.cache.get(icloud_photos._SERVICE_CACHE_KEY) is None
+
+
+def test_patch_settings_leaves_icloud_service_cache_alone_for_unrelated_keys(client, tmp_db):
+    from app.integrations import icloud_photos
+
+    icloud_photos.cache.set(icloud_photos._SERVICE_CACHE_KEY, object(), 60)
+
+    client.patch("/api/settings", json={"timezone": "America/Chicago"})
+
+    assert icloud_photos.cache.get(icloud_photos._SERVICE_CACHE_KEY) is not None
+
+
 def test_patch_settings_invalidates_clock_and_date_widget_cache(client, tmp_db):
     from app.storage.cache import cache
 

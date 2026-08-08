@@ -2,6 +2,8 @@
 	import { page } from '$app/state';
 	import { api } from '$lib/api';
 	import type { GoodreadsDetail } from '$lib/api';
+	import { _ } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	let { data: initialData }: { data: GoodreadsDetail } = $props();
 
@@ -32,7 +34,7 @@
 			goodreads = await api.widgetDetail<GoodreadsDetail>(page.params.id!);
 			editing = false;
 		} catch {
-			error = 'Could not update the shelf settings.';
+			error = get(_)('goodreads.detail.save_error');
 		} finally {
 			saving = false;
 		}
@@ -42,18 +44,18 @@
 <div class="header">
 	<h1>{goodreads.shelf || 'Goodreads'}</h1>
 	<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
-		{editing ? 'Cancel' : 'Edit shelf'}
+		{editing ? $_('common.cancel') : $_('goodreads.detail.edit_shelf')}
 	</button>
 </div>
 
 {#if editing}
 	<div class="settings-form">
 		<label>
-			Goodreads user id
+			{$_('goodreads.detail.user_id_label')}
 			<input type="text" placeholder="12345678" bind:value={userIdInput} />
 		</label>
 		<label>
-			Shelf
+			{$_('goodreads.detail.shelf_label')}
 			<input type="text" placeholder="currently-reading" bind:value={shelfInput} />
 		</label>
 
@@ -62,7 +64,7 @@
 		{/if}
 
 		<button class="save" disabled={saving} onclick={saveSettings}>
-			{saving ? 'Saving…' : 'Save'}
+			{saving ? $_('common.saving') : $_('common.save')}
 		</button>
 	</div>
 {:else if error}
@@ -82,17 +84,17 @@
 						<p class="meta">{book.author_name}</p>
 					{/if}
 					{#if book.user_rating && book.user_rating !== '0'}
-						<p class="rating">Your rating: {book.user_rating}/5</p>
+						<p class="rating">{$_('goodreads.detail.your_rating', { values: { rating: book.user_rating } })}</p>
 					{:else if book.average_rating}
-						<p class="rating">Average rating: {book.average_rating}</p>
+						<p class="rating">{$_('goodreads.detail.average_rating', { values: { rating: book.average_rating } })}</p>
 					{/if}
 				</div>
 			</a>
 		{/each}
 	{:else if !goodreads.user_id}
-		<p class="hint">No shelf configured yet — tap "Edit shelf" to add your Goodreads user id.</p>
+		<p class="hint">{$_('goodreads.detail.no_shelf_hint')}</p>
 	{:else}
-		<p class="hint">No books on this shelf yet.</p>
+		<p class="hint">{$_('goodreads.detail.empty_hint')}</p>
 	{/if}
 </div>
 

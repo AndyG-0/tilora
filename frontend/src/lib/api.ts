@@ -3,6 +3,7 @@
 // into the client bundle at Docker build time — lets frontend and backend
 // run on different hosts without a rebuild.
 import { env } from '$env/dynamic/public';
+import { logger } from '$lib/logger';
 
 export interface WidgetLayout {
 	col: number;
@@ -44,6 +45,11 @@ export interface AppSettings {
 	has_anthropic_api_key: boolean;
 	has_openai_api_key: boolean;
 	has_gemini_api_key: boolean;
+	openai_tts_enabled: string;
+	openai_tts_model: string;
+	piper_tts_enabled: string;
+	piper_server_url: string;
+	piper_voices: string;
 	has_google_calendar_client_id: boolean;
 	has_google_calendar_client_secret: boolean;
 	has_microsoft_calendar_client_id: boolean;
@@ -108,6 +114,11 @@ export interface JellyfinTestConnectionResult {
 	ok: boolean;
 	server_name: string | null;
 	error: string | null;
+}
+
+export interface JellyfinSection {
+	label: string;
+	items: JellyfinItem[];
 }
 
 export interface HDHomeRunGuideEntry {
@@ -184,6 +195,64 @@ export interface PiholeTestConnectionResult {
 	ok: boolean;
 	version: string | null;
 	error: string | null;
+}
+
+export interface QBittorrentSummary {
+	connected: boolean;
+	host: string;
+	port: number;
+	use_https: boolean;
+	username: string;
+	has_password: boolean;
+	torrent_count?: number;
+	downloading_count?: number;
+	seeding_count?: number;
+	download_speed_bps?: number;
+	upload_speed_bps?: number;
+	error?: string;
+}
+
+export interface QBittorrentTorrent {
+	hash: string;
+	name: string;
+	state: string;
+	progress: number;
+	size_bytes: number;
+	download_speed_bps: number;
+	upload_speed_bps: number;
+	eta_seconds: number | null;
+}
+
+export interface QBittorrentDetail extends QBittorrentSummary {
+	torrents: QBittorrentTorrent[];
+}
+
+export interface QBittorrentTestConnectionResult {
+	ok: boolean;
+	version: string | null;
+	error: string | null;
+}
+
+export interface SpeedtestSummary {
+	title: string;
+	ran_at: string | null;
+	download_mbps: number | null;
+	upload_mbps: number | null;
+	ping_ms: number | null;
+	server_name: string | null;
+}
+
+export interface SpeedtestRun {
+	ran_at: string;
+	download_mbps: number;
+	upload_mbps: number;
+	ping_ms: number;
+	server_name: string;
+}
+
+export interface SpeedtestDetail extends SpeedtestSummary {
+	history: SpeedtestRun[];
+	interval_minutes: number;
 }
 
 export interface SynologyVolumeSummary {
@@ -288,6 +357,120 @@ export interface BookmarksData {
 	bookmarks: BookmarkItem[];
 }
 
+export interface Chore {
+	id: number;
+	widget_id: string;
+	user_id: string;
+	text: string;
+	completed: boolean;
+	created_at: string;
+	completed_at: string | null;
+}
+
+export interface ChoresData {
+	title: string;
+	chores: Chore[];
+	open_count: number;
+}
+
+export interface ShoppingItem {
+	id: number;
+	widget_id: string;
+	text: string;
+	checked: boolean;
+	added_by: string;
+	checked_by: string | null;
+	created_at: string;
+	checked_at: string | null;
+}
+
+export interface ShoppingData {
+	title: string;
+	items: ShoppingItem[];
+	open_count: number;
+}
+
+export interface Package {
+	id: number;
+	widget_id: string;
+	tracking_number: string;
+	carrier: string | null;
+	label: string | null;
+	status: string | null;
+	last_event: string | null;
+	eta_date: string | null;
+	delivered: boolean;
+	added_at: string;
+	updated_at: string | null;
+}
+
+export interface RSSFeed {
+	id: number;
+	user_id: string;
+	url: string;
+	name: string | null;
+	item_limit: number;
+	created_at: string;
+}
+
+export interface RSSItem {
+	title: string;
+	link: string;
+	published: string | null;
+	source: string;
+	summary?: string;
+	image?: string | null;
+}
+
+export interface RSSFeedGroup {
+	feed_id: number;
+	name: string;
+	items: RSSItem[];
+}
+
+export interface RSSSummary {
+	title: string;
+	feed_groups: RSSFeedGroup[];
+}
+
+export interface RSSDetail extends RSSSummary {
+	feed_ids: number[];
+	all_feeds: RSSFeed[];
+}
+
+export interface PackagesSummary {
+	title: string;
+	arriving_today_count: number;
+	arriving_today: Package[];
+	active_count: number;
+}
+
+export interface PackagesData extends PackagesSummary {
+	packages: Package[];
+}
+
+export interface NASAApodSummary {
+	title: string;
+	available: boolean;
+	apod_title?: string;
+	date?: string;
+	media_type?: string;
+	thumbnail_url?: string | null;
+}
+
+export interface NASAApodDetail {
+	title: string;
+	available: boolean;
+	apod_title?: string;
+	explanation?: string;
+	url?: string;
+	hdurl?: string | null;
+	thumbnail_url?: string | null;
+	media_type?: string;
+	date?: string;
+	copyright?: string | null;
+}
+
 export interface SystemMonitorSummary {
 	hostname: string;
 	cpu_percent: number;
@@ -365,6 +548,7 @@ export interface SportsSummaryGame extends SportsGame {
 	league: string;
 	league_label: string;
 	team: string;
+	team_espn_url: string | null;
 }
 
 export interface SportsError {
@@ -389,9 +573,11 @@ export interface SportsTrendingGame {
 	home_team: string;
 	home_abbreviation: string;
 	home_rank: number | null;
+	home_espn_url: string | null;
 	away_team: string;
 	away_abbreviation: string;
 	away_rank: number | null;
+	away_espn_url: string | null;
 	home_score: string | null;
 	away_score: string | null;
 	broadcast_links: SportsBroadcastLink[];
@@ -400,8 +586,9 @@ export interface SportsTrendingGame {
 
 export interface SportsSummary {
 	configured: boolean;
-	games: SportsSummaryGame[];
+	todays_games: SportsSummaryGame[];
 	trending: SportsTrendingGame[];
+	upcoming_games: SportsSummaryGame[];
 	errors?: SportsError[];
 	trending_errors?: SportsTrendingError[];
 }
@@ -416,14 +603,15 @@ export interface SportsTeamDetail {
 	league_label: string;
 	team: string;
 	team_name: string;
-	games: SportsGame[];
 	error?: string;
 }
 
 export interface SportsDetail {
 	configured: boolean;
 	teams: SportsTeamDetail[];
+	todays_games: SportsSummaryGame[];
 	trending: SportsTrendingGame[];
+	upcoming_games: SportsSummaryGame[];
 	trending_leagues: string[];
 	trending_errors?: SportsTrendingError[];
 }
@@ -572,6 +760,27 @@ export interface CurrentUser {
 
 export interface UserPreferences {
 	theme: string;
+	voice_provider: string;
+	voice_id: string;
+	voice_name: string;
+	locale: string;
+}
+
+export interface TTSVoice {
+	id: string;
+	label: string;
+	provider: 'openai' | 'piper';
+}
+
+export interface ScreensaverSettings {
+	enabled: boolean;
+	idle_timeout_seconds: number;
+	rotation_interval_seconds: number;
+	widget_ids: string[];
+	text_animation_style: 'marquee' | 'matrix' | 'flipboard' | 'led_dots';
+	led_color: string;
+	text_pause_seconds: number;
+	flipboard_pattern: 'top_to_bottom' | 'random';
 }
 
 export interface SetupStatus {
@@ -604,6 +813,7 @@ export function describeFetchError(error: unknown): FetchErrorKind {
 async function getJSON<T>(path: string): Promise<T> {
 	const response = await fetch(`${env.PUBLIC_API_BASE_URL}${path}`, { credentials: 'include' });
 	if (!response.ok) {
+		logger.warn(`Request to ${path} failed: ${response.status}`);
 		throw new Error(`Request to ${path} failed: ${response.status}`);
 	}
 	return response.json();
@@ -617,6 +827,7 @@ async function patchJSON<T>(path: string, body: Record<string, unknown>): Promis
 		body: JSON.stringify(body),
 	});
 	if (!response.ok) {
+		logger.warn(`Request to ${path} failed: ${response.status}`);
 		throw new Error(`Request to ${path} failed: ${response.status}`);
 	}
 	return response.json();
@@ -632,9 +843,27 @@ async function postJSON<T>(path: string, body?: Record<string, unknown>): Promis
 		}),
 	});
 	if (!response.ok) {
+		logger.warn(`Request to ${path} failed: ${response.status}`);
 		throw new Error(`Request to ${path} failed: ${response.status}`);
 	}
 	return response.json();
+}
+
+// Like postJSON, but for an endpoint that returns raw audio bytes rather
+// than JSON (/api/tts/synthesize) — used to fetch cloud/Piper speech audio
+// for playback via an <audio> element.
+async function postForBlob(path: string, body: Record<string, unknown>): Promise<Blob> {
+	const response = await fetch(`${env.PUBLIC_API_BASE_URL}${path}`, {
+		method: 'POST',
+		credentials: 'include',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body),
+	});
+	if (!response.ok) {
+		logger.warn(`Request to ${path} failed: ${response.status}`);
+		throw new Error(`Request to ${path} failed: ${response.status}`);
+	}
+	return response.blob();
 }
 
 async function deleteJSON<T>(path: string): Promise<T> {
@@ -643,6 +872,7 @@ async function deleteJSON<T>(path: string): Promise<T> {
 		credentials: 'include',
 	});
 	if (!response.ok) {
+		logger.warn(`Request to ${path} failed: ${response.status}`);
 		throw new Error(`Request to ${path} failed: ${response.status}`);
 	}
 	return response.json();
@@ -656,6 +886,7 @@ async function putJSON<T>(path: string, body: Record<string, unknown>): Promise<
 		body: JSON.stringify(body),
 	});
 	if (!response.ok) {
+		logger.warn(`Request to ${path} failed: ${response.status}`);
 		throw new Error(`Request to ${path} failed: ${response.status}`);
 	}
 	return response.json();
@@ -686,6 +917,21 @@ export const api = {
 	createAlert: (alert: { message: string; severity?: AlertSeverity; expires_in_minutes?: number }) =>
 		postJSON<Alert>('/api/alerts', alert),
 	dismissAlert: (id: number) => postJSON<{ status: string }>(`/api/alerts/${id}/dismiss`),
+	createChore: (text: string) => postJSON<Chore>('/api/chores', { text }),
+	completeChore: (id: number) => postJSON<Chore>(`/api/chores/${id}/complete`),
+	removeChore: (id: number) => deleteJSON<{ status: string }>(`/api/chores/${id}`),
+	createShoppingItem: (text: string) => postJSON<ShoppingItem>('/api/shopping', { text }),
+	checkShoppingItem: (id: number) => postJSON<ShoppingItem>(`/api/shopping/${id}/check`),
+	removeShoppingItem: (id: number) => deleteJSON<{ status: string }>(`/api/shopping/${id}`),
+	createPackage: (trackingNumber: string, label?: string) =>
+		postJSON<Package>('/api/packages', { tracking_number: trackingNumber, ...(label && { label }) }),
+	removePackage: (id: number) => deleteJSON<{ status: string }>(`/api/packages/${id}`),
+	listRSSFeeds: () => getJSON<RSSFeed[]>('/api/rss/feeds'),
+	addRSSFeed: (url: string, name?: string, item_limit?: number) =>
+		postJSON<RSSFeed>('/api/rss/feeds', { url, ...(name && { name }), ...(item_limit && { item_limit }) }),
+	updateRSSFeed: (id: number, name: string | null, item_limit: number) =>
+		patchJSON<RSSFeed>(`/api/rss/feeds/${id}`, { name, item_limit }),
+	deleteRSSFeed: (id: number) => deleteJSON<{ status: string }>(`/api/rss/feeds/${id}`),
 	calendarStatus: () => getJSON<CalendarStatus>('/api/calendar/status'),
 	listCaldavCalendars: () => getJSON<CaldavCalendar[]>('/api/calendar/caldav/calendars'),
 	sportsTeams: (league: string) => getJSON<SportsTeamOption[]>(`/api/sports/${encodeURIComponent(league)}/teams`),
@@ -732,6 +978,8 @@ export const api = {
 		postJSON<SynologyTestConnectionResult>(`/api/synology/${id}/test-connection`, settings),
 	asusRouterTestConnection: (id: string, settings: Record<string, unknown>) =>
 		postJSON<AsusRouterTestConnectionResult>(`/api/asus-router/${id}/test-connection`, settings),
+	qbittorrentTestConnection: (id: string, settings: Record<string, unknown>) =>
+		postJSON<QBittorrentTestConnectionResult>(`/api/qbittorrent/${id}/test-connection`, settings),
 	registerDevice: () => postJSON<DeviceRegisterResult>('/api/devices/register'),
 	currentDevice: () => getJSON<DeviceInfo>('/api/devices/me'),
 	renameDevice: (name: string) => patchJSON<DeviceInfo>('/api/devices/me', { name }),
@@ -756,6 +1004,12 @@ export const api = {
 	getPreferences: () => getJSON<UserPreferences>('/api/users/me/preferences'),
 	updatePreferences: (partial: Partial<UserPreferences>) =>
 		patchJSON<UserPreferences>('/api/users/me/preferences', partial),
+	getScreensaverSettings: () => getJSON<ScreensaverSettings>('/api/screensaver/settings'),
+	updateScreensaverSettings: (partial: Partial<ScreensaverSettings>) =>
+		patchJSON<ScreensaverSettings>('/api/screensaver/settings', partial),
+	ttsVoices: () => getJSON<TTSVoice[]>('/api/tts/voices'),
+	synthesizeSpeech: (provider: 'openai' | 'piper', voiceId: string, text: string) =>
+		postForBlob('/api/tts/synthesize', { provider, voice_id: voiceId, text }),
 	setupStatus: () => getJSON<SetupStatus>('/api/setup/status'),
 	createSetupAdmin: (name: string, avatar?: string, pin?: string) =>
 		postJSON<CurrentUser>('/api/setup/admin', {

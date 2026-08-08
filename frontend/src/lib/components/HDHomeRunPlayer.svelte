@@ -1,5 +1,7 @@
 <script lang="ts">
 	import type Mpegts from 'mpegts.js';
+	import { _ } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	interface Props {
 		src: string;
@@ -35,8 +37,9 @@
 				{ enableStashBuffer: false, liveBufferLatencyChasing: true },
 			);
 			player.on(mpegts.Events.ERROR, () => {
-				errorMessage =
-					'Playback failed — this tuner may not support this playback mode. Try "Open in external player" instead.';
+				errorMessage = get(_)('hdhomerun.detail.playback_failed_hint', {
+					values: { action: get(_)('hdhomerun.detail.open_external') },
+				});
 			});
 			player.attachMediaElement(node);
 			player.load();
@@ -62,7 +65,7 @@
 <div class="overlay" role="dialog" aria-label={title} use:portal>
 	<div class="header">
 		<h2>{title}</h2>
-		<button class="close" onclick={onClose} aria-label="Close player">✕</button>
+		<button class="close" onclick={onClose} aria-label={$_('player.close')}>✕</button>
 	</div>
 	{#if errorMessage}
 		<p class="error">{errorMessage}</p>

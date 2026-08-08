@@ -3,16 +3,38 @@ from __future__ import annotations
 import httpx
 import respx
 
-from app.plugins.weather.plugin import FORECAST_URL, WeatherPlugin, _condition_for
+from app.plugins.weather.plugin import (
+    AIR_QUALITY_URL,
+    FORECAST_URL,
+    WeatherPlugin,
+    _aqi_category_for,
+    _condition_for,
+    _primary_pollutant,
+)
 
 FAKE_RESPONSE = {
-    "current": {"temperature_2m": 72.5, "weather_code": 1},
+    "current": {"temperature_2m": 72.5, "weather_code": 1, "is_day": 1},
     "daily": {
         "time": ["2026-07-24", "2026-07-25"],
         "temperature_2m_max": [85.0, 88.0],
         "temperature_2m_min": [68.0, 70.0],
         "weather_code": [1, 61],
     },
+}
+
+FAKE_AIR_QUALITY_RESPONSE = {
+    "current": {
+        "us_aqi": 42,
+        "pm2_5": 8.1,
+        "pm10": 15.0,
+        "ozone": 30.0,
+        "alder_pollen": None,
+        "birch_pollen": None,
+        "grass_pollen": None,
+        "mugwort_pollen": None,
+        "olive_pollen": None,
+        "ragweed_pollen": None,
+    }
 }
 
 
@@ -30,12 +52,28 @@ def make_plugin() -> WeatherPlugin:
     )
 
 
+def test_settings_scope_is_personal():
+    # Each household member's location is their own, not shared — see
+    # Plugin.settings_scope.
+    assert WeatherPlugin.settings_scope == "personal"
+
+
 def test_condition_for_known_code():
-    assert _condition_for(1) == "Mainly clear"
+    assert _condition_for(1, "en") == "Mainly clear"
 
 
 def test_condition_for_unknown_code_falls_back():
-    assert _condition_for(999) == "Unknown"
+    assert _condition_for(999, "en") == "Unknown"
+
+
+def test_condition_for_known_code_translates_by_locale():
+    assert _condition_for(1, "es") == "Mayormente despejado"
+    assert _condition_for(1, "fr") == "Généralement dégagé"
+    assert _condition_for(1, "de") == "Überwiegend klar"
+
+
+def test_condition_for_missing_locale_falls_back_to_english():
+    assert _condition_for(1, "xx") == "Mainly clear"
 
 
 @respx.mock
@@ -49,21 +87,57 @@ async def test_get_summary_maps_current_conditions():
         "location_name": "Fort Worth, TX",
         "temperature": 72.5,
         "condition": "Mainly clear",
+        "weather_code": 1,
+        "is_day": True,
     }
 
 
 @respx.mock
 async def test_get_detail_includes_daily_forecast():
     respx.get(FORECAST_URL).mock(return_value=httpx.Response(200, json=FAKE_RESPONSE))
+    respx.get(AIR_QUALITY_URL).mock(return_value=httpx.Response(200, json=FAKE_AIR_QUALITY_RESPONSE))
     plugin = make_plugin()
 
     detail = await plugin.get_detail()
 
     assert detail["temperature"] == 72.5
     assert detail["daily_forecast"] == [
-        {"date": "2026-07-24", "high": 85.0, "low": 68.0, "condition": "Mainly clear"},
-        {"date": "2026-07-25", "high": 88.0, "low": 70.0, "condition": "Slight rain"},
+        {"date": "2026-07-24", "high": 85.0, "low": 68.0, "condition": "Mainly clear", "weather_code": 1},
+        {"date": "2026-07-25", "high": 88.0, "low": 70.0, "condition": "Slight rain", "weather_code": 61},
     ]
+
+
+@respx.mock
+async def test_get_detail_includes_severe_weather_alerts_setting():
+    respx.get(FORECAST_URL).mock(return_value=httpx.Response(200, json=FAKE_RESPONSE))
+    respx.get(AIR_QUALITY_URL).mock(return_value=httpx.Response(200, json=FAKE_AIR_QUALITY_RESPONSE))
+    plugin = make_plugin()
+
+    detail = await plugin.get_detail()
+
+    assert detail["severe_weather_alerts"] is True
+
+
+@respx.mock
+async def test_get_detail_reflects_severe_weather_alerts_disabled():
+    respx.get(FORECAST_URL).mock(return_value=httpx.Response(200, json=FAKE_RESPONSE))
+    respx.get(AIR_QUALITY_URL).mock(return_value=httpx.Response(200, json=FAKE_AIR_QUALITY_RESPONSE))
+    plugin = WeatherPlugin(
+        {
+            "id": "weather",
+            "settings": {
+                "latitude": 32.7555,
+                "longitude": -97.3308,
+                "location_name": "Fort Worth, TX",
+                "units": "fahrenheit",
+                "severe_weather_alerts": False,
+            },
+        }
+    )
+
+    detail = await plugin.get_detail()
+
+    assert detail["severe_weather_alerts"] is False
 
 
 @respx.mock
@@ -87,3 +161,84 @@ async def test_fetch_uses_celsius_when_configured():
     await plugin.get_summary()
 
     assert route.calls.last.request.url.params["temperature_unit"] == "celsius"
+
+
+def test_aqi_category_for_breakpoints():
+    assert _aqi_category_for(0, "en") == "Good"
+    assert _aqi_category_for(50, "en") == "Good"
+    assert _aqi_category_for(51, "en") == "Moderate"
+    assert _aqi_category_for(100, "en") == "Moderate"
+    assert _aqi_category_for(101, "en") == "Unhealthy for sensitive groups"
+    assert _aqi_category_for(151, "en") == "Unhealthy"
+    assert _aqi_category_for(201, "en") == "Very unhealthy"
+    assert _aqi_category_for(301, "en") == "Hazardous"
+
+
+def test_aqi_category_for_translates_by_locale():
+    assert _aqi_category_for(0, "es") == "Buena"
+    assert _aqi_category_for(0, "fr") == "Bonne"
+    assert _aqi_category_for(0, "de") == "Gut"
+
+
+def test_primary_pollutant_picks_highest_ratio_to_its_ceiling():
+    # pm2_5 ceiling 12.0 -> ratio 2.0; pm10 ceiling 54.0 -> ratio ~0.5; ozone ceiling 100.0 -> ratio 0.3
+    current = {"pm2_5": 24.0, "pm10": 27.0, "ozone": 30.0}
+    assert _primary_pollutant(current) == "pm2_5"
+
+
+def test_primary_pollutant_returns_none_when_no_pollutants_present():
+    assert _primary_pollutant({}) is None
+
+
+@respx.mock
+async def test_get_detail_includes_air_quality():
+    respx.get(FORECAST_URL).mock(return_value=httpx.Response(200, json=FAKE_RESPONSE))
+    respx.get(AIR_QUALITY_URL).mock(return_value=httpx.Response(200, json=FAKE_AIR_QUALITY_RESPONSE))
+    plugin = make_plugin()
+
+    detail = await plugin.get_detail()
+
+    assert detail["air_quality"] == {
+        "us_aqi": 42,
+        "us_aqi_category": "Good",
+        "pm2_5": 8.1,
+        "pm10": 15.0,
+        "ozone": 30.0,
+        "primary_pollutant": "pm2_5",
+    }
+    assert "pollen" not in detail["air_quality"]
+
+
+@respx.mock
+async def test_get_detail_includes_pollen_when_present():
+    respx.get(FORECAST_URL).mock(return_value=httpx.Response(200, json=FAKE_RESPONSE))
+    response = {**FAKE_AIR_QUALITY_RESPONSE, "current": {**FAKE_AIR_QUALITY_RESPONSE["current"], "birch_pollen": 12.5}}
+    respx.get(AIR_QUALITY_URL).mock(return_value=httpx.Response(200, json=response))
+    plugin = make_plugin()
+
+    detail = await plugin.get_detail()
+
+    assert detail["air_quality"]["pollen"] == {"birch_pollen": 12.5}
+
+
+@respx.mock
+async def test_get_detail_omits_air_quality_when_us_aqi_missing():
+    respx.get(FORECAST_URL).mock(return_value=httpx.Response(200, json=FAKE_RESPONSE))
+    response = {"current": {"us_aqi": None}}
+    respx.get(AIR_QUALITY_URL).mock(return_value=httpx.Response(200, json=response))
+    plugin = make_plugin()
+
+    detail = await plugin.get_detail()
+
+    assert "air_quality" not in detail
+
+
+@respx.mock
+async def test_get_detail_omits_air_quality_on_fetch_error():
+    respx.get(FORECAST_URL).mock(return_value=httpx.Response(200, json=FAKE_RESPONSE))
+    respx.get(AIR_QUALITY_URL).mock(return_value=httpx.Response(500))
+    plugin = make_plugin()
+
+    detail = await plugin.get_detail()
+
+    assert "air_quality" not in detail

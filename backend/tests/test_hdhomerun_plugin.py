@@ -65,6 +65,18 @@ async def test_get_summary_reflects_custom_hwaccel_in_ffmpeg_command():
     assert "h264_v4l2m2m" in summary["ffmpeg_command"]
 
 
+async def test_get_summary_survives_unparseable_custom_ffmpeg_args():
+    # Regression test: a saved custom_ffmpeg_args typo (e.g. an unbalanced
+    # quote) must not crash the whole widget just from viewing its summary
+    # (which unconditionally builds a command preview) — see
+    # transcoding.command_preview.
+    plugin = make_plugin(hwaccel="custom", custom_ffmpeg_args='-c:v "libx264')
+
+    summary = await plugin.get_summary()
+
+    assert "invalid custom ffmpeg arguments" in summary["ffmpeg_command"].lower()
+
+
 @respx.mock
 async def test_get_summary_connected_reports_channel_count_no_guide():
     respx.get("http://hdhr.local:80/lineup.json").mock(return_value=httpx.Response(200, json=LINEUP_RESPONSE))

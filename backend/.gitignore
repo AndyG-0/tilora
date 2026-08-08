@@ -6,4 +6,5 @@ __pycache__/
 *.db-shm
 *.db-wal
 icloud_session/
+secret.key
 config/dashboard.yaml

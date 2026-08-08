@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 
 from app.config import effective_settings, resolve_timezone, settings
+from app.i18n import t
 from app.plugins.base import Plugin, ToolDef
 
 DISCORD_API_BASE = "https://discord.com/api/v10"
@@ -56,7 +57,7 @@ class DiscordPlugin(Plugin):
     async def _fetch_channel_name(self, client: httpx.AsyncClient) -> str:
         response = await client.get(f"{DISCORD_API_BASE}/channels/{self._channel_id}", headers=self._headers)
         response.raise_for_status()
-        return response.json().get("name", "unknown-channel")
+        return response.json().get("name") or t("discord.unknown_channel", self.locale)
 
     async def _fetch_messages(self, client: httpx.AsyncClient, limit: int) -> list[dict[str, Any]]:
         response = await client.get(
@@ -72,7 +73,7 @@ class DiscordPlugin(Plugin):
         avatar_url = _avatar_url(author)
         return {
             "id": message["id"],
-            "author": author.get("username", "unknown"),
+            "author": author.get("username") or t("discord.unknown_author", self.locale),
             "avatar_url": avatar_url,
             "content": message.get("content", ""),
             "timestamp": message["timestamp"],

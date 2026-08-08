@@ -26,15 +26,19 @@ populated even when no teams are followed.
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime
 from typing import Any, ClassVar
 from zoneinfo import ZoneInfo
 
 from app.config import effective_settings, resolve_timezone
+from app.i18n import t
 from app.integrations import broadcast_links, espn_client
 from app.plugins.base import Plugin, ToolDef
 from app.plugins.sports import trending
 from app.storage.cache import cache
+
+logger = logging.getLogger(__name__)
 
 _CACHE_TTL_SECONDS = 900  # 15 minutes — schedules/broadcasts rarely change minute to minute
 _SUMMARY_GAMES_PER_TEAM = 1
@@ -64,10 +68,47 @@ def _perspective(team_abbr: str, game: dict[str, Any]) -> dict[str, Any]:
     return {**game, "is_home": is_home, "opponent": opponent, "broadcast_links": broadcast_link_list}
 
 
+def _split_followed_games(
+    entries: list[dict[str, Any]], tz: ZoneInfo, upcoming_limit_per_team: int
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split each followed team's upcoming games into today's games and
+    future games, so callers can render them as two separate sections
+    instead of one merged/sorted list.
+
+    `upcoming_limit_per_team` caps only the future-games list per team
+    (mirrors the old flat per-team slicing); today's games are uncapped —
+    a team playing more than once in a day is rare enough that hiding one
+    would be worse than a slightly longer list.
+    """
+    todays: list[dict[str, Any]] = []
+    upcoming: list[dict[str, Any]] = []
+    for entry in entries:
+        team_future_count = 0
+        for game in entry["games"]:
+            perspective_game = {
+                "league": entry["league"],
+                "league_label": entry["league_label"],
+                "team": entry["team_name"],
+                "team_espn_url": espn_client.team_page_url(entry["league"], entry["team"]),
+                **_perspective(entry["team"], game),
+            }
+            if _is_today(game["date"], tz):
+                todays.append(perspective_game)
+            elif team_future_count < upcoming_limit_per_team:
+                upcoming.append(perspective_game)
+                team_future_count += 1
+    todays.sort(key=lambda g: g["date"] or "")
+    upcoming.sort(key=lambda g: g["date"] or "")
+    return todays, upcoming
+
+
 class SportsPlugin(Plugin):
     id = "sports"
     name = "Sports Schedule"
     refresh_interval_seconds = 1800
+    # Each household member follows different teams, not a shared list —
+    # see Plugin.settings_scope.
+    settings_scope = "personal"
     default_settings: ClassVar[dict[str, Any]] = {
         "teams": [{"league": "nfl", "team": "DAL"}],
         "trending_leagues": list(espn_client.LEAGUE_PATHS),
@@ -98,9 +139,14 @@ class SportsPlugin(Plugin):
         base = {"league": league, "league_label": league_label, "team": team}
 
         if not team:
-            return {**base, "team_name": "", "games": [], "error": "No team configured."}
+            return {**base, "team_name": "", "games": [], "error": t("sports.error.no_team_configured", self.locale)}
         if not espn_client.is_supported_league(league):
-            return {**base, "team_name": team, "games": [], "error": f"Unsupported league '{league}'."}
+            return {
+                **base,
+                "team_name": team,
+                "games": [],
+                "error": t("sports.error.unsupported_league", self.locale, league=league),
+            }
 
         cache_key = _cache_key(league, team)
         cached = cache.get(cache_key)
@@ -112,6 +158,7 @@ class SportsPlugin(Plugin):
         except espn_client.ESPNError as exc:
             # Not cached — a transient failure shouldn't lock in an error
             # state for the full TTL window.
+            logger.warning("Could not fetch schedule for %s/%s: %s", league, team, exc)
             return {**base, "team_name": team, "games": [], "error": str(exc)}
 
         team_name, games = espn_client.parse_team_schedule(data)
@@ -162,7 +209,8 @@ class SportsPlugin(Plugin):
 
     async def get_summary(self) -> dict[str, Any]:
         configured = self._is_configured()
-        games: list[dict[str, Any]] = []
+        todays_games: list[dict[str, Any]] = []
+        upcoming_games: list[dict[str, Any]] = []
         errors: list[dict[str, Any]] = []
 
         if configured:
@@ -170,20 +218,19 @@ class SportsPlugin(Plugin):
             for entry in entries:
                 if entry.get("error"):
                     errors.append({"league": entry["league"], "team": entry["team"], "error": entry["error"]})
-                for game in entry["games"][:_SUMMARY_GAMES_PER_TEAM]:
-                    games.append(
-                        {
-                            "league": entry["league"],
-                            "league_label": entry["league_label"],
-                            "team": entry["team_name"],
-                            **_perspective(entry["team"], game),
-                        }
-                    )
-            games.sort(key=lambda g: g["date"] or "")
+            tz = resolve_timezone(effective_settings()["timezone"])
+            todays_games, upcoming_games = _split_followed_games(entries, tz, _SUMMARY_GAMES_PER_TEAM)
 
         trending_games, trending_errors = await self._fetch_trending(_SUMMARY_TRENDING_GAMES)
+        todays_ids = {game["id"] for game in todays_games}
+        trending_games = [game for game in trending_games if game["id"] not in todays_ids]
 
-        result: dict[str, Any] = {"configured": configured, "games": games, "trending": trending_games}
+        result: dict[str, Any] = {
+            "configured": configured,
+            "todays_games": todays_games,
+            "trending": trending_games,
+            "upcoming_games": upcoming_games,
+        }
         if errors:
             result["errors"] = errors
         if trending_errors:
@@ -193,28 +240,34 @@ class SportsPlugin(Plugin):
     async def get_detail(self) -> dict[str, Any]:
         configured = self._is_configured()
         teams: list[dict[str, Any]] = []
+        todays_games: list[dict[str, Any]] = []
+        upcoming_games: list[dict[str, Any]] = []
 
         if configured:
             entries = await self._fetch_all()
             for entry in entries:
-                games = [_perspective(entry["team"], g) for g in entry["games"][:_DETAIL_GAMES_PER_TEAM]]
                 team_out: dict[str, Any] = {
                     "league": entry["league"],
                     "league_label": entry["league_label"],
                     "team": entry["team"],
                     "team_name": entry["team_name"],
-                    "games": games,
                 }
                 if entry.get("error"):
                     team_out["error"] = entry["error"]
                 teams.append(team_out)
+            tz = resolve_timezone(effective_settings()["timezone"])
+            todays_games, upcoming_games = _split_followed_games(entries, tz, _DETAIL_GAMES_PER_TEAM)
 
         trending_games, trending_errors = await self._fetch_trending(_DETAIL_TRENDING_GAMES)
+        todays_ids = {game["id"] for game in todays_games}
+        trending_games = [game for game in trending_games if game["id"] not in todays_ids]
 
         result: dict[str, Any] = {
             "configured": configured,
             "teams": teams,
+            "todays_games": todays_games,
             "trending": trending_games,
+            "upcoming_games": upcoming_games,
             "trending_leagues": self._trending_leagues(),
         }
         if trending_errors:
@@ -239,7 +292,8 @@ class SportsPlugin(Plugin):
             ToolDef(
                 name=f"get_upcoming_games_{self.id}",
                 description="Get the next upcoming/in-progress game and broadcast/streaming info for each "
-                "team followed by this sports schedule widget.",
+                "team followed by this sports schedule widget, split into games happening today "
+                "(`todays_games`) and future games (`upcoming_games`).",
                 parameters={"type": "object", "properties": {}},
                 handler=get_upcoming_games,
             ),

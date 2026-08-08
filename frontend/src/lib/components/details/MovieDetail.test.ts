@@ -18,7 +18,10 @@ const movie = {
 	rating: 8.456,
 	poster_url: 'https://example.com/a.jpg',
 	overview: 'An overview.',
-	where_to_watch: ['Netflix', 'Hulu'],
+	where_to_watch: [
+		{ name: 'Netflix', logo_url: null, url: 'https://www.netflix.com' },
+		{ name: 'Hulu', logo_url: null, url: 'https://www.hulu.com' },
+	],
 };
 
 const noProvidersMovie = {
@@ -68,7 +71,11 @@ describe('MovieDetail', () => {
 		expect(screen.getByAltText('A Movie')).toBeInTheDocument();
 		expect(screen.getByText(/2024-01-01/)).toBeInTheDocument();
 		expect(screen.getByText(/8\.5★/)).toBeInTheDocument();
-		expect(screen.getByText('Streaming in US on: Netflix, Hulu')).toBeInTheDocument();
+		expect(screen.getByText('Streaming in US on:')).toBeInTheDocument();
+		const netflixLink = screen.getByRole('link', { name: /Netflix/ });
+		expect(netflixLink).toHaveAttribute('href', 'https://www.netflix.com');
+		const huluLink = screen.getByRole('link', { name: /Hulu/ });
+		expect(huluLink).toHaveAttribute('href', 'https://www.hulu.com');
 	});
 
 	it('falls back to placeholders when release date/rating are missing and shows a not-streaming hint', () => {

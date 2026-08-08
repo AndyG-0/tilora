@@ -18,12 +18,15 @@ failure mode (see steam_client's docstring), not a bug.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, ClassVar
 
 from app.integrations import steam_client
 from app.plugins.base import Plugin, ToolDef
 from app.plugins.steam import news
 from app.storage.cache import cache
+
+logger = logging.getLogger(__name__)
 
 # The friends list is the most expensive call (a friend-list fetch plus a
 # batched N-steamid player-summaries fetch), and only get_detail needs it —
@@ -43,8 +46,8 @@ _SUMMARY_NEWS_COUNT = 1
 _DETAIL_NEWS_COUNT = 8
 
 
-def _friends_cache_key(widget_id: str) -> str:
-    return f"steam_friends:{widget_id}"
+def _friends_cache_key(widget_id: str, locale: str) -> str:
+    return f"steam_friends:{widget_id}:{locale}"
 
 
 def _news_games(recent: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -80,25 +83,27 @@ class SteamPlugin(Plugin):
         settings = self._settings()
         steamid = settings.get("steamid", "")
         try:
-            player = await steam_client.fetch_player_summary(settings, steamid)
+            player = await steam_client.fetch_player_summary(settings, steamid, self.locale)
             recent = await steam_client.fetch_recently_played(settings, steamid)
         except steam_client.SteamError as exc:
+            logger.warning("Could not fetch Steam player/recently-played for widget '%s': %s", self.id, exc)
             return None, [], str(exc)
         return player, recent, None
 
     async def _friends(self) -> tuple[list[dict[str, Any]], str | None]:
         settings = self._settings()
-        cache_key = _friends_cache_key(self.id)
+        cache_key = _friends_cache_key(self.id, self.locale)
         cached = cache.get(cache_key)
         if cached is not None:
             return cached, None
 
         try:
-            friends = await steam_client.fetch_friends_status(settings, settings.get("steamid", ""))
+            friends = await steam_client.fetch_friends_status(settings, settings.get("steamid", ""), self.locale)
         except steam_client.SteamError as exc:
             # Not cached — a transient failure (or a private friends list
             # the user just fixed) shouldn't lock in an error state for the
             # full TTL window.
+            logger.warning("Could not fetch Steam friends status for widget '%s': %s", self.id, exc)
             return [], str(exc)
 
         cache.set(cache_key, friends, _FRIENDS_CACHE_TTL_SECONDS)

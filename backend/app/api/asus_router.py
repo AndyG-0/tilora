@@ -13,13 +13,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.auth import get_current_user, require_write_access
 from app.integrations import asus_router_client
 from app.plugins.asus_router.plugin import AsusRouterPlugin
 from app.plugins.base import registry
 
-router = APIRouter(prefix="/api/asus-router", tags=["asus_router"])
+router = APIRouter(prefix="/api/asus-router", tags=["asus_router"], dependencies=[Depends(get_current_user)])
 
 
 def _get_plugin(widget_id: str) -> AsusRouterPlugin:
@@ -30,8 +31,9 @@ def _get_plugin(widget_id: str) -> AsusRouterPlugin:
 
 
 @router.post("/{widget_id}/test-connection")
-async def test_connection(widget_id: str, payload: dict[str, Any]):
+async def test_connection(widget_id: str, payload: dict[str, Any], user: dict[str, Any] = Depends(get_current_user)):
     plugin = _get_plugin(widget_id)
+    require_write_access(plugin, user)
     candidate_settings = {**plugin.config["settings"], **payload}
     try:
         product_id = await asus_router_client.test_connection(candidate_settings, widget_id)

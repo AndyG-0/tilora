@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { api, type SportsDetail, type SportsTeamEntry, type SportsTeamOption } from '$lib/api';
+	import { _ } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	const LEAGUE_OPTIONS: { value: string; label: string }[] = [
 		{ value: 'nfl', label: 'NFL' },
@@ -92,7 +94,7 @@
 			sports = await api.widgetDetail<SportsDetail>(widgetId);
 			editing = false;
 		} catch {
-			error = 'Could not update sports settings.';
+			error = get(_)('sports.detail.save_failed');
 		} finally {
 			saving = false;
 		}
@@ -111,9 +113,9 @@
 </script>
 
 <div class="header">
-	<h1>Sports Schedule</h1>
+	<h1>{$_('sports.detail.title')}</h1>
 	<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
-		{editing ? 'Cancel' : 'Edit settings'}
+		{editing ? $_('sports.detail.cancel') : $_('sports.detail.edit_settings')}
 	</button>
 </div>
 
@@ -128,22 +130,28 @@
 						{/each}
 					</select>
 					<select bind:value={team.team} disabled={loadingLeagues.has(team.league)}>
-						<option value="">{loadingLeagues.has(team.league) ? 'Loading teams…' : 'Select a team'}</option>
+						<option value=""
+							>{loadingLeagues.has(team.league)
+								? $_('sports.detail.loading_teams')
+								: $_('sports.detail.select_team')}</option
+						>
 						{#each teamOptionsByLeague[team.league] ?? [] as option (option.abbreviation)}
 							<option value={option.abbreviation}>{option.display_name}</option>
 						{/each}
 					</select>
-					<button class="remove-team" onclick={() => removeTeamRow(index)} aria-label="Remove team"> ✕ </button>
+					<button class="remove-team" onclick={() => removeTeamRow(index)} aria-label={$_('sports.detail.remove_team')}>
+						✕
+					</button>
 				</div>
 			{:else}
-				<p class="hint">No teams yet — add one below.</p>
+				<p class="hint">{$_('sports.detail.no_teams_yet')}</p>
 			{/each}
-			<button class="add-team" onclick={addTeamRow}>+ Add team</button>
+			<button class="add-team" onclick={addTeamRow}>{$_('sports.detail.add_team')}</button>
 		</div>
 
 		<div class="trending-editor">
-			<h3>Track for trending</h3>
-			<p class="hint">Leagues shown in "Top Games Today", regardless of followed teams.</p>
+			<h3>{$_('sports.detail.track_trending')}</h3>
+			<p class="hint">{$_('sports.detail.trending_hint')}</p>
 			<div class="trending-leagues">
 				{#each LEAGUE_OPTIONS as option (option.value)}
 					<label class="trending-league">
@@ -163,7 +171,7 @@
 		{/if}
 
 		<button class="save" disabled={saving} onclick={saveSettings}>
-			{saving ? 'Saving…' : 'Save'}
+			{saving ? $_('sports.detail.saving') : $_('sports.detail.save')}
 		</button>
 	</div>
 {:else if error}
@@ -172,70 +180,77 @@
 
 {#if !editing}
 	{#if !sports.configured || sports.teams.length === 0}
-		<p class="hint">No teams configured yet — tap "Edit teams" to follow one.</p>
+		<p class="hint">{$_('sports.detail.no_teams_configured')}</p>
 	{:else}
-		<div class="teams">
-			{#each sports.teams as team (team.league + team.team)}
-				<div class="team-section">
-					<h2>
-						{team.team_name || team.team}
-						<span class="league-badge">{team.league_label}</span>
-					</h2>
-					{#if team.error}
-						<p class="hint error">{team.error}</p>
-					{:else if team.games.length === 0}
-						<p class="hint">No upcoming games scheduled.</p>
-					{:else}
-						<ul class="games">
-							{#each team.games as game (game.id)}
-								<li>
-									<div class="matchup">
-										<span class="teams-line">
-											{game.is_home ? `vs ${game.opponent}` : `@ ${game.opponent}`}
-										</span>
-										{#if game.state !== 'pre'}
-											<span class="score">
-												{game.away_abbreviation}
-												{game.away_score ?? '-'} · {game.home_abbreviation}
-												{game.home_score ?? '-'}
-											</span>
-										{/if}
-									</div>
-									<div class="meta">
-										<span class="when">
-											{game.state === 'in' ? `Live — ${game.status_detail}` : formatDate(game.date)}
-										</span>
-										{#if game.venue}
-											<span class="venue">{game.venue}</span>
-										{/if}
-										{#if game.broadcast_links.length > 0}
-											<span class="broadcast">
-												{#each game.broadcast_links as link, i (link.name)}
-													{#if i > 0}<span>, </span>{/if}
-													{#if link.url}
-														<a href={link.url} target="_blank" rel="noopener noreferrer">{link.name}</a>
-													{:else}
-														{link.name}
-													{/if}
-												{/each}
-											</span>
-										{/if}
-									</div>
-								</li>
-							{/each}
-						</ul>
-					{/if}
-				</div>
-			{/each}
-		</div>
+		{#if sports.teams.some((team) => team.error)}
+			<p class="hint error">
+				{$_('sports.couldnt_load')}
+				{sports.teams
+					.filter((team) => team.error)
+					.map((team) => `${team.team_name || team.team} (${team.league_label})`)
+					.join(', ')}
+			</p>
+		{/if}
+
+		{#if sports.todays_games.length > 0}
+			<div class="game-section">
+				<h2>{$_('sports.today_title')}</h2>
+				<ul class="games">
+					{#each sports.todays_games as game (game.league + game.team + game.id)}
+						<li>
+							<div class="matchup">
+								<span class="teams-line">
+									<span class="league-badge">{game.league_label}</span>
+									{#if game.team_espn_url}
+										<a href={game.team_espn_url} target="_blank" rel="noopener noreferrer">{game.team}</a>
+									{:else}
+										{game.team}
+									{/if}{': ' + (game.is_home ? `${$_('sports.vs')} ${game.opponent}` : `@ ${game.opponent}`)}
+								</span>
+								{#if game.state !== 'pre'}
+									<span class="score">
+										{game.away_abbreviation}
+										{game.away_score ?? '-'} · {game.home_abbreviation}
+										{game.home_score ?? '-'}
+									</span>
+								{/if}
+							</div>
+							<div class="meta">
+								<span class="when">
+									{game.state === 'in'
+										? $_('sports.live_status', { values: { status: game.status_detail } })
+										: formatDate(game.date)}
+								</span>
+								{#if game.venue}
+									<span class="venue">{game.venue}</span>
+								{/if}
+								{#if game.broadcast_links.length > 0}
+									<span class="broadcast">
+										{#each game.broadcast_links as link, i (link.name)}
+											{#if i > 0}<span>, </span>{/if}
+											{#if link.url}
+												<a href={link.url} target="_blank" rel="noopener noreferrer">{link.name}</a>
+											{:else}
+												{link.name}
+											{/if}
+										{/each}
+									</span>
+								{/if}
+							</div>
+						</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
 	{/if}
 
 	{#if sports.trending.length > 0}
-		<div class="trending">
-			<h2>Top Games Today</h2>
+		<div class="game-section">
+			<h2>{$_('sports.trending_title')}</h2>
 			{#if sports.trending_errors && sports.trending_errors.length > 0}
 				<p class="hint error">
-					Couldn't load: {sports.trending_errors.map((e) => e.league).join(', ')}
+					{$_('sports.couldnt_load')}
+					{sports.trending_errors.map((e) => e.league).join(', ')}
 				</p>
 			{/if}
 			<ul class="games">
@@ -244,9 +259,21 @@
 						<div class="matchup">
 							<span class="teams-line">
 								<span class="league-badge">{game.league_label}</span>
-								{game.away_rank ? `#${game.away_rank} ` : ''}{game.away_team} @ {game.home_rank
-									? `#${game.home_rank} `
-									: ''}{game.home_team}
+								{#if game.away_espn_url}
+									<a href={game.away_espn_url} target="_blank" rel="noopener noreferrer"
+										>{game.away_rank ? `#${game.away_rank} ` : ''}{game.away_team}</a
+									>
+								{:else}
+									{game.away_rank ? `#${game.away_rank} ` : ''}{game.away_team}
+								{/if}
+								@
+								{#if game.home_espn_url}
+									<a href={game.home_espn_url} target="_blank" rel="noopener noreferrer"
+										>{game.home_rank ? `#${game.home_rank} ` : ''}{game.home_team}</a
+									>
+								{:else}
+									{game.home_rank ? `#${game.home_rank} ` : ''}{game.home_team}
+								{/if}
 							</span>
 							{#if game.state !== 'pre'}
 								<span class="score">
@@ -258,7 +285,9 @@
 						</div>
 						<div class="meta">
 							<span class="when">
-								{game.state === 'in' ? `Live — ${game.status_detail}` : formatDate(game.date)}
+								{game.state === 'in'
+									? $_('sports.live_status', { values: { status: game.status_detail } })
+									: formatDate(game.date)}
 							</span>
 							{#if game.venue}
 								<span class="venue">{game.venue}</span>
@@ -279,6 +308,61 @@
 					</li>
 				{/each}
 			</ul>
+		</div>
+	{/if}
+
+	{#if sports.configured && sports.teams.length > 0}
+		<div class="game-section">
+			<h2>{$_('sports.upcoming_title')}</h2>
+			{#if sports.upcoming_games.length === 0}
+				<p class="hint">{$_('sports.detail.no_upcoming_scheduled')}</p>
+			{:else}
+				<ul class="games">
+					{#each sports.upcoming_games as game (game.league + game.team + game.id)}
+						<li>
+							<div class="matchup">
+								<span class="teams-line">
+									<span class="league-badge">{game.league_label}</span>
+									{#if game.team_espn_url}
+										<a href={game.team_espn_url} target="_blank" rel="noopener noreferrer">{game.team}</a>
+									{:else}
+										{game.team}
+									{/if}{': ' + (game.is_home ? `${$_('sports.vs')} ${game.opponent}` : `@ ${game.opponent}`)}
+								</span>
+								{#if game.state !== 'pre'}
+									<span class="score">
+										{game.away_abbreviation}
+										{game.away_score ?? '-'} · {game.home_abbreviation}
+										{game.home_score ?? '-'}
+									</span>
+								{/if}
+							</div>
+							<div class="meta">
+								<span class="when">
+									{game.state === 'in'
+										? $_('sports.live_status', { values: { status: game.status_detail } })
+										: formatDate(game.date)}
+								</span>
+								{#if game.venue}
+									<span class="venue">{game.venue}</span>
+								{/if}
+								{#if game.broadcast_links.length > 0}
+									<span class="broadcast">
+										{#each game.broadcast_links as link, i (link.name)}
+											{#if i > 0}<span>, </span>{/if}
+											{#if link.url}
+												<a href={link.url} target="_blank" rel="noopener noreferrer">{link.name}</a>
+											{:else}
+												{link.name}
+											{/if}
+										{/each}
+									</span>
+								{/if}
+							</div>
+						</li>
+					{/each}
+				</ul>
+			{/if}
 		</div>
 	{/if}
 {/if}
@@ -404,17 +488,11 @@
 		color: var(--color-error);
 	}
 
-	.teams {
-		display: flex;
-		flex-direction: column;
-		gap: 1.5rem;
-		margin-top: 1rem;
+	.game-section {
+		margin-top: 1.5rem;
 	}
 
-	.team-section h2 {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
+	.game-section h2 {
 		font-size: 1.1rem;
 		margin: 0 0 0.5rem;
 	}
@@ -471,18 +549,14 @@
 		color: var(--color-accent);
 	}
 
-	.trending {
-		margin-top: 1.5rem;
-	}
-
-	.trending h2 {
-		font-size: 1.1rem;
-		margin: 0 0 0.5rem;
-	}
-
 	.teams-line {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
+	}
+
+	.teams-line a {
+		color: inherit;
+		text-decoration: underline dotted;
 	}
 </style>

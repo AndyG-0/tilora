@@ -9,6 +9,7 @@
 		type Board,
 		type Direction,
 	} from '$lib/game2048';
+	import { _ } from 'svelte-i18n';
 
 	interface Game2048DetailData {
 		title: string;
@@ -103,14 +104,14 @@
 
 <div class="scoreboard">
 	<div class="score-box">
-		<div class="label">Score</div>
+		<div class="label">{$_('game2048.detail.score')}</div>
 		<div class="value">{score}</div>
 	</div>
 	<div class="score-box">
-		<div class="label">Best</div>
+		<div class="label">{$_('game2048.detail.best')}</div>
 		<div class="value">{best}</div>
 	</div>
-	<button class="new-game" onclick={reset}>New Game</button>
+	<button class="new-game" onclick={reset}>{$_('game2048.detail.new_game')}</button>
 </div>
 
 <div class="board" ontouchstart={onTouchStart} ontouchend={onTouchEnd} role="presentation">
@@ -124,21 +125,21 @@
 
 	{#if gameOver}
 		<div class="overlay">
-			<p>Game over</p>
-			<button onclick={reset}>Try again</button>
+			<p>{$_('game2048.detail.game_over')}</p>
+			<button onclick={reset}>{$_('game2048.detail.try_again')}</button>
 		</div>
 	{:else if won}
 		<div class="overlay">
-			<p>You reached 2048!</p>
+			<p>{$_('game2048.detail.won')}</p>
 			<div class="overlay-actions">
-				<button onclick={() => (won = false)}>Keep playing</button>
-				<button onclick={reset}>New Game</button>
+				<button onclick={() => (won = false)}>{$_('game2048.detail.keep_playing')}</button>
+				<button onclick={reset}>{$_('game2048.detail.new_game')}</button>
 			</div>
 		</div>
 	{/if}
 </div>
 
-<p class="hint">Swipe or use the arrow keys to play.</p>
+<p class="hint">{$_('game2048.detail.hint')}</p>
 
 <style>
 	h1 {

@@ -3,6 +3,8 @@
 	import { api } from '$lib/api';
 	import type { BookmarkItem, BookmarksData } from '$lib/api';
 	import { faviconSrc, hideBrokenIcon } from '$lib/bookmarkIcons';
+	import { _ } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	let { data: initialData }: { data: BookmarksData } = $props();
 
@@ -48,7 +50,7 @@
 			bookmarks = await api.widgetDetail<BookmarksData>(page.params.id!);
 			editing = false;
 		} catch {
-			error = 'Could not update the bookmarks.';
+			error = get(_)('bookmarks.detail.save_error');
 		} finally {
 			saving = false;
 		}
@@ -58,31 +60,35 @@
 <div class="header">
 	<h1>{bookmarks.title || 'Bookmarks'}</h1>
 	<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
-		{editing ? 'Cancel' : 'Edit bookmarks'}
+		{editing ? $_('common.cancel') : $_('bookmarks.detail.edit')}
 	</button>
 </div>
 
 {#if editing}
 	<div class="settings-form">
 		<label>
-			Title
+			{$_('bookmarks.detail.title_label')}
 			<input type="text" bind:value={titleInput} />
 		</label>
 
 		<div class="bookmarks">
 			{#each bookmarkInputs as bookmark, index (index)}
 				<div class="bookmark-row">
-					<input type="text" placeholder="Name" bind:value={bookmark.name} />
-					<input type="text" placeholder="URL" bind:value={bookmark.url} />
-					<input type="text" placeholder="Icon URL (optional)" bind:value={bookmark.icon} />
-					<button class="remove-bookmark" onclick={() => removeBookmarkRow(index)} aria-label="Remove bookmark">
+					<input type="text" placeholder={$_('bookmarks.detail.name_placeholder')} bind:value={bookmark.name} />
+					<input type="text" placeholder={$_('bookmarks.detail.url_placeholder')} bind:value={bookmark.url} />
+					<input type="text" placeholder={$_('bookmarks.detail.icon_placeholder')} bind:value={bookmark.icon} />
+					<button
+						class="remove-bookmark"
+						onclick={() => removeBookmarkRow(index)}
+						aria-label={$_('bookmarks.detail.remove_aria')}
+					>
 						✕
 					</button>
 				</div>
 			{:else}
-				<p class="hint">No bookmarks yet — add one below.</p>
+				<p class="hint">{$_('bookmarks.detail.empty_editing_hint')}</p>
 			{/each}
-			<button class="add-bookmark" onclick={addBookmarkRow}>+ Add bookmark</button>
+			<button class="add-bookmark" onclick={addBookmarkRow}>{$_('bookmarks.detail.add_bookmark')}</button>
 		</div>
 
 		{#if error}
@@ -90,7 +96,7 @@
 		{/if}
 
 		<button class="save" disabled={saving} onclick={saveSettings}>
-			{saving ? 'Saving…' : 'Save'}
+			{saving ? $_('common.saving') : $_('common.save')}
 		</button>
 	</div>
 {:else if error}
@@ -108,7 +114,7 @@
 			</li>
 		{/each}
 	{:else}
-		<p class="hint">No bookmarks configured yet — tap "Edit bookmarks" to add one.</p>
+		<p class="hint">{$_('bookmarks.detail.empty_hint')}</p>
 	{/if}
 </ul>
 

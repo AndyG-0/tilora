@@ -15,7 +15,7 @@ describe('GoodreadsTile', () => {
 		expect(await screen.findByText('No books on this shelf')).toBeInTheDocument();
 	});
 
-	it('shows the current book cover, title, and author', async () => {
+	it('shows the Goodreads header and the book cover, title, and author', async () => {
 		widgetSummary.mockResolvedValue({
 			shelf: 'currently-reading',
 			books: [
@@ -30,18 +30,29 @@ describe('GoodreadsTile', () => {
 
 		render(GoodreadsTile, { props: { widgetId: 'goodreads' } });
 
-		expect(await screen.findByText('Project Hail Mary')).toBeInTheDocument();
+		expect(await screen.findByText('Goodreads')).toBeInTheDocument();
+		expect(screen.getByText('Project Hail Mary')).toBeInTheDocument();
 		expect(screen.getByText('Andy Weir')).toBeInTheDocument();
-		expect(document.querySelector('img.cover')).toHaveAttribute('src', 'https://images.gr.example/hail-mary.jpg');
+		expect(document.querySelector('img.thumb')).toHaveAttribute('src', 'https://images.gr.example/hail-mary.jpg');
 	});
 
-	it('lists the remaining books below the current one when there is more than one', async () => {
+	it('lists all books at the same size when there is more than one', async () => {
 		widgetSummary.mockResolvedValue({
 			shelf: 'currently-reading',
 			books: [
 				{ title: 'Book One', link: 'https://x/1', book_image_url: '', author_name: 'A' },
-				{ title: 'Book Two', link: 'https://x/2', book_image_url: '', author_name: 'B' },
-				{ title: 'Book Three', link: 'https://x/3', book_image_url: '', author_name: 'C' },
+				{
+					title: 'Book Two',
+					link: 'https://x/2',
+					book_image_url: 'https://images.gr.example/two.jpg',
+					author_name: 'B',
+				},
+				{
+					title: 'Book Three',
+					link: 'https://x/3',
+					book_image_url: 'https://images.gr.example/three.jpg',
+					author_name: 'C',
+				},
 			],
 		});
 
@@ -50,9 +61,16 @@ describe('GoodreadsTile', () => {
 		expect(await screen.findByText('Book One')).toBeInTheDocument();
 		expect(screen.getByText('Book Two')).toBeInTheDocument();
 		expect(screen.getByText('Book Three')).toBeInTheDocument();
+
+		// Book One has no image, so only Book Two and Book Three render thumbnails,
+		// each using the same .thumb size/markup as every other book.
+		const thumbs = document.querySelectorAll('img.thumb');
+		expect(thumbs).toHaveLength(2);
+		expect(thumbs[0]).toHaveAttribute('src', 'https://images.gr.example/two.jpg');
+		expect(thumbs[1]).toHaveAttribute('src', 'https://images.gr.example/three.jpg');
 	});
 
-	it('does not render the extra-books list when there is only one book', async () => {
+	it('renders a single book in the list', async () => {
 		widgetSummary.mockResolvedValue({
 			shelf: 'currently-reading',
 			books: [{ title: 'Solo Book', link: 'https://x/1', book_image_url: '', author_name: 'A' }],
@@ -61,6 +79,6 @@ describe('GoodreadsTile', () => {
 		render(GoodreadsTile, { props: { widgetId: 'goodreads' } });
 
 		expect(await screen.findByText('Solo Book')).toBeInTheDocument();
-		expect(document.querySelector('ul.more-books')).not.toBeInTheDocument();
+		expect(document.querySelector('ul.more-books')).toBeInTheDocument();
 	});
 });

@@ -4,6 +4,7 @@ import httpx
 import respx
 
 from app.plugins.rss.plugin import RSSPlugin
+from app.storage import db
 
 FEED_ONE = b"""<?xml version="1.0"?>
 <rss version="2.0">
@@ -28,97 +29,133 @@ FEED_TWO = b"""<?xml version="1.0"?>
 <link>https://example.com/newer</link>
 <description>Newer description</description>
 <pubDate>Wed, 03 Jan 2026 12:00:00 GMT</pubDate>
+<media:thumbnail xmlns:media="http://search.yahoo.com/mrss/" url="https://example.com/newer.jpg"/>
 </item>
 </channel>
 </rss>
 """
 
 
-def make_plugin(widget_id: str = "rss", **settings) -> RSSPlugin:
-    return RSSPlugin({"id": widget_id, "settings": settings})
+def make_plugin(widget_id: str = "rss", user_id: str | None = "user-1", **settings) -> RSSPlugin:
+    return RSSPlugin({"id": widget_id, "settings": settings, "user_id": user_id})
 
 
 @respx.mock
-async def test_get_summary_merges_and_sorts_feeds_by_published_date():
+async def test_get_summary_groups_items_by_feed(tmp_db):
     respx.get("https://example.com/one.xml").mock(return_value=httpx.Response(200, content=FEED_ONE))
     respx.get("https://example.com/two.xml").mock(return_value=httpx.Response(200, content=FEED_TWO))
-    plugin = make_plugin(
-        feeds=[{"url": "https://example.com/one.xml"}, {"url": "https://example.com/two.xml", "name": "Custom"}]
-    )
-
-    summary = await plugin.get_summary()
-
-    assert [item["title"] for item in summary["items"]] == ["Newer Item", "Older Item"]
-    assert summary["items"][0]["source"] == "Custom"
-    assert summary["items"][1]["source"] == "Feed One"
-    assert "summary" not in summary["items"][0]
-
-
-@respx.mock
-async def test_get_summary_respects_item_limit():
-    respx.get("https://example.com/one.xml").mock(return_value=httpx.Response(200, content=FEED_ONE))
-    respx.get("https://example.com/two.xml").mock(return_value=httpx.Response(200, content=FEED_TWO))
-    plugin = make_plugin(
-        feeds=[{"url": "https://example.com/one.xml"}, {"url": "https://example.com/two.xml"}],
-        item_limit=1,
-    )
-
-    summary = await plugin.get_summary()
-
-    assert len(summary["items"]) == 1
-
-
-@respx.mock
-async def test_get_detail_strips_html_from_summary():
-    respx.get("https://example.com/one.xml").mock(return_value=httpx.Response(200, content=FEED_ONE))
-    plugin = make_plugin(feeds=[{"url": "https://example.com/one.xml"}])
-
-    detail = await plugin.get_detail()
-
-    assert detail["items"][0]["summary"] == "Older description"
-
-
-@respx.mock
-async def test_get_detail_includes_current_feed_settings():
-    respx.get("https://example.com/one.xml").mock(return_value=httpx.Response(200, content=FEED_ONE))
-    feeds = [{"url": "https://example.com/one.xml", "name": "Custom"}]
-    plugin = make_plugin(title="Tech News", feeds=feeds, item_limit=3)
-
-    detail = await plugin.get_detail()
-
-    assert detail["title"] == "Tech News"
-    assert detail["feeds"] == feeds
-    assert detail["item_limit"] == 3
-
-
-async def test_get_summary_title_defaults_to_headlines():
-    plugin = make_plugin(feeds=[])
+    one = db.add_rss_feed("user-1", "https://example.com/one.xml", None)
+    two = db.add_rss_feed("user-1", "https://example.com/two.xml", "Custom")
+    plugin = make_plugin(feed_ids=[one["id"], two["id"]])
 
     summary = await plugin.get_summary()
 
     assert summary["title"] == "Headlines"
-
-
-def test_default_settings_start_with_an_empty_feed_list():
-    assert RSSPlugin.default_settings == {"title": "Headlines", "feeds": [], "item_limit": 5}
+    groups = {group["name"]: group for group in summary["feed_groups"]}
+    assert groups.keys() == {"Feed One", "Custom"}
+    assert groups["Feed One"]["items"][0]["title"] == "Older Item"
+    assert groups["Custom"]["items"][0]["title"] == "Newer Item"
+    assert "summary" not in groups["Feed One"]["items"][0]
+    assert "image" not in groups["Custom"]["items"][0]
 
 
 @respx.mock
-async def test_get_ai_tools_exposes_latest_headlines_tool():
+async def test_get_summary_respects_each_feeds_own_item_limit(tmp_db):
+    respx.get("https://example.com/one.xml").mock(
+        return_value=httpx.Response(200, content=_feed_with_n_items("One", 5))
+    )
+    feed = db.add_rss_feed("user-1", "https://example.com/one.xml", None, item_limit=2)
+    plugin = make_plugin(feed_ids=[feed["id"]])
+
+    summary = await plugin.get_summary()
+
+    assert len(summary["feed_groups"][0]["items"]) == 2
+
+
+def _feed_with_n_items(title: str, n: int) -> bytes:
+    items = "".join(
+        f"<item><title>{title} Item {i}</title><link>https://example.com/{title}/{i}</link>"
+        f"<pubDate>{(1 + i):02d} Jan 2026 12:00:00 GMT</pubDate></item>"
+        for i in range(n)
+    )
+    return f"<?xml version='1.0'?><rss version='2.0'><channel><title>{title}</title>{items}</channel></rss>".encode()
+
+
+@respx.mock
+async def test_get_detail_strips_html_from_summary(tmp_db):
     respx.get("https://example.com/one.xml").mock(return_value=httpx.Response(200, content=FEED_ONE))
-    plugin = make_plugin(feeds=[{"url": "https://example.com/one.xml"}])
+    feed = db.add_rss_feed("user-1", "https://example.com/one.xml", None)
+    plugin = make_plugin(feed_ids=[feed["id"]])
+
+    detail = await plugin.get_detail()
+
+    assert detail["feed_groups"][0]["items"][0]["summary"] == "Older description"
+
+
+@respx.mock
+async def test_get_detail_extracts_media_thumbnail_image(tmp_db):
+    respx.get("https://example.com/two.xml").mock(return_value=httpx.Response(200, content=FEED_TWO))
+    feed = db.add_rss_feed("user-1", "https://example.com/two.xml", None)
+    plugin = make_plugin(feed_ids=[feed["id"]])
+
+    detail = await plugin.get_detail()
+
+    assert detail["feed_groups"][0]["items"][0]["image"] == "https://example.com/newer.jpg"
+
+
+@respx.mock
+async def test_get_detail_includes_full_feed_catalog_and_selection(tmp_db):
+    respx.get("https://example.com/one.xml").mock(return_value=httpx.Response(200, content=FEED_ONE))
+    one = db.add_rss_feed("user-1", "https://example.com/one.xml", None)
+    two = db.add_rss_feed("user-1", "https://example.com/two.xml", "Custom")
+    plugin = make_plugin(title="Tech News", feed_ids=[one["id"]])
+
+    detail = await plugin.get_detail()
+
+    assert detail["title"] == "Tech News"
+    assert detail["feed_ids"] == [one["id"]]
+    assert {feed["id"] for feed in detail["all_feeds"]} == {one["id"], two["id"]}
+
+
+async def test_get_summary_without_a_requesting_user_returns_no_groups(tmp_db):
+    feed = db.add_rss_feed("user-1", "https://example.com/one.xml", None)
+    plugin = make_plugin(user_id=None, feed_ids=[feed["id"]])
+
+    summary = await plugin.get_summary()
+
+    assert summary == {"title": "Headlines", "feed_groups": []}
+
+
+async def test_get_summary_title_defaults_to_headlines(tmp_db):
+    plugin = make_plugin()
+
+    summary = await plugin.get_summary()
+
+    assert summary["title"] == "Headlines"
+    assert summary["feed_groups"] == []
+
+
+def test_default_settings_start_with_no_selected_feeds():
+    assert RSSPlugin.default_settings == {"title": "Headlines", "feed_ids": []}
+
+
+@respx.mock
+async def test_get_ai_tools_exposes_latest_headlines_tool(tmp_db):
+    respx.get("https://example.com/one.xml").mock(return_value=httpx.Response(200, content=FEED_ONE))
+    feed = db.add_rss_feed("user-1", "https://example.com/one.xml", None)
+    plugin = make_plugin(feed_ids=[feed["id"]])
 
     tools = plugin.get_ai_tools()
 
     assert len(tools) == 1
     assert tools[0].name == "get_latest_headlines_rss"
     result = await tools[0].handler()
-    assert result["items"][0]["title"] == "Older Item"
+    assert result["feed_groups"][0]["items"][0]["title"] == "Older Item"
 
 
 def test_get_ai_tools_names_are_scoped_per_widget_instance():
-    first = make_plugin(widget_id="rss-aaa1111", title="Tech News", feeds=[])
-    second = make_plugin(widget_id="rss-bbb2222", title="Sports", feeds=[])
+    first = make_plugin(widget_id="rss-aaa1111", title="Tech News")
+    second = make_plugin(widget_id="rss-bbb2222", title="Sports")
 
     first_tool = first.get_ai_tools()[0]
     second_tool = second.get_ai_tools()[0]

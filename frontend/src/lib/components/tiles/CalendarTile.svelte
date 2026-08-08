@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { pollWidget } from '$lib/polling';
 	import { api } from '$lib/api';
+	import { _, locale } from 'svelte-i18n';
 	import TileCard from '$lib/components/TileCard.svelte';
 
 	interface CalendarEvent {
@@ -32,8 +33,12 @@
 	function formatEventTime(event: CalendarEvent): string {
 		const date = new Date(event.start);
 		return event.all_day
-			? new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(date)
-			: new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' }).format(date);
+			? new Intl.DateTimeFormat($locale ?? undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(date)
+			: new Intl.DateTimeFormat($locale ?? undefined, {
+					weekday: 'short',
+					hour: 'numeric',
+					minute: '2-digit',
+				}).format(date);
 	}
 
 	pollWidget(refresh, 60_000);
@@ -42,9 +47,9 @@
 <TileCard {widgetId}>
 	<div class="title">Calendar</div>
 	{#if !summary}
-		<div class="empty">Loading events…</div>
+		<div class="empty">{$_('calendar.tile.loading')}</div>
 	{:else if !summary.connected}
-		<div class="empty">Not connected</div>
+		<div class="empty">{$_('common.not_connected')}</div>
 	{:else if summary.events.length}
 		<ul class="events">
 			{#each summary.events as event (event.id)}
@@ -56,7 +61,7 @@
 			{/each}
 		</ul>
 	{:else}
-		<div class="empty">No upcoming events</div>
+		<div class="empty">{$_('calendar.tile.no_events')}</div>
 	{/if}
 </TileCard>
 

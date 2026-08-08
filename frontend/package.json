@@ -39,6 +39,10 @@
 		"vitest": "^4.1.10"
 	},
 	"dependencies": {
-		"mpegts.js": "^1.8.0"
+		"@fontsource-variable/doto": "^5.3.0",
+		"dompurify": "^3.4.13",
+		"marked": "^18.0.9",
+		"mpegts.js": "^1.8.0",
+		"svelte-i18n": "^4.0.1"
 	}
 }

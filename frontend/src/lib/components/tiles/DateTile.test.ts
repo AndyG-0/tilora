@@ -23,6 +23,7 @@ describe('DateTile', () => {
 
 		expect(screen.getByText('Friday')).toBeInTheDocument();
 		expect(screen.getByText('March 15')).toBeInTheDocument();
+		expect(screen.getByText('2024')).toBeInTheDocument();
 	});
 
 	it('renders the weekday and date in the fetched timezone once the summary resolves', async () => {
@@ -36,5 +37,6 @@ describe('DateTile', () => {
 
 		expect(screen.getByText('Saturday')).toBeInTheDocument();
 		expect(screen.getByText('March 16')).toBeInTheDocument();
+		expect(screen.getByText('2024')).toBeInTheDocument();
 	});
 });

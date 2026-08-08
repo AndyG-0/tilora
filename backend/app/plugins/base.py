@@ -71,6 +71,23 @@ class Plugin(ABC):
         # (e.g. "weather"), but a UI-added widget gets a generated id so two
         # widgets of the same type can coexist — the instance's config wins.
         self.id = config.get("id", self.id)
+        # BCP-47-ish locale code (e.g. "en", "es") a plugin may use via
+        # app.i18n.t() to translate any server-synthesized text (condition
+        # labels, error messages) — see with_settings/scoped_plugin for how
+        # this is resolved per request without mutating the registry
+        # singleton. Most plugin output is data the frontend formats itself,
+        # so most plugins never read this.
+        self.locale: str = config.get("locale", "en")
+        # id of the household member this instance was cloned for, set by
+        # scoped_plugin() for "personal"-scope plugins whose content is
+        # per-user rather than just per-user-*settings* (e.g. a chore list
+        # keyed by owner, not just a differently-configured shared feed).
+        # None on the registry singleton and for "network"-scope plugins,
+        # where there's no single owning user. Named requesting_user_id
+        # rather than user_id to avoid colliding with plugins (e.g.
+        # Goodreads) that already have their own settings-derived user_id
+        # property for an unrelated external account id.
+        self.requesting_user_id: str | None = config.get("user_id")
 
     @abstractmethod
     async def get_summary(self) -> dict[str, Any]:
@@ -84,17 +101,28 @@ class Plugin(ABC):
         """Tools this plugin exposes to the AI layer. Optional to override."""
         return []
 
-    def with_settings(self, settings: dict[str, Any]) -> Plugin:
-        """A fresh instance of this plugin carrying a different settings dict.
+    def with_settings(
+        self, settings: dict[str, Any] | None = None, locale: str | None = None, user_id: str | None = None
+    ) -> Plugin:
+        """A fresh instance of this plugin carrying different settings/locale/user.
 
-        Used to personalize a "personal"-scope plugin per request without
+        Used to personalize a "personal"-scope plugin (or a plugin whose
+        requester's locale differs from this instance's) per request without
         mutating the shared registry singleton — get_summary/get_detail are
         async with awaited I/O, so two users' requests interleaving on the
         event loop could otherwise corrupt each other's view if the
-        singleton's settings were mutated in place instead. Requires __init__
-        to stay cheap/side-effect-free, which holds for every plugin today.
+        singleton's settings/locale were mutated in place instead. Requires
+        __init__ to stay cheap/side-effect-free, which holds for every plugin
+        today.
         """
-        return type(self)({**self.config, "settings": settings})
+        return type(self)(
+            {
+                **self.config,
+                "settings": settings if settings is not None else self.config["settings"],
+                "locale": locale or self.locale,
+                "user_id": user_id if user_id is not None else self.requesting_user_id,
+            }
+        )
 
 
 class PluginRegistry:

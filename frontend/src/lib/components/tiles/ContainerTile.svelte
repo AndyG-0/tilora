@@ -2,6 +2,7 @@
 	import { pollWidget } from '$lib/polling';
 	import { api, type ContainerSummary } from '$lib/api';
 	import TileCard from '$lib/components/TileCard.svelte';
+	import { _ } from 'svelte-i18n';
 
 	let { widgetId }: { widgetId: string } = $props();
 
@@ -24,16 +25,16 @@
 <TileCard {widgetId}>
 	<div class="title">{title}</div>
 	{#if !summary}
-		<div class="hint">Loading…</div>
+		<div class="hint">{$_('common.loading')}</div>
 	{:else if !summary.connected}
-		<div class="hint">Not connected</div>
+		<div class="hint">{$_('common.not_connected')}</div>
 	{:else if summary.error}
 		<div class="hint error">{summary.error}</div>
 	{:else}
 		<div class="counts">
-			<span class="running">{summary.running_count} running</span>
+			<span class="running">{$_('container.tile.running', { values: { count: summary.running_count } })}</span>
 			{#if summary.stopped_count > 0}
-				<span class="stopped">{summary.stopped_count} stopped</span>
+				<span class="stopped">{$_('container.tile.stopped', { values: { count: summary.stopped_count } })}</span>
 			{/if}
 		</div>
 		<ul class="containers">

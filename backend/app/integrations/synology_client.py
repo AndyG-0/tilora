@@ -16,12 +16,15 @@ API surface:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
 
 from app.storage.cache import cache
+
+logger = logging.getLogger(__name__)
 
 _SESSION_TTL_SECONDS = 1800
 _SESSION_APP = "Tilora"
@@ -155,6 +158,12 @@ async def _discover_version(base_url: str, api: str, fallback: int, widget_id: s
         if not isinstance(max_version, int):
             return fallback
     except Exception:
+        logger.debug(
+            "Could not look up DSM's supported version for API '%s'; using fallback %d",
+            api,
+            fallback,
+            exc_info=True,
+        )
         return fallback
     cache.set(cache_key, max_version, _API_VERSION_TTL_SECONDS)
     return max_version

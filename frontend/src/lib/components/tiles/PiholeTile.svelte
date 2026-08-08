@@ -2,6 +2,7 @@
 	import { pollWidget } from '$lib/polling';
 	import { api, type PiholeSummary } from '$lib/api';
 	import TileCard from '$lib/components/TileCard.svelte';
+	import { _ } from 'svelte-i18n';
 
 	let { widgetId }: { widgetId: string } = $props();
 
@@ -20,20 +21,25 @@
 
 <TileCard {widgetId}>
 	{#if !summary}
-		<div class="status">Loading Pi-hole…</div>
+		<div class="status">{$_('pihole.tile.loading')}</div>
 	{:else if !summary.connected}
 		<div class="title">Pi-hole</div>
-		<div class="status">Not connected</div>
+		<div class="status">{$_('common.not_connected')}</div>
 	{:else}
 		<div class="header">
 			<div class="title">Pi-hole</div>
 			<div class="badge" class:on={summary.blocking_enabled} class:off={!summary.blocking_enabled}>
-				{summary.blocking_enabled ? '● Enabled' : '⏸ Paused'}
+				{summary.blocking_enabled ? $_('pihole.tile.enabled') : $_('pihole.tile.paused')}
 			</div>
 		</div>
 		<div class="percent">{Math.round(summary.percent_blocked ?? 0)}%</div>
 		<div class="status">
-			{(summary.blocked_today ?? 0).toLocaleString()} / {(summary.queries_today ?? 0).toLocaleString()} blocked
+			{$_('pihole.tile.blocked_summary', {
+				values: {
+					blocked: (summary.blocked_today ?? 0).toLocaleString(),
+					queries: (summary.queries_today ?? 0).toLocaleString(),
+				},
+			})}
 		</div>
 	{/if}
 </TileCard>

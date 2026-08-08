@@ -9,10 +9,13 @@ same regardless of which Steam widget instance asked for it.
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 from app.integrations import steam_client
 from app.storage.cache import cache
+
+logger = logging.getLogger(__name__)
 
 # News posts publish at most a few times a day even for popular titles, far
 # less volatile than presence/friends data — a longer TTL than the 60s
@@ -36,6 +39,7 @@ async def _fetch_one(appid: int, game_name: str, count: int) -> tuple[list[dict[
     except steam_client.SteamError as exc:
         # Not cached — a transient failure shouldn't lock in an error state
         # for the full TTL window.
+        logger.warning("Could not fetch Steam news for appid %s: %s", appid, exc)
         return [], {"appid": appid, "game_name": game_name, "error": str(exc)}
 
     tagged = [{**item, "appid": appid, "game_name": game_name} for item in items]
