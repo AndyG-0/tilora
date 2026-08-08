@@ -12,7 +12,7 @@
 	} from '$lib/api';
 	import { user, logout } from '$lib/stores/user';
 	import { device as currentDevice, renameDevice as renameCurrentDevice } from '$lib/stores/device';
-	import { widgets, reloadWidgets } from '$lib/stores/widgets';
+	import { widgets } from '$lib/stores/widgets';
 	import { screensaverSettings, persistScreensaverSettings, forceScreensaverPreview } from '$lib/stores/screensaver';
 	import {
 		isScreensaverAllowedType,
@@ -189,10 +189,6 @@
 	let confirmingForgetDeviceId = $state<string | null>(null);
 	let forgettingDeviceId = $state<string | null>(null);
 	let deviceNameInitialized = false;
-	let copySourceId = $state('');
-	let confirmingCopyLayout = $state(false);
-	let copyingLayout = $state(false);
-	let copyLayoutError = $state<string | null>(null);
 
 	$effect(() => {
 		if ($currentDevice && !deviceNameInitialized) {
@@ -204,8 +200,6 @@
 	async function loadDevices() {
 		try {
 			devices = await api.listDevices();
-			const firstOther = devices.find((d) => d.id !== $currentDevice?.id);
-			if (firstOther) copySourceId = firstOther.id;
 		} catch {
 			devicesError = get(_)('settings.devices.load_error');
 		}
@@ -592,21 +586,6 @@
 			confirmingForgetDeviceId = null;
 		}
 	}
-
-	async function copyLayout() {
-		if (!copySourceId) return;
-		copyingLayout = true;
-		copyLayoutError = null;
-		try {
-			await api.copyDeviceLayout(copySourceId);
-			await reloadWidgets();
-			confirmingCopyLayout = false;
-		} catch {
-			copyLayoutError = get(_)('settings.devices.copy_error');
-		} finally {
-			copyingLayout = false;
-		}
-	}
 </script>
 
 <div class="settings-page">
@@ -667,6 +646,12 @@
 						{/each}
 					</ul>
 				{/if}
+			</section>
+
+			<section>
+				<h3>{$_('network_settings.title')}</h3>
+				<p class="hint">{$_('network_settings.subtitle')}</p>
+				<button class="clear" onclick={() => goto('/settings/network')}>{$_('network_settings.nav_link')}</button>
 			</section>
 
 			{#if !settings}
@@ -1032,42 +1017,6 @@
 						</li>
 					{/each}
 				</ul>
-
-				<label>
-					{$_('settings.devices.copy_from_label')}
-					<select bind:value={copySourceId}>
-						{#each devices.filter((d) => d.id !== $currentDevice?.id) as d (d.id)}
-							<option value={d.id}>{d.name}</option>
-						{/each}
-					</select>
-				</label>
-
-				{#if copyLayoutError}
-					<p class="hint error">{copyLayoutError}</p>
-				{/if}
-
-				{#if confirmingCopyLayout}
-					<p class="hint error">
-						{$_('settings.devices.copy_confirm', {
-							values: {
-								target: $currentDevice?.name ?? '',
-								source: devices.find((d) => d.id === copySourceId)?.name ?? '',
-							},
-						})}
-					</p>
-					<div class="confirm-actions">
-						<button class="cancel" onclick={() => (confirmingCopyLayout = false)} disabled={copyingLayout}>
-							{$_('common.cancel')}
-						</button>
-						<button class="danger" onclick={copyLayout} disabled={copyingLayout}>
-							{copyingLayout ? $_('settings.devices.copying') : $_('settings.devices.copy_layout')}
-						</button>
-					</div>
-				{:else}
-					<button class="danger-link" disabled={!copySourceId} onclick={() => (confirmingCopyLayout = true)}>
-						{$_('settings.devices.copy_layout_link')}
-					</button>
-				{/if}
 			{/if}
 		</section>
 

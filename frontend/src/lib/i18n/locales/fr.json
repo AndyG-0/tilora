@@ -4,12 +4,7 @@
 		"fatal_hint": "Vérifiez que le serveur est en cours d'exécution et accessible, puis rechargez cette page.",
 		"name_device_title": "Nommez cet appareil",
 		"name_device_hint": "Permet de le distinguer dans la liste des appareils — p. ex. « Tablette de cuisine » ou « TV du salon ».",
-		"done": "Terminé",
-		"setup_device_title": "Configurer cet appareil",
-		"setup_device_hint": "Copiez la disposition du tableau de bord depuis un autre de vos appareils, ou commencez avec la disposition par défaut.",
-		"start_fresh": "Repartir de zéro",
-		"copy_layout": "Copier la disposition",
-		"copying": "Copie en cours…"
+		"done": "Terminé"
 	},
 	"settings": {
 		"language": {
@@ -51,13 +46,7 @@
 			"forgetting": "Suppression…",
 			"forget": "Oublier",
 			"forget_device": "Oublier l'appareil",
-			"forget_error": "Impossible d'oublier l'appareil.",
-			"copy_from_label": "Copier la disposition depuis un autre appareil",
-			"copy_confirm": "Cela remplacera votre disposition sur {target} par votre disposition depuis {source}. Cette action est irréversible.",
-			"copying": "Copie en cours…",
-			"copy_layout": "Copier la disposition",
-			"copy_layout_link": "Copier la disposition sur cet appareil…",
-			"copy_error": "Impossible de copier la disposition."
+			"forget_error": "Impossible d'oublier l'appareil."
 		},
 		"screensaver": {
 			"heading": "Économiseur d'écran",
@@ -216,12 +205,20 @@
 			"empty": "Aucun avion à proximité.",
 			"column_flight": "Vol",
 			"column_type": "Type",
+			"column_route": "Itinéraire",
 			"column_altitude": "Altitude",
 			"column_speed": "Vitesse",
 			"column_distance": "Distance"
 		},
 		"screensaver": {
 			"no_aircraft": "AUCUN AVION À PROXIMITÉ"
+		},
+		"aircraft_kind": {
+			"helicopter": "Hélicoptère",
+			"jet": "Jet",
+			"prop": "Avion à hélice",
+			"other": "Avion",
+			"unknown": "Type d'avion inconnu"
 		}
 	},
 	"game2048": {
@@ -350,7 +347,7 @@
 			"clear_password": "Effacer le mot de passe",
 			"connected_result": "✓ Connecté (Pi-hole {version})",
 			"clear_password_error": "Impossible d'effacer le mot de passe.",
-			"not_connected_hint": "Pas encore connecté — appuyez sur « Modifier la connexion » pour configurer Pi-hole.",
+			"not_connected_hint": "Pas encore connecté — configurez Pi-hole dans les paramètres réseau.",
 			"blocking_enabled": "● Blocage activé",
 			"blocking_paused": "⏸ Blocage en pause",
 			"pause_30s": "Pause 30 s",
@@ -400,11 +397,12 @@
 			"socket_path_label": "Chemin du socket",
 			"host_label": "Hôte",
 			"port_label": "Port",
-			"not_connected_hint": "Pas encore connecté — appuyez sur « Modifier la connexion » pour configurer {title}.",
+			"not_connected_hint": "Pas encore connecté — configurez {title} dans les paramètres réseau.",
 			"running_label": "En cours",
 			"stopped_label": "Arrêtés",
 			"total_label": "Total",
-			"empty": "Aucun conteneur trouvé."
+			"empty": "Aucun conteneur trouvé.",
+			"host_picker_label": "Hôte"
 		}
 	},
 	"synology": {
@@ -418,7 +416,7 @@
 			"username_label": "Nom d'utilisateur",
 			"password_label": "Mot de passe",
 			"connected_result": "✓ Connecté ({model})",
-			"not_connected_hint": "Pas encore connecté — appuyez sur « Modifier la connexion » pour configurer Synology.",
+			"not_connected_hint": "Pas encore connecté — configurez Synology dans les paramètres réseau.",
 			"model_label": "Modèle",
 			"uptime_label": "Disponibilité",
 			"temp_label": "Température du CPU",
@@ -438,7 +436,7 @@
 			"username_label": "Nom d'utilisateur",
 			"password_label": "Mot de passe",
 			"connected_result": "✓ Connecté ({product_id})",
-			"not_connected_hint": "Pas encore connecté — appuyez sur « Modifier la connexion » pour configurer votre routeur.",
+			"not_connected_hint": "Pas encore connecté — configurez votre routeur dans les paramètres réseau.",
 			"wan_status_label": "État WAN",
 			"wan_ip_label": "IP WAN",
 			"download_label": "Téléchargement",
@@ -726,7 +724,7 @@
 			"password_label": "Mot de passe",
 			"clear_password": "Effacer le mot de passe",
 			"test_ok": "✓ Connecté à {name}",
-			"not_connected_hint": "Pas encore connecté — appuyez sur « Modifier la connexion » pour configurer Jellyfin.",
+			"not_connected_hint": "Pas encore connecté — configurez Jellyfin dans les paramètres réseau.",
 			"tile_content_heading": "Contenu de la tuile",
 			"content_added": "Ajouts récents",
 			"content_played": "Reprendre la lecture",
@@ -772,7 +770,7 @@
 			"xmltv_url_label": "URL XMLTV",
 			"xmltv_hint": "Les titres « En cours » sont d'abord recherchés via un abonnement DVR HDHomeRun. Si vous n'en avez pas, définissez plutôt ici une URL de guide XMLTV (le format utilisé par Plex, Channels DVR, TVheadend, etc.) — ses identifiants de chaîne doivent correspondre à vos numéros de chaîne HDHomeRun (ex. « 4.1 »).",
 			"dvr_settings_heading": "Moteur d'enregistrement DVR",
-			"not_connected_hint": "Pas encore connecté — appuyez sur « Modifier la connexion » pour configurer HDHomeRun.",
+			"not_connected_hint": "Pas encore connecté — configurez HDHomeRun dans les paramètres réseau.",
 			"tuner_count": "{count} tuners",
 			"tuner_label": "Tuner {index}",
 			"tuner_signal": "Signal {percent}%",
@@ -792,7 +790,8 @@
 			"recording_until": "jusqu'à {time}",
 			"no_recordings": "Aucun enregistrement en cours.",
 			"upcoming_rules": "{count} règles d'enregistrement à venir.",
-			"playback_failed_hint": "Échec de la lecture — ce tuner ne prend peut-être pas en charge ce mode de lecture. Essayez « {action} » à la place."
+			"playback_failed_hint": "Échec de la lecture — ce tuner ne prend peut-être pas en charge ce mode de lecture. Essayez « {action} » à la place.",
+			"edit_playback_settings": "Modifier les paramètres de lecture"
 		}
 	},
 	"screensaver": {
@@ -854,5 +853,32 @@
 		"create": "Créer",
 		"add_error": "Impossible de créer le profil.",
 		"add_profile": "Ajouter un profil"
+	},
+	"network_settings": {
+		"title": "Paramètres réseau",
+		"subtitle": "Paramètres de connexion partagés pour les appareils du réseau local — modifiés une seule fois ici, pas par widget.",
+		"nav_link": "Paramètres réseau",
+		"admin_only_hint": "Seuls les administrateurs peuvent voir les paramètres réseau.",
+		"loading": "Chargement…",
+		"load_error": "Impossible de charger les paramètres réseau.",
+		"section_pihole": "Pi-hole",
+		"section_jellyfin": "Jellyfin",
+		"section_synology": "Synology",
+		"section_asus_router": "Routeur Asus",
+		"section_hdhomerun": "HDHomeRun",
+		"section_container": "Hôtes de conteneurs",
+		"test_ok": "✓ {detail}",
+		"test_fail": "✗ {error}",
+		"save_error": "Impossible d'enregistrer ces paramètres.",
+		"add_host_heading": "Ajouter un hôte",
+		"host_name_label": "Nom",
+		"host_name_placeholder": "Docker",
+		"add_host_button": "Ajouter un hôte",
+		"add_host_error": "Impossible d'ajouter cet hôte.",
+		"delete_host_button": "Supprimer",
+		"confirm_delete_host": "Supprimer cet hôte ?",
+		"cancel_delete_host": "Annuler",
+		"delete_host_error": "Impossible de supprimer cet hôte.",
+		"no_container_hosts": "Aucun hôte de conteneur pour le moment."
 	}
 }

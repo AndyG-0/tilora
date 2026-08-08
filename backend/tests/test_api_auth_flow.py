@@ -55,32 +55,41 @@ def test_full_register_login_layout_switch_profile_flow(client, dashboard_yaml, 
     client.post(f"/api/users/{alice['id']}/login", json={})
     client.put(
         "/api/widgets/layout",
-        json={"widgets": [{"id": "clock", "layout": {"col": 3, "row": 3, "colSpan": 1, "rowSpan": 1}}]},
+        json={
+            "breakpoint": "wide",
+            "widgets": [{"id": "clock", "layout": {"col": 3, "row": 3, "colSpan": 1, "rowSpan": 1}}],
+        },
     )
-    alice_widgets = client.get("/api/widgets").json()
+    alice_widgets = client.get("/api/widgets?breakpoint=wide").json()
     assert alice_widgets[0]["layout"] == {"col": 3, "row": 3, "colSpan": 1, "rowSpan": 1}
 
     # 5. Bob logs in on the same device — his layout is untouched (still the
-    # dashboard.yaml default), confirming per-(user, device) scoping.
+    # dashboard.yaml default), confirming per-user scoping.
     client.post("/api/users/logout")
     client.post(f"/api/users/{bob['id']}/login", json={})
-    bob_widgets = client.get("/api/widgets").json()
+    bob_widgets = client.get("/api/widgets?breakpoint=wide").json()
     assert bob_widgets[0]["layout"] == {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1}
 
     # 6. Switching back to Alice on this device shows her drag again.
     client.post("/api/users/logout")
     client.post(f"/api/users/{alice['id']}/login", json={})
-    alice_widgets_again = client.get("/api/widgets").json()
+    alice_widgets_again = client.get("/api/widgets?breakpoint=wide").json()
     assert alice_widgets_again[0]["layout"] == {"col": 3, "row": 3, "colSpan": 1, "rowSpan": 1}
 
 
-def test_layout_is_independent_across_devices_for_the_same_user(client, dashboard_yaml, tmp_db):
+def test_layout_is_shared_across_devices_for_the_same_user_and_breakpoint(client, dashboard_yaml, tmp_db):
+    # Layout is keyed by (user, breakpoint), not by physical device, so a
+    # user's drag on one device is immediately visible from another device —
+    # no per-device re-arranging or "copy layout" step needed.
     client.post("/api/devices/register")
     alice = client.post("/api/users", json={"name": "Alice"}).json()
 
     client.put(
         "/api/widgets/layout",
-        json={"widgets": [{"id": "clock", "layout": {"col": 3, "row": 3, "colSpan": 1, "rowSpan": 1}}]},
+        json={
+            "breakpoint": "wide",
+            "widgets": [{"id": "clock", "layout": {"col": 3, "row": 3, "colSpan": 1, "rowSpan": 1}}],
+        },
     )
 
     # A second device, same user: fresh cookie jar, log in again.
@@ -88,16 +97,16 @@ def test_layout_is_independent_across_devices_for_the_same_user(client, dashboar
     other_client.post("/api/devices/register")
     other_client.post(f"/api/users/{alice['id']}/login", json={})
 
-    other_widgets = other_client.get("/api/widgets").json()
-    assert other_widgets[0]["layout"] == {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1}
+    other_widgets = other_client.get("/api/widgets?breakpoint=wide").json()
+    assert other_widgets[0]["layout"] == {"col": 3, "row": 3, "colSpan": 1, "rowSpan": 1}
 
 
 def test_widgets_endpoints_require_both_device_and_user_auth(client, dashboard_yaml, tmp_db):
-    assert client.get("/api/widgets").status_code == 401
+    assert client.get("/api/widgets?breakpoint=wide").status_code == 401
 
     client.post("/api/devices/register")
-    assert client.get("/api/widgets").status_code == 401
+    assert client.get("/api/widgets?breakpoint=wide").status_code == 401
 
     profile = client.post("/api/users", json={"name": "Alice"}).json()
     client.post(f"/api/users/{profile['id']}/login", json={})
-    assert client.get("/api/widgets").status_code == 200
+    assert client.get("/api/widgets?breakpoint=wide").status_code == 200

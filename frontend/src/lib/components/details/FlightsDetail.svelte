@@ -2,17 +2,40 @@
 	import { page } from '$app/state';
 	import { api, type CityResult } from '$lib/api';
 	import { airlineLogoSrc } from '$lib/airlineLogos';
+	import LedText from '$lib/components/LedText.svelte';
+	import AircraftIcon from '$lib/components/AircraftIcon.svelte';
 	import { _ } from 'svelte-i18n';
 	import { get } from 'svelte/store';
+
+	interface AirportRef {
+		iata: string | null;
+		icao: string;
+		city: string | null;
+	}
 
 	interface FlightItem {
 		callsign: string;
 		airline_code: string | null;
 		airline_name: string | null;
 		aircraft_type: string | null;
+		aircraft_kind: string | null;
 		altitude_ft: number | null;
 		speed_kts: number | null;
 		distance_nm: number | null;
+		origin: AirportRef | null;
+		destination: AirportRef | null;
+	}
+
+	const LED_COLOR = '#ff8a00';
+
+	function airportCode(airport: AirportRef): string {
+		return airport.iata ?? airport.icao;
+	}
+
+	function routeText(flight: FlightItem): string {
+		return flight.origin && flight.destination
+			? `${airportCode(flight.origin)} → ${airportCode(flight.destination)}`
+			: '—';
 	}
 
 	interface FlightsDetailData {
@@ -150,6 +173,7 @@
 		<div class="table-header">
 			<span>{$_('flights.detail.column_flight')}</span>
 			<span>{$_('flights.detail.column_type')}</span>
+			<span>{$_('flights.detail.column_route')}</span>
 			<span>{$_('flights.detail.column_altitude')}</span>
 			<span>{$_('flights.detail.column_speed')}</span>
 			<span>{$_('flights.detail.column_distance')}</span>
@@ -163,12 +187,25 @@
 					{:else if flight.airline_code}
 						<span class="badge">{flight.airline_code}</span>
 					{/if}
-					<span class="callsign">{flight.callsign}</span>
+					<LedText text={flight.callsign} color={LED_COLOR} weight={700} />
 				</span>
-				<span>{flight.aircraft_type ?? '—'}</span>
-				<span>{flight.altitude_ft !== null ? `${Math.round(flight.altitude_ft).toLocaleString()} ft` : '—'}</span>
-				<span>{flight.speed_kts !== null ? `${Math.round(flight.speed_kts)} kts` : '—'}</span>
-				<span>{flight.distance_nm !== null ? `${flight.distance_nm.toFixed(1)} nm` : '—'}</span>
+				<span class="type-cell">
+					<span class="icon">
+						<AircraftIcon
+							kind={flight.aircraft_kind}
+							label={$_(`flights.aircraft_kind.${flight.aircraft_kind ?? 'unknown'}`)}
+							color={LED_COLOR}
+						/>
+					</span>
+					<LedText text={flight.aircraft_type ?? '—'} color={LED_COLOR} />
+				</span>
+				<LedText text={routeText(flight)} color={LED_COLOR} />
+				<LedText
+					text={flight.altitude_ft !== null ? `${Math.round(flight.altitude_ft).toLocaleString()} FT` : '—'}
+					color={LED_COLOR}
+				/>
+				<LedText text={flight.speed_kts !== null ? `${Math.round(flight.speed_kts)} KTS` : '—'} color={LED_COLOR} />
+				<LedText text={flight.distance_nm !== null ? `${flight.distance_nm.toFixed(1)} NM` : '—'} color={LED_COLOR} />
 			</div>
 		{/each}
 	</div>
@@ -277,7 +314,7 @@
 	.table-header,
 	.table-row {
 		display: grid;
-		grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+		grid-template-columns: 2fr 1fr 1.4fr 1fr 1fr 1fr;
 		gap: 0.75rem;
 		align-items: center;
 		padding: 0.5rem 0.75rem;
@@ -291,7 +328,7 @@
 	}
 
 	.table-row {
-		background: var(--color-surface);
+		background: #0a0a0a;
 		border: 1px solid var(--color-border);
 		border-radius: 0.75rem;
 	}
@@ -301,6 +338,19 @@
 		align-items: center;
 		gap: 0.5rem;
 		min-width: 0;
+	}
+
+	.type-cell {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		min-width: 0;
+	}
+
+	.type-cell .icon {
+		width: 1.5rem;
+		height: 1.5rem;
+		flex-shrink: 0;
 	}
 
 	.logo {
@@ -317,12 +367,5 @@
 		border-radius: 0.25rem;
 		padding: 0.1em 0.35em;
 		flex-shrink: 0;
-	}
-
-	.callsign {
-		font-weight: 600;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
 	}
 </style>

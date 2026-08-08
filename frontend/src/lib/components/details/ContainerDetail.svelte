@@ -1,163 +1,109 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { api, type ContainerDetail } from '$lib/api';
+	import { api, type ContainerDetail, type NetworkIntegration } from '$lib/api';
 	import { user } from '$lib/stores/user';
 	import { _ } from 'svelte-i18n';
 	import { get } from 'svelte/store';
 
+	const ENGINE_LABELS: Record<'docker' | 'podman', string> = { docker: 'Docker', podman: 'Podman' };
+
 	let { data: initialData }: { data: ContainerDetail } = $props();
 
 	// svelte-ignore state_referenced_locally -- seed local state from the
-	// initial load once; subsequent updates come from saveSettings's refetch.
+	// initial load once; subsequent updates come from setHost's refetch.
 	let container = $state(initialData);
 
-	const ENGINE_LABELS: Record<'docker' | 'podman', string> = { docker: 'Docker', podman: 'Podman' };
-	const ENGINE_DEFAULTS: Record<'docker' | 'podman', { socketPath: string; host: string; port: number }> = {
-		docker: { socketPath: '/var/run/docker.sock', host: 'docker.local', port: 2375 },
-		podman: { socketPath: '/run/podman/podman.sock', host: 'podman.local', port: 8080 },
-	};
-
-	let editing = $state(false);
-	let engineInput = $state<'docker' | 'podman'>('docker');
-	let connectionInput = $state<'socket' | 'tcp'>('socket');
-	let socketPathInput = $state('/var/run/docker.sock');
-	let hostInput = $state('');
-	let portInput = $state(2375);
-	let saving = $state(false);
+	let hosts = $state<NetworkIntegration[]>([]);
+	let switching = $state(false);
 	let error = $state<string | null>(null);
 
 	const widgetId = $derived(page.params.id!);
 	const title = $derived(ENGINE_LABELS[container.engine] ?? 'Container');
-	const enginePlaceholders = $derived(ENGINE_DEFAULTS[engineInput]);
 
-	function openEditor() {
-		engineInput = container.engine;
-		connectionInput = container.connection === 'tcp' ? 'tcp' : 'socket';
-		socketPathInput = container.socket_path;
-		hostInput = container.host;
-		portInput = container.port;
-		editing = true;
+	async function loadHosts() {
+		try {
+			hosts = await api.listContainerIntegrations();
+		} catch {
+			hosts = [];
+		}
 	}
 
-	function onEngineChange(next: 'docker' | 'podman') {
-		const previousDefaults = ENGINE_DEFAULTS[engineInput];
-		const nextDefaults = ENGINE_DEFAULTS[next];
-		if (socketPathInput === previousDefaults.socketPath) socketPathInput = nextDefaults.socketPath;
-		if (portInput === previousDefaults.port) portInput = nextDefaults.port;
-		engineInput = next;
-	}
-
-	async function saveSettings() {
-		saving = true;
+	async function setHost(integrationId: string) {
+		if (integrationId === container.network_integration_id) return;
+		switching = true;
 		error = null;
 		try {
-			await api.updateWidgetSettings(widgetId, {
-				engine: engineInput,
-				connection: connectionInput,
-				socket_path: socketPathInput,
-				host: hostInput,
-				port: portInput,
-			});
+			await api.updateWidgetSettings(widgetId, { network_integration_id: integrationId });
 			container = await api.widgetDetail<ContainerDetail>(widgetId);
-			editing = false;
 		} catch {
 			error = get(_)('common.connection_save_error');
 		} finally {
-			saving = false;
+			switching = false;
 		}
 	}
+
+	onMount(loadHosts);
 </script>
 
 <div class="header">
 	<h1>{title}</h1>
-	{#if $user?.role === 'admin'}
-		<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
-			{editing ? $_('common.cancel') : $_('common.edit_connection')}
-		</button>
-	{/if}
 </div>
 
-{#if editing}
-	<div class="settings-form">
-		<label>
-			{$_('container.detail.engine_label')}
-			<select value={engineInput} onchange={(e) => onEngineChange(e.currentTarget.value as 'docker' | 'podman')}>
-				<option value="docker">Docker</option>
-				<option value="podman">Podman</option>
-			</select>
-		</label>
-		<label>
-			{$_('container.detail.connection_label')}
-			<select bind:value={connectionInput}>
-				<option value="socket">{$_('container.detail.local_socket')}</option>
-				<option value="tcp">{$_('container.detail.remote_tcp')}</option>
-			</select>
-		</label>
-		{#if connectionInput === 'socket'}
-			<label>
-				{$_('container.detail.socket_path_label')}
-				<input type="text" bind:value={socketPathInput} placeholder={enginePlaceholders.socketPath} />
-			</label>
-		{:else}
-			<label>
-				{$_('container.detail.host_label')}
-				<input type="text" bind:value={hostInput} placeholder={enginePlaceholders.host} />
-			</label>
-			<label>
-				{$_('container.detail.port_label')}
-				<input type="number" min="1" max="65535" bind:value={portInput} />
-			</label>
-		{/if}
+{#if $user?.role === 'admin' && hosts.length > 0}
+	<label class="host-picker">
+		{$_('container.detail.host_picker_label')}
+		<select
+			value={container.network_integration_id}
+			disabled={switching}
+			onchange={(e) => setHost(e.currentTarget.value)}
+		>
+			{#each hosts as host (host.id)}
+				<option value={host.id}>{host.name}</option>
+			{/each}
+		</select>
+	</label>
+{/if}
 
-		{#if error}
-			<p class="hint error">{error}</p>
-		{/if}
-
-		<button class="save" disabled={saving} onclick={saveSettings}>
-			{saving ? $_('common.saving') : $_('common.save')}
-		</button>
-	</div>
-{:else if error}
+{#if error}
 	<p class="hint error">{error}</p>
 {/if}
 
-{#if !editing}
-	{#if !container.connected}
-		<p class="hint">{$_('container.detail.not_connected_hint', { values: { title } })}</p>
-	{:else}
-		{#if container.error}
-			<p class="hint error">{container.error}</p>
-		{/if}
+{#if !container.connected}
+	<p class="hint">{$_('container.detail.not_connected_hint', { values: { title } })}</p>
+{:else}
+	{#if container.error}
+		<p class="hint error">{container.error}</p>
+	{/if}
 
-		<div class="counts">
-			<div class="count">
-				<div class="count-value">{container.running_count}</div>
-				<div class="count-label">{$_('container.detail.running_label')}</div>
-			</div>
-			<div class="count">
-				<div class="count-value">{container.stopped_count}</div>
-				<div class="count-label">{$_('container.detail.stopped_label')}</div>
-			</div>
-			<div class="count">
-				<div class="count-value">{container.total_count}</div>
-				<div class="count-label">{$_('container.detail.total_label')}</div>
-			</div>
+	<div class="counts">
+		<div class="count">
+			<div class="count-value">{container.running_count}</div>
+			<div class="count-label">{$_('container.detail.running_label')}</div>
 		</div>
+		<div class="count">
+			<div class="count-value">{container.stopped_count}</div>
+			<div class="count-label">{$_('container.detail.stopped_label')}</div>
+		</div>
+		<div class="count">
+			<div class="count-value">{container.total_count}</div>
+			<div class="count-label">{$_('container.detail.total_label')}</div>
+		</div>
+	</div>
 
-		{#if container.containers.length === 0}
-			<p class="hint">{$_('container.detail.empty')}</p>
-		{:else}
-			<ul class="containers">
-				{#each container.containers as item (item.id)}
-					<li>
-						<span class="dot" class:on={item.state === 'running'}></span>
-						<span class="name">{item.name}</span>
-						<span class="image">{item.image}</span>
-						<span class="status">{item.status}</span>
-					</li>
-				{/each}
-			</ul>
-		{/if}
+	{#if container.containers.length === 0}
+		<p class="hint">{$_('container.detail.empty')}</p>
+	{:else}
+		<ul class="containers">
+			{#each container.containers as item (item.id)}
+				<li>
+					<span class="dot" class:on={item.state === 'running'}></span>
+					<span class="name">{item.name}</span>
+					<span class="image">{item.image}</span>
+					<span class="status">{item.status}</span>
+				</li>
+			{/each}
+		</ul>
 	{/if}
 {/if}
 
@@ -173,54 +119,23 @@
 		margin: 0;
 	}
 
-	.edit-settings {
-		background: none;
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		padding: 0.4rem 0.75rem;
-		color: var(--color-accent);
-		cursor: pointer;
-	}
-
-	.settings-form {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-		max-width: 30rem;
-		margin: 1rem 0 1.5rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
-		border-radius: 0.75rem;
-		padding: 1rem;
-	}
-
-	.settings-form label {
+	.host-picker {
 		display: flex;
 		flex-direction: column;
 		gap: 0.25rem;
+		max-width: 20rem;
+		margin: 1rem 0;
 		font-size: 0.9rem;
 		color: var(--color-text-muted);
 	}
 
-	.settings-form input[type='text'],
-	.settings-form input[type='number'],
-	.settings-form select {
+	.host-picker select {
 		font: inherit;
 		padding: 0.5rem 0.75rem;
 		border-radius: 0.5rem;
 		border: 1px solid var(--color-border);
 		background: var(--color-surface);
 		color: var(--color-text);
-	}
-
-	.save {
-		align-self: flex-start;
-		background: var(--color-accent);
-		color: var(--color-surface);
-		border: none;
-		border-radius: 0.5rem;
-		padding: 0.5rem 1rem;
-		cursor: pointer;
 	}
 
 	.hint {

@@ -64,6 +64,25 @@ class Plugin(ABC):
     #: policy, so any user may tune it for their own device without needing
     #: admin rights — see app.api.widgets for resolution/persistence.
     device_overridable_settings: ClassVar[frozenset[str]] = frozenset()
+    #: if set, this plugin's connection settings (host/port/credentials) live
+    #: in a shared `network_integrations` DB row of this type rather than in
+    #: dashboard.yaml/widget_settings — see app.plugins.network_settings.
+    #: None (the default) means this plugin is unrelated to that mechanism.
+    #: Orthogonal to settings_scope above: that axis is personal-vs-household,
+    #: this one is per-widget-instance-vs-shared-physical-device.
+    network_integration_type: ClassVar[str | None] = None
+    #: only meaningful when network_integration_type is set. True (the
+    #: default): exactly one network_integrations row of this type exists,
+    #: looked up directly by type. False: a widget instance must say *which*
+    #: row via its own `network_integration_id` setting, since more than one
+    #: named connection of this type can exist — only ContainerPlugin sets
+    #: this, since dashboard.yaml already configures two Container widgets
+    #: (Docker, Podman) pointing at two different hosts.
+    network_integration_singleton: ClassVar[bool] = True
+    #: starter values for this type's network_integrations row — the
+    #: connection-field subset that used to live in default_settings before
+    #: this plugin opted into network_integration_type.
+    network_default_settings: ClassVar[dict[str, Any]] = {}
 
     def __init__(self, config: dict[str, Any]):
         self.config = config

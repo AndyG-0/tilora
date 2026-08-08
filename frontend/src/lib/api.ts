@@ -12,6 +12,10 @@ export interface WidgetLayout {
 	rowSpan: number;
 }
 
+// Which viewport class a layout applies to, not which physical device — a
+// tile's position is shared by every device rendering at the same class.
+export type Breakpoint = 'wide' | 'narrow';
+
 export interface WidgetSummaryMeta {
 	id: string;
 	type: string;
@@ -110,12 +114,6 @@ export interface JellyfinItem {
 	runtime_minutes: number | null;
 }
 
-export interface JellyfinTestConnectionResult {
-	ok: boolean;
-	server_name: string | null;
-	error: string | null;
-}
-
 export interface JellyfinSection {
 	label: string;
 	items: JellyfinItem[];
@@ -157,12 +155,6 @@ export interface HDHomeRunRecording {
 	record_end: number | null;
 }
 
-export interface HDHomeRunTestConnectionResult {
-	ok: boolean;
-	name: string | null;
-	error: string | null;
-}
-
 export interface PiholeDomainStat {
 	domain: string;
 	count: number;
@@ -189,12 +181,6 @@ export interface PiholeDetail extends PiholeSummary {
 	gravity_last_update: number | null;
 	top_blocked_domains: PiholeDomainStat[];
 	top_permitted_domains: PiholeDomainStat[];
-}
-
-export interface PiholeTestConnectionResult {
-	ok: boolean;
-	version: string | null;
-	error: string | null;
 }
 
 export interface QBittorrentSummary {
@@ -284,12 +270,6 @@ export interface SynologyDetail extends Omit<SynologySummary, 'volumes'> {
 	temperature_celsius: number | null;
 }
 
-export interface SynologyTestConnectionResult {
-	ok: boolean;
-	model: string | null;
-	error: string | null;
-}
-
 export interface AsusRouterClient {
 	name: string;
 	ip: string;
@@ -312,12 +292,6 @@ export interface AsusRouterDetail extends AsusRouterSummary {
 	clients: AsusRouterClient[];
 	rx_bytes: number;
 	tx_bytes: number;
-}
-
-export interface AsusRouterTestConnectionResult {
-	ok: boolean;
-	product_id: string | null;
-	error: string | null;
 }
 
 export interface GoodreadsBookSummary {
@@ -503,6 +477,8 @@ export interface ContainerDetailItem extends ContainerSummaryItem {
 }
 
 export interface ContainerSummary {
+	network_integration_id: string;
+	network_integration_name: string | null;
 	engine: 'docker' | 'podman';
 	connected: boolean;
 	connection: string;
@@ -518,6 +494,25 @@ export interface ContainerSummary {
 
 export interface ContainerDetail extends Omit<ContainerSummary, 'containers'> {
 	containers: ContainerDetailItem[];
+}
+
+// Shared connection config for a LAN device, edited once at the network
+// level instead of per-widget — see backend/app/api/network_settings.py.
+// `settings` is loosely typed since its shape depends on `type` (Pi-hole's
+// host/port/use_https/has_password vs. Jellyfin's auth_mode/api_key/... vs.
+// Container's engine/connection/socket_path/host/port); each settings page
+// section narrows it to the fields it actually renders.
+export interface NetworkIntegration {
+	id: string;
+	type: string;
+	name: string;
+	settings: Record<string, unknown>;
+}
+
+export interface NetworkTestConnectionResult {
+	ok: boolean;
+	detail: string | null;
+	error: string | null;
 }
 
 export interface SportsBroadcastLink {
@@ -738,10 +733,6 @@ export interface DeviceRegisterResult extends DeviceInfo {
 	is_new: boolean;
 }
 
-export interface LayoutStatus {
-	has_layout: boolean;
-}
-
 export interface UserProfile {
 	id: string;
 	name: string;
@@ -893,7 +884,7 @@ async function putJSON<T>(path: string, body: Record<string, unknown>): Promise<
 }
 
 export const api = {
-	listWidgets: () => getJSON<WidgetSummaryMeta[]>('/api/widgets'),
+	listWidgets: (breakpoint: Breakpoint) => getJSON<WidgetSummaryMeta[]>(`/api/widgets?breakpoint=${breakpoint}`),
 	widgetSummary: <T = Record<string, unknown>>(id: string) => getJSON<T>(`/api/widgets/${id}/summary`),
 	widgetDetail: <T = Record<string, unknown>>(id: string) => getJSON<T>(`/api/widgets/${id}/detail`),
 	updateWidgetSettings: <T = Record<string, unknown>>(id: string, settings: Record<string, unknown>) =>
@@ -903,8 +894,8 @@ export const api = {
 	updateWidgetDeviceSettings: <T = Record<string, unknown>>(id: string, settings: Record<string, unknown>) =>
 		patchJSON<T>(`/api/widgets/${id}/device-settings`, settings),
 	clearWidgetDeviceSettings: (id: string) => deleteJSON<{ status: string }>(`/api/widgets/${id}/device-settings`),
-	updateWidgetsLayout: (widgets: { id: string; layout: WidgetLayout }[]) =>
-		putJSON<{ status: string }>('/api/widgets/layout', { widgets }),
+	updateWidgetsLayout: (widgets: { id: string; layout: WidgetLayout }[], breakpoint: Breakpoint) =>
+		putJSON<{ status: string }>('/api/widgets/layout', { widgets, breakpoint }),
 	runAiWidget: <T = Record<string, unknown>>(id: string) => postJSON<T>(`/api/widgets/${id}/run`),
 	searchCities: (query: string) => getJSON<CityResult[]>(`/api/weather/search?q=${encodeURIComponent(query)}`),
 	movieProviders: (region: string) =>
@@ -947,8 +938,6 @@ export const api = {
 	addWidget: (type: string, layout: WidgetLayout, tab?: string) =>
 		postJSON<WidgetSummaryMeta>('/api/widgets', { type, layout, ...(tab !== undefined && { tab }) }),
 	removeWidget: (id: string) => deleteJSON<{ status: string }>(`/api/widgets/${id}`),
-	jellyfinTestConnection: (id: string, settings: Record<string, unknown>) =>
-		postJSON<JellyfinTestConnectionResult>(`/api/jellyfin/${id}/test-connection`, settings),
 	jellyfinChildren: (id: string, parentId?: string) =>
 		getJSON<JellyfinItem[]>(
 			parentId
@@ -957,27 +946,38 @@ export const api = {
 		),
 	jellyfinImageUrl: (id: string, itemId: string) => `${env.PUBLIC_API_BASE_URL}/api/jellyfin/${id}/images/${itemId}`,
 	jellyfinStreamUrl: (id: string, itemId: string) => `${env.PUBLIC_API_BASE_URL}/api/jellyfin/${id}/stream/${itemId}`,
-	hdhomerunTestTunerConnection: (id: string, settings: Record<string, unknown>) =>
-		postJSON<HDHomeRunTestConnectionResult>(`/api/hdhomerun/${id}/test-tuner-connection`, settings),
-	hdhomerunTestDvrConnection: (id: string, settings: Record<string, unknown>) =>
-		postJSON<HDHomeRunTestConnectionResult>(`/api/hdhomerun/${id}/test-dvr-connection`, settings),
 	hdhomerunTranscodePresets: () => getJSON<HDHomeRunTranscodePreset[]>('/api/hdhomerun/transcode-presets'),
 	// Channel playback_url is a backend-relative proxy path — resolve it
 	// against the API base the same way jellyfinImageUrl/jellyfinStreamUrl do.
 	hdhomerunPlaybackUrl: (url: string) => (url.startsWith('/') ? `${env.PUBLIC_API_BASE_URL}${url}` : url),
 	hdhomerunPlaylistUrl: (id: string, channelNumber: string) =>
 		`${env.PUBLIC_API_BASE_URL}/api/hdhomerun/${id}/playlist/${channelNumber}`,
-	piholeTestConnection: (id: string, settings: Record<string, unknown>) =>
-		postJSON<PiholeTestConnectionResult>(`/api/pihole/${id}/test-connection`, settings),
 	piholeSetBlocking: (id: string, enabled: boolean, timer?: number | null) =>
 		postJSON<{ blocking: string; timer: number | null }>(`/api/pihole/${id}/blocking`, {
 			enabled,
 			timer: timer ?? null,
 		}),
-	synologyTestConnection: (id: string, settings: Record<string, unknown>) =>
-		postJSON<SynologyTestConnectionResult>(`/api/synology/${id}/test-connection`, settings),
-	asusRouterTestConnection: (id: string, settings: Record<string, unknown>) =>
-		postJSON<AsusRouterTestConnectionResult>(`/api/asus-router/${id}/test-connection`, settings),
+	// Network-level integration settings (Pi-hole, Jellyfin, Synology, Asus
+	// Router, HDHomeRun, Container) — shared per-device connection config
+	// edited once, not per widget instance. See backend/app/api/network_settings.py.
+	listNetworkIntegrations: () => getJSON<NetworkIntegration[]>('/api/network-settings'),
+	getNetworkIntegration: (type: string) => getJSON<NetworkIntegration>(`/api/network-settings/${type}`),
+	listContainerIntegrations: () => getJSON<NetworkIntegration[]>('/api/network-settings/container'),
+	updateNetworkIntegration: (type: string, settings: Record<string, unknown>) =>
+		patchJSON<NetworkIntegration>(`/api/network-settings/${type}`, settings),
+	testNetworkIntegrationConnection: (type: string, settings: Record<string, unknown>) =>
+		postJSON<NetworkTestConnectionResult>(`/api/network-settings/${type}/test-connection`, settings),
+	testHDHomeRunTunerConnection: (settings: Record<string, unknown>) =>
+		postJSON<NetworkTestConnectionResult>('/api/network-settings/hdhomerun/test-tuner-connection', settings),
+	testHDHomeRunDvrConnection: (settings: Record<string, unknown>) =>
+		postJSON<NetworkTestConnectionResult>('/api/network-settings/hdhomerun/test-dvr-connection', settings),
+	createContainerIntegration: (name: string, settings: Record<string, unknown>) =>
+		postJSON<NetworkIntegration>('/api/network-settings/container', { name, ...settings }),
+	updateContainerIntegration: (id: string, settings: Record<string, unknown>) =>
+		patchJSON<NetworkIntegration>(`/api/network-settings/container/${id}`, settings),
+	deleteContainerIntegration: (id: string) => deleteJSON<{ status: string }>(`/api/network-settings/container/${id}`),
+	testContainerIntegrationConnection: (id: string, settings: Record<string, unknown>) =>
+		postJSON<NetworkTestConnectionResult>(`/api/network-settings/container/${id}/test-connection`, settings),
 	qbittorrentTestConnection: (id: string, settings: Record<string, unknown>) =>
 		postJSON<QBittorrentTestConnectionResult>(`/api/qbittorrent/${id}/test-connection`, settings),
 	registerDevice: () => postJSON<DeviceRegisterResult>('/api/devices/register'),
@@ -985,9 +985,6 @@ export const api = {
 	renameDevice: (name: string) => patchJSON<DeviceInfo>('/api/devices/me', { name }),
 	listDevices: () => getJSON<DeviceListEntry[]>('/api/devices'),
 	deleteDevice: (id: string) => deleteJSON<{ status: string }>(`/api/devices/${id}`),
-	layoutStatus: () => getJSON<LayoutStatus>('/api/devices/me/layout-status'),
-	copyDeviceLayout: (sourceDeviceId: string) =>
-		postJSON<{ status: string }>('/api/devices/me/copy-layout', { source_device_id: sourceDeviceId }),
 	listUsers: () => getJSON<UserProfile[]>('/api/users'),
 	createUser: (name: string, avatar?: string, pin?: string) =>
 		postJSON<CurrentUser>('/api/users', {

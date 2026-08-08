@@ -7,7 +7,6 @@ const {
 	getWidgetDeviceSettings,
 	updateWidgetDeviceSettings,
 	clearWidgetDeviceSettings,
-	jellyfinTestConnection,
 	jellyfinChildren,
 	jellyfinImageUrl,
 	jellyfinStreamUrl,
@@ -17,7 +16,6 @@ const {
 	getWidgetDeviceSettings: vi.fn(),
 	updateWidgetDeviceSettings: vi.fn(),
 	clearWidgetDeviceSettings: vi.fn(),
-	jellyfinTestConnection: vi.fn(),
 	jellyfinChildren: vi.fn(),
 	jellyfinImageUrl: vi.fn((widgetId: string, id: string) => `https://example.com/${widgetId}/${id}/image`),
 	jellyfinStreamUrl: vi.fn((widgetId: string, id: string) => `https://example.com/${widgetId}/${id}/stream`),
@@ -29,7 +27,6 @@ vi.mock('$lib/api', () => ({
 		getWidgetDeviceSettings,
 		updateWidgetDeviceSettings,
 		clearWidgetDeviceSettings,
-		jellyfinTestConnection,
 		jellyfinChildren,
 		jellyfinImageUrl,
 		jellyfinStreamUrl,
@@ -42,14 +39,6 @@ import JellyfinDetail from './JellyfinDetail.svelte';
 
 const notConnected = {
 	connected: false,
-	host: '',
-	port: 8096,
-	use_https: false,
-	auth_mode: 'api_key' as const,
-	username: '',
-	library_ids: [],
-	has_api_key: false,
-	has_password: false,
 	playback_mode: 'compatible' as const,
 	content_mode: 'added' as const,
 	resume_available: false,
@@ -58,8 +47,6 @@ const notConnected = {
 const connected = {
 	...notConnected,
 	connected: true,
-	host: 'jellyfin.local',
-	has_api_key: true,
 };
 
 describe('JellyfinDetail', () => {
@@ -73,7 +60,7 @@ describe('JellyfinDetail', () => {
 	it('shows a not-connected hint and never calls jellyfinChildren', async () => {
 		render(JellyfinDetail, { props: { data: notConnected } });
 
-		expect(screen.getByText('Not connected yet — tap "Edit connection" to set up Jellyfin.')).toBeInTheDocument();
+		expect(screen.getByText('Not connected yet — set up Jellyfin in Network Settings.')).toBeInTheDocument();
 		expect(jellyfinChildren).not.toHaveBeenCalled();
 	});
 
@@ -147,48 +134,6 @@ describe('JellyfinDetail', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Close player' }));
 
 		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-	});
-
-	it('tests the connection and saves settings from the editor', async () => {
-		jellyfinTestConnection.mockResolvedValue({ ok: true, server_name: 'My Server', error: null });
-		updateWidgetSettings.mockResolvedValue({ status: 'ok' });
-		widgetDetail.mockResolvedValue(connected);
-
-		render(JellyfinDetail, { props: { data: connected } });
-
-		await fireEvent.click(screen.getByText('Edit connection'));
-		await fireEvent.click(screen.getByText('Test connection'));
-
-		expect(await screen.findByText('✓ Connected to My Server')).toBeInTheDocument();
-
-		await fireEvent.click(screen.getByText('Save'));
-
-		await vi.waitFor(() => expect(updateWidgetSettings).toHaveBeenCalled());
-		expect(widgetDetail).toHaveBeenCalledWith('jellyfin');
-		// playback_mode is exclusively managed via the per-device panel now —
-		// the network-wide connection form must never echo it back, or it
-		// would silently overwrite the household default with whatever this
-		// device's effective (possibly overridden) mode happened to be.
-		const [, submittedSettings] = updateWidgetSettings.mock.calls[0];
-		expect(submittedSettings).not.toHaveProperty('playback_mode');
-	});
-
-	it('does not show playback-mode controls in the edit-connection form', async () => {
-		render(JellyfinDetail, { props: { data: connected } });
-
-		await fireEvent.click(screen.getByText('Edit connection'));
-
-		expect(screen.queryByText('Compatible audio')).not.toBeInTheDocument();
-		expect(screen.queryByText('Force transcode')).not.toBeInTheDocument();
-		expect(screen.queryByText('Direct play')).not.toBeInTheDocument();
-	});
-
-	it('hides the edit-connection control for a non-admin', () => {
-		user.set({ id: 'member-user', name: 'Member', avatar: null, role: 'member' });
-
-		render(JellyfinDetail, { props: { data: connected } });
-
-		expect(screen.queryByText('Edit connection')).not.toBeInTheDocument();
 	});
 
 	it('shows the per-device playback panel for any user, defaulting to the household mode', async () => {

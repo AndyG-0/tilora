@@ -27,9 +27,6 @@ from app.api import (
     assistant as assistant_api,
 )
 from app.api import (
-    asus_router as asus_router_api,
-)
-from app.api import (
     devices as devices_api,
 )
 from app.api import (
@@ -37,6 +34,9 @@ from app.api import (
 )
 from app.api import (
     jellyfin as jellyfin_api,
+)
+from app.api import (
+    network_settings as network_settings_api,
 )
 from app.api import (
     packages as packages_api,
@@ -63,9 +63,6 @@ from app.api import (
     sports as sports_api,
 )
 from app.api import (
-    synology as synology_api,
-)
-from app.api import (
     tabs as tabs_api,
 )
 from app.api import (
@@ -80,6 +77,7 @@ from app.api import (
 from app.config import list_widget_configs, load_dashboard_config, settings
 from app.logging_config import configure_logging, request_id_ctx
 from app.plugins.base import registry
+from app.plugins.network_settings import ensure_network_integration_defaults, resolve_network_settings
 from app.plugins.registry_types import PLUGIN_CLASSES_BY_TYPE
 from app.scheduler import (
     schedule_ai_widgets,
@@ -112,13 +110,17 @@ def load_plugins() -> None:
         # widget whose empty starter settings were never persisted) still
         # loads with usable settings instead of missing required keys.
         overrides = get_widget_settings(widget["id"]) or {}
-        widget = {**widget, "settings": {**plugin_cls.default_settings, **widget.get("settings", {}), **overrides}}
+        settings = {**plugin_cls.default_settings, **widget.get("settings", {}), **overrides}
+        if plugin_cls.network_integration_type:
+            settings = {**settings, **resolve_network_settings(plugin_cls, settings)}
+        widget = {**widget, "settings": settings}
         registry.register(plugin_cls(widget))
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    ensure_network_integration_defaults()
     load_plugins()
     schedule_ai_widgets()
     schedule_photo_index_widgets()
@@ -181,8 +183,7 @@ app.include_router(hdhomerun_api.router)
 app.include_router(pihole_api.router)
 app.include_router(qbittorrent_api.router)
 app.include_router(rss_api.router)
-app.include_router(synology_api.router)
-app.include_router(asus_router_api.router)
+app.include_router(network_settings_api.router)
 app.include_router(sports_api.router)
 app.include_router(devices_api.router)
 app.include_router(screensaver_api.router)

@@ -66,12 +66,36 @@ CREATE TABLE IF NOT EXISTS widget_settings (
     settings TEXT NOT NULL
 );
 
+-- One row per physical LAN device (Pi-hole, Jellyfin, Synology, Asus
+-- Router, HDHomeRun, and each named Docker/Podman host) shared across every
+-- widget instance of that type/host, instead of duplicating connection
+-- settings (host/port/credentials) per widget_id the way widget_settings
+-- does. Singleton integration types use `id = type` (a direct primary-key
+-- lookup, since there's only ever one row); Container is the one
+-- multi-instance type, using a generated id, with each Container widget's
+-- own widget_settings row carrying a `network_integration_id` reference to
+-- pick which row it uses. See app.plugins.network_settings. `settings` is a
+-- JSON blob with `password`/`api_key` values Fernet-encrypted per-key (same
+-- mechanism as app_settings, see app.crypto), not the whole column.
+CREATE TABLE IF NOT EXISTS network_integrations (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    name TEXT NOT NULL,
+    settings TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_network_integrations_type ON network_integrations (type);
+
+-- Keyed by breakpoint class ("wide"/"narrow"), not physical device: a tile's
+-- position is shared by every device that renders at the same viewport
+-- class, so a new phone automatically matches an old phone's arrangement
+-- instead of starting from the dashboard.yaml defaults. See migration 008
+-- below for how this replaced the original per-device keying.
 CREATE TABLE IF NOT EXISTS widget_layout (
     user_id TEXT NOT NULL,
-    device_id TEXT NOT NULL,
+    breakpoint TEXT NOT NULL,
     widget_id TEXT NOT NULL,
     layout TEXT NOT NULL,
-    PRIMARY KEY (user_id, device_id, widget_id)
+    PRIMARY KEY (user_id, breakpoint, widget_id)
 );
 CREATE INDEX IF NOT EXISTS idx_widget_layout_widget_id ON widget_layout (widget_id);
 
@@ -472,6 +496,154 @@ def _migration_006_seed_rss_feed_catalog(conn: sqlite3.Connection) -> None:
         )
 
 
+# Per-type primary connection field used to pick a winner when more than one
+# widget of the same singleton network-integration type exists (today,
+# dashboard.yaml has exactly one of each, so this is mostly a safety net):
+# the first widget whose effective settings has this field non-empty wins,
+# rather than an arbitrary first-seen one that might be an unconfigured stub.
+_SINGLETON_PRIMARY_HOST_KEY = {
+    "pihole": "host",
+    "jellyfin": "host",
+    "synology": "host",
+    "asus_router": "host",
+    "hdhomerun": "tuner_host",
+}
+
+
+# Connection settings (host, port, credentials) for the six LAN-device plugin
+# types moved out of per-widget settings into a shared `network_integrations`
+# row per physical device, edited once instead of per widget instance (see
+# `app.plugins.network_settings`). dashboard.yaml still has these fields
+# inline in each widget's `settings:` block at the time this runs (that file
+# gets hand-edited separately, after this migration is verified against
+# production data) — so, unlike migrations 003/005/006, this one has to read
+# dashboard.yaml as well as the DB to find the real values to migrate,
+# via the same `load_dashboard_config`/`list_widget_configs` merge
+# `main.py:load_plugins` used to do before this refactor. Uses raw SQL
+# against the migration's own `conn` throughout rather than the
+# save_widget_settings/get_widget_settings/save_network_integration helpers,
+# since those each open their own new connection via `_connect()`, which
+# would contend with this function's own open migration transaction.
+def _migration_007_extract_network_integrations(conn: sqlite3.Connection) -> None:
+    from uuid import uuid4
+
+    from app.config import list_widget_configs, load_dashboard_config
+    from app.plugins.registry_types import PLUGIN_CLASSES_BY_TYPE
+
+    widgets = list_widget_configs(load_dashboard_config())
+
+    def _db_overrides(widget_id: str) -> dict[str, Any]:
+        row = conn.execute("SELECT settings FROM widget_settings WHERE widget_id = ?", (widget_id,)).fetchone()
+        return json.loads(row["settings"]) if row else {}
+
+    def _save_widget_settings(widget_id: str, settings: dict[str, Any]) -> None:
+        conn.execute(
+            "INSERT INTO widget_settings (widget_id, settings) VALUES (?, ?) "
+            "ON CONFLICT (widget_id) DO UPDATE SET settings = excluded.settings",
+            (widget_id, json.dumps(settings)),
+        )
+
+    def _create_integration(id_: str, type_: str, name: str, settings: dict[str, Any]) -> None:
+        stored = _encrypt_network_integration_settings(settings)
+        conn.execute(
+            "INSERT INTO network_integrations (id, type, name, settings) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT (id) DO NOTHING",
+            (id_, type_, name, json.dumps(stored)),
+        )
+
+    for type_, plugin_cls in PLUGIN_CLASSES_BY_TYPE.items():
+        if not plugin_cls.network_integration_type or not plugin_cls.network_integration_singleton:
+            continue
+        integration_type = plugin_cls.network_integration_type
+        if conn.execute("SELECT id FROM network_integrations WHERE id = ?", (integration_type,)).fetchone():
+            continue  # already migrated (or seeded) — leave it alone
+
+        connection_keys = set(plugin_cls.network_default_settings.keys())
+        entries: list[tuple[str, dict[str, Any]]] = []
+        for widget in widgets:
+            if widget["type"] != type_:
+                continue
+            effective = {
+                **plugin_cls.network_default_settings,
+                **plugin_cls.default_settings,
+                **widget.get("settings", {}),
+                **_db_overrides(widget["id"]),
+            }
+            entries.append((widget["id"], effective))
+        if not entries:
+            continue  # no widget of this type exists yet — nothing to migrate
+
+        primary_key = _SINGLETON_PRIMARY_HOST_KEY.get(integration_type)
+        winner = next((e for _, e in entries if primary_key and e.get(primary_key)), entries[0][1])
+        integration_settings = {k: winner.get(k, plugin_cls.network_default_settings[k]) for k in connection_keys}
+        _create_integration(integration_type, integration_type, plugin_cls.name, integration_settings)
+
+        for widget_id, _ in entries:
+            overrides = _db_overrides(widget_id)
+            if connection_keys & overrides.keys():
+                _save_widget_settings(widget_id, {k: v for k, v in overrides.items() if k not in connection_keys})
+
+    container_cls = PLUGIN_CLASSES_BY_TYPE.get("container")
+    if container_cls is not None:
+        connection_keys = set(container_cls.network_default_settings.keys())
+        for widget in widgets:
+            if widget["type"] != "container":
+                continue
+            widget_id = widget["id"]
+            overrides = _db_overrides(widget_id)
+            if "network_integration_id" in overrides:
+                continue  # already migrated
+            effective = {
+                **container_cls.network_default_settings,
+                **container_cls.default_settings,
+                **widget.get("settings", {}),
+                **overrides,
+            }
+            integration_settings = {
+                k: effective.get(k, container_cls.network_default_settings[k]) for k in connection_keys
+            }
+            integration_id = f"container-{uuid4().hex[:8]}"
+            _create_integration(integration_id, "container", widget_id, integration_settings)
+            _save_widget_settings(widget_id, {"network_integration_id": integration_id})
+
+
+# `widget_layout` moved from a (user_id, device_id) key to (user_id,
+# breakpoint): a tile's position is now shared by every device that renders
+# at the same viewport class (see the table comment above) instead of being
+# re-established from scratch on every new physical device. SQLite can't
+# ALTER a PRIMARY KEY, so this rebuilds the table under a temp name and swaps
+# it in, same approach as migration 001.
+#
+# Multiple old device rows for the same (user_id, widget_id) would collide
+# under the new key, so this collapses them: one survivor per
+# (user_id, widget_id), picked deterministically via MAX(rowid), landing
+# under the 'wide' breakpoint. There's no signal anywhere in the old schema
+# for which device was wide vs. narrow, and 'wide' (the original 4-column
+# kiosk grid) is this app's primary layout concept, so defaulting there
+# preserves the live dashboard's arrangement across the upgrade the same way
+# migration 001 preserved data rather than resetting it. 'narrow' starts
+# empty for existing users — not a regression, since a missing override
+# already falls back to the dashboard.yaml default position.
+_MIGRATION_008_WIDGET_LAYOUT_BREAKPOINT = """
+CREATE TABLE IF NOT EXISTS widget_layout_new (
+    user_id TEXT NOT NULL,
+    breakpoint TEXT NOT NULL,
+    widget_id TEXT NOT NULL,
+    layout TEXT NOT NULL,
+    PRIMARY KEY (user_id, breakpoint, widget_id)
+);
+
+INSERT INTO widget_layout_new (user_id, breakpoint, widget_id, layout)
+SELECT user_id, 'wide', widget_id, layout
+FROM widget_layout
+WHERE rowid IN (SELECT MAX(rowid) FROM widget_layout GROUP BY user_id, widget_id);
+
+DROP TABLE widget_layout;
+ALTER TABLE widget_layout_new RENAME TO widget_layout;
+CREATE INDEX IF NOT EXISTS idx_widget_layout_widget_id ON widget_layout (widget_id);
+"""
+
+
 _MIGRATIONS: tuple[str | Callable[[sqlite3.Connection], None], ...] = (
     _MIGRATION_001_USERS_DEVICES,
     _migration_002_user_roles,
@@ -479,6 +651,8 @@ _MIGRATIONS: tuple[str | Callable[[sqlite3.Connection], None], ...] = (
     _migration_004_merge_container_widgets,
     _migration_005_seed_personal_sports_weather_settings,
     _migration_006_seed_rss_feed_catalog,
+    _migration_007_extract_network_integrations,
+    _MIGRATION_008_WIDGET_LAYOUT_BREAKPOINT,
 )
 
 
@@ -606,81 +780,116 @@ def get_widget_settings(widget_id: str) -> dict[str, Any] | None:
     return None if row is None else json.loads(row["settings"])
 
 
-def save_widget_layout(user_id: str, device_id: str, widget_id: str, layout: dict[str, Any]) -> None:
-    """Persist a widget's grid position for a given (user, device), overwriting any prior override.
+# Settings keys within a network_integrations row's `settings` blob that get
+# Fernet-encrypted per-value before being stored, mirroring
+# SECRET_APP_SETTINGS_KEYS' whole-row encryption for app_settings — see
+# app.crypto. Fixed across every integration type: only Jellyfin uses
+# api_key, but reusing one constant keeps save/get_network_integration
+# type-agnostic rather than needing a per-type secret-key table.
+NETWORK_INTEGRATION_SECRET_KEYS = ("password", "api_key")
+
+
+def _encrypt_network_integration_settings(settings: dict[str, Any]) -> dict[str, Any]:
+    return {k: (encrypt(v) if k in NETWORK_INTEGRATION_SECRET_KEYS and v else v) for k, v in settings.items()}
+
+
+def _decrypt_network_integration_settings(settings: dict[str, Any]) -> dict[str, Any]:
+    return {k: (decrypt(v) if k in NETWORK_INTEGRATION_SECRET_KEYS and v else v) for k, v in settings.items()}
+
+
+def save_network_integration(id: str, type_: str, name: str, settings: dict[str, Any]) -> None:
+    """Create or overwrite a network integration row (its full settings, not a partial merge — callers merge first)."""
+    stored = _encrypt_network_integration_settings(settings)
+    with _connect() as conn:
+        _upsert(
+            conn,
+            "network_integrations",
+            {"id": id, "type": type_, "name": name, "settings": json.dumps(stored)},
+            ("id",),
+        )
+
+
+def get_network_integration(id: str) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute("SELECT id, type, name, settings FROM network_integrations WHERE id = ?", (id,)).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": row["id"],
+        "type": row["type"],
+        "name": row["name"],
+        "settings": _decrypt_network_integration_settings(json.loads(row["settings"])),
+    }
+
+
+def list_network_integrations(type_: str | None = None) -> list[dict[str, Any]]:
+    with _connect() as conn:
+        if type_ is None:
+            rows = conn.execute("SELECT id, type, name, settings FROM network_integrations").fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, type, name, settings FROM network_integrations WHERE type = ?", (type_,)
+            ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "type": row["type"],
+            "name": row["name"],
+            "settings": _decrypt_network_integration_settings(json.loads(row["settings"])),
+        }
+        for row in rows
+    ]
+
+
+def delete_network_integration(id: str) -> None:
+    with _connect() as conn:
+        conn.execute("DELETE FROM network_integrations WHERE id = ?", (id,))
+
+
+def save_widget_layout(user_id: str, breakpoint: str, widget_id: str, layout: dict[str, Any]) -> None:
+    """Persist a widget's grid position for a given (user, breakpoint), overwriting any prior override.
 
     Lets drag-to-rearrange edits made from the dashboard survive a backend
     restart without editing dashboard.yaml, the same way `save_widget_settings`
-    does for runtime settings changes. Scoped per (user, device) so each
-    household member can arrange each of their screens independently.
+    does for runtime settings changes. Scoped per (user, breakpoint) rather
+    than per physical device, so a new device that renders at the same
+    viewport class as an existing one automatically inherits its arrangement.
     """
     with _connect() as conn:
         _upsert(
             conn,
             "widget_layout",
-            {"user_id": user_id, "device_id": device_id, "widget_id": widget_id, "layout": json.dumps(layout)},
-            ("user_id", "device_id", "widget_id"),
+            {"user_id": user_id, "breakpoint": breakpoint, "widget_id": widget_id, "layout": json.dumps(layout)},
+            ("user_id", "breakpoint", "widget_id"),
         )
 
 
-def get_widget_layout(user_id: str, device_id: str, widget_id: str) -> dict[str, Any] | None:
+def get_widget_layout(user_id: str, breakpoint: str, widget_id: str) -> dict[str, Any] | None:
     with _connect() as conn:
         row = conn.execute(
-            "SELECT layout FROM widget_layout WHERE user_id = ? AND device_id = ? AND widget_id = ?",
-            (user_id, device_id, widget_id),
+            "SELECT layout FROM widget_layout WHERE user_id = ? AND breakpoint = ? AND widget_id = ?",
+            (user_id, breakpoint, widget_id),
         ).fetchone()
     return None if row is None else json.loads(row["layout"])
 
 
 def delete_widget_layout_for_widget(widget_id: str) -> None:
-    """Drop every (user, device) layout override for a widget that's been removed."""
+    """Drop every (user, breakpoint) layout override for a widget that's been removed."""
     with _connect() as conn:
         conn.execute("DELETE FROM widget_layout WHERE widget_id = ?", (widget_id,))
 
 
-def list_widget_layouts(user_id: str, device_id: str) -> dict[str, dict[str, Any]]:
-    """All layout overrides for a (user, device), keyed by widget_id.
+def list_widget_layouts(user_id: str, breakpoint: str) -> dict[str, dict[str, Any]]:
+    """All layout overrides for a (user, breakpoint), keyed by widget_id.
 
     One query for the whole dashboard list rather than one per widget.
     """
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT widget_id, layout FROM widget_layout WHERE user_id = ? AND device_id = ?",
-            (user_id, device_id),
+            "SELECT widget_id, layout FROM widget_layout WHERE user_id = ? AND breakpoint = ?",
+            (user_id, breakpoint),
         ).fetchall()
     return {row["widget_id"]: json.loads(row["layout"]) for row in rows}
-
-
-def has_widget_layout(user_id: str, device_id: str) -> bool:
-    """Whether a (user, device) has any saved layout overrides at all.
-
-    Used to decide whether a device is "fresh" for this user and should be
-    offered a copy from an existing device, vs. already arranged.
-    """
-    with _connect() as conn:
-        row = conn.execute(
-            "SELECT 1 FROM widget_layout WHERE user_id = ? AND device_id = ? LIMIT 1",
-            (user_id, device_id),
-        ).fetchone()
-    return row is not None
-
-
-def copy_widget_layout(user_id: str, source_device_id: str, target_device_id: str) -> None:
-    """Replace a user's layout overrides on the target device with the source device's.
-
-    Full delete-then-insert rather than a merge, matching the "this will
-    replace your current layout" warning shown before the copy is confirmed.
-    """
-    with _connect() as conn:
-        conn.execute("DELETE FROM widget_layout WHERE user_id = ? AND device_id = ?", (user_id, target_device_id))
-        rows = conn.execute(
-            "SELECT widget_id, layout FROM widget_layout WHERE user_id = ? AND device_id = ?",
-            (user_id, source_device_id),
-        ).fetchall()
-        conn.executemany(
-            "INSERT INTO widget_layout (user_id, device_id, widget_id, layout) VALUES (?, ?, ?, ?)",
-            [(user_id, target_device_id, row["widget_id"], row["layout"]) for row in rows],
-        )
 
 
 _DEFAULT_SCREENSAVER_SETTINGS: dict[str, Any] = {
@@ -1364,7 +1573,6 @@ _USER_SCOPED_TABLES: tuple[tuple[str, str], ...] = (
 
 _DEVICE_SCOPED_TABLES: tuple[tuple[str, str], ...] = (
     ("sessions", "device_id"),
-    ("widget_layout", "device_id"),
     ("widget_device_settings", "device_id"),
     ("screensaver_settings", "device_id"),
 )

@@ -4,12 +4,7 @@
 		"fatal_hint": "Stelle sicher, dass das Backend läuft und erreichbar ist, und lade diese Seite dann neu.",
 		"name_device_title": "Dieses Gerät benennen",
 		"name_device_hint": "Hilft, es in der Geräteliste zu unterscheiden — z. B. „Küchen-Tablet“ oder „Wohnzimmer-TV“.",
-		"done": "Fertig",
-		"setup_device_title": "Dieses Gerät einrichten",
-		"setup_device_hint": "Übernimm dein Dashboard-Layout von einem deiner anderen Geräte, oder starte mit dem Standardlayout.",
-		"start_fresh": "Neu beginnen",
-		"copy_layout": "Layout übernehmen",
-		"copying": "Wird übernommen…"
+		"done": "Fertig"
 	},
 	"settings": {
 		"language": {
@@ -51,13 +46,7 @@
 			"forgetting": "Wird entfernt…",
 			"forget": "Entfernen",
 			"forget_device": "Gerät entfernen",
-			"forget_error": "Gerät konnte nicht entfernt werden.",
-			"copy_from_label": "Layout von einem anderen Gerät kopieren",
-			"copy_confirm": "Dadurch wird dein Layout auf {target} durch dein Layout von {source} ersetzt. Dies kann nicht rückgängig gemacht werden.",
-			"copying": "Wird kopiert…",
-			"copy_layout": "Layout kopieren",
-			"copy_layout_link": "Layout auf dieses Gerät kopieren…",
-			"copy_error": "Layout konnte nicht kopiert werden."
+			"forget_error": "Gerät konnte nicht entfernt werden."
 		},
 		"screensaver": {
 			"heading": "Bildschirmschoner",
@@ -216,12 +205,20 @@
 			"empty": "Keine Flugzeuge in der Nähe.",
 			"column_flight": "Flug",
 			"column_type": "Typ",
+			"column_route": "Route",
 			"column_altitude": "Höhe",
 			"column_speed": "Geschwindigkeit",
 			"column_distance": "Entfernung"
 		},
 		"screensaver": {
 			"no_aircraft": "KEINE FLUGZEUGE IN DER NÄHE"
+		},
+		"aircraft_kind": {
+			"helicopter": "Hubschrauber",
+			"jet": "Jet",
+			"prop": "Propellerflugzeug",
+			"other": "Flugzeug",
+			"unknown": "Unbekannter Flugzeugtyp"
 		}
 	},
 	"game2048": {
@@ -350,7 +347,7 @@
 			"clear_password": "Passwort löschen",
 			"connected_result": "✓ Verbunden (Pi-hole {version})",
 			"clear_password_error": "Das Passwort konnte nicht gelöscht werden.",
-			"not_connected_hint": "Noch nicht verbunden — tippe auf „Verbindung bearbeiten“, um Pi-hole einzurichten.",
+			"not_connected_hint": "Noch nicht verbunden — richte Pi-hole in den Netzwerkeinstellungen ein.",
 			"blocking_enabled": "● Blockierung aktiviert",
 			"blocking_paused": "⏸ Blockierung pausiert",
 			"pause_30s": "30 s pausieren",
@@ -400,11 +397,12 @@
 			"socket_path_label": "Socket-Pfad",
 			"host_label": "Host",
 			"port_label": "Port",
-			"not_connected_hint": "Noch nicht verbunden — tippe auf „Verbindung bearbeiten“, um {title} einzurichten.",
+			"not_connected_hint": "Noch nicht verbunden — richte {title} in den Netzwerkeinstellungen ein.",
 			"running_label": "Aktiv",
 			"stopped_label": "Gestoppt",
 			"total_label": "Gesamt",
-			"empty": "Keine Container gefunden."
+			"empty": "Keine Container gefunden.",
+			"host_picker_label": "Host"
 		}
 	},
 	"synology": {
@@ -418,7 +416,7 @@
 			"username_label": "Benutzername",
 			"password_label": "Passwort",
 			"connected_result": "✓ Verbunden ({model})",
-			"not_connected_hint": "Noch nicht verbunden — tippe auf „Verbindung bearbeiten“, um Synology einzurichten.",
+			"not_connected_hint": "Noch nicht verbunden — richte Synology in den Netzwerkeinstellungen ein.",
 			"model_label": "Modell",
 			"uptime_label": "Laufzeit",
 			"temp_label": "CPU-Temperatur",
@@ -438,7 +436,7 @@
 			"username_label": "Benutzername",
 			"password_label": "Passwort",
 			"connected_result": "✓ Verbunden ({product_id})",
-			"not_connected_hint": "Noch nicht verbunden — tippe auf „Verbindung bearbeiten“, um deinen Router einzurichten.",
+			"not_connected_hint": "Noch nicht verbunden — richte deinen Router in den Netzwerkeinstellungen ein.",
 			"wan_status_label": "WAN-Status",
 			"wan_ip_label": "WAN-IP",
 			"download_label": "Download",
@@ -726,7 +724,7 @@
 			"password_label": "Passwort",
 			"clear_password": "Passwort löschen",
 			"test_ok": "✓ Verbunden mit {name}",
-			"not_connected_hint": "Noch nicht verbunden — tippe auf „Verbindung bearbeiten“, um Jellyfin einzurichten.",
+			"not_connected_hint": "Noch nicht verbunden — richte Jellyfin in den Netzwerkeinstellungen ein.",
 			"tile_content_heading": "Kachelinhalt",
 			"content_added": "Kürzlich hinzugefügt",
 			"content_played": "Weiterschauen",
@@ -772,7 +770,7 @@
 			"xmltv_url_label": "XMLTV-URL",
 			"xmltv_hint": "„Läuft gerade“-Titel werden zuerst über ein HDHomeRun-DVR-Abonnement versucht. Falls du keines hast, lege stattdessen hier eine XMLTV-Guide-URL fest (das von Plex, Channels DVR, TVheadend usw. verwendete Format) — deren Kanal-IDs müssen deinen HDHomeRun-Kanalnummern entsprechen (z. B. „4.1“).",
 			"dvr_settings_heading": "DVR-Aufnahme-Engine",
-			"not_connected_hint": "Noch nicht verbunden — tippe auf „Verbindung bearbeiten“, um HDHomeRun einzurichten.",
+			"not_connected_hint": "Noch nicht verbunden — richte HDHomeRun in den Netzwerkeinstellungen ein.",
 			"tuner_count": "{count} Tuner",
 			"tuner_label": "Tuner {index}",
 			"tuner_signal": "Signal {percent}%",
@@ -792,7 +790,8 @@
 			"recording_until": "bis {time}",
 			"no_recordings": "Keine laufenden Aufnahmen.",
 			"upcoming_rules": "{count} bevorstehende Aufnahmeregeln.",
-			"playback_failed_hint": "Wiedergabe fehlgeschlagen — dieser Tuner unterstützt diesen Wiedergabemodus möglicherweise nicht. Versuche stattdessen „{action}“."
+			"playback_failed_hint": "Wiedergabe fehlgeschlagen — dieser Tuner unterstützt diesen Wiedergabemodus möglicherweise nicht. Versuche stattdessen „{action}“.",
+			"edit_playback_settings": "Wiedergabeeinstellungen bearbeiten"
 		}
 	},
 	"screensaver": {
@@ -854,5 +853,32 @@
 		"create": "Erstellen",
 		"add_error": "Profil konnte nicht erstellt werden.",
 		"add_profile": "Profil hinzufügen"
+	},
+	"network_settings": {
+		"title": "Netzwerkeinstellungen",
+		"subtitle": "Gemeinsame Verbindungseinstellungen für LAN-Geräte — hier einmal bearbeitet statt pro Widget.",
+		"nav_link": "Netzwerkeinstellungen",
+		"admin_only_hint": "Nur Admins können die Netzwerkeinstellungen einsehen.",
+		"loading": "Lädt…",
+		"load_error": "Netzwerkeinstellungen konnten nicht geladen werden.",
+		"section_pihole": "Pi-hole",
+		"section_jellyfin": "Jellyfin",
+		"section_synology": "Synology",
+		"section_asus_router": "Asus Router",
+		"section_hdhomerun": "HDHomeRun",
+		"section_container": "Container-Hosts",
+		"test_ok": "✓ {detail}",
+		"test_fail": "✗ {error}",
+		"save_error": "Diese Einstellungen konnten nicht gespeichert werden.",
+		"add_host_heading": "Host hinzufügen",
+		"host_name_label": "Name",
+		"host_name_placeholder": "Docker",
+		"add_host_button": "Host hinzufügen",
+		"add_host_error": "Dieser Host konnte nicht hinzugefügt werden.",
+		"delete_host_button": "Löschen",
+		"confirm_delete_host": "Diesen Host löschen?",
+		"cancel_delete_host": "Abbrechen",
+		"delete_host_error": "Dieser Host konnte nicht gelöscht werden.",
+		"no_container_hosts": "Noch keine Container-Hosts."
 	}
 }

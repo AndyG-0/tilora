@@ -5,17 +5,16 @@ these routes stream bytes (images, video) or need Jellyfin-specific query
 params rather than the generic summary/detail JSON shape. Settings are read
 from the *live* registered plugin instance (not `app.config.widget_config`,
 which only reflects `dashboard.yaml` and misses DB-persisted overrides) so a
-connection just saved from the widget's detail view works immediately.
+connection change made via `app/api/network_settings.py` takes effect
+immediately.
 """
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
-from app.auth import get_current_user, require_write_access
+from app.auth import get_current_user
 from app.integrations import jellyfin_client
 from app.plugins.base import registry
 from app.plugins.jellyfin.plugin import JellyfinPlugin
@@ -30,18 +29,6 @@ def _get_plugin(widget_id: str) -> JellyfinPlugin:
     if not isinstance(plugin, JellyfinPlugin):
         raise HTTPException(status_code=404, detail=f"Unknown Jellyfin widget '{widget_id}'")
     return plugin
-
-
-@router.post("/{widget_id}/test-connection")
-async def test_connection(widget_id: str, payload: dict[str, Any], user: dict[str, Any] = Depends(get_current_user)):
-    plugin = _get_plugin(widget_id)
-    require_write_access(plugin, user)
-    candidate_settings = {**plugin.config["settings"], **payload}
-    try:
-        server_name = await jellyfin_client.test_connection(candidate_settings, widget_id)
-    except jellyfin_client.JellyfinError as exc:
-        return {"ok": False, "server_name": None, "error": str(exc)}
-    return {"ok": True, "server_name": server_name, "error": None}
 
 
 @router.get("/{widget_id}/libraries")

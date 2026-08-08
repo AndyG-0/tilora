@@ -4,12 +4,7 @@
 		"fatal_hint": "Comprueba que el backend esté en ejecución y sea accesible, luego recarga esta página.",
 		"name_device_title": "Asigna un nombre a este dispositivo",
 		"name_device_hint": "Ayuda a diferenciarlo en la lista de dispositivos — p. ej., \"Tablet de la cocina\" o \"TV del salón\".",
-		"done": "Listo",
-		"setup_device_title": "Configura este dispositivo",
-		"setup_device_hint": "Copia el diseño del panel desde otro de tus dispositivos, o empieza con el diseño predeterminado.",
-		"start_fresh": "Empezar de cero",
-		"copy_layout": "Copiar diseño",
-		"copying": "Copiando…"
+		"done": "Listo"
 	},
 	"settings": {
 		"language": {
@@ -51,13 +46,7 @@
 			"forgetting": "Olvidando…",
 			"forget": "Olvidar",
 			"forget_device": "Olvidar dispositivo",
-			"forget_error": "No se pudo olvidar el dispositivo.",
-			"copy_from_label": "Copiar diseño desde otro dispositivo",
-			"copy_confirm": "Esto reemplazará tu diseño en {target} con tu diseño de {source}. Esta acción no se puede deshacer.",
-			"copying": "Copiando…",
-			"copy_layout": "Copiar diseño",
-			"copy_layout_link": "Copiar diseño a este dispositivo…",
-			"copy_error": "No se pudo copiar el diseño."
+			"forget_error": "No se pudo olvidar el dispositivo."
 		},
 		"screensaver": {
 			"heading": "Salvapantallas",
@@ -216,12 +205,20 @@
 			"empty": "Ninguna aeronave cerca.",
 			"column_flight": "Vuelo",
 			"column_type": "Tipo",
+			"column_route": "Ruta",
 			"column_altitude": "Altitud",
 			"column_speed": "Velocidad",
 			"column_distance": "Distancia"
 		},
 		"screensaver": {
 			"no_aircraft": "SIN AERONAVES CERCA"
+		},
+		"aircraft_kind": {
+			"helicopter": "Helicóptero",
+			"jet": "Reactor",
+			"prop": "Avión de hélice",
+			"other": "Aeronave",
+			"unknown": "Tipo de aeronave desconocido"
 		}
 	},
 	"game2048": {
@@ -350,7 +347,7 @@
 			"clear_password": "Borrar contraseña",
 			"connected_result": "✓ Conectado (Pi-hole {version})",
 			"clear_password_error": "No se pudo borrar la contraseña.",
-			"not_connected_hint": "Aún no conectado — toca «Editar conexión» para configurar Pi-hole.",
+			"not_connected_hint": "Aún no conectado — configura Pi-hole en Ajustes de red.",
 			"blocking_enabled": "● Bloqueo activado",
 			"blocking_paused": "⏸ Bloqueo en pausa",
 			"pause_30s": "Pausar 30s",
@@ -400,11 +397,12 @@
 			"socket_path_label": "Ruta del socket",
 			"host_label": "Host",
 			"port_label": "Puerto",
-			"not_connected_hint": "Aún no conectado — toca «Editar conexión» para configurar {title}.",
+			"not_connected_hint": "Aún no conectado — configura {title} en Ajustes de red.",
 			"running_label": "En ejecución",
 			"stopped_label": "Detenidos",
 			"total_label": "Total",
-			"empty": "No se encontraron contenedores."
+			"empty": "No se encontraron contenedores.",
+			"host_picker_label": "Host"
 		}
 	},
 	"synology": {
@@ -418,7 +416,7 @@
 			"username_label": "Usuario",
 			"password_label": "Contraseña",
 			"connected_result": "✓ Conectado ({model})",
-			"not_connected_hint": "Aún no conectado — toca «Editar conexión» para configurar Synology.",
+			"not_connected_hint": "Aún no conectado — configura Synology en Ajustes de red.",
 			"model_label": "Modelo",
 			"uptime_label": "Tiempo activo",
 			"temp_label": "Temperatura de la CPU",
@@ -438,7 +436,7 @@
 			"username_label": "Usuario",
 			"password_label": "Contraseña",
 			"connected_result": "✓ Conectado ({product_id})",
-			"not_connected_hint": "Aún no conectado — toca «Editar conexión» para configurar tu router.",
+			"not_connected_hint": "Aún no conectado — configura tu router en Ajustes de red.",
 			"wan_status_label": "Estado WAN",
 			"wan_ip_label": "IP WAN",
 			"download_label": "Descarga",
@@ -726,7 +724,7 @@
 			"password_label": "Contraseña",
 			"clear_password": "Borrar contraseña",
 			"test_ok": "✓ Conectado a {name}",
-			"not_connected_hint": "Aún no está conectado — toca \"Editar conexión\" para configurar Jellyfin.",
+			"not_connected_hint": "Aún no conectado — configura Jellyfin en Ajustes de red.",
 			"tile_content_heading": "Contenido del widget",
 			"content_added": "Añadido recientemente",
 			"content_played": "Continuar viendo",
@@ -772,7 +770,7 @@
 			"xmltv_url_label": "URL de XMLTV",
 			"xmltv_hint": "Los títulos de \"En emisión\" se intentan obtener primero de una suscripción DVR de HDHomeRun. Si no tienes una, configura aquí una URL de guía XMLTV en su lugar (el formato usado por Plex, Channels DVR, TVheadend, etc.) — sus ids de canal deben coincidir con tus números de canal de HDHomeRun (p. ej. \"4.1\").",
 			"dvr_settings_heading": "Motor de grabación DVR",
-			"not_connected_hint": "Aún no está conectado — toca \"Editar conexión\" para configurar HDHomeRun.",
+			"not_connected_hint": "Aún no conectado — configura HDHomeRun en Ajustes de red.",
 			"tuner_count": "{count} sintonizadores",
 			"tuner_label": "Sintonizador {index}",
 			"tuner_signal": "Señal {percent}%",
@@ -792,7 +790,8 @@
 			"recording_until": "hasta {time}",
 			"no_recordings": "No hay grabaciones en curso.",
 			"upcoming_rules": "{count} reglas de grabación próximas.",
-			"playback_failed_hint": "La reproducción falló — es posible que este sintonizador no admita este modo de reproducción. Prueba \"{action}\" en su lugar."
+			"playback_failed_hint": "La reproducción falló — es posible que este sintonizador no admita este modo de reproducción. Prueba \"{action}\" en su lugar.",
+			"edit_playback_settings": "Editar ajustes de reproducción"
 		}
 	},
 	"screensaver": {
@@ -854,5 +853,32 @@
 		"create": "Crear",
 		"add_error": "No se pudo crear el perfil.",
 		"add_profile": "Añadir perfil"
+	},
+	"network_settings": {
+		"title": "Configuración de red",
+		"subtitle": "Ajustes de conexión compartidos para dispositivos de la red local — se editan aquí una sola vez, no por widget.",
+		"nav_link": "Configuración de red",
+		"admin_only_hint": "Solo los administradores pueden ver la configuración de red.",
+		"loading": "Cargando…",
+		"load_error": "No se pudo cargar la configuración de red.",
+		"section_pihole": "Pi-hole",
+		"section_jellyfin": "Jellyfin",
+		"section_synology": "Synology",
+		"section_asus_router": "Router Asus",
+		"section_hdhomerun": "HDHomeRun",
+		"section_container": "Hosts de contenedores",
+		"test_ok": "✓ {detail}",
+		"test_fail": "✗ {error}",
+		"save_error": "No se pudo guardar esta configuración.",
+		"add_host_heading": "Agregar un host",
+		"host_name_label": "Nombre",
+		"host_name_placeholder": "Docker",
+		"add_host_button": "Agregar host",
+		"add_host_error": "No se pudo agregar este host.",
+		"delete_host_button": "Eliminar",
+		"confirm_delete_host": "¿Eliminar este host?",
+		"cancel_delete_host": "Cancelar",
+		"delete_host_error": "No se pudo eliminar este host.",
+		"no_container_hosts": "Todavía no hay hosts de contenedores."
 	}
 }
