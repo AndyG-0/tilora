@@ -17,6 +17,15 @@ ENV PORT=3000
 # `environment:` per deployment; no rebuild needed, and frontend/backend can
 # run on different hosts.
 ENV PUBLIC_API_BASE_URL=http://localhost:8000
+
+# adapter-node's build/ output only contains app code — it externalizes real
+# npm packages (marked, dompurify, mpegts.js, svelte-i18n, ...) as bare
+# imports rather than bundling them, expecting node_modules to resolve them
+# at runtime. Without this install, the server 500s on first request with
+# ERR_MODULE_NOT_FOUND for whichever such package the current route hits
+# first.
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 COPY --from=build /app/build ./build
 
 # node:20-alpine already ships an unprivileged "node" user (uid 1000) —
