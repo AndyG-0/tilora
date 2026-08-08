@@ -527,10 +527,16 @@ _SINGLETON_PRIMARY_HOST_KEY = {
 def _migration_007_extract_network_integrations(conn: sqlite3.Connection) -> None:
     from uuid import uuid4
 
-    from app.config import list_widget_configs, load_dashboard_config
+    from app.config import DASHBOARD_CONFIG_PATH, list_widget_configs, load_dashboard_config
     from app.plugins.registry_types import PLUGIN_CLASSES_BY_TYPE
 
-    widgets = list_widget_configs(load_dashboard_config())
+    # dashboard.yaml is gitignored (a per-deployment file; docker-entrypoint.sh
+    # seeds it from dashboard.example.yaml before the app starts) and doesn't
+    # exist yet in a fresh checkout or the CI/test environment. Fall back to
+    # no YAML-defined widgets rather than erroring — list_widget_configs still
+    # layers in DB-persisted custom widgets regardless.
+    yaml_config = load_dashboard_config() if DASHBOARD_CONFIG_PATH.exists() else {"widgets": []}
+    widgets = list_widget_configs(yaml_config)
 
     def _db_overrides(widget_id: str) -> dict[str, Any]:
         row = conn.execute("SELECT settings FROM widget_settings WHERE widget_id = ?", (widget_id,)).fetchone()
