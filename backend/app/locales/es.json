@@ -1,0 +1,110 @@
+{
+	"clock": {
+		"period": {
+			"am": "a. m.",
+			"pm": "p. m."
+		}
+	},
+	"date": {
+		"weekday": {
+			"monday": "Lunes",
+			"tuesday": "Martes",
+			"wednesday": "Miércoles",
+			"thursday": "Jueves",
+			"friday": "Viernes",
+			"saturday": "Sábado",
+			"sunday": "Domingo"
+		},
+		"month": {
+			"january": "Enero",
+			"february": "Febrero",
+			"march": "Marzo",
+			"april": "Abril",
+			"may": "Mayo",
+			"june": "Junio",
+			"july": "Julio",
+			"august": "Agosto",
+			"september": "Septiembre",
+			"october": "Octubre",
+			"november": "Noviembre",
+			"december": "Diciembre"
+		}
+	},
+	"weather": {
+		"condition": {
+			"clear_sky": "Cielo despejado",
+			"mainly_clear": "Mayormente despejado",
+			"partly_cloudy": "Parcialmente nublado",
+			"overcast": "Nublado",
+			"fog": "Niebla",
+			"depositing_rime_fog": "Niebla con escarcha",
+			"light_drizzle": "Llovizna ligera",
+			"moderate_drizzle": "Llovizna moderada",
+			"dense_drizzle": "Llovizna densa",
+			"slight_rain": "Lluvia ligera",
+			"moderate_rain": "Lluvia moderada",
+			"heavy_rain": "Lluvia intensa",
+			"slight_snow": "Nieve ligera",
+			"moderate_snow": "Nieve moderada",
+			"heavy_snow": "Nieve intensa",
+			"slight_rain_showers": "Chubascos ligeros",
+			"moderate_rain_showers": "Chubascos moderados",
+			"violent_rain_showers": "Chubascos violentos",
+			"thunderstorm": "Tormenta eléctrica",
+			"unknown": "Desconocido"
+		},
+		"air_quality": {
+			"good": "Buena",
+			"moderate": "Moderada",
+			"unhealthy_sensitive": "Insalubre para grupos sensibles",
+			"unhealthy": "Insalubre",
+			"very_unhealthy": "Muy insalubre",
+			"hazardous": "Peligrosa"
+		}
+	},
+	"sports": {
+		"error": {
+			"no_team_configured": "Ningún equipo configurado.",
+			"unsupported_league": "Liga no compatible: '{league}'."
+		}
+	},
+	"steam": {
+		"status": {
+			"offline": "Desconectado",
+			"online": "Conectado",
+			"busy": "Ocupado",
+			"away": "Ausente",
+			"snooze": "En reposo",
+			"looking_to_trade": "Buscando intercambiar",
+			"looking_to_play": "Buscando jugar"
+		}
+	},
+	"flights": {
+		"your_location": "Tu ubicación"
+	},
+	"bf6": {
+		"error": {
+			"server_not_found": "No se encontró ningún servidor que coincida con '{server_name}'."
+		}
+	},
+	"ai_insights": {
+		"summary": {
+			"no_briefing": "Aún no se ha generado ningún resumen."
+		}
+	},
+	"calendar": {
+		"event": {
+			"untitled": "(sin título)"
+		}
+	},
+	"discord": {
+		"unknown_channel": "canal-desconocido",
+		"unknown_author": "desconocido"
+	},
+	"jellyfin": {
+		"section": {
+			"recently_added": "Añadido recientemente",
+			"continue_watching": "Continuar viendo"
+		}
+	}
+}

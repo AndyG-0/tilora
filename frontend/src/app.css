@@ -2,6 +2,9 @@
 @import './lib/themes/dark.css';
 @import './lib/themes/sepia.css';
 @import './lib/themes/contrast.css';
+@import './lib/themes/forest.css';
+@import './lib/themes/ocean.css';
+@import '@fontsource-variable/doto';
 
 * {
 	box-sizing: border-box;

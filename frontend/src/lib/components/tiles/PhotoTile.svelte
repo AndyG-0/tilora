@@ -3,6 +3,7 @@
 	import { env } from '$env/dynamic/public';
 	import { api } from '$lib/api';
 	import TileCard from '$lib/components/TileCard.svelte';
+	import { _ } from 'svelte-i18n';
 
 	interface PhotoSummary {
 		count: number;
@@ -30,14 +31,14 @@
 	{#if summary?.current}
 		<div class="frame">
 			<img class="photo" src={`${env.PUBLIC_API_BASE_URL}${summary.current.url}`} alt="" />
-			<div class="count">{summary.count} photos</div>
+			<div class="count">{$_('photos.tile.count', { values: { count: summary.count } })}</div>
 		</div>
 	{:else if summary?.indexing}
-		<div class="empty">Indexing…</div>
+		<div class="empty">{$_('photos.tile.indexing')}</div>
 	{:else if summary?.index_error}
 		<div class="empty error">{summary.index_error}</div>
 	{:else}
-		<div class="empty">No photos found</div>
+		<div class="empty">{$_('photos.tile.no_photos')}</div>
 	{/if}
 </TileCard>
 

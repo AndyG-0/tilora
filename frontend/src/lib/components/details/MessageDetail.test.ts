@@ -58,4 +58,21 @@ describe('MessageDetail', () => {
 
 		expect(await screen.findByText('Could not update the message.')).toBeInTheDocument();
 	});
+
+	it('renders markdown in the message text', () => {
+		render(MessageDetail, {
+			props: { data: { title: 'Note', text: '**Trash night** — put bins on the `curb`.' } },
+		});
+
+		expect(screen.getByText('Trash night', { selector: 'strong' })).toBeInTheDocument();
+		expect(screen.getByText('curb', { selector: 'code' })).toBeInTheDocument();
+	});
+
+	it('shows a markdown hint under the text field while editing', async () => {
+		render(MessageDetail, { props: { data: baseData } });
+
+		await fireEvent.click(screen.getByText('Edit message'));
+
+		expect(screen.getByText('Supports basic markdown.')).toBeInTheDocument();
+	});
 });

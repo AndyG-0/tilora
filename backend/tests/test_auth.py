@@ -128,3 +128,50 @@ async def test_get_current_admin_raises_403_for_a_member(tmp_db):
     with pytest.raises(HTTPException) as exc_info:
         await auth.get_current_admin(user)
     assert exc_info.value.status_code == 403
+
+
+def test_is_locked_out_is_false_with_no_recorded_failures():
+    assert auth.is_locked_out("alice") is False
+
+
+def test_is_locked_out_becomes_true_after_max_failed_attempts():
+    for _ in range(auth._MAX_FAILED_ATTEMPTS):
+        auth.record_failed_login("alice")
+
+    assert auth.is_locked_out("alice") is True
+
+
+def test_is_locked_out_stays_false_below_the_threshold():
+    for _ in range(auth._MAX_FAILED_ATTEMPTS - 1):
+        auth.record_failed_login("alice")
+
+    assert auth.is_locked_out("alice") is False
+
+
+def test_record_successful_login_clears_failed_attempts():
+    for _ in range(auth._MAX_FAILED_ATTEMPTS):
+        auth.record_failed_login("alice")
+
+    auth.record_successful_login("alice")
+
+    assert auth.is_locked_out("alice") is False
+
+
+def test_lockout_expires_after_the_window_passes(monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr(auth.time, "monotonic", lambda: clock[0])
+
+    for _ in range(auth._MAX_FAILED_ATTEMPTS):
+        auth.record_failed_login("alice")
+    assert auth.is_locked_out("alice") is True
+
+    clock[0] += auth._LOCKOUT_WINDOW_SECONDS + 1
+
+    assert auth.is_locked_out("alice") is False
+
+
+def test_lockout_is_scoped_per_user_id():
+    for _ in range(auth._MAX_FAILED_ATTEMPTS):
+        auth.record_failed_login("alice")
+
+    assert auth.is_locked_out("bob") is False

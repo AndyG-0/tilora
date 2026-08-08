@@ -94,7 +94,7 @@ def test_is_configured_requires_both_key_and_steamid():
 async def test_fetch_player_summary_maps_fields():
     respx.get(PLAYER_SUMMARIES_URL).mock(return_value=httpx.Response(200, json=PLAYER_SUMMARIES_RESPONSE))
 
-    player = await steam_client.fetch_player_summary(SETTINGS, "76561197960435530")
+    player = await steam_client.fetch_player_summary(SETTINGS, "76561197960435530", "en")
 
     assert player["name"] == "Robin"
     assert player["status"] == "Online"
@@ -119,7 +119,7 @@ async def test_fetch_player_summary_maps_offline_status_without_current_game():
     }
     respx.get(PLAYER_SUMMARIES_URL).mock(return_value=httpx.Response(200, json=offline_response))
 
-    player = await steam_client.fetch_player_summary(SETTINGS, "76561197960435530")
+    player = await steam_client.fetch_player_summary(SETTINGS, "76561197960435530", "en")
 
     assert player["status"] == "Offline"
     assert player["online"] is False
@@ -131,12 +131,12 @@ async def test_fetch_player_summary_raises_when_profile_not_found():
     respx.get(PLAYER_SUMMARIES_URL).mock(return_value=httpx.Response(200, json={"response": {"players": []}}))
 
     with pytest.raises(steam_client.SteamError):
-        await steam_client.fetch_player_summary(SETTINGS, "76561197960435530")
+        await steam_client.fetch_player_summary(SETTINGS, "76561197960435530", "en")
 
 
 async def test_fetch_player_summary_raises_without_steamid():
     with pytest.raises(steam_client.SteamError):
-        await steam_client.fetch_player_summary(SETTINGS, "")
+        await steam_client.fetch_player_summary(SETTINGS, "", "en")
 
 
 @respx.mock
@@ -168,7 +168,7 @@ async def test_fetch_friends_status_batches_friend_list_into_player_summaries():
     respx.get(FRIEND_LIST_URL).mock(return_value=httpx.Response(200, json=FRIEND_LIST_RESPONSE))
     respx.get(PLAYER_SUMMARIES_URL).mock(return_value=httpx.Response(200, json=FRIEND_SUMMARIES_RESPONSE))
 
-    friends = await steam_client.fetch_friends_status(SETTINGS, "76561197960435530")
+    friends = await steam_client.fetch_friends_status(SETTINGS, "76561197960435530", "en")
 
     assert len(friends) == 2
     names = {f["name"] for f in friends}
@@ -183,7 +183,7 @@ async def test_fetch_friends_status_batches_friend_list_into_player_summaries():
 async def test_fetch_friends_status_returns_empty_list_when_no_friends():
     respx.get(FRIEND_LIST_URL).mock(return_value=httpx.Response(200, json={"friendslist": {"friends": []}}))
 
-    friends = await steam_client.fetch_friends_status(SETTINGS, "76561197960435530")
+    friends = await steam_client.fetch_friends_status(SETTINGS, "76561197960435530", "en")
 
     assert friends == []
 
@@ -213,7 +213,7 @@ async def test_fetch_friends_status_batches_large_friend_lists():
 
     respx.get(PLAYER_SUMMARIES_URL).mock(side_effect=responder)
 
-    friends = await steam_client.fetch_friends_status(SETTINGS, "76561197960435530")
+    friends = await steam_client.fetch_friends_status(SETTINGS, "76561197960435530", "en")
 
     assert len(friends) == 150
     assert call_sizes == [100, 50]
@@ -226,7 +226,7 @@ async def test_fetch_player_summary_raises_on_forbidden_html_response():
     )
 
     with pytest.raises(steam_client.SteamError, match="rejected the request"):
-        await steam_client.fetch_player_summary(SETTINGS, "76561197960435530")
+        await steam_client.fetch_player_summary(SETTINGS, "76561197960435530", "en")
 
 
 @respx.mock
@@ -236,7 +236,7 @@ async def test_fetch_friends_status_raises_on_unauthorized_when_friends_list_pri
     )
 
     with pytest.raises(steam_client.SteamError, match="rejected the request"):
-        await steam_client.fetch_friends_status(SETTINGS, "76561197960435530")
+        await steam_client.fetch_friends_status(SETTINGS, "76561197960435530", "en")
 
 
 @respx.mock
@@ -246,7 +246,7 @@ async def test_fetch_player_summary_raises_on_bad_request_html_response():
     )
 
     with pytest.raises(steam_client.SteamError):
-        await steam_client.fetch_player_summary(SETTINGS, "76561197960435530")
+        await steam_client.fetch_player_summary(SETTINGS, "76561197960435530", "en")
 
 
 @respx.mock
@@ -254,7 +254,7 @@ async def test_fetch_player_summary_raises_on_connect_error():
     respx.get(PLAYER_SUMMARIES_URL).mock(side_effect=httpx.ConnectError("refused"))
 
     with pytest.raises(steam_client.SteamError):
-        await steam_client.fetch_player_summary(SETTINGS, "76561197960435530")
+        await steam_client.fetch_player_summary(SETTINGS, "76561197960435530", "en")
 
 
 @respx.mock
@@ -264,7 +264,7 @@ async def test_fetch_player_summary_raises_on_non_json_200_response():
     )
 
     with pytest.raises(steam_client.SteamError):
-        await steam_client.fetch_player_summary(SETTINGS, "76561197960435530")
+        await steam_client.fetch_player_summary(SETTINGS, "76561197960435530", "en")
 
 
 @respx.mock
@@ -272,11 +272,11 @@ async def test_fetch_player_summary_raises_on_unexpected_shape():
     respx.get(PLAYER_SUMMARIES_URL).mock(return_value=httpx.Response(200, json={"oops": True}))
 
     with pytest.raises(steam_client.SteamError):
-        await steam_client.fetch_player_summary(SETTINGS, "76561197960435530")
+        await steam_client.fetch_player_summary(SETTINGS, "76561197960435530", "en")
 
 
 async def test_fetch_player_summaries_returns_empty_list_for_no_steamids():
-    assert await steam_client.fetch_player_summaries(SETTINGS, []) == []
+    assert await steam_client.fetch_player_summaries(SETTINGS, [], "en") == []
 
 
 NEWS_RESPONSE = {

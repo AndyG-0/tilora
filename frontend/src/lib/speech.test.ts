@@ -1,9 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { isSpeechRecognitionSupported, isSpeechSynthesisSupported, listenOnce, playChime, speak } from './speech';
+
+const { synthesizeSpeech } = vi.hoisted(() => ({ synthesizeSpeech: vi.fn() }));
+vi.mock('$lib/api', () => ({ api: { synthesizeSpeech } }));
+
+import {
+	isSpeechRecognitionSupported,
+	isSpeechSynthesisSupported,
+	listBrowserVoices,
+	listenOnce,
+	playChime,
+	speak,
+} from './speech';
 
 describe('speech', () => {
 	afterEach(() => {
 		vi.unstubAllGlobals();
+		synthesizeSpeech.mockReset();
 		// @ts-expect-error -- test-only cleanup of a property speech.ts adds
 		delete window.SpeechRecognition;
 		// @ts-expect-error -- test-only cleanup of a property speech.ts adds
@@ -31,6 +43,45 @@ describe('speech', () => {
 	describe('isSpeechSynthesisSupported', () => {
 		it('reflects whether window.speechSynthesis is present', () => {
 			expect(isSpeechSynthesisSupported()).toBe('speechSynthesis' in window);
+		});
+	});
+
+	describe('listBrowserVoices', () => {
+		it('resolves immediately when voices are already populated', async () => {
+			const voices = [{ name: 'Voice 1' } as SpeechSynthesisVoice];
+			vi.stubGlobal('speechSynthesis', { getVoices: () => voices });
+
+			await expect(listBrowserVoices()).resolves.toBe(voices);
+		});
+
+		it('waits for the voiceschanged event when nothing is populated yet', async () => {
+			const voices = [{ name: 'Voice 1' } as SpeechSynthesisVoice];
+			let callCount = 0;
+			const synth = {
+				getVoices: () => (callCount++ === 0 ? [] : voices),
+				onvoiceschanged: null as (() => void) | null,
+			};
+			vi.stubGlobal('speechSynthesis', synth);
+
+			const promise = listBrowserVoices();
+			synth.onvoiceschanged?.();
+
+			await expect(promise).resolves.toBe(voices);
+		});
+
+		it('falls back to an empty list after a timeout if voiceschanged never fires', async () => {
+			vi.useFakeTimers();
+			vi.stubGlobal('speechSynthesis', { getVoices: () => [], onvoiceschanged: null });
+
+			const promise = listBrowserVoices();
+			await vi.advanceTimersByTimeAsync(1000);
+
+			await expect(promise).resolves.toEqual([]);
+			vi.useRealTimers();
+		});
+
+		it('resolves with an empty list when speech synthesis is unsupported', async () => {
+			await expect(listBrowserVoices()).resolves.toEqual([]);
 		});
 	});
 
@@ -68,6 +119,66 @@ describe('speech', () => {
 
 			expect(cancel).not.toHaveBeenCalled();
 			expect(speakFn).not.toHaveBeenCalled();
+		});
+
+		it('matches a voice selection by voiceURI', () => {
+			const cancel = vi.fn();
+			const speakFn = vi.fn();
+			const matchingVoice = { voiceURI: 'v1', name: 'Voice 1' } as SpeechSynthesisVoice;
+			const otherVoice = { voiceURI: 'v2', name: 'Voice 2' } as SpeechSynthesisVoice;
+			vi.stubGlobal('speechSynthesis', {
+				cancel,
+				speak: speakFn,
+				getVoices: () => [otherVoice, matchingVoice],
+			});
+
+			speak('hello', { provider: 'browser', voiceId: 'v1', voiceName: 'Voice 1' });
+
+			expect(speakFn.mock.calls[0][0].voice).toBe(matchingVoice);
+		});
+
+		it('falls back to matching a voice selection by name when the voiceURI is stale', () => {
+			const cancel = vi.fn();
+			const speakFn = vi.fn();
+			const matchingVoice = { voiceURI: 'new-uri', name: 'Voice 1' } as SpeechSynthesisVoice;
+			vi.stubGlobal('speechSynthesis', {
+				cancel,
+				speak: speakFn,
+				getVoices: () => [matchingVoice],
+			});
+
+			speak('hello', { provider: 'browser', voiceId: 'stale-uri', voiceName: 'Voice 1' });
+
+			expect(speakFn.mock.calls[0][0].voice).toBe(matchingVoice);
+		});
+
+		it('plays audio from the remote provider for a non-browser selection', async () => {
+			const blob = new Blob(['audio-bytes']);
+			synthesizeSpeech.mockResolvedValue(blob);
+			const play = vi.fn().mockResolvedValue(undefined);
+			class FakeAudio {
+				play = play;
+				addEventListener = vi.fn();
+			}
+			vi.stubGlobal('Audio', FakeAudio);
+			vi.stubGlobal('URL', { createObjectURL: vi.fn(() => 'blob:fake'), revokeObjectURL: vi.fn() });
+
+			await speak('hello', { provider: 'openai', voiceId: 'nova', voiceName: '' });
+
+			expect(synthesizeSpeech).toHaveBeenCalledWith('openai', 'nova', 'hello');
+			expect(play).toHaveBeenCalled();
+		});
+
+		it('falls back to the browser voice when the remote provider fails', async () => {
+			synthesizeSpeech.mockRejectedValue(new Error('server unreachable'));
+			const cancel = vi.fn();
+			const speakFn = vi.fn();
+			vi.stubGlobal('speechSynthesis', { cancel, speak: speakFn, getVoices: () => [] });
+
+			await speak('hello', { provider: 'piper', voiceId: 'en_US-amy-medium', voiceName: '' });
+
+			expect(speakFn).toHaveBeenCalledTimes(1);
+			expect(speakFn.mock.calls[0][0].text).toBe('hello');
 		});
 	});
 

@@ -84,3 +84,39 @@ async def test_prompt_and_cron_properties():
     plugin = make_plugin()
     assert plugin.prompt == "Say hello"
     assert plugin.cron == "30 6 * * *"
+
+
+async def test_language_defaults_to_en():
+    plugin = make_plugin()
+    assert plugin.language == "en"
+
+
+async def test_language_reads_from_settings():
+    plugin = AIInsightsPlugin(
+        {
+            "id": "ai-insights",
+            "settings": {"cron": "30 6 * * *", "prompt": "Say hello", "language": "es"},
+        }
+    )
+    assert plugin.language == "es"
+
+
+async def test_get_detail_includes_language(tmp_db):
+    plugin = AIInsightsPlugin(
+        {
+            "id": "ai-insights",
+            "settings": {"cron": "30 6 * * *", "prompt": "Say hello", "language": "fr"},
+        }
+    )
+
+    detail = await plugin.get_detail()
+
+    assert detail["language"] == "fr"
+
+
+async def test_get_detail_defaults_language_to_en(tmp_db):
+    plugin = make_plugin()
+
+    detail = await plugin.get_detail()
+
+    assert detail["language"] == "en"

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { api, type SystemMonitorDetail } from '$lib/api';
+	import { _ } from 'svelte-i18n';
 
 	let { data: initialData }: { data: SystemMonitorDetail } = $props();
 
@@ -39,24 +40,30 @@
 <div class="stats">
 	<div class="stat">
 		<div class="value">{Math.round(stats.cpu_percent)}%</div>
-		<div class="label">CPU ({stats.cpu_count} cores)</div>
+		<div class="label">{$_('system_monitor.detail.cpu_label', { values: { count: stats.cpu_count } })}</div>
 	</div>
 	<div class="stat">
 		<div class="value">{Math.round(stats.memory_percent)}%</div>
-		<div class="label">RAM — {stats.memory_used_gb} / {stats.memory_total_gb} GB</div>
+		<div class="label">
+			{$_('system_monitor.detail.ram_label', {
+				values: { used: stats.memory_used_gb, total: stats.memory_total_gb },
+			})}
+		</div>
 	</div>
 	<div class="stat">
 		<div class="value">{Math.round(stats.disk_percent)}%</div>
-		<div class="label">Disk — {stats.disk_used_gb} / {stats.disk_total_gb} GB</div>
+		<div class="label">
+			{$_('system_monitor.detail.disk_label', { values: { used: stats.disk_used_gb, total: stats.disk_total_gb } })}
+		</div>
 	</div>
 	<div class="stat">
 		<div class="value">{formatUptime(stats.uptime_seconds)}</div>
-		<div class="label">Uptime</div>
+		<div class="label">{$_('system_monitor.detail.uptime')}</div>
 	</div>
 </div>
 
 <div class="section">
-	<h2>Per-core CPU</h2>
+	<h2>{$_('system_monitor.detail.per_core_cpu')}</h2>
 	<div class="cores">
 		{#each stats.cpu_per_core as core, i (i)}
 			<div class="core">
@@ -68,12 +75,18 @@
 </div>
 
 <div class="section">
-	<h2>Network (cumulative since boot)</h2>
-	<p class="hint">↑ {stats.network_sent_gb} GB sent · ↓ {stats.network_recv_gb} GB received</p>
+	<h2>{$_('system_monitor.detail.network_heading')}</h2>
+	<p class="hint">
+		{$_('system_monitor.detail.network_summary', {
+			values: { sent: stats.network_sent_gb, recv: stats.network_recv_gb },
+		})}
+	</p>
 </div>
 
 <p class="hint">
-	Load average: {stats.load_average.map((n) => n.toFixed(2)).join(' / ')} (1m / 5m / 15m)
+	{$_('system_monitor.detail.load_average', {
+		values: { avg: stats.load_average.map((n) => n.toFixed(2)).join(' / ') },
+	})}
 </p>
 
 <style>

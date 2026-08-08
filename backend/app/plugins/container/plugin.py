@@ -18,10 +18,13 @@ the daemon isn't reachable.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, ClassVar
 
 from app.integrations import container_client
 from app.plugins.base import Plugin, ToolDef
+
+logger = logging.getLogger(__name__)
 
 _ENGINE_DEFAULTS: dict[str, dict[str, Any]] = {
     "docker": {"socket_path": "/var/run/docker.sock", "host": "docker.local", "port": 2375},
@@ -69,6 +72,7 @@ class ContainerPlugin(Plugin):
         try:
             containers = await container_client.fetch_containers(self._settings())
         except container_client.ContainerError as exc:
+            logger.warning("Could not fetch containers for widget '%s': %s", self.id, exc)
             return [], str(exc)
         return containers, None
 

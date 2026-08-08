@@ -21,15 +21,16 @@ import asyncio
 from collections.abc import Coroutine
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
 from app import transcoding
+from app.auth import get_current_user, require_write_access
 from app.integrations import hdhomerun_client
 from app.plugins.base import registry
 from app.plugins.hdhomerun.plugin import HDHomeRunPlugin
 
-router = APIRouter(prefix="/api/hdhomerun", tags=["hdhomerun"])
+router = APIRouter(prefix="/api/hdhomerun", tags=["hdhomerun"], dependencies=[Depends(get_current_user)])
 
 _STREAM_CHUNK_BYTES = 64 * 1024
 _FFMPEG_STARTUP_TIMEOUT_SECONDS = 8
@@ -57,8 +58,11 @@ def _get_plugin(widget_id: str) -> HDHomeRunPlugin:
 
 
 @router.post("/{widget_id}/test-tuner-connection")
-async def test_tuner_connection(widget_id: str, payload: dict[str, Any]):
+async def test_tuner_connection(
+    widget_id: str, payload: dict[str, Any], user: dict[str, Any] = Depends(get_current_user)
+):
     plugin = _get_plugin(widget_id)
+    require_write_access(plugin, user)
     candidate_settings = {**plugin.config["settings"], **payload}
     try:
         name = await hdhomerun_client.test_tuner_connection(candidate_settings)
@@ -68,8 +72,11 @@ async def test_tuner_connection(widget_id: str, payload: dict[str, Any]):
 
 
 @router.post("/{widget_id}/test-dvr-connection")
-async def test_dvr_connection(widget_id: str, payload: dict[str, Any]):
+async def test_dvr_connection(
+    widget_id: str, payload: dict[str, Any], user: dict[str, Any] = Depends(get_current_user)
+):
     plugin = _get_plugin(widget_id)
+    require_write_access(plugin, user)
     candidate_settings = {**plugin.config["settings"], **payload}
     try:
         name = await hdhomerun_client.test_dvr_connection(candidate_settings)
@@ -134,9 +141,14 @@ async def stream_channel(widget_id: str, channel_number: str, request: Request):
     # client-passed URL) avoids turning this into an open proxy.
     raw_url = hdhomerun_client.raw_stream_url(settings, channel_number)
     try:
+        ffmpeg_args = transcoding.build_ffmpeg_args(settings, raw_url)
+    except transcoding.InvalidCustomFfmpegArgsError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
         process = await asyncio.create_subprocess_exec(
             "ffmpeg",
-            *transcoding.build_ffmpeg_args(settings, raw_url),
+            *ffmpeg_args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )

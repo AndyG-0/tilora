@@ -20,6 +20,7 @@ call — reused across the auth check and every photo list/download.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -28,6 +29,8 @@ from icloudpy.exceptions import ICloudPyFailedLoginException
 
 from app.config import ICLOUD_SESSION_DIR
 from app.storage.cache import cache
+
+logger = logging.getLogger(__name__)
 
 _SERVICE_CACHE_KEY = "icloud_photos:service"
 _SERVICE_CACHE_TTL_SECONDS = 30 * 60
@@ -55,6 +58,7 @@ async def _get_or_build_service(username: str, password: str) -> ICloudPyService
     try:
         service = await asyncio.to_thread(_build_service, username, password)
     except ICloudPyFailedLoginException:
+        logger.warning("iCloud login failed for account '%s'", username, exc_info=True)
         return None
 
     if not service.requires_2fa:
@@ -68,6 +72,9 @@ async def start_auth(username: str, password: str) -> dict[str, Any]:
     if service is None:
         return {"connected": False, "requires_2fa": False}
     if service.requires_2fa:
+        pushed = await asyncio.to_thread(service.trigger_2fa_push_notification)
+        if not pushed:
+            logger.warning("iCloud 2FA push notification trigger failed for account '%s'", username)
         cache.set(_PENDING_SERVICE_CACHE_KEY, service, _PENDING_SERVICE_TTL_SECONDS)
         return {"connected": False, "requires_2fa": True}
     return {"connected": True, "requires_2fa": False}
@@ -90,6 +97,21 @@ async def verify_2fa(code: str) -> bool:
         cache.delete(_PENDING_SERVICE_CACHE_KEY)
         cache.set(_SERVICE_CACHE_KEY, service, _SERVICE_CACHE_TTL_SECONDS)
     return verified
+
+
+def invalidate_service_cache() -> None:
+    """Drops any cached authenticated service/photo-list state.
+
+    `_get_or_build_service` only rebuilds when the cache is empty, so it has
+    no way to notice on its own that the configured Apple ID changed —
+    without this, a stale session (and cached photo list) for the
+    *previous* account keeps serving requests for up to
+    _SERVICE_CACHE_TTL_SECONDS after the switch. Called from
+    app.api.settings whenever icloud_username/icloud_password are edited.
+    """
+    cache.delete(_SERVICE_CACHE_KEY)
+    cache.delete(_PENDING_SERVICE_CACHE_KEY)
+    cache.delete(_PHOTO_LIST_CACHE_KEY)
 
 
 def is_connected_cached() -> bool:

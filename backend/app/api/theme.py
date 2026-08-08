@@ -6,13 +6,15 @@ from app.auth import get_current_user
 
 router = APIRouter(prefix="/api/theme", tags=["theme"], dependencies=[Depends(get_current_user)])
 
-# v1 ships two themes; the frontend owns the actual CSS. This endpoint just
-# tells the UI what's selectable and what to default to.
+# The frontend owns the actual CSS (frontend/src/lib/themes/*.css) — this
+# endpoint just tells the UI what's selectable and what to default to.
 _THEMES = [
     {"id": "light", "name": "Light"},
     {"id": "dark", "name": "Dark"},
     {"id": "sepia", "name": "Sepia"},
     {"id": "contrast", "name": "High Contrast"},
+    {"id": "forest", "name": "Forest"},
+    {"id": "ocean", "name": "Ocean"},
 ]
 
 

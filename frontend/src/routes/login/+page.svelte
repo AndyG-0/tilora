@@ -3,6 +3,8 @@
 	import { goto } from '$app/navigation';
 	import { api, describeFetchError, type UserProfile } from '$lib/api';
 	import { user } from '$lib/stores/user';
+	import { _ } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	let profiles = $state<UserProfile[]>([]);
 	let loading = $state(true);
@@ -37,7 +39,7 @@
 			}
 		} catch (err) {
 			loadError =
-				describeFetchError(err) === 'network' ? 'Could not reach the Tilora backend.' : 'Could not load profiles.';
+				describeFetchError(err) === 'network' ? get(_)('login.backend_unreachable') : get(_)('login.load_error');
 		} finally {
 			loading = false;
 		}
@@ -63,7 +65,7 @@
 			user.set(me);
 			goto('/');
 		} catch {
-			pinError = 'Incorrect PIN.';
+			pinError = get(_)('login.pin_incorrect');
 			pin = '';
 		} finally {
 			loggingIn = false;
@@ -105,7 +107,7 @@
 	async function createProfile() {
 		if (!newName.trim()) return;
 		if (newPin && !/^\d{4,8}$/.test(newPin)) {
-			addError = 'PIN must be 4-8 digits.';
+			addError = get(_)('settings.profile.pin_invalid');
 			return;
 		}
 		creating = true;
@@ -115,7 +117,7 @@
 			user.set(me);
 			goto('/');
 		} catch {
-			addError = 'Could not create profile.';
+			addError = get(_)('login.add_error');
 		} finally {
 			creating = false;
 		}
@@ -123,15 +125,15 @@
 </script>
 
 <div class="login-page">
-	<h1>Who's watching?</h1>
+	<h1>{$_('login.title')}</h1>
 
 	{#if loading}
-		<p class="hint">Loading…</p>
+		<p class="hint">{$_('common.loading')}</p>
 	{:else if loadError}
 		<p class="hint error">{loadError}</p>
 	{:else if pinProfile}
 		<div class="pin-pad">
-			<p class="pin-prompt">Enter PIN for {pinProfile.name}</p>
+			<p class="pin-prompt">{$_('login.pin_prompt', { values: { name: pinProfile.name } })}</p>
 			<div class="pin-dots" aria-hidden="true">
 				<!-- eslint-disable-next-line @typescript-eslint/no-unused-vars -- each-block item binding is required syntax; only the index is used -->
 				{#each Array(8) as _, i (i)}
@@ -145,40 +147,48 @@
 				{#each ['1', '2', '3', '4', '5', '6', '7', '8', '9'] as digit (digit)}
 					<button class="pad-key" onclick={() => tapDigit(digit)} disabled={loggingIn}>{digit}</button>
 				{/each}
-				<button class="pad-key" onclick={backspace} disabled={loggingIn} aria-label="Backspace">⌫</button>
+				<button class="pad-key" onclick={backspace} disabled={loggingIn} aria-label={$_('login.backspace_aria')}
+					>⌫</button
+				>
 				<button class="pad-key" onclick={() => tapDigit('0')} disabled={loggingIn}>0</button>
 				<button
 					class="pad-key confirm"
 					onclick={submitPin}
 					disabled={loggingIn || pin.length < 4}
-					aria-label="Submit PIN"
+					aria-label={$_('login.submit_pin_aria')}
 				>
 					✓
 				</button>
 			</div>
-			<button class="cancel" onclick={cancelPin} disabled={loggingIn}>← Back</button>
+			<button class="cancel" onclick={cancelPin} disabled={loggingIn}>{$_('common.back')}</button>
 		</div>
 	{:else if adding}
 		<div class="add-form">
 			<label>
-				Name
+				{$_('settings.profile.name_label')}
 				<input type="text" bind:value={newName} placeholder="Alice" maxlength="40" />
 			</label>
 			<label>
-				Avatar (emoji, optional)
+				{$_('settings.profile.avatar_label')}
 				<input type="text" bind:value={newAvatar} placeholder="🐱" maxlength="8" />
 			</label>
 			<label>
-				PIN (optional)
-				<input type="password" inputmode="numeric" bind:value={newPin} placeholder="4-8 digits" maxlength="8" />
+				{$_('setup.pin_label')}
+				<input
+					type="password"
+					inputmode="numeric"
+					bind:value={newPin}
+					placeholder={$_('setup.pin_placeholder')}
+					maxlength="8"
+				/>
 			</label>
 			{#if addError}
 				<p class="hint error">{addError}</p>
 			{/if}
 			<div class="add-actions">
-				<button class="cancel" onclick={cancelAdd} disabled={creating}>Cancel</button>
+				<button class="cancel" onclick={cancelAdd} disabled={creating}>{$_('common.cancel')}</button>
 				<button class="confirm-button" onclick={createProfile} disabled={creating || !newName.trim()}>
-					{creating ? 'Creating…' : 'Create'}
+					{creating ? $_('setup.creating') : $_('login.create')}
 				</button>
 			</div>
 		</div>
@@ -195,7 +205,7 @@
 			{/each}
 			<button class="profile add" onclick={openAdd}>
 				<span class="avatar">+</span>
-				<span class="name">Add profile</span>
+				<span class="name">{$_('login.add_profile')}</span>
 			</button>
 		</div>
 	{/if}

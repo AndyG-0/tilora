@@ -378,4 +378,37 @@ describe('api', () => {
 		});
 		expect(result).toEqual(prefs);
 	});
+
+	it('ttsVoices fetches the tts voices endpoint', async () => {
+		const voices = [{ id: 'nova', label: 'Nova', provider: 'openai' }];
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => voices }));
+
+		const result = await api.ttsVoices();
+
+		expect(fetch).toHaveBeenCalledWith('http://api.test/api/tts/voices', { credentials: 'include' });
+		expect(result).toEqual(voices);
+	});
+
+	it('synthesizeSpeech POSTs the provider, voice id, and text and returns a blob', async () => {
+		const blob = new Blob(['audio-bytes']);
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, blob: async () => blob }));
+
+		const result = await api.synthesizeSpeech('openai', 'nova', 'hello there');
+
+		expect(fetch).toHaveBeenCalledWith('http://api.test/api/tts/synthesize', {
+			method: 'POST',
+			credentials: 'include',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ provider: 'openai', voice_id: 'nova', text: 'hello there' }),
+		});
+		expect(result).toBe(blob);
+	});
+
+	it('synthesizeSpeech throws a descriptive error when the response is not ok', async () => {
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400 }));
+
+		await expect(api.synthesizeSpeech('piper', 'en_US-amy-medium', 'hi')).rejects.toThrow(
+			'Request to /api/tts/synthesize failed: 400',
+		);
+	});
 });

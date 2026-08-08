@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { wallTime } from '$lib/clockTime';
+	import { _ } from 'svelte-i18n';
 
 	let { now, timezone, size }: { now: Date; timezone: string; size: 'tile' | 'detail' } = $props();
 
@@ -11,7 +12,13 @@
 	const ticks = Array.from({ length: 12 }, (_, i) => i * 30);
 </script>
 
-<svg class="analog" class:large={size === 'detail'} viewBox="0 0 200 200" role="img" aria-label="Analog clock face">
+<svg
+	class="analog"
+	class:large={size === 'detail'}
+	viewBox="0 0 200 200"
+	role="img"
+	aria-label={$_('clock.aria_analog')}
+>
 	<circle cx="100" cy="100" r="94" class="face" />
 	{#each ticks as angle (angle)}
 		<line
@@ -32,8 +39,8 @@
 
 <style>
 	.analog {
-		width: 6rem;
-		height: 6rem;
+		width: clamp(3.5rem, 70cqmin, 8rem);
+		height: clamp(3.5rem, 70cqmin, 8rem);
 	}
 
 	.analog.large {

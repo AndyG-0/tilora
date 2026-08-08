@@ -12,7 +12,32 @@ from datetime import datetime
 from typing import Any
 
 from app.config import effective_settings, resolve_timezone
+from app.i18n import t
 from app.plugins.base import Plugin, ToolDef
+
+_WEEKDAY_KEYS = (
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+)
+_MONTH_KEYS = (
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+)
 
 
 class DatePlugin(Plugin):
@@ -30,7 +55,9 @@ class DatePlugin(Plugin):
         async def get_current_date() -> dict[str, Any]:
             timezone_name = effective_settings()["timezone"]
             now = datetime.now(resolve_timezone(timezone_name))
-            return {"date": f"{now:%A, %B} {now.day}, {now.year}", "timezone": timezone_name}
+            weekday = t(f"date.weekday.{_WEEKDAY_KEYS[now.weekday()]}", self.locale)
+            month = t(f"date.month.{_MONTH_KEYS[now.month - 1]}", self.locale)
+            return {"date": f"{weekday}, {month} {now.day}, {now.year}", "timezone": timezone_name}
 
         return [
             ToolDef(

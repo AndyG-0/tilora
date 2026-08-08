@@ -3,6 +3,7 @@
 	import { api, type Alert } from '$lib/api';
 	import TileCard from '$lib/components/TileCard.svelte';
 	import { playChime } from '$lib/speech';
+	import { _ } from 'svelte-i18n';
 
 	interface AlertSummary {
 		count: number;
@@ -42,7 +43,7 @@
 			<p class="message">{summary.most_urgent.message}</p>
 		</div>
 	{:else}
-		<div class="empty">No active alerts</div>
+		<div class="empty">{$_('alert.tile.empty')}</div>
 	{/if}
 </TileCard>
 

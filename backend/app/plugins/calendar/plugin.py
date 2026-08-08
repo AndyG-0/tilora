@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from app.config import effective_settings, resolve_timezone
+from app.i18n import t
 from app.integrations import caldav_client, google_oauth, microsoft_oauth
 from app.plugins.base import Plugin, ToolDef
 
@@ -135,7 +136,7 @@ class CalendarPlugin(Plugin):
             events.append(
                 {
                     "id": item["id"],
-                    "title": item.get("summary", "(untitled)"),
+                    "title": item.get("summary") or t("calendar.event.untitled", self.locale),
                     "start": start.get("dateTime") or start.get("date"),
                     "all_day": "date" in start,
                     "location": item.get("location"),
@@ -189,7 +190,7 @@ class CalendarPlugin(Plugin):
             events.append(
                 {
                     "id": item["id"],
-                    "title": item.get("subject") or "(untitled)",
+                    "title": item.get("subject") or t("calendar.event.untitled", self.locale),
                     "start": start_value,
                     "all_day": all_day,
                     "location": location.get("displayName") or None,

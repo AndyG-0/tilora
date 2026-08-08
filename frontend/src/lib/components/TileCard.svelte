@@ -34,6 +34,11 @@
 		/* Touch-first: no hover-dependent affordance, generous tap target. */
 		min-height: 8rem;
 		overflow: hidden;
+		/* Lets tile content (weather/date/clock) size itself off the actual
+		   rendered box via cqw/cqh/cqmin instead of fixed viewport-relative
+		   values, since users can drag-resize tiles to very different sizes. */
+		container-type: size;
+		container-name: tile;
 	}
 
 	.tile:active {

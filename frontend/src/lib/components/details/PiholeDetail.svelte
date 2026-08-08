@@ -2,6 +2,8 @@
 	import { page } from '$app/state';
 	import { api, type PiholeDetail, type PiholeTestConnectionResult } from '$lib/api';
 	import { user } from '$lib/stores/user';
+	import { _, locale } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	let { data: initialData }: { data: PiholeDetail } = $props();
 
@@ -47,7 +49,7 @@
 		try {
 			testResult = await api.piholeTestConnection(widgetId, currentFormSettings());
 		} catch {
-			testResult = { ok: false, version: null, error: 'Could not reach the backend.' };
+			testResult = { ok: false, version: null, error: get(_)('common.backend_unreachable') };
 		} finally {
 			testing = false;
 		}
@@ -65,7 +67,7 @@
 			await refetch();
 			editing = false;
 		} catch {
-			error = 'Could not save the connection settings.';
+			error = get(_)('common.connection_save_error');
 		} finally {
 			saving = false;
 		}
@@ -77,7 +79,7 @@
 			await api.updateWidgetSettings(widgetId, { password: '' });
 			await refetch();
 		} catch {
-			error = 'Could not clear the password.';
+			error = get(_)('pihole.detail.clear_password_error');
 		}
 	}
 
@@ -88,15 +90,15 @@
 			await api.piholeSetBlocking(widgetId, enabled, timer);
 			await refetch();
 		} catch {
-			error = 'Could not change the blocking state.';
+			error = get(_)('pihole.detail.blocking_error');
 		} finally {
 			blockingBusy = false;
 		}
 	}
 
 	function formatTimestamp(unixSeconds: number | null): string {
-		if (!unixSeconds) return 'unknown';
-		return new Date(unixSeconds * 1000).toLocaleString();
+		if (!unixSeconds) return get(_)('pihole.detail.unknown_timestamp');
+		return new Date(unixSeconds * 1000).toLocaleString(get(locale) ?? undefined);
 	}
 </script>
 
@@ -104,7 +106,7 @@
 	<h1>Pi-hole</h1>
 	{#if $user?.role === 'admin'}
 		<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
-			{editing ? 'Cancel' : 'Edit connection'}
+			{editing ? $_('common.cancel') : $_('common.edit_connection')}
 		</button>
 	{/if}
 </div>
@@ -112,36 +114,38 @@
 {#if editing}
 	<div class="settings-form">
 		<label>
-			Host
+			{$_('pihole.detail.host_label')}
 			<input type="text" bind:value={hostInput} placeholder="pi.hole" />
 		</label>
 		<label>
-			Port
+			{$_('pihole.detail.port_label')}
 			<input type="number" min="1" max="65535" bind:value={portInput} />
 		</label>
 		<label class="checkbox">
 			<input type="checkbox" bind:checked={useHttpsInput} />
-			Use HTTPS
+			{$_('pihole.detail.use_https_label')}
 		</label>
 		<label>
-			Password
+			{$_('pihole.detail.password_label')}
 			<input
 				type="password"
 				bind:value={passwordInput}
-				placeholder={pihole.has_password ? 'Set — enter a new value to replace it' : 'Not set'}
+				placeholder={pihole.has_password ? $_('common.password_set_hint') : $_('common.password_not_set')}
 			/>
 		</label>
 		{#if pihole.has_password}
-			<button class="clear" onclick={clearPassword}>Clear password</button>
+			<button class="clear" onclick={clearPassword}>{$_('pihole.detail.clear_password')}</button>
 		{/if}
 
 		<div class="test-row">
 			<button class="test" disabled={testing} onclick={testConnection}>
-				{testing ? 'Testing…' : 'Test connection'}
+				{testing ? $_('common.testing') : $_('common.test_connection')}
 			</button>
 			{#if testResult}
 				{#if testResult.ok}
-					<span class="test-result ok">✓ Connected (Pi-hole {testResult.version})</span>
+					<span class="test-result ok"
+						>{$_('pihole.detail.connected_result', { values: { version: testResult.version } })}</span
+					>
 				{:else}
 					<span class="test-result fail">✗ {testResult.error}</span>
 				{/if}
@@ -153,7 +157,7 @@
 		{/if}
 
 		<button class="save" disabled={saving} onclick={saveSettings}>
-			{saving ? 'Saving…' : 'Save'}
+			{saving ? $_('common.saving') : $_('common.save')}
 		</button>
 	</div>
 {:else if error}
@@ -162,7 +166,7 @@
 
 {#if !editing}
 	{#if !pihole.connected}
-		<p class="hint">Not connected yet — tap "Edit connection" to set up Pi-hole.</p>
+		<p class="hint">{$_('pihole.detail.not_connected_hint')}</p>
 	{:else}
 		{#if pihole.error}
 			<p class="hint error">{pihole.error}</p>
@@ -170,15 +174,17 @@
 
 		<div class="blocking-row">
 			<span class="blocking-status" class:on={pihole.blocking_enabled} class:off={!pihole.blocking_enabled}>
-				{pihole.blocking_enabled ? '● Blocking enabled' : '⏸ Blocking paused'}
+				{pihole.blocking_enabled ? $_('pihole.detail.blocking_enabled') : $_('pihole.detail.blocking_paused')}
 			</span>
 			<div class="blocking-actions">
 				{#if pihole.blocking_enabled}
-					<button disabled={blockingBusy} onclick={() => setBlocking(false, 30)}>Pause 30s</button>
-					<button disabled={blockingBusy} onclick={() => setBlocking(false, 300)}>Pause 5m</button>
-					<button disabled={blockingBusy} onclick={() => setBlocking(false)}>Disable</button>
+					<button disabled={blockingBusy} onclick={() => setBlocking(false, 30)}>{$_('pihole.detail.pause_30s')}</button
+					>
+					<button disabled={blockingBusy} onclick={() => setBlocking(false, 300)}>{$_('pihole.detail.pause_5m')}</button
+					>
+					<button disabled={blockingBusy} onclick={() => setBlocking(false)}>{$_('pihole.detail.disable')}</button>
 				{:else}
-					<button disabled={blockingBusy} onclick={() => setBlocking(true)}>Enable</button>
+					<button disabled={blockingBusy} onclick={() => setBlocking(true)}>{$_('pihole.detail.enable')}</button>
 				{/if}
 			</div>
 		</div>
@@ -186,32 +192,34 @@
 		<div class="stats">
 			<div class="stat">
 				<div class="stat-value">{(pihole.queries_today ?? 0).toLocaleString()}</div>
-				<div class="stat-label">Queries today</div>
+				<div class="stat-label">{$_('pihole.detail.stat_queries_today')}</div>
 			</div>
 			<div class="stat">
 				<div class="stat-value">{(pihole.blocked_today ?? 0).toLocaleString()}</div>
-				<div class="stat-label">Blocked today</div>
+				<div class="stat-label">{$_('pihole.detail.stat_blocked_today')}</div>
 			</div>
 			<div class="stat">
 				<div class="stat-value">{Math.round(pihole.percent_blocked ?? 0)}%</div>
-				<div class="stat-label">Percent blocked</div>
+				<div class="stat-label">{$_('pihole.detail.stat_percent_blocked')}</div>
 			</div>
 			<div class="stat">
 				<div class="stat-value">{pihole.unique_clients} / {pihole.clients_total}</div>
-				<div class="stat-label">Active clients</div>
+				<div class="stat-label">{$_('pihole.detail.stat_active_clients')}</div>
 			</div>
 			<div class="stat">
 				<div class="stat-value">{pihole.domains_blocked.toLocaleString()}</div>
-				<div class="stat-label">Domains on blocklist</div>
+				<div class="stat-label">{$_('pihole.detail.stat_domains_blocked')}</div>
 			</div>
 		</div>
-		<p class="hint">Blocklist last updated {formatTimestamp(pihole.gravity_last_update)}.</p>
+		<p class="hint">
+			{$_('pihole.detail.blocklist_updated', { values: { timestamp: formatTimestamp(pihole.gravity_last_update) } })}
+		</p>
 
 		<div class="domain-lists">
 			<div class="domain-list">
-				<h2>Top blocked domains</h2>
+				<h2>{$_('pihole.detail.top_blocked')}</h2>
 				{#if pihole.top_blocked_domains.length === 0}
-					<p class="hint">No data yet.</p>
+					<p class="hint">{$_('common.no_data')}</p>
 				{:else}
 					<ul>
 						{#each pihole.top_blocked_domains as entry (entry.domain)}
@@ -221,9 +229,9 @@
 				{/if}
 			</div>
 			<div class="domain-list">
-				<h2>Top permitted domains</h2>
+				<h2>{$_('pihole.detail.top_permitted')}</h2>
 				{#if pihole.top_permitted_domains.length === 0}
-					<p class="hint">No data yet.</p>
+					<p class="hint">{$_('common.no_data')}</p>
 				{:else}
 					<ul>
 						{#each pihole.top_permitted_domains as entry (entry.domain)}

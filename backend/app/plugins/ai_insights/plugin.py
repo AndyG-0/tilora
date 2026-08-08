@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from app.i18n import DEFAULT_LOCALE, t
 from app.plugins.base import Plugin
 from app.storage import db
 
@@ -23,6 +24,7 @@ class AIInsightsPlugin(Plugin):
         "prompt": "Write a short, friendly good-morning update for the household.",
         "cron": "0 8 * * *",
         "topics": [],
+        "language": DEFAULT_LOCALE,
     }
 
     @property
@@ -32,6 +34,13 @@ class AIInsightsPlugin(Plugin):
     @property
     def cron(self) -> str:
         return self.config["settings"]["cron"]
+
+    @property
+    def language(self) -> str:
+        # The locale to generate this widget's AI text in — distinct from
+        # `self.locale` (the requesting user's UI locale, irrelevant here
+        # since the scheduled job has no requesting user).
+        return self.config["settings"].get("language", DEFAULT_LOCALE)
 
     @property
     def topics(self) -> list[str]:
@@ -44,7 +53,7 @@ class AIInsightsPlugin(Plugin):
         if latest is None:
             return {
                 "title": self.config["settings"].get("title", self.name),
-                "text": "No briefing generated yet.",
+                "text": t("ai_insights.summary.no_briefing", self.locale),
                 "ran_at": None,
             }
         return {"title": self.config["settings"].get("title", self.name), **latest}
@@ -57,4 +66,5 @@ class AIInsightsPlugin(Plugin):
             "prompt": self.prompt,
             "cron": self.cron,
             "topics": self.topics,
+            "language": self.language,
         }

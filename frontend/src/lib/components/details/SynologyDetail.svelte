@@ -2,6 +2,8 @@
 	import { page } from '$app/state';
 	import { api, type SynologyDetail, type SynologyTestConnectionResult } from '$lib/api';
 	import { user } from '$lib/stores/user';
+	import { _ } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	let { data: initialData }: { data: SynologyDetail } = $props();
 
@@ -49,7 +51,7 @@
 		try {
 			testResult = await api.synologyTestConnection(widgetId, currentFormSettings());
 		} catch {
-			testResult = { ok: false, model: null, error: 'Could not reach the backend.' };
+			testResult = { ok: false, model: null, error: get(_)('common.backend_unreachable') };
 		} finally {
 			testing = false;
 		}
@@ -63,7 +65,7 @@
 			synology = await api.widgetDetail<SynologyDetail>(widgetId);
 			editing = false;
 		} catch {
-			error = 'Could not save the connection settings.';
+			error = get(_)('common.connection_save_error');
 		} finally {
 			saving = false;
 		}
@@ -74,7 +76,7 @@
 	<h1>Synology</h1>
 	{#if $user?.role === 'admin'}
 		<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
-			{editing ? 'Cancel' : 'Edit connection'}
+			{editing ? $_('common.cancel') : $_('common.edit_connection')}
 		</button>
 	{/if}
 </div>
@@ -82,37 +84,39 @@
 {#if editing}
 	<div class="settings-form">
 		<label>
-			Host
+			{$_('synology.detail.host_label')}
 			<input type="text" bind:value={hostInput} placeholder="synology.local" />
 		</label>
 		<label>
-			Port
+			{$_('synology.detail.port_label')}
 			<input type="number" min="1" max="65535" bind:value={portInput} />
 		</label>
 		<label class="checkbox">
 			<input type="checkbox" bind:checked={useHttpsInput} />
-			Use HTTPS
+			{$_('synology.detail.use_https_label')}
 		</label>
 		<label>
-			Username
+			{$_('synology.detail.username_label')}
 			<input type="text" bind:value={usernameInput} placeholder="admin" />
 		</label>
 		<label>
-			Password
+			{$_('synology.detail.password_label')}
 			<input
 				type="password"
 				bind:value={passwordInput}
-				placeholder={synology.has_password ? 'Set — enter a new value to replace it' : 'Not set'}
+				placeholder={synology.has_password ? $_('common.password_set_hint') : $_('common.password_not_set')}
 			/>
 		</label>
 
 		<div class="test-row">
 			<button class="test" disabled={testing} onclick={testConnection}>
-				{testing ? 'Testing…' : 'Test connection'}
+				{testing ? $_('common.testing') : $_('common.test_connection')}
 			</button>
 			{#if testResult}
 				{#if testResult.ok}
-					<span class="test-result ok">✓ Connected ({testResult.model})</span>
+					<span class="test-result ok"
+						>{$_('synology.detail.connected_result', { values: { model: testResult.model } })}</span
+					>
 				{:else}
 					<span class="test-result fail">✗ {testResult.error}</span>
 				{/if}
@@ -124,7 +128,7 @@
 		{/if}
 
 		<button class="save" disabled={saving} onclick={saveSettings}>
-			{saving ? 'Saving…' : 'Save'}
+			{saving ? $_('common.saving') : $_('common.save')}
 		</button>
 	</div>
 {:else if error}
@@ -133,7 +137,7 @@
 
 {#if !editing}
 	{#if !synology.connected}
-		<p class="hint">Not connected yet — tap "Edit connection" to set up Synology.</p>
+		<p class="hint">{$_('synology.detail.not_connected_hint')}</p>
 	{:else}
 		{#if synology.error}
 			<p class="hint error">{synology.error}</p>
@@ -141,26 +145,26 @@
 
 		<div class="system-info">
 			<div class="stat">
-				<div class="stat-value">{synology.model ?? 'Unknown'}</div>
-				<div class="stat-label">Model</div>
+				<div class="stat-value">{synology.model ?? $_('common.unknown')}</div>
+				<div class="stat-label">{$_('synology.detail.model_label')}</div>
 			</div>
 			<div class="stat">
-				<div class="stat-value">{synology.uptime ?? 'Unknown'}</div>
-				<div class="stat-label">Uptime</div>
+				<div class="stat-value">{synology.uptime ?? $_('common.unknown')}</div>
+				<div class="stat-label">{$_('synology.detail.uptime_label')}</div>
 			</div>
 			<div class="stat">
 				<div class="stat-value">
-					{synology.temperature_celsius != null ? `${synology.temperature_celsius}°C` : 'Unknown'}
+					{synology.temperature_celsius != null ? `${synology.temperature_celsius}°C` : $_('common.unknown')}
 				</div>
-				<div class="stat-label">CPU temperature</div>
+				<div class="stat-label">{$_('synology.detail.temp_label')}</div>
 				{#if synology.temperature_celsius == null}
-					<div class="stat-hint">DSM may be withholding this from a non-admin account</div>
+					<div class="stat-hint">{$_('synology.detail.temp_hint')}</div>
 				{/if}
 			</div>
 		</div>
 
 		{#if synology.volumes.length === 0}
-			<p class="hint">No volumes found.</p>
+			<p class="hint">{$_('synology.detail.no_volumes')}</p>
 		{:else}
 			<ul class="volumes">
 				{#each synology.volumes as volume (volume.name)}

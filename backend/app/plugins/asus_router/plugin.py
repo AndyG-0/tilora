@@ -10,10 +10,13 @@ raising, so the widget degrades gracefully.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, ClassVar
 
 from app.integrations import asus_router_client
 from app.plugins.base import Plugin, ToolDef
+
+logger = logging.getLogger(__name__)
 
 
 class AsusRouterPlugin(Plugin):
@@ -46,6 +49,7 @@ class AsusRouterPlugin(Plugin):
             wan = await asus_router_client.get_wan_status(self.config["settings"], self.id)
             clients = await asus_router_client.get_clients(self.config["settings"], self.id)
         except asus_router_client.AsusRouterError as exc:
+            logger.warning("Could not fetch WAN status/clients for widget '%s': %s", self.id, exc)
             return None, [], str(exc)
         return wan, clients, None
 
@@ -78,6 +82,7 @@ class AsusRouterPlugin(Plugin):
         try:
             traffic = await asus_router_client.get_traffic(self.config["settings"], self.id)
         except asus_router_client.AsusRouterError as exc:
+            logger.warning("Could not fetch traffic stats for widget '%s': %s", self.id, exc)
             return {
                 **summary,
                 "error": str(exc),

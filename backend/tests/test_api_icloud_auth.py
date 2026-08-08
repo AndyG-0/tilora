@@ -55,6 +55,9 @@ def test_start_auth_requires_2fa(client, monkeypatch):
     class FakeService:
         requires_2fa = True
 
+        def trigger_2fa_push_notification(self) -> bool:
+            return True
+
     monkeypatch.setattr(icloud_photos, "_build_service", lambda u, p: FakeService())
 
     response = client.post("/api/icloud/auth/start")
@@ -78,6 +81,9 @@ def test_verify_auth_succeeds_and_invalidates_photos_cache(client, monkeypatch):
     class FakeService:
         requires_2fa = True
         is_trusted_session = False
+
+        def trigger_2fa_push_notification(self) -> bool:
+            return True
 
         def validate_2fa_code(self, code: str) -> bool:
             return code == "123456"

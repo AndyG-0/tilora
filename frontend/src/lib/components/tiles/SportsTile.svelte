@@ -3,10 +3,16 @@
 	import { api, type SportsSummary, type SportsTrendingGame } from '$lib/api';
 	import { scrollFade } from '$lib/scrollFade';
 	import TileCard from '$lib/components/TileCard.svelte';
+	import { _ } from 'svelte-i18n';
 
 	let { widgetId }: { widgetId: string } = $props();
 
 	let summary = $state<SportsSummary | null>(null);
+
+	const showToday = $derived(!!summary && summary.configured && summary.todays_games.length > 0);
+	const showTrending = $derived(!!summary && summary.trending.length > 0);
+	const showUpcoming = $derived(!!summary && summary.configured);
+	const visibleSections = $derived([showToday, showTrending, showUpcoming].filter(Boolean).length);
 
 	async function refresh() {
 		try {
@@ -31,75 +37,184 @@
 		});
 	}
 
-	function trendingMatchup(game: SportsTrendingGame): string {
-		const away = game.away_rank ? `#${game.away_rank} ${game.away_team}` : game.away_team;
-		const home = game.home_rank ? `#${game.home_rank} ${game.home_team}` : game.home_team;
-		return `${away} @ ${home}`;
+	function awayLabel(game: SportsTrendingGame): string {
+		return game.away_rank ? `#${game.away_rank} ${game.away_team}` : game.away_team;
+	}
+
+	function homeLabel(game: SportsTrendingGame): string {
+		return game.home_rank ? `#${game.home_rank} ${game.home_team}` : game.home_team;
+	}
+
+	// A team-link tap should open ESPN, not fall through to TileCard's button
+	// and open the widget's own detail view — stop the click here so it
+	// never bubbles up.
+	function stopPropagation(event: Event) {
+		event.stopPropagation();
 	}
 </script>
 
 <TileCard {widgetId}>
 	<div class="frame">
-		<div class="title">Sports</div>
+		<div class="title">{$_('sports.tile_title')}</div>
 		{#if !summary}
-			<div class="hint">Loading…</div>
+			<div class="hint">{$_('sports.loading')}</div>
 		{:else if !summary.configured && summary.trending.length === 0}
-			<div class="hint">No teams configured</div>
+			<div class="hint">{$_('sports.not_configured')}</div>
 		{:else}
 			<div class="scroll-wrap">
 				<div class="sections" use:scrollFade={summary}>
-					{#if summary.configured}
+					{#if showToday}
 						<div class="section">
-							{#if summary.trending.length > 0}
-								<div class="section-label">Your Teams</div>
+							{#if visibleSections > 1}
+								<div class="section-label">{$_('sports.today_title')}</div>
 							{/if}
-							{#if summary.games.length === 0}
-								<div class="hint">No upcoming games</div>
-							{:else}
-								<ul class="games">
-									{#each summary.games as game (game.league + game.team + game.id)}
-										<li>
-											<div class="matchup">
-												<span class="league">{game.league_label}</span>
-												<span class="teams">{game.team} {game.is_home ? 'vs' : '@'} {game.opponent}</span>
-											</div>
-											<div class="meta">
-												<span class="when">
-													{game.state === 'in' ? `Live — ${game.status_detail}` : formatDate(game.date)}
+							<ul class="games">
+								{#each summary.todays_games as game (game.league + game.team + game.id)}
+									<li>
+										<div class="matchup">
+											<span class="league">{game.league_label}</span>
+											<span class="teams">
+												{#if game.team_espn_url}
+													<a
+														href={game.team_espn_url}
+														target="_blank"
+														rel="noopener noreferrer"
+														onclick={stopPropagation}>{game.team}</a
+													>
+												{:else}
+													{game.team}
+												{/if}{' ' + (game.is_home ? $_('sports.vs') : '@') + ' ' + game.opponent}
+											</span>
+										</div>
+										<div class="meta">
+											<span class="when">
+												{game.state === 'in'
+													? $_('sports.live_status', { values: { status: game.status_detail } })
+													: formatDate(game.date)}
+											</span>
+											{#if game.broadcast_links.length > 0}
+												<span class="broadcast">
+													{#each game.broadcast_links as link, i (link.name)}
+														{#if i > 0}<span>, </span>{/if}
+														{#if link.url}
+															<a href={link.url} target="_blank" rel="noopener noreferrer">{link.name}</a>
+														{:else}
+															{link.name}
+														{/if}
+													{/each}
 												</span>
-												{#if game.broadcasts.length > 0}
-													<span class="broadcast">{game.broadcasts.join(', ')}</span>
-												{/if}
-											</div>
-										</li>
-									{/each}
-								</ul>
-							{/if}
+											{/if}
+										</div>
+									</li>
+								{/each}
+							</ul>
 						</div>
 					{/if}
-					{#if summary.trending.length > 0}
+					{#if showTrending}
 						<div class="section">
-							{#if summary.configured}
-								<div class="section-label">Top Games Today</div>
+							{#if visibleSections > 1}
+								<div class="section-label">{$_('sports.trending_title')}</div>
 							{/if}
 							<ul class="games">
 								{#each summary.trending as game (game.league + game.id)}
 									<li>
 										<div class="matchup">
 											<span class="league">{game.league_label}</span>
-											<span class="teams">{trendingMatchup(game)}</span>
+											<span class="teams">
+												{#if game.away_espn_url}
+													<a
+														href={game.away_espn_url}
+														target="_blank"
+														rel="noopener noreferrer"
+														onclick={stopPropagation}>{awayLabel(game)}</a
+													>
+												{:else}
+													{awayLabel(game)}
+												{/if} @ {#if game.home_espn_url}
+													<a
+														href={game.home_espn_url}
+														target="_blank"
+														rel="noopener noreferrer"
+														onclick={stopPropagation}>{homeLabel(game)}</a
+													>
+												{:else}
+													{homeLabel(game)}
+												{/if}
+											</span>
 										</div>
 										<div class="meta">
 											<span class="when">
-												{game.state === 'in' ? `Live — ${game.status_detail}` : formatDate(game.date)}
+												{game.state === 'in'
+													? $_('sports.live_status', { values: { status: game.status_detail } })
+													: formatDate(game.date)}
 											</span>
 											{#if game.broadcast_links.length > 0}
-												<span class="broadcast">{game.broadcast_links.map((link) => link.name).join(', ')}</span>
+												<span class="broadcast">
+													{#each game.broadcast_links as link, i (link.name)}
+														{#if i > 0}<span>, </span>{/if}
+														{#if link.url}
+															<a href={link.url} target="_blank" rel="noopener noreferrer">{link.name}</a>
+														{:else}
+															{link.name}
+														{/if}
+													{/each}
+												</span>
 											{/if}
 										</div>
 									</li>
 								{/each}
 							</ul>
+						</div>
+					{/if}
+					{#if showUpcoming}
+						<div class="section">
+							{#if visibleSections > 1}
+								<div class="section-label">{$_('sports.upcoming_title')}</div>
+							{/if}
+							{#if summary.upcoming_games.length === 0}
+								<div class="hint">{$_('sports.no_upcoming')}</div>
+							{:else}
+								<ul class="games">
+									{#each summary.upcoming_games as game (game.league + game.team + game.id)}
+										<li>
+											<div class="matchup">
+												<span class="league">{game.league_label}</span>
+												<span class="teams">
+													{#if game.team_espn_url}
+														<a
+															href={game.team_espn_url}
+															target="_blank"
+															rel="noopener noreferrer"
+															onclick={stopPropagation}>{game.team}</a
+														>
+													{:else}
+														{game.team}
+													{/if}{' ' + (game.is_home ? $_('sports.vs') : '@') + ' ' + game.opponent}
+												</span>
+											</div>
+											<div class="meta">
+												<span class="when">
+													{game.state === 'in'
+														? $_('sports.live_status', { values: { status: game.status_detail } })
+														: formatDate(game.date)}
+												</span>
+												{#if game.broadcast_links.length > 0}
+													<span class="broadcast">
+														{#each game.broadcast_links as link, i (link.name)}
+															{#if i > 0}<span>, </span>{/if}
+															{#if link.url}
+																<a href={link.url} target="_blank" rel="noopener noreferrer">{link.name}</a>
+															{:else}
+																{link.name}
+															{/if}
+														{/each}
+													</span>
+												{/if}
+											</div>
+										</li>
+									{/each}
+								</ul>
+							{/if}
 						</div>
 					{/if}
 				</div>
@@ -236,5 +351,14 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.broadcast a {
+		color: var(--color-accent);
+	}
+
+	.teams a {
+		color: inherit;
+		text-decoration: underline dotted;
 	}
 </style>

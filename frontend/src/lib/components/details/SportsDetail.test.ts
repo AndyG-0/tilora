@@ -1,5 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import type { SportsSummaryGame, SportsTrendingGame } from '$lib/api';
 
 const { updateWidgetSettings, widgetDetail, sportsTeams } = vi.hoisted(() => ({
 	updateWidgetSettings: vi.fn(),
@@ -11,58 +12,64 @@ vi.mock('$app/state', () => ({ page: { params: { id: 'sports' } } }));
 
 import SportsDetail from './SportsDetail.svelte';
 
+function makeGame(overrides: Partial<SportsSummaryGame> = {}): SportsSummaryGame {
+	return {
+		id: '1',
+		date: '2026-09-14T00:20Z',
+		state: 'pre',
+		completed: false,
+		status_detail: '9/13 - 8:20 PM EDT',
+		home_team: 'New York Giants',
+		home_abbreviation: 'NYG',
+		away_team: 'Dallas Cowboys',
+		away_abbreviation: 'DAL',
+		home_score: null,
+		away_score: null,
+		broadcasts: ['NBC'],
+		broadcast_links: [{ name: 'NBC', url: 'https://www.nbc.com/live' }],
+		venue: 'MetLife Stadium',
+		is_home: false,
+		opponent: 'New York Giants',
+		league: 'nfl',
+		league_label: 'NFL',
+		team: 'Dallas Cowboys',
+		team_espn_url: 'https://www.espn.com/nfl/team/_/name/dal',
+		...overrides,
+	};
+}
+
+function makeTrendingGame(overrides: Partial<SportsTrendingGame> = {}): SportsTrendingGame {
+	return {
+		id: '2',
+		league: 'college-football',
+		league_label: 'College Football',
+		date: '2026-09-14T17:00Z',
+		state: 'pre',
+		completed: false,
+		status_detail: '9/14 - 1:00 PM EDT',
+		home_team: 'Texas Longhorns',
+		home_abbreviation: 'TEX',
+		home_rank: 3,
+		home_espn_url: 'https://www.espn.com/college-football/team/_/name/tex',
+		away_team: 'Ohio State Buckeyes',
+		away_abbreviation: 'OSU',
+		away_rank: 1,
+		away_espn_url: 'https://www.espn.com/college-football/team/_/name/osu',
+		home_score: null,
+		away_score: null,
+		broadcast_links: [{ name: 'ABC', url: null }],
+		venue: 'Darrell K Royal Stadium',
+		...overrides,
+	};
+}
+
 const baseData = {
 	configured: true,
-	teams: [
-		{
-			league: 'nfl',
-			league_label: 'NFL',
-			team: 'DAL',
-			team_name: 'Dallas Cowboys',
-			games: [
-				{
-					id: '1',
-					date: '2026-09-14T00:20Z',
-					state: 'pre',
-					completed: false,
-					status_detail: '9/13 - 8:20 PM EDT',
-					home_team: 'New York Giants',
-					home_abbreviation: 'NYG',
-					away_team: 'Dallas Cowboys',
-					away_abbreviation: 'DAL',
-					home_score: null,
-					away_score: null,
-					broadcasts: ['NBC'],
-					broadcast_links: [{ name: 'NBC', url: 'https://www.nbc.com/live' }],
-					venue: 'MetLife Stadium',
-					is_home: false,
-					opponent: 'New York Giants',
-				},
-			],
-		},
-	],
+	teams: [{ league: 'nfl', league_label: 'NFL', team: 'DAL', team_name: 'Dallas Cowboys' }],
+	todays_games: [],
 	trending: [],
+	upcoming_games: [makeGame()],
 	trending_leagues: ['nfl', 'nba', 'mlb', 'nhl', 'college-football', 'wnba'],
-};
-
-const trendingGame = {
-	id: '2',
-	league: 'college-football',
-	league_label: 'College Football',
-	date: '2026-09-14T17:00Z',
-	state: 'pre',
-	completed: false,
-	status_detail: '9/14 - 1:00 PM EDT',
-	home_team: 'Texas Longhorns',
-	home_abbreviation: 'TEX',
-	home_rank: 3,
-	away_team: 'Ohio State Buckeyes',
-	away_abbreviation: 'OSU',
-	away_rank: 1,
-	home_score: null,
-	away_score: null,
-	broadcast_links: [{ name: 'ABC', url: null }],
-	venue: 'Darrell K Royal Stadium',
 };
 
 describe('SportsDetail', () => {
@@ -77,13 +84,16 @@ describe('SportsDetail', () => {
 		]);
 	});
 
-	it('renders each followed team with its upcoming games', () => {
-		render(SportsDetail, { props: { data: baseData } });
+	it("renders a followed team's upcoming game with league badge and details", () => {
+		const { container } = render(SportsDetail, { props: { data: baseData } });
 
 		expect(screen.getByText('Sports Schedule')).toBeInTheDocument();
-		expect(screen.getByText('Dallas Cowboys')).toBeInTheDocument();
+		expect(screen.getByText("My Team's Upcoming Games")).toBeInTheDocument();
 		expect(screen.getByText('NFL')).toBeInTheDocument();
-		expect(screen.getByText('@ New York Giants')).toBeInTheDocument();
+		// The league badge and matchup text are siblings inside the same
+		// span, so there's no single element whose own text is just the
+		// matchup — check the rendered output instead of a single node.
+		expect(container.textContent).toContain('Dallas Cowboys: @ New York Giants');
 		expect(screen.getByText('NBC')).toBeInTheDocument();
 		expect(screen.getByRole('link', { name: 'NBC' })).toHaveAttribute('href', 'https://www.nbc.com/live');
 		expect(screen.getByText('MetLife Stadium')).toBeInTheDocument();
@@ -91,21 +101,13 @@ describe('SportsDetail', () => {
 
 	it('renders an unknown broadcast name as plain text, not a link', () => {
 		const data = {
-			configured: true,
-			teams: [
-				{
-					...baseData.teams[0],
-					games: [
-						{
-							...baseData.teams[0].games[0],
-							broadcasts: ['Regional Sports Network'],
-							broadcast_links: [{ name: 'Regional Sports Network', url: null }],
-						},
-					],
-				},
+			...baseData,
+			upcoming_games: [
+				makeGame({
+					broadcasts: ['Regional Sports Network'],
+					broadcast_links: [{ name: 'Regional Sports Network', url: null }],
+				}),
 			],
-			trending: [],
-			trending_leagues: [],
 		};
 
 		render(SportsDetail, { props: { data } });
@@ -116,46 +118,70 @@ describe('SportsDetail', () => {
 
 	it('shows a hint when no teams are configured', () => {
 		render(SportsDetail, {
-			props: { data: { configured: false, teams: [], trending: [], trending_leagues: [] } },
+			props: {
+				data: {
+					configured: false,
+					teams: [],
+					todays_games: [],
+					trending: [],
+					upcoming_games: [],
+					trending_leagues: [],
+				},
+			},
 		});
 
 		expect(screen.getByText('No teams configured yet — tap "Edit teams" to follow one.')).toBeInTheDocument();
 	});
 
-	it('shows a per-team hint when a team has no upcoming games', () => {
-		const data = {
-			configured: true,
-			teams: [{ ...baseData.teams[0], games: [] }],
-			trending: [],
-			trending_leagues: [],
-		};
+	it('renders trending games even when no teams are configured', () => {
+		render(SportsDetail, {
+			props: {
+				data: {
+					configured: false,
+					teams: [],
+					todays_games: [],
+					trending: [makeTrendingGame()],
+					upcoming_games: [],
+					trending_leagues: [],
+				},
+			},
+		});
+
+		// The "no teams configured" hint and the trending section are
+		// independent siblings — both render at once when unconfigured.
+		expect(screen.getByText('Top Games Today')).toBeInTheDocument();
+		expect(screen.getByText('No teams configured yet — tap "Edit teams" to follow one.')).toBeInTheDocument();
+	});
+
+	it('shows a hint when a configured team has no upcoming games', () => {
+		const data = { ...baseData, todays_games: [], upcoming_games: [] };
 
 		render(SportsDetail, { props: { data } });
 
 		expect(screen.getByText('No upcoming games scheduled.')).toBeInTheDocument();
+		// The today section is hidden entirely (no hint) when empty — most
+		// days no followed team plays, so a daily "nothing today" line
+		// would just be noise.
+		expect(screen.queryByText("My Team's Games Today")).not.toBeInTheDocument();
 	});
 
-	it('shows a per-team error without hiding the other teams', () => {
+	it('shows a team-fetch error banner without hiding games from other teams', () => {
 		const data = {
-			configured: true,
+			...baseData,
 			teams: [
-				{ ...baseData.teams[0], error: 'Unknown team.', games: [] },
-				{
-					league: 'nba',
-					league_label: 'NBA',
-					team: 'LAL',
-					team_name: 'Los Angeles Lakers',
-					games: [],
-				},
+				{ league: 'nfl', league_label: 'NFL', team: 'DAL', team_name: 'Dallas Cowboys', error: 'Unknown team.' },
+				{ league: 'nba', league_label: 'NBA', team: 'LAL', team_name: 'Los Angeles Lakers' },
 			],
-			trending: [],
-			trending_leagues: [],
+			todays_games: [],
+			upcoming_games: [
+				makeGame({ league: 'nba', league_label: 'NBA', team: 'Los Angeles Lakers', opponent: 'New York Giants' }),
+			],
 		};
 
-		render(SportsDetail, { props: { data } });
+		const { container } = render(SportsDetail, { props: { data } });
 
-		expect(screen.getByText('Unknown team.')).toBeInTheDocument();
-		expect(screen.getByText('Los Angeles Lakers')).toBeInTheDocument();
+		expect(screen.getByText("Couldn't load: Dallas Cowboys (NFL)")).toBeInTheDocument();
+		expect(container.textContent).toContain('Los Angeles Lakers: @ New York Giants');
 	});
 
 	it('opens the editor prefilled with the current teams', async () => {
@@ -201,11 +227,10 @@ describe('SportsDetail', () => {
 		updateWidgetSettings.mockResolvedValue({});
 		widgetDetail.mockResolvedValue({
 			configured: true,
-			teams: [
-				...baseData.teams,
-				{ league: 'nba', league_label: 'NBA', team: 'LAL', team_name: 'Los Angeles Lakers', games: [] },
-			],
+			teams: [...baseData.teams, { league: 'nba', league_label: 'NBA', team: 'LAL', team_name: 'Los Angeles Lakers' }],
+			todays_games: [],
 			trending: [],
+			upcoming_games: baseData.upcoming_games,
 			trending_leagues: baseData.trending_leagues,
 		});
 
@@ -276,12 +301,15 @@ describe('SportsDetail', () => {
 	});
 
 	it('renders trending games with ranks and broadcast links', () => {
-		const data = { ...baseData, trending: [trendingGame] };
+		const data = { ...baseData, trending: [makeTrendingGame()] };
 
-		render(SportsDetail, { props: { data } });
+		const { container } = render(SportsDetail, { props: { data } });
 
 		expect(screen.getByText('Top Games Today')).toBeInTheDocument();
-		expect(screen.getByText(/#1 Ohio State Buckeyes @ #3 Texas Longhorns/)).toBeInTheDocument();
+		// The team names are each wrapped in their own <a>, so the combined
+		// matchup text is split across elements — check the rendered output
+		// rather than a single node.
+		expect(container.textContent).toContain('#1 Ohio State Buckeyes @ #3 Texas Longhorns');
 		expect(screen.getByText('ABC')).toBeInTheDocument();
 		expect(screen.queryByRole('link', { name: 'ABC' })).not.toBeInTheDocument();
 	});
@@ -289,7 +317,7 @@ describe('SportsDetail', () => {
 	it('surfaces trending errors without hiding the games that did load', () => {
 		const data = {
 			...baseData,
-			trending: [trendingGame],
+			trending: [makeTrendingGame()],
 			trending_errors: [{ league: 'nba', error: 'ESPN request failed.' }],
 		};
 
@@ -303,5 +331,46 @@ describe('SportsDetail', () => {
 		render(SportsDetail, { props: { data: baseData } });
 
 		expect(screen.queryByText('Top Games Today')).not.toBeInTheDocument();
+	});
+
+	it('renders today, top, and upcoming sections in that order', () => {
+		const data = {
+			configured: true,
+			teams: baseData.teams,
+			todays_games: [makeGame({ id: '1' })],
+			trending: [makeTrendingGame({ id: '2' })],
+			upcoming_games: [makeGame({ id: '3', opponent: 'Chicago Bears', home_team: 'Chicago Bears' })],
+			trending_leagues: baseData.trending_leagues,
+		};
+
+		render(SportsDetail, { props: { data } });
+
+		const today = screen.getByText("My Team's Games Today");
+		const top = screen.getByText('Top Games Today');
+		const upcoming = screen.getByText("My Team's Upcoming Games");
+
+		// DOM order: today's section heading appears before top games, which
+		// appears before the upcoming section heading.
+		expect(today.compareDocumentPosition(top) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		expect(top.compareDocumentPosition(upcoming) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+	});
+
+	it("does not duplicate a followed team's today game inside the top games section", () => {
+		// Dedup between todays_games and trending happens server-side; the
+		// component just needs to render each list as given without merging
+		// them.
+		const data = {
+			configured: true,
+			teams: baseData.teams,
+			todays_games: [makeGame({ id: '10' })],
+			trending: [makeTrendingGame({ id: '11' })],
+			upcoming_games: [],
+			trending_leagues: baseData.trending_leagues,
+		};
+
+		const { container } = render(SportsDetail, { props: { data } });
+
+		const occurrences = (container.textContent ?? '').split('Dallas Cowboys: @ New York Giants').length - 1;
+		expect(occurrences).toBe(1);
 	});
 });

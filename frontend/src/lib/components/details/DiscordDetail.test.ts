@@ -7,6 +7,7 @@ const { widgetDetail, updateWidgetSettings } = vi.hoisted(() => ({
 }));
 vi.mock('$lib/api', () => ({ api: { widgetDetail, updateWidgetSettings } }));
 vi.mock('$app/state', () => ({ page: { params: { id: 'discord' } } }));
+vi.mock('$app/environment', () => ({ browser: true }));
 
 import DiscordDetail from './DiscordDetail.svelte';
 
@@ -55,16 +56,37 @@ describe('DiscordDetail', () => {
 		expect(screen.queryByText('No recent messages.')).not.toBeInTheDocument();
 	});
 
+	it('renders Discord markdown in message content', () => {
+		const { container } = render(DiscordDetail, {
+			props: {
+				data: {
+					...baseData,
+					messages: [
+						{
+							id: '1',
+							author: 'Alice',
+							avatar_url: null,
+							content: 'This is **bold** text',
+							timestamp: '2024-01-01T00:00:00Z',
+						},
+					],
+				},
+			},
+		});
+
+		expect(container.querySelector('.content strong')).toHaveTextContent('bold');
+	});
+
 	it('shows the marquee-specific field only in marquee mode', async () => {
 		render(DiscordDetail, { props: { data: baseData } });
 
 		await fireEvent.click(screen.getByText('Edit settings'));
 
-		expect(screen.queryByText('Scroll duration (seconds)')).not.toBeInTheDocument();
+		expect(screen.queryByText('Scroll speed (higher = slower, 40 = normal)')).not.toBeInTheDocument();
 
 		await fireEvent.change(screen.getByLabelText('Display mode'), { target: { value: 'marquee' } });
 
-		expect(screen.getByText('Scroll duration (seconds)')).toBeInTheDocument();
+		expect(screen.getByText('Scroll speed (higher = slower, 40 = normal)')).toBeInTheDocument();
 		expect(screen.queryByText('Seconds per message')).not.toBeInTheDocument();
 	});
 

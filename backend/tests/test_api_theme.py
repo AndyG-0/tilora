@@ -24,7 +24,7 @@ def test_get_theme_lists_all_themes_with_dark_default(client):
     assert response.status_code == 200
     body = response.json()
     assert body["default"] == "dark"
-    assert {t["id"] for t in body["themes"]} == {"light", "dark", "sepia", "contrast"}
+    assert {t["id"] for t in body["themes"]} == {"light", "dark", "sepia", "contrast", "forest", "ocean"}
 
 
 def test_theme_route_requires_a_session():

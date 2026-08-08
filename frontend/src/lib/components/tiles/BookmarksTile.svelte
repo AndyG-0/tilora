@@ -4,6 +4,7 @@
 	import TileCard from '$lib/components/TileCard.svelte';
 	import type { BookmarksData } from '$lib/api';
 	import { faviconSrc, hideBrokenIcon } from '$lib/bookmarkIcons';
+	import { _ } from 'svelte-i18n';
 
 	let { widgetId }: { widgetId: string } = $props();
 
@@ -42,9 +43,9 @@
 				{/each}
 			</ul>
 		{:else if summary}
-			<div class="empty">No bookmarks yet</div>
+			<div class="empty">{$_('bookmarks.tile.empty')}</div>
 		{:else}
-			<div class="empty">Loading bookmarks…</div>
+			<div class="empty">{$_('bookmarks.tile.loading')}</div>
 		{/if}
 	</div>
 </TileCard>

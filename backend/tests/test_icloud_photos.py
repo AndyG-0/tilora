@@ -37,12 +37,19 @@ class FakePhotosService:
 
 
 class FakeService:
-    def __init__(self, requires_2fa: bool = False, albums: dict[str, FakeAlbum] | None = None):
+    def __init__(
+        self,
+        requires_2fa: bool = False,
+        albums: dict[str, FakeAlbum] | None = None,
+        push_notification_succeeds: bool = True,
+    ):
         self.requires_2fa = requires_2fa
         self.is_trusted_session = False
         self.photos = FakePhotosService(albums or {})
         self._2fa_valid_code = "123456"
         self.trust_session_called = False
+        self._push_notification_succeeds = push_notification_succeeds
+        self.trigger_2fa_push_notification_called = False
 
     def validate_2fa_code(self, code: str) -> bool:
         return code == self._2fa_valid_code
@@ -50,6 +57,10 @@ class FakeService:
     def trust_session(self) -> None:
         self.trust_session_called = True
         self.is_trusted_session = True
+
+    def trigger_2fa_push_notification(self) -> bool:
+        self.trigger_2fa_push_notification_called = True
+        return self._push_notification_succeeds
 
 
 def test_is_configured():
@@ -77,6 +88,18 @@ async def test_start_auth_reports_2fa_required(monkeypatch):
 
     assert result == {"connected": False, "requires_2fa": True}
     assert cache.get(icloud_photos._SERVICE_CACHE_KEY) is None
+    assert cache.get(icloud_photos._PENDING_SERVICE_CACHE_KEY) is service
+    assert service.trigger_2fa_push_notification_called is True
+
+
+async def test_start_auth_still_reports_2fa_required_when_push_trigger_fails(monkeypatch):
+    service = FakeService(requires_2fa=True, push_notification_succeeds=False)
+    monkeypatch.setattr(icloud_photos, "_build_service", lambda u, p: service)
+
+    result = await icloud_photos.start_auth("user@example.com", "hunter2")
+
+    assert result == {"connected": False, "requires_2fa": True}
+    assert service.trigger_2fa_push_notification_called is True
     assert cache.get(icloud_photos._PENDING_SERVICE_CACHE_KEY) is service
 
 
@@ -119,6 +142,18 @@ def test_is_connected_cached():
     assert icloud_photos.is_connected_cached() is False
     cache.set(icloud_photos._SERVICE_CACHE_KEY, object(), 60)
     assert icloud_photos.is_connected_cached() is True
+
+
+def test_invalidate_service_cache_drops_service_pending_and_photo_list():
+    cache.set(icloud_photos._SERVICE_CACHE_KEY, object(), 60)
+    cache.set(icloud_photos._PENDING_SERVICE_CACHE_KEY, object(), 60)
+    cache.set(icloud_photos._PHOTO_LIST_CACHE_KEY, [object()], 60)
+
+    icloud_photos.invalidate_service_cache()
+
+    assert cache.get(icloud_photos._SERVICE_CACHE_KEY) is None
+    assert cache.get(icloud_photos._PENDING_SERVICE_CACHE_KEY) is None
+    assert cache.get(icloud_photos._PHOTO_LIST_CACHE_KEY) is None
 
 
 async def test_list_photos_returns_assets_from_named_album(monkeypatch):

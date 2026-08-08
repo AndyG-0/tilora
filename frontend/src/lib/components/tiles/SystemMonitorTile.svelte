@@ -2,6 +2,7 @@
 	import { pollWidget } from '$lib/polling';
 	import { api, type SystemMonitorSummary } from '$lib/api';
 	import TileCard from '$lib/components/TileCard.svelte';
+	import { _ } from 'svelte-i18n';
 
 	let { widgetId }: { widgetId: string } = $props();
 
@@ -20,21 +21,21 @@
 
 <TileCard {widgetId}>
 	{#if !summary}
-		<div class="status">Loading system stats…</div>
+		<div class="status">{$_('system_monitor.tile.loading')}</div>
 	{:else}
 		<div class="title">{summary.hostname}</div>
 		<div class="stats">
 			<div class="stat">
 				<div class="value">{Math.round(summary.cpu_percent)}%</div>
-				<div class="label">CPU</div>
+				<div class="label">{$_('system_monitor.tile.cpu')}</div>
 			</div>
 			<div class="stat">
 				<div class="value">{Math.round(summary.memory_percent)}%</div>
-				<div class="label">RAM</div>
+				<div class="label">{$_('system_monitor.tile.ram')}</div>
 			</div>
 			<div class="stat">
 				<div class="value">{Math.round(summary.disk_percent)}%</div>
-				<div class="label">Disk</div>
+				<div class="label">{$_('system_monitor.tile.disk')}</div>
 			</div>
 		</div>
 	{/if}

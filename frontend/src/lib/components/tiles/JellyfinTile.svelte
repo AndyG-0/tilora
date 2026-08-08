@@ -3,11 +3,12 @@
 	import { api } from '$lib/api';
 	import TileCard from '$lib/components/TileCard.svelte';
 	import JellyfinPlayer from '$lib/components/JellyfinPlayer.svelte';
-	import type { JellyfinItem } from '$lib/api';
+	import type { JellyfinItem, JellyfinSection } from '$lib/api';
+	import { _ } from 'svelte-i18n';
 
 	interface JellyfinSummary {
 		connected: boolean;
-		recent_items: JellyfinItem[];
+		sections: JellyfinSection[];
 	}
 
 	let { widgetId }: { widgetId: string } = $props();
@@ -37,30 +38,41 @@
 <TileCard {widgetId}>
 	<div class="title">Jellyfin</div>
 	{#if !summary}
-		<div class="condition">Loading…</div>
+		<div class="condition">{$_('common.loading')}</div>
 	{:else if !summary.connected}
-		<div class="condition">Not connected</div>
-	{:else if summary.recent_items.length}
-		<div class="posters">
-			{#each summary.recent_items as item (item.id)}
-				{#if item.has_poster}
-					<span
-						class="poster-btn"
-						role="button"
-						tabindex="0"
-						aria-label={`Play ${item.name}`}
-						onclick={(event) => playItem(event, item)}
-						onkeydown={(event) => {
-							if (event.key === 'Enter' || event.key === ' ') playItem(event, item);
-						}}
-					>
-						<img class="poster" src={api.jellyfinImageUrl(widgetId, item.id)} alt={item.name} />
-					</span>
+		<div class="condition">{$_('common.not_connected')}</div>
+	{:else if summary.sections.some((section) => section.items.length > 0)}
+		<div class="sections">
+			{#each summary.sections as section (section.label)}
+				{#if section.items.length > 0}
+					<div class="section">
+						{#if summary.sections.length > 1}
+							<div class="section-label">{section.label}</div>
+						{/if}
+						<div class="posters">
+							{#each section.items as item (item.id)}
+								{#if item.has_poster}
+									<span
+										class="poster-btn"
+										role="button"
+										tabindex="0"
+										aria-label={$_('jellyfin.tile.play_aria', { values: { name: item.name } })}
+										onclick={(event) => playItem(event, item)}
+										onkeydown={(event) => {
+											if (event.key === 'Enter' || event.key === ' ') playItem(event, item);
+										}}
+									>
+										<img class="poster" src={api.jellyfinImageUrl(widgetId, item.id)} alt={item.name} />
+									</span>
+								{/if}
+							{/each}
+						</div>
+					</div>
 				{/if}
 			{/each}
 		</div>
 	{:else}
-		<div class="condition">No recently added items</div>
+		<div class="condition">{$_('jellyfin.tile.nothing_to_show')}</div>
 	{/if}
 </TileCard>
 
@@ -78,6 +90,22 @@
 		font-weight: 600;
 		color: var(--color-text-muted);
 		margin: 0 0 0.35rem;
+	}
+
+	.sections {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+		overflow: hidden;
+	}
+
+	.section-label {
+		font-size: 0.7rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+		color: var(--color-text-muted);
+		margin: 0 0 0.3rem;
 	}
 
 	.posters {

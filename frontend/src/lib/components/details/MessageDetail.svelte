@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { api } from '$lib/api';
+	import { renderMarkdown } from '$lib/markdown';
+	import { _ } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	interface MessageDetailData {
 		title: string;
@@ -33,7 +36,7 @@
 			message = await api.widgetDetail<MessageDetailData>(page.params.id!);
 			editing = false;
 		} catch {
-			error = 'Could not update the message.';
+			error = get(_)('message.detail.save_error');
 		} finally {
 			saving = false;
 		}
@@ -43,34 +46,36 @@
 <div class="header">
 	<h1>{message.title || 'Message'}</h1>
 	<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
-		{editing ? 'Cancel' : 'Edit message'}
+		{editing ? $_('common.cancel') : $_('message.detail.edit_message')}
 	</button>
 </div>
 
 {#if editing}
 	<div class="settings-form">
 		<label>
-			Title
+			{$_('message.detail.title_label')}
 			<input type="text" bind:value={titleInput} />
 		</label>
 		<label>
-			Text
+			{$_('message.detail.text_label')}
 			<textarea rows="6" bind:value={textInput}></textarea>
 		</label>
+		<p class="hint">{$_('message.detail.markdown_hint')}</p>
 
 		{#if error}
 			<p class="hint error">{error}</p>
 		{/if}
 
 		<button class="save" disabled={saving} onclick={saveMessage}>
-			{saving ? 'Saving…' : 'Save'}
+			{saving ? $_('common.saving') : $_('common.save')}
 		</button>
 	</div>
 {:else if error}
 	<p class="hint error">{error}</p>
 {/if}
 
-<p class="current">{message.text}</p>
+<!-- eslint-disable-next-line svelte/no-at-html-tags -- renderMarkdown sanitizes with DOMPurify against an explicit tag/attribute allowlist before this reaches the DOM. -->
+<div class="current">{@html renderMarkdown(message.text)}</div>
 
 <style>
 	.header {
@@ -146,7 +151,53 @@
 	.current {
 		font-size: 1.3rem;
 		line-height: 1.5;
-		white-space: pre-wrap;
 		overflow-wrap: break-word;
+	}
+
+	/* {@html}-injected markdown sits outside Svelte's scoped-style tree. */
+	.current :global(p) {
+		margin: 0 0 0.6em;
+	}
+
+	.current :global(p:last-child) {
+		margin-bottom: 0;
+	}
+
+	.current :global(ul),
+	.current :global(ol) {
+		margin: 0 0 0.6em;
+		padding-left: 1.4em;
+	}
+
+	.current :global(h1),
+	.current :global(h2),
+	.current :global(h3) {
+		margin: 0.75em 0 0.4em;
+	}
+
+	.current :global(blockquote) {
+		margin: 0 0 0.6em;
+		padding-left: 0.75em;
+		border-left: 3px solid var(--color-border);
+		color: var(--color-text-muted);
+	}
+
+	.current :global(code) {
+		background: var(--color-surface);
+		border-radius: 0.25rem;
+		padding: 0.1em 0.3em;
+	}
+
+	.current :global(pre) {
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		padding: 0.75em;
+		overflow-x: auto;
+	}
+
+	.current :global(pre code) {
+		background: none;
+		padding: 0;
 	}
 </style>

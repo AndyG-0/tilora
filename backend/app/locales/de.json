@@ -1,0 +1,110 @@
+{
+	"clock": {
+		"period": {
+			"am": "AM",
+			"pm": "PM"
+		}
+	},
+	"date": {
+		"weekday": {
+			"monday": "Montag",
+			"tuesday": "Dienstag",
+			"wednesday": "Mittwoch",
+			"thursday": "Donnerstag",
+			"friday": "Freitag",
+			"saturday": "Samstag",
+			"sunday": "Sonntag"
+		},
+		"month": {
+			"january": "Januar",
+			"february": "Februar",
+			"march": "März",
+			"april": "April",
+			"may": "Mai",
+			"june": "Juni",
+			"july": "Juli",
+			"august": "August",
+			"september": "September",
+			"october": "Oktober",
+			"november": "November",
+			"december": "Dezember"
+		}
+	},
+	"weather": {
+		"condition": {
+			"clear_sky": "Klarer Himmel",
+			"mainly_clear": "Überwiegend klar",
+			"partly_cloudy": "Teilweise bewölkt",
+			"overcast": "Bedeckt",
+			"fog": "Nebel",
+			"depositing_rime_fog": "Reifnebel",
+			"light_drizzle": "Leichter Nieselregen",
+			"moderate_drizzle": "Mäßiger Nieselregen",
+			"dense_drizzle": "Starker Nieselregen",
+			"slight_rain": "Leichter Regen",
+			"moderate_rain": "Mäßiger Regen",
+			"heavy_rain": "Starker Regen",
+			"slight_snow": "Leichter Schneefall",
+			"moderate_snow": "Mäßiger Schneefall",
+			"heavy_snow": "Starker Schneefall",
+			"slight_rain_showers": "Leichte Regenschauer",
+			"moderate_rain_showers": "Mäßige Regenschauer",
+			"violent_rain_showers": "Heftige Regenschauer",
+			"thunderstorm": "Gewitter",
+			"unknown": "Unbekannt"
+		},
+		"air_quality": {
+			"good": "Gut",
+			"moderate": "Mäßig",
+			"unhealthy_sensitive": "Ungesund für empfindliche Gruppen",
+			"unhealthy": "Ungesund",
+			"very_unhealthy": "Sehr ungesund",
+			"hazardous": "Gefährlich"
+		}
+	},
+	"sports": {
+		"error": {
+			"no_team_configured": "Kein Team konfiguriert.",
+			"unsupported_league": "Nicht unterstützte Liga: '{league}'."
+		}
+	},
+	"steam": {
+		"status": {
+			"offline": "Offline",
+			"online": "Online",
+			"busy": "Beschäftigt",
+			"away": "Abwesend",
+			"snooze": "Nicht stören",
+			"looking_to_trade": "Sucht Tauschpartner",
+			"looking_to_play": "Sucht Mitspieler"
+		}
+	},
+	"flights": {
+		"your_location": "Dein Standort"
+	},
+	"bf6": {
+		"error": {
+			"server_not_found": "Kein Server gefunden, der zu „{server_name}“ passt."
+		}
+	},
+	"ai_insights": {
+		"summary": {
+			"no_briefing": "Es wurde noch kein Kurzbericht erstellt."
+		}
+	},
+	"calendar": {
+		"event": {
+			"untitled": "(ohne Titel)"
+		}
+	},
+	"discord": {
+		"unknown_channel": "unbekannter-kanal",
+		"unknown_author": "unbekannt"
+	},
+	"jellyfin": {
+		"section": {
+			"recently_added": "Kürzlich hinzugefügt",
+			"continue_watching": "Weiterschauen"
+		}
+	}
+}

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { wallTime } from '$lib/clockTime';
+	import { _ } from 'svelte-i18n';
 
 	let { now, timezone, size }: { now: Date; timezone: string; size: 'tile' | 'detail' } = $props();
 
@@ -22,7 +23,7 @@
 	const groupLabels = ['H', 'H', 'M', 'M', 'S', 'S'];
 </script>
 
-<div class="binary" class:large={size === 'detail'} role="img" aria-label="Binary clock face">
+<div class="binary" class:large={size === 'detail'} role="img" aria-label={$_('clock.aria_binary')}>
 	{#each columns as column, colIndex (colIndex)}
 		<div class="column">
 			{#each column as bit, rowIndex (rowIndex)}
@@ -47,8 +48,8 @@
 	}
 
 	.dot {
-		width: 0.55rem;
-		height: 0.55rem;
+		width: clamp(0.4rem, 8cqh, 0.7rem);
+		height: clamp(0.4rem, 8cqh, 0.7rem);
 		border-radius: 50%;
 		border: 1.5px solid var(--color-border);
 		background: transparent;

@@ -160,6 +160,18 @@ widgets:
           name: "Hacker News"
       item_limit: 5
 
+  - id: flights
+    type: flights
+    # Disabled by default — swap in your own coordinates before enabling.
+    enabled: false
+    layout: { col: 1, row: 6, colSpan: 2, rowSpan: 1 }
+    settings:
+      # Fort Worth, TX by default — swap for your own coordinates.
+      latitude: 32.7555
+      longitude: -97.3308
+      location_name: "Fort Worth, TX"
+      radius_nm: 15
+
   - id: alert
     type: alert
     # Disabled by default — position it once you want alerts (raised manually
@@ -440,6 +452,36 @@ widgets:
       ssh_port: 22
       username: "admin"
 
+  - id: qbittorrent
+    type: qbittorrent
+    # Disabled by default. `host`/`port`/`use_https` point at the qBittorrent
+    # WebUI (Tools -> Options -> Web UI in the qBittorrent app). Set the
+    # WebUI username/password from this widget's detail view (not here, so
+    # the password isn't committed to this git-tracked file — stored in the
+    # backend's local database instead, same as the Pi-hole/Synology
+    # widgets). Shows active/downloading/seeding torrent counts and total
+    # download/upload speed, plus a per-torrent list in the detail view.
+    enabled: false
+    layout: { col: 3, row: 13, colSpan: 2, rowSpan: 1 }
+    settings:
+      host: ""
+      port: 8080
+      use_https: false
+      username: "admin"
+
+  - id: speedtest
+    type: speedtest
+    # Disabled by default. Runs a real download/upload/ping test against the
+    # nearest speedtest.net server on `interval_minutes` (default 60,
+    # editable from this widget's detail view) — no host/credentials to
+    # configure. Shows the latest result plus a trend history in the detail
+    # view.
+    enabled: false
+    layout: { col: 3, row: 14, colSpan: 2, rowSpan: 1 }
+    settings:
+      title: "Speedtest"
+      interval_minutes: 60
+
   - id: goodreads
     type: goodreads
     # Disabled by default. `user_id` is the numeric id in your Goodreads
@@ -468,3 +510,49 @@ widgets:
       bookmarks:
         - name: "GitHub"
           url: "https://github.com"
+
+  - id: chores
+    type: chores
+    # Disabled by default. Each logged-in user has their own list, added via
+    # this widget's detail view (not here — there's nothing to hand-type,
+    # since items are per-user DB rows, not settings). Shows open item count
+    # on the tile, full checkable list in the detail view.
+    enabled: false
+    layout: { col: 1, row: 15, colSpan: 1, rowSpan: 2 }
+    settings:
+      title: "To-Do"
+
+  - id: shopping
+    type: shopping
+    # Disabled by default. One shared list for the whole household — unlike
+    # Chores, items aren't owned by whoever added them, so any logged-in
+    # user can check off or remove any item. Added via this widget's detail
+    # view, same reasoning as Chores above.
+    enabled: false
+    layout: { col: 2, row: 15, colSpan: 1, rowSpan: 2 }
+    settings:
+      title: "Shopping List"
+
+  - id: packages
+    type: packages
+    # Disabled by default. Requires a `TRACK17_API_KEY` in the backend's
+    # .env (17track.net/en/api) — the widget just shows a "17Track isn't
+    # configured" state until that's set. One shared tracking-number list
+    # for the whole household, same "network" scope as Shopping. Add a
+    # tracking number from this widget's detail view; status/ETA refresh
+    # on a slow background interval since 17Track's free tier is
+    # rate-limited, not on every dashboard poll.
+    enabled: false
+    layout: { col: 3, row: 15, colSpan: 1, rowSpan: 2 }
+    settings:
+      title: "Packages"
+
+  - id: nasa_apod
+    type: nasa_apod
+    # Disabled by default. Works out of the box with NASA's shared
+    # "DEMO_KEY" (low rate limit); set `NASA_API_KEY` in the backend's
+    # .env (api.nasa.gov) for a personal, higher-limit key.
+    enabled: false
+    layout: { col: 4, row: 15, colSpan: 1, rowSpan: 2 }
+    settings:
+      title: "Astronomy Picture of the Day"

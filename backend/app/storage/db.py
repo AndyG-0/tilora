@@ -15,7 +15,8 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from app.config import DB_PATH
+from app.config import DB_PATH, SECRET_APP_SETTINGS_KEYS
+from app.crypto import decrypt, encrypt
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS ai_runs (
@@ -25,6 +26,40 @@ CREATE TABLE IF NOT EXISTS ai_runs (
     result TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_ai_runs_widget_id ON ai_runs (widget_id, ran_at DESC);
+
+CREATE TABLE IF NOT EXISTS speedtest_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    widget_id TEXT NOT NULL,
+    ran_at TEXT NOT NULL,
+    download_mbps REAL NOT NULL,
+    upload_mbps REAL NOT NULL,
+    ping_ms REAL NOT NULL,
+    server_name TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_speedtest_runs_widget_id ON speedtest_runs (widget_id, ran_at DESC);
+
+CREATE TABLE IF NOT EXISTS chores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    widget_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    text TEXT NOT NULL,
+    completed INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_chores_widget_user ON chores (widget_id, user_id, completed, created_at);
+
+CREATE TABLE IF NOT EXISTS shopping_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    widget_id TEXT NOT NULL,
+    text TEXT NOT NULL,
+    checked INTEGER NOT NULL DEFAULT 0,
+    added_by TEXT NOT NULL,
+    checked_by TEXT,
+    created_at TEXT NOT NULL,
+    checked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_shopping_items_widget ON shopping_items (widget_id, checked, created_at);
 
 CREATE TABLE IF NOT EXISTS widget_settings (
     widget_id TEXT PRIMARY KEY,
@@ -39,6 +74,19 @@ CREATE TABLE IF NOT EXISTS widget_layout (
     PRIMARY KEY (user_id, device_id, widget_id)
 );
 CREATE INDEX IF NOT EXISTS idx_widget_layout_widget_id ON widget_layout (widget_id);
+
+-- Per-(user, device) screensaver configuration (enabled, idle timeout,
+-- rotation interval, which widgets to cycle through) — same scoping as
+-- widget_layout above, since each household member's idle-screensaver
+-- behavior can differ per physical screen they use. One row per pair, not
+-- one per widget, so unlike widget_layout there's no widget_id column or
+-- per-widget index: the widget id list lives inside the settings blob.
+CREATE TABLE IF NOT EXISTS screensaver_settings (
+    user_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    settings TEXT NOT NULL,
+    PRIMARY KEY (user_id, device_id)
+);
 
 -- Per-user overrides for "personal"-scope plugins (e.g. RSS, calendar) whose
 -- content should differ per household member, unlike the shared/global
@@ -151,6 +199,50 @@ CREATE TABLE IF NOT EXISTS photo_index_meta (
     status TEXT NOT NULL DEFAULT 'ok',
     last_error TEXT
 );
+
+-- Dedup for the severe-weather scheduler job: tracks which NWS alert (or
+-- synthesized forecast-heuristic) keys have already been turned into an
+-- `alerts` row for a given weather widget, so a 15-minute poll doesn't
+-- re-alert on the same ongoing warning. No expiry/cleanup — same
+-- unbounded-growth tradeoff as the alerts table itself.
+CREATE TABLE IF NOT EXISTS severe_weather_seen (
+    widget_id TEXT NOT NULL,
+    alert_key TEXT NOT NULL,
+    first_seen_at TEXT NOT NULL,
+    PRIMARY KEY (widget_id, alert_key)
+);
+
+CREATE TABLE IF NOT EXISTS packages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    widget_id TEXT NOT NULL,
+    tracking_number TEXT NOT NULL,
+    carrier TEXT,
+    label TEXT,
+    status TEXT,
+    last_event TEXT,
+    eta_date TEXT,
+    delivered INTEGER NOT NULL DEFAULT 0,
+    added_at TEXT NOT NULL,
+    updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_packages_widget ON packages (widget_id, delivered, eta_date);
+
+-- A household member's own RSS feed catalog, independent of any single
+-- widget instance — feeds are added/removed here once, then any of that
+-- same user's RSS tiles picks a subset via feed_ids in its (personal-scope)
+-- widget settings. Deliberately per-user rather than shared across the
+-- household: each member reads different headlines (see
+-- app.plugins.rss.plugin's settings_scope comment).
+CREATE TABLE IF NOT EXISTS rss_feeds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    url TEXT NOT NULL,
+    name TEXT,
+    item_limit INTEGER NOT NULL DEFAULT 10,
+    created_at TEXT NOT NULL,
+    UNIQUE (user_id, url)
+);
+CREATE INDEX IF NOT EXISTS idx_rss_feeds_user_id ON rss_feeds (user_id);
 """
 
 
@@ -168,11 +260,35 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def _upsert(conn: sqlite3.Connection, table: str, row: dict[str, Any], key_columns: tuple[str, ...]) -> None:
+    """`INSERT INTO table (...) VALUES (...) ON CONFLICT (key_columns) DO
+    UPDATE SET ...` for `row`, generically — the same shape hand-copied
+    across every settings/preferences table below (widget_settings,
+    widget_layout, widget_user_settings, widget_device_settings,
+    screensaver_settings, user_preferences, oauth_tokens, custom_widgets,
+    app_settings) before this helper existed. `table` and `key_columns` are
+    always caller-supplied literals (never request data), so building SQL
+    via f-string here carries no injection risk.
+    """
+    columns = list(row.keys())
+    update_columns = [c for c in columns if c not in key_columns]
+    conflict_action = (
+        "DO UPDATE SET " + ", ".join(f"{c} = excluded.{c}" for c in update_columns) if update_columns else "DO NOTHING"
+    )
+    conn.execute(
+        f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)}) "
+        f"ON CONFLICT ({', '.join(key_columns)}) {conflict_action}",
+        [row[c] for c in columns],
+    )
+
+
 # Schema changes to a table _SCHEMA already created (adding/renaming a
 # column, backfilling data) — `CREATE TABLE IF NOT EXISTS` alone only
 # handles brand-new tables, not evolving an existing one on an upgrade.
-# Append new SQL scripts here in order; each one is a single version step
-# applied at most once, tracked via SQLite's built-in `PRAGMA user_version`.
+# Append new SQL scripts here in order; each one is a single version step,
+# applied at most once and committed atomically (together with its own
+# `PRAGMA user_version` bump) by `_apply_migrations` — see that function for
+# why script migrations don't need their own BEGIN/COMMIT.
 
 # `widget_layout` gained a (user_id, device_id) dimension for multi-user/
 # multi-device support. SQLite can't ALTER a PRIMARY KEY, so this rebuilds
@@ -182,13 +298,8 @@ def _connect() -> sqlite3.Connection:
 # dashboard's current layout instead of resetting it. No FK constraints
 # anywhere in this schema, so re-keying to an id that may not (yet, or ever)
 # have a matching users/devices row is safe — it just means those rows are
-# inert until/unless something creates that id. Explicit BEGIN/COMMIT
-# because `_apply_migrations` only advances `PRAGMA user_version` after this
-# whole script returns — without a transaction, a crash between DROP TABLE
-# and the RENAME could lose the table on a retried boot.
+# inert until/unless something creates that id.
 _MIGRATION_001_USERS_DEVICES = """
-BEGIN;
-
 CREATE TABLE IF NOT EXISTS widget_layout_new (
     user_id TEXT NOT NULL,
     device_id TEXT NOT NULL,
@@ -203,8 +314,6 @@ SELECT 'default', 'default', widget_id, layout FROM widget_layout;
 DROP TABLE widget_layout;
 ALTER TABLE widget_layout_new RENAME TO widget_layout;
 CREATE INDEX IF NOT EXISTS idx_widget_layout_widget_id ON widget_layout (widget_id);
-
-COMMIT;
 """
 
 
@@ -288,22 +397,130 @@ def _migration_004_merge_container_widgets(conn: sqlite3.Connection) -> None:
         )
 
 
+_SPORTS_WEATHER_PERSONAL_SCOPE_WIDGET_TYPES = ("sports", "weather")
+
+
+# `sports`/`weather` moved from global (whole-household) settings to per-user
+# settings (favorite teams, home location) — same reasoning and mechanics as
+# _migration_003_seed_personal_widget_settings above, just for a different
+# widget-type list added later. See that migration's comment for the
+# widget-id-to-type detection logic this mirrors.
+def _migration_005_seed_personal_sports_weather_settings(conn: sqlite3.Connection) -> None:
+    custom_types = {row["id"]: row["type"] for row in conn.execute("SELECT id, type FROM custom_widgets")}
+    user_ids = [row["id"] for row in conn.execute("SELECT id FROM users")]
+    if not user_ids:
+        return
+
+    for row in conn.execute("SELECT widget_id, settings FROM widget_settings").fetchall():
+        widget_id = row["widget_id"]
+        widget_type = custom_types.get(widget_id, widget_id)
+        if widget_type not in _SPORTS_WEATHER_PERSONAL_SCOPE_WIDGET_TYPES:
+            continue
+        conn.executemany(
+            "INSERT INTO widget_user_settings (user_id, widget_id, settings) VALUES (?, ?, ?) "
+            "ON CONFLICT (user_id, widget_id) DO NOTHING",
+            [(user_id, widget_id, row["settings"]) for user_id in user_ids],
+        )
+
+
+# RSS feeds moved out of each tile's own settings into a per-user catalog
+# (the `rss_feeds` table above) shared across that same user's RSS tiles —
+# see app.plugins.rss.plugin. This seeds the catalog from every existing
+# widget_user_settings row's inline `feeds: [{url, name}]` list (RSS has
+# been personal-scope since migration 003, so that's the only place old
+# feed lists can live) and rewrites the row to reference the new catalog
+# entries by id instead, dropping the now-obsolete `feeds`/`item_limit`
+# keys (item_limit moved onto each catalog feed, default 10). Detects a
+# row's widget type the same way migrations 003/005 do. Safe to run only
+# once per row: a row with no `feeds` key (fresh install, or already
+# migrated) is skipped rather than re-processed.
+def _migration_006_seed_rss_feed_catalog(conn: sqlite3.Connection) -> None:
+    custom_types = {row["id"]: row["type"] for row in conn.execute("SELECT id, type FROM custom_widgets")}
+
+    for row in conn.execute("SELECT user_id, widget_id, settings FROM widget_user_settings").fetchall():
+        widget_type = custom_types.get(row["widget_id"], row["widget_id"])
+        if widget_type != "rss":
+            continue
+
+        settings = json.loads(row["settings"])
+        feeds = settings.get("feeds")
+        if feeds is None:
+            continue
+
+        feed_ids = []
+        for feed in feeds:
+            url = feed.get("url")
+            if not url:
+                continue
+            existing = conn.execute(
+                "SELECT id FROM rss_feeds WHERE user_id = ? AND url = ?", (row["user_id"], url)
+            ).fetchone()
+            if existing is not None:
+                feed_ids.append(existing["id"])
+                continue
+            cursor = conn.execute(
+                "INSERT INTO rss_feeds (user_id, url, name, item_limit, created_at) VALUES (?, ?, ?, 10, ?)",
+                (row["user_id"], url, feed.get("name"), datetime.now(UTC).isoformat()),
+            )
+            feed_ids.append(cursor.lastrowid)
+
+        new_settings = {k: v for k, v in settings.items() if k not in ("feeds", "item_limit")}
+        new_settings["feed_ids"] = feed_ids
+        conn.execute(
+            "UPDATE widget_user_settings SET settings = ? WHERE user_id = ? AND widget_id = ?",
+            (json.dumps(new_settings), row["user_id"], row["widget_id"]),
+        )
+
+
 _MIGRATIONS: tuple[str | Callable[[sqlite3.Connection], None], ...] = (
     _MIGRATION_001_USERS_DEVICES,
     _migration_002_user_roles,
     _migration_003_seed_personal_widget_settings,
     _migration_004_merge_container_widgets,
+    _migration_005_seed_personal_sports_weather_settings,
+    _migration_006_seed_rss_feed_catalog,
 )
 
 
 def _apply_migrations(conn: sqlite3.Connection) -> None:
+    """Applies each un-run migration as its own atomic unit: that migration's
+    writes and its `PRAGMA user_version` bump commit (or roll back) together,
+    so a crash mid-migration leaves `user_version` pointing at the last
+    migration that actually completed — a retried boot resumes from exactly
+    that point instead of re-running (or skipping) one that may not be safe
+    to repeat. The old behavior only bumped `user_version` once, after every
+    migration in the list had run, so a crash partway through silently
+    reverted to "none applied" on the next boot even though some had already
+    written (and possibly weren't idempotent to rerun).
+
+    Uses fully manual transaction control (`isolation_level = None`) rather
+    than sqlite3's default implicit-BEGIN heuristic, because
+    `executescript()` unconditionally issues a COMMIT before it runs —
+    wrapping it in a caller-issued `conn.execute("BEGIN")` would just get
+    silently committed away. Baking `BEGIN`/`COMMIT` into the script text
+    itself (for script migrations) or driving them explicitly around the
+    call (for callable migrations) sidesteps that entirely. The script
+    branch has no explicit `except`/`ROLLBACK` of its own — if a later
+    statement in the script fails, the transaction it opened is left
+    pending on `conn`, and it's `init_db`'s enclosing `with _connect() as
+    conn:` that rolls it back as the exception propagates out.
+    """
+    conn.isolation_level = None
     current_version = conn.execute("PRAGMA user_version").fetchone()[0]
-    for migration in _MIGRATIONS[current_version:]:
+    for offset, migration in enumerate(_MIGRATIONS[current_version:]):
+        version = current_version + offset + 1
         if callable(migration):
-            migration(conn)
+            conn.execute("BEGIN")
+            try:
+                migration(conn)
+                conn.execute(f"PRAGMA user_version = {version}")
+            except BaseException:
+                conn.execute("ROLLBACK")
+                raise
+            else:
+                conn.execute("COMMIT")
         else:
-            conn.executescript(migration)
-    conn.execute(f"PRAGMA user_version = {len(_MIGRATIONS)}")
+            conn.executescript(f"BEGIN;\n{migration}\nPRAGMA user_version = {version};\nCOMMIT;")
 
 
 def init_db() -> None:
@@ -340,6 +557,39 @@ def ai_run_history(widget_id: str, limit: int = 10) -> list[dict[str, Any]]:
     return [{"ran_at": row["ran_at"], **json.loads(row["result"])} for row in rows]
 
 
+def record_speedtest_run(
+    widget_id: str, download_mbps: float, upload_mbps: float, ping_ms: float, server_name: str
+) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO speedtest_runs (widget_id, ran_at, download_mbps, upload_mbps, ping_ms, server_name) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (widget_id, datetime.now(UTC).isoformat(), download_mbps, upload_mbps, ping_ms, server_name),
+        )
+
+
+def latest_speedtest_run(widget_id: str) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT ran_at, download_mbps, upload_mbps, ping_ms, server_name FROM speedtest_runs "
+            "WHERE widget_id = ? ORDER BY ran_at DESC LIMIT 1",
+            (widget_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return dict(row)
+
+
+def speedtest_run_history(widget_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT ran_at, download_mbps, upload_mbps, ping_ms, server_name FROM speedtest_runs "
+            "WHERE widget_id = ? ORDER BY ran_at DESC LIMIT ?",
+            (widget_id, limit),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def save_widget_settings(widget_id: str, settings: dict[str, Any]) -> None:
     """Persist a widget's full settings dict, overwriting any prior override.
 
@@ -347,11 +597,7 @@ def save_widget_settings(widget_id: str, settings: dict[str, Any]) -> None:
     a backend restart without editing dashboard.yaml.
     """
     with _connect() as conn:
-        conn.execute(
-            "INSERT INTO widget_settings (widget_id, settings) VALUES (?, ?) "
-            "ON CONFLICT (widget_id) DO UPDATE SET settings = excluded.settings",
-            (widget_id, json.dumps(settings)),
-        )
+        _upsert(conn, "widget_settings", {"widget_id": widget_id, "settings": json.dumps(settings)}, ("widget_id",))
 
 
 def get_widget_settings(widget_id: str) -> dict[str, Any] | None:
@@ -369,10 +615,11 @@ def save_widget_layout(user_id: str, device_id: str, widget_id: str, layout: dic
     household member can arrange each of their screens independently.
     """
     with _connect() as conn:
-        conn.execute(
-            "INSERT INTO widget_layout (user_id, device_id, widget_id, layout) VALUES (?, ?, ?, ?) "
-            "ON CONFLICT (user_id, device_id, widget_id) DO UPDATE SET layout = excluded.layout",
-            (user_id, device_id, widget_id, json.dumps(layout)),
+        _upsert(
+            conn,
+            "widget_layout",
+            {"user_id": user_id, "device_id": device_id, "widget_id": widget_id, "layout": json.dumps(layout)},
+            ("user_id", "device_id", "widget_id"),
         )
 
 
@@ -436,6 +683,50 @@ def copy_widget_layout(user_id: str, source_device_id: str, target_device_id: st
         )
 
 
+_DEFAULT_SCREENSAVER_SETTINGS: dict[str, Any] = {
+    "enabled": False,
+    "idle_timeout_seconds": 300,
+    "rotation_interval_seconds": 25,
+    "widget_ids": [],
+    "text_animation_style": "marquee",
+    "led_color": "#ff8a00",
+    "text_pause_seconds": 8,
+    "flipboard_pattern": "top_to_bottom",
+}
+
+
+def get_screensaver_settings(user_id: str, device_id: str) -> dict[str, Any]:
+    """A (user, device)'s screensaver settings, defaults filled in for anything unset.
+
+    Same shape as `get_user_preferences`: defaults live here so callers (and
+    a brand-new row) never have to special-case a missing key.
+    """
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT settings FROM screensaver_settings WHERE user_id = ? AND device_id = ?",
+            (user_id, device_id),
+        ).fetchone()
+    overrides = json.loads(row["settings"]) if row else {}
+    return {**_DEFAULT_SCREENSAVER_SETTINGS, **overrides}
+
+
+def save_screensaver_settings(user_id: str, device_id: str, overrides: dict[str, Any]) -> dict[str, Any]:
+    """Merge `overrides` onto a (user, device)'s stored screensaver settings and persist the result.
+
+    Same merge-upsert shape as `save_user_preferences` — lets the API layer
+    send a partial PATCH body without first reading the current value.
+    """
+    merged = {**get_screensaver_settings(user_id, device_id), **overrides}
+    with _connect() as conn:
+        _upsert(
+            conn,
+            "screensaver_settings",
+            {"user_id": user_id, "device_id": device_id, "settings": json.dumps(merged)},
+            ("user_id", "device_id"),
+        )
+    return merged
+
+
 def save_widget_user_settings(user_id: str, widget_id: str, settings: dict[str, Any]) -> None:
     """Persist a (user, widget) settings override, overwriting any prior one.
 
@@ -444,10 +735,11 @@ def save_widget_user_settings(user_id: str, widget_id: str, settings: dict[str, 
     where the same widget_id should render different content per user.
     """
     with _connect() as conn:
-        conn.execute(
-            "INSERT INTO widget_user_settings (user_id, widget_id, settings) VALUES (?, ?, ?) "
-            "ON CONFLICT (user_id, widget_id) DO UPDATE SET settings = excluded.settings",
-            (user_id, widget_id, json.dumps(settings)),
+        _upsert(
+            conn,
+            "widget_user_settings",
+            {"user_id": user_id, "widget_id": widget_id, "settings": json.dumps(settings)},
+            ("user_id", "widget_id"),
         )
 
 
@@ -480,10 +772,11 @@ def save_widget_device_settings(device_id: str, widget_id: str, settings: dict[s
     in or the household's shared default.
     """
     with _connect() as conn:
-        conn.execute(
-            "INSERT INTO widget_device_settings (device_id, widget_id, settings) VALUES (?, ?, ?) "
-            "ON CONFLICT (device_id, widget_id) DO UPDATE SET settings = excluded.settings",
-            (device_id, widget_id, json.dumps(settings)),
+        _upsert(
+            conn,
+            "widget_device_settings",
+            {"device_id": device_id, "widget_id": widget_id, "settings": json.dumps(settings)},
+            ("device_id", "widget_id"),
         )
 
 
@@ -606,7 +899,9 @@ def get_app_settings() -> dict[str, str]:
     """
     with _connect() as conn:
         rows = conn.execute("SELECT key, value FROM app_settings").fetchall()
-    return {row["key"]: row["value"] for row in rows}
+    return {
+        row["key"]: (decrypt(row["value"]) if row["key"] in SECRET_APP_SETTINGS_KEYS else row["value"]) for row in rows
+    }
 
 
 def create_alert(widget_id: str, message: str, severity: str, expires_in_minutes: int | None = None) -> dict[str, Any]:
@@ -659,17 +954,321 @@ def dismiss_alert(alert_id: int) -> None:
         conn.execute("UPDATE alerts SET dismissed = 1 WHERE id = ?", (alert_id,))
 
 
+def has_seen_severe_weather_alert(widget_id: str, alert_key: str) -> bool:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM severe_weather_seen WHERE widget_id = ? AND alert_key = ?",
+            (widget_id, alert_key),
+        ).fetchone()
+    return row is not None
+
+
+def mark_severe_weather_alert_seen(widget_id: str, alert_key: str) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO severe_weather_seen (widget_id, alert_key, first_seen_at) VALUES (?, ?, ?)",
+            (widget_id, alert_key, datetime.now(UTC).isoformat()),
+        )
+
+
+_CHORE_COLUMNS = "id, widget_id, user_id, text, completed, created_at, completed_at"
+
+
+def add_chore(widget_id: str, user_id: str, text: str) -> dict[str, Any]:
+    created_at = datetime.now(UTC).isoformat()
+    with _connect() as conn:
+        cursor = conn.execute(
+            "INSERT INTO chores (widget_id, user_id, text, completed, created_at, completed_at) "
+            "VALUES (?, ?, ?, 0, ?, NULL)",
+            (widget_id, user_id, text, created_at),
+        )
+        chore_id = cursor.lastrowid
+    return {
+        "id": chore_id,
+        "widget_id": widget_id,
+        "user_id": user_id,
+        "text": text,
+        "completed": False,
+        "created_at": created_at,
+        "completed_at": None,
+    }
+
+
+def list_chores(widget_id: str, user_id: str) -> list[dict[str, Any]]:
+    """A user's items on `widget_id`'s list, open items first, oldest first within each group."""
+    with _connect() as conn:
+        rows = conn.execute(
+            f"SELECT {_CHORE_COLUMNS} FROM chores WHERE widget_id = ? AND user_id = ? "
+            "ORDER BY completed ASC, created_at ASC",
+            (widget_id, user_id),
+        ).fetchall()
+    return [dict(row) | {"completed": bool(row["completed"])} for row in rows]
+
+
+def complete_chore(chore_id: int, user_id: str) -> dict[str, Any] | None:
+    """Mark a chore done, scoped to `user_id` so one user can't complete another's item.
+
+    Returns the updated row, or None if no chore with that id belongs to this user.
+    """
+    completed_at = datetime.now(UTC).isoformat()
+    with _connect() as conn:
+        cursor = conn.execute(
+            "UPDATE chores SET completed = 1, completed_at = ? WHERE id = ? AND user_id = ?",
+            (completed_at, chore_id, user_id),
+        )
+        if cursor.rowcount == 0:
+            return None
+        row = conn.execute(f"SELECT {_CHORE_COLUMNS} FROM chores WHERE id = ?", (chore_id,)).fetchone()
+    return dict(row) | {"completed": bool(row["completed"])}
+
+
+def remove_chore(chore_id: int, user_id: str) -> dict[str, Any] | None:
+    """Delete a chore, scoped to `user_id`. Returns the deleted row, or None if not found/not owned."""
+    with _connect() as conn:
+        row = conn.execute(
+            f"SELECT {_CHORE_COLUMNS} FROM chores WHERE id = ? AND user_id = ?", (chore_id, user_id)
+        ).fetchone()
+        if row is None:
+            return None
+        conn.execute("DELETE FROM chores WHERE id = ?", (chore_id,))
+    return dict(row) | {"completed": bool(row["completed"])}
+
+
+_SHOPPING_COLUMNS = "id, widget_id, text, checked, added_by, checked_by, created_at, checked_at"
+
+
+def add_shopping_item(widget_id: str, text: str, added_by: str) -> dict[str, Any]:
+    created_at = datetime.now(UTC).isoformat()
+    with _connect() as conn:
+        cursor = conn.execute(
+            "INSERT INTO shopping_items (widget_id, text, checked, added_by, checked_by, created_at, checked_at) "
+            "VALUES (?, ?, 0, ?, NULL, ?, NULL)",
+            (widget_id, text, added_by, created_at),
+        )
+        item_id = cursor.lastrowid
+    return {
+        "id": item_id,
+        "widget_id": widget_id,
+        "text": text,
+        "checked": False,
+        "added_by": added_by,
+        "checked_by": None,
+        "created_at": created_at,
+        "checked_at": None,
+    }
+
+
+def list_shopping_items(widget_id: str) -> list[dict[str, Any]]:
+    """A widget's shared list, unchecked items first, oldest first within each group."""
+    with _connect() as conn:
+        rows = conn.execute(
+            f"SELECT {_SHOPPING_COLUMNS} FROM shopping_items WHERE widget_id = ? ORDER BY checked ASC, created_at ASC",
+            (widget_id,),
+        ).fetchall()
+    return [dict(row) | {"checked": bool(row["checked"])} for row in rows]
+
+
+def check_shopping_item(item_id: int, checked_by: str) -> dict[str, Any] | None:
+    """Mark a shopping item checked off. Returns the updated row, or None if not found."""
+    checked_at = datetime.now(UTC).isoformat()
+    with _connect() as conn:
+        cursor = conn.execute(
+            "UPDATE shopping_items SET checked = 1, checked_by = ?, checked_at = ? WHERE id = ?",
+            (checked_by, checked_at, item_id),
+        )
+        if cursor.rowcount == 0:
+            return None
+        row = conn.execute(f"SELECT {_SHOPPING_COLUMNS} FROM shopping_items WHERE id = ?", (item_id,)).fetchone()
+    return dict(row) | {"checked": bool(row["checked"])}
+
+
+def remove_shopping_item(item_id: int) -> dict[str, Any] | None:
+    """Delete a shopping item. Returns the deleted row, or None if not found."""
+    with _connect() as conn:
+        row = conn.execute(f"SELECT {_SHOPPING_COLUMNS} FROM shopping_items WHERE id = ?", (item_id,)).fetchone()
+        if row is None:
+            return None
+        conn.execute("DELETE FROM shopping_items WHERE id = ?", (item_id,))
+    return dict(row) | {"checked": bool(row["checked"])}
+
+
+_RSS_FEED_COLUMNS = "id, user_id, url, name, item_limit, created_at"
+
+
+def add_rss_feed(user_id: str, url: str, name: str | None, item_limit: int = 10) -> dict[str, Any]:
+    """Add a feed to a user's catalog. Adding a URL already in that user's
+    catalog is idempotent — it returns the existing entry unchanged rather
+    than erroring or duplicating it, since the (user_id, url) unique
+    constraint makes "add" and "get-or-create" the same operation here."""
+    created_at = datetime.now(UTC).isoformat()
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO rss_feeds (user_id, url, name, item_limit, created_at) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT (user_id, url) DO NOTHING",
+            (user_id, url, name, item_limit, created_at),
+        )
+        row = conn.execute(
+            f"SELECT {_RSS_FEED_COLUMNS} FROM rss_feeds WHERE user_id = ? AND url = ?", (user_id, url)
+        ).fetchone()
+    return dict(row)
+
+
+def list_rss_feeds(user_id: str) -> list[dict[str, Any]]:
+    """A user's whole feed catalog, oldest first."""
+    with _connect() as conn:
+        rows = conn.execute(
+            f"SELECT {_RSS_FEED_COLUMNS} FROM rss_feeds WHERE user_id = ? ORDER BY created_at ASC", (user_id,)
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_rss_feeds(user_id: str, feed_ids: list[int]) -> list[dict[str, Any]]:
+    """The subset of `feed_ids` that belong to this user, in catalog order.
+    Ids that don't exist or belong to someone else are silently dropped —
+    used to resolve a tile's selected feeds, where a since-deleted feed
+    should just mean one fewer group rather than an error."""
+    if not feed_ids:
+        return []
+    placeholders = ",".join("?" * len(feed_ids))
+    with _connect() as conn:
+        rows = conn.execute(
+            f"SELECT {_RSS_FEED_COLUMNS} FROM rss_feeds WHERE user_id = ? AND id IN ({placeholders}) "
+            "ORDER BY created_at ASC",
+            (user_id, *feed_ids),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def update_rss_feed(user_id: str, feed_id: int, name: str | None, item_limit: int) -> dict[str, Any] | None:
+    with _connect() as conn:
+        cursor = conn.execute(
+            "UPDATE rss_feeds SET name = ?, item_limit = ? WHERE id = ? AND user_id = ?",
+            (name, item_limit, feed_id, user_id),
+        )
+        if cursor.rowcount == 0:
+            return None
+        row = conn.execute(f"SELECT {_RSS_FEED_COLUMNS} FROM rss_feeds WHERE id = ?", (feed_id,)).fetchone()
+    return dict(row)
+
+
+def delete_rss_feed(user_id: str, feed_id: int) -> None:
+    with _connect() as conn:
+        conn.execute("DELETE FROM rss_feeds WHERE id = ? AND user_id = ?", (feed_id, user_id))
+
+
+_PACKAGE_COLUMNS = (
+    "id, widget_id, tracking_number, carrier, label, status, last_event, eta_date, delivered, added_at, updated_at"
+)
+
+
+def add_package(widget_id: str, tracking_number: str, label: str | None = None) -> dict[str, Any]:
+    added_at = datetime.now(UTC).isoformat()
+    with _connect() as conn:
+        cursor = conn.execute(
+            "INSERT INTO packages "
+            "(widget_id, tracking_number, carrier, label, status, last_event, eta_date, delivered, "
+            "added_at, updated_at) "
+            "VALUES (?, ?, NULL, ?, NULL, NULL, NULL, 0, ?, NULL)",
+            (widget_id, tracking_number, label, added_at),
+        )
+        package_id = cursor.lastrowid
+    return {
+        "id": package_id,
+        "widget_id": widget_id,
+        "tracking_number": tracking_number,
+        "carrier": None,
+        "label": label,
+        "status": None,
+        "last_event": None,
+        "eta_date": None,
+        "delivered": False,
+        "added_at": added_at,
+        "updated_at": None,
+    }
+
+
+def list_packages(widget_id: str) -> list[dict[str, Any]]:
+    """A widget's tracked packages, active (not yet delivered) first, earliest ETA first within each group."""
+    with _connect() as conn:
+        rows = conn.execute(
+            f"SELECT {_PACKAGE_COLUMNS} FROM packages WHERE widget_id = ? "
+            "ORDER BY delivered ASC, eta_date IS NULL, eta_date ASC, added_at ASC",
+            (widget_id,),
+        ).fetchall()
+    return [dict(row) | {"delivered": bool(row["delivered"])} for row in rows]
+
+
+def get_package(package_id: int) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute(f"SELECT {_PACKAGE_COLUMNS} FROM packages WHERE id = ?", (package_id,)).fetchone()
+    return None if row is None else dict(row) | {"delivered": bool(row["delivered"])}
+
+
+def remove_package(package_id: int) -> dict[str, Any] | None:
+    """Delete a tracked package. Returns the deleted row, or None if not found."""
+    with _connect() as conn:
+        row = conn.execute(f"SELECT {_PACKAGE_COLUMNS} FROM packages WHERE id = ?", (package_id,)).fetchone()
+        if row is None:
+            return None
+        conn.execute("DELETE FROM packages WHERE id = ?", (package_id,))
+    return dict(row) | {"delivered": bool(row["delivered"])}
+
+
+def update_package_status(
+    package_id: int,
+    carrier: str | None = None,
+    status: str | None = None,
+    last_event: str | None = None,
+    eta_date: str | None = None,
+    delivered: bool | None = None,
+) -> dict[str, Any] | None:
+    """Apply a 17Track refresh's results to a package row.
+
+    Each param defaults to None meaning "leave unchanged" — a refresh only
+    overwrites fields 17Track actually returned a value for, so a
+    momentarily-thin API response can't blank out previously-known status.
+    """
+    with _connect() as conn:
+        existing = conn.execute("SELECT * FROM packages WHERE id = ?", (package_id,)).fetchone()
+        if existing is None:
+            return None
+        conn.execute(
+            "UPDATE packages SET "
+            "carrier = COALESCE(?, carrier), "
+            "status = COALESCE(?, status), "
+            "last_event = COALESCE(?, last_event), "
+            "eta_date = COALESCE(?, eta_date), "
+            "delivered = COALESCE(?, delivered), "
+            "updated_at = ? "
+            "WHERE id = ?",
+            (
+                carrier,
+                status,
+                last_event,
+                eta_date,
+                None if delivered is None else int(delivered),
+                datetime.now(UTC).isoformat(),
+                package_id,
+            ),
+        )
+        row = conn.execute(f"SELECT {_PACKAGE_COLUMNS} FROM packages WHERE id = ?", (package_id,)).fetchone()
+    return dict(row) | {"delivered": bool(row["delivered"])}
+
+
 def save_oauth_tokens(
     provider: str, refresh_token: str, access_token: str | None = None, expires_at: str | None = None
 ) -> None:
     with _connect() as conn:
-        conn.execute(
-            "INSERT INTO oauth_tokens (provider, refresh_token, access_token, expires_at) "
-            "VALUES (?, ?, ?, ?) "
-            "ON CONFLICT (provider) DO UPDATE SET "
-            "refresh_token = excluded.refresh_token, access_token = excluded.access_token, "
-            "expires_at = excluded.expires_at",
-            (provider, refresh_token, access_token, expires_at),
+        _upsert(
+            conn,
+            "oauth_tokens",
+            {
+                "provider": provider,
+                "refresh_token": refresh_token,
+                "access_token": access_token,
+                "expires_at": expires_at,
+            },
+            ("provider",),
         )
 
 
@@ -694,11 +1293,11 @@ def save_oauth_access_token(provider: str, access_token: str, expires_at: str) -
 def save_custom_widget(widget_id: str, type_: str, layout: dict[str, Any], tab: str | None) -> None:
     """Persist a widget added via the UI (no dashboard.yaml entry to live in)."""
     with _connect() as conn:
-        conn.execute(
-            "INSERT INTO custom_widgets (id, type, layout, tab) VALUES (?, ?, ?, ?) "
-            "ON CONFLICT (id) DO UPDATE SET type = excluded.type, layout = excluded.layout, "
-            "tab = excluded.tab",
-            (widget_id, type_, json.dumps(layout), tab),
+        _upsert(
+            conn,
+            "custom_widgets",
+            {"id": widget_id, "type": type_, "layout": json.dumps(layout), "tab": tab},
+            ("id",),
         )
 
 
@@ -731,25 +1330,44 @@ def removed_widget_ids() -> set[str]:
 
 
 def save_app_settings(overrides: dict[str, str | None]) -> None:
-    """Upsert app setting overrides; a `None` value clears that key."""
+    """Upsert app setting overrides; a `None` value clears that key.
+
+    Values for SECRET_APP_SETTINGS_KEYS (API keys, OAuth secrets, CalDAV/
+    iCloud passwords) are encrypted before hitting disk — see app.crypto.
+    """
     with _connect() as conn:
         for key, value in overrides.items():
             if value is None:
                 conn.execute("DELETE FROM app_settings WHERE key = ?", (key,))
             else:
-                conn.execute(
-                    "INSERT INTO app_settings (key, value) VALUES (?, ?) "
-                    "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-                    (key, value),
-                )
+                stored = encrypt(value) if key in SECRET_APP_SETTINGS_KEYS else value
+                _upsert(conn, "app_settings", {"key": key, "value": stored}, ("key",))
 
 
 # --- Users, devices, sessions, preferences -------------------------------
 #
 # No FK constraints here, matching the rest of this schema (no table in
 # `_SCHEMA` uses one, and `_connect()` never sets `PRAGMA foreign_keys=ON`).
-# Cascades on delete are done by hand below, the same hand-rolled style as
-# everything else in this module.
+# Cascades on delete are driven by the two registries below instead of a
+# hand-written DELETE per table in delete_user/delete_device — a new
+# per-user or per-device table only needs a tuple added here, rather than
+# relying on whoever adds that table to remember to also go edit these two
+# functions (easy to miss, and nothing would catch it if they did).
+
+_USER_SCOPED_TABLES: tuple[tuple[str, str], ...] = (
+    ("sessions", "user_id"),
+    ("widget_layout", "user_id"),
+    ("widget_user_settings", "user_id"),
+    ("screensaver_settings", "user_id"),
+    ("user_preferences", "user_id"),
+)
+
+_DEVICE_SCOPED_TABLES: tuple[tuple[str, str], ...] = (
+    ("sessions", "device_id"),
+    ("widget_layout", "device_id"),
+    ("widget_device_settings", "device_id"),
+    ("screensaver_settings", "device_id"),
+)
 
 
 def create_user(
@@ -792,10 +1410,8 @@ def update_user(user_id: str, **fields: Any) -> None:
 
 def delete_user(user_id: str) -> None:
     with _connect() as conn:
-        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
-        conn.execute("DELETE FROM widget_layout WHERE user_id = ?", (user_id,))
-        conn.execute("DELETE FROM widget_user_settings WHERE user_id = ?", (user_id,))
-        conn.execute("DELETE FROM user_preferences WHERE user_id = ?", (user_id,))
+        for table, column in _USER_SCOPED_TABLES:
+            conn.execute(f"DELETE FROM {table} WHERE {column} = ?", (user_id,))
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
 
 
@@ -834,9 +1450,8 @@ def touch_device(device_id: str, last_seen_at: str) -> None:
 
 def delete_device(device_id: str) -> None:
     with _connect() as conn:
-        conn.execute("DELETE FROM sessions WHERE device_id = ?", (device_id,))
-        conn.execute("DELETE FROM widget_layout WHERE device_id = ?", (device_id,))
-        conn.execute("DELETE FROM widget_device_settings WHERE device_id = ?", (device_id,))
+        for table, column in _DEVICE_SCOPED_TABLES:
+            conn.execute(f"DELETE FROM {table} WHERE {column} = ?", (device_id,))
         conn.execute("DELETE FROM devices WHERE id = ?", (device_id,))
 
 
@@ -874,7 +1489,13 @@ def delete_expired_sessions(now: str) -> None:
         conn.execute("DELETE FROM sessions WHERE expires_at < ?", (now,))
 
 
-_DEFAULT_PREFERENCES: dict[str, Any] = {"theme": "dark"}
+_DEFAULT_PREFERENCES: dict[str, Any] = {
+    "theme": "dark",
+    "voice_provider": "browser",
+    "voice_id": "",
+    "voice_name": "",
+    "locale": "en",
+}
 
 
 def get_user_preferences(user_id: str) -> dict[str, Any]:
@@ -888,9 +1509,5 @@ def save_user_preferences(user_id: str, overrides: dict[str, Any]) -> dict[str, 
     """Merge `overrides` onto the user's stored preferences and persist the result."""
     merged = {**get_user_preferences(user_id), **overrides}
     with _connect() as conn:
-        conn.execute(
-            "INSERT INTO user_preferences (user_id, preferences) VALUES (?, ?) "
-            "ON CONFLICT (user_id) DO UPDATE SET preferences = excluded.preferences",
-            (user_id, json.dumps(merged)),
-        )
+        _upsert(conn, "user_preferences", {"user_id": user_id, "preferences": json.dumps(merged)}, ("user_id",))
     return merged

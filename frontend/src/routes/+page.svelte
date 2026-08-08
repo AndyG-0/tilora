@@ -11,7 +11,10 @@
 	import { computeResizedLayout, MAX_ROW_SPAN } from '$lib/resize';
 	import { computeEmptyCells, isRectFree } from '$lib/layout';
 	import { isSpeechRecognitionSupported, listenOnce, speak } from '$lib/speech';
+	import { voiceSelection } from '$lib/stores/voice';
 	import { TILE_COMPONENTS } from '$lib/widgetComponents';
+	import { _ } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	// Matches the `.grid`'s `grid-template-columns: repeat(4, 1fr)` below —
 	// caps how wide a tile can grow when resizing.
@@ -22,11 +25,13 @@
 		dark: '☀️',
 		sepia: '◐',
 		contrast: '◑',
+		forest: '🌿',
+		ocean: '🌊',
 	};
 
 	// Fallback matches the backend's default set; refreshed from /api/theme
 	// on mount so new themes show up without a frontend redeploy.
-	let themeIds = $state(['light', 'dark', 'sepia', 'contrast']);
+	let themeIds = $state(['light', 'dark', 'sepia', 'contrast', 'forest', 'ocean']);
 	let updateAvailable = $state(false);
 
 	async function checkVersion() {
@@ -324,7 +329,7 @@
 		try {
 			query = await listenOnce();
 		} catch {
-			assistantState = { status: 'error', message: "Didn't catch that." };
+			assistantState = { status: 'error', message: get(_)('dashboard.mic_no_match') };
 			return;
 		}
 
@@ -332,9 +337,9 @@
 		try {
 			const { text } = await api.askAssistant(query);
 			assistantState = { status: 'answered', query, answer: text };
-			speak(text);
+			speak(text, $voiceSelection);
 		} catch {
-			assistantState = { status: 'error', message: "Couldn't get an answer." };
+			assistantState = { status: 'error', message: get(_)('dashboard.assistant_error') };
 		}
 	}
 
@@ -401,38 +406,45 @@
 			class:active={assistantState.status === 'listening'}
 			onclick={startListening}
 			disabled={assistantState.status === 'listening' || assistantState.status === 'thinking'}
-			aria-label="Ask a question"
+			aria-label={$_('dashboard.ask_question')}
 		>
 			🎙
 		</button>
 	{/if}
-	<button class="icon-button" onclick={() => goto('/settings')} aria-label="Settings">
+	<button class="icon-button" onclick={() => goto('/settings')} aria-label={$_('settings.page.title')}>
 		⚙
 		{#if updateAvailable}
-			<span class="update-badge" aria-label="Update available"></span>
+			<span class="update-badge" aria-label={$_('dashboard.update_available')}></span>
 		{/if}
 	</button>
-	<button class="icon-button" onclick={cycleTheme} aria-label="Change theme">
+	<button class="icon-button" onclick={cycleTheme} aria-label={$_('dashboard.change_theme')}>
 		{THEME_ICONS[$theme] ?? '🎨'}
 	</button>
 	<button
 		class="icon-button"
 		class:active={editMode}
 		onclick={toggleEditMode}
-		aria-label={editMode ? 'Done rearranging' : 'Rearrange widgets'}
+		aria-label={editMode ? $_('dashboard.done_rearranging') : $_('dashboard.rearrange_widgets')}
 	>
 		{editMode ? '✓' : '✎'}
 	</button>
 	{#if $user}
 		<div class="profile-menu-wrap">
-			<button class="icon-button" class:active={profileMenuOpen} onclick={toggleProfileMenu} aria-label="Profile">
+			<button
+				class="icon-button"
+				class:active={profileMenuOpen}
+				onclick={toggleProfileMenu}
+				aria-label={$_('settings.profile.heading')}
+			>
 				{$user.avatar || $user.name.charAt(0).toUpperCase()}
 			</button>
 			{#if profileMenuOpen}
 				<div class="profile-menu">
 					<p class="profile-menu-name">{$user.name}</p>
-					<button class="profile-menu-action" onclick={switchProfile}>Switch profile</button>
-					<button class="profile-menu-action profile-menu-logout" onclick={switchProfile}>Log out</button>
+					<button class="profile-menu-action" onclick={switchProfile}>{$_('dashboard.switch_profile')}</button>
+					<button class="profile-menu-action profile-menu-logout" onclick={switchProfile}
+						>{$_('dashboard.log_out')}</button
+					>
 				</div>
 			{/if}
 		</div>
@@ -442,17 +454,17 @@
 {#if assistantState.status !== 'idle'}
 	<div class="assistant-overlay" role="status">
 		{#if assistantState.status === 'listening'}
-			<p>Listening…</p>
+			<p>{$_('dashboard.listening')}</p>
 		{:else if assistantState.status === 'thinking'}
 			<p class="query">{assistantState.query}</p>
-			<p>Thinking…</p>
+			<p>{$_('dashboard.thinking')}</p>
 		{:else if assistantState.status === 'answered'}
 			<p class="query">{assistantState.query}</p>
 			<p>{assistantState.answer}</p>
-			<button class="dismiss" onclick={dismissAssistant}>Dismiss</button>
+			<button class="dismiss" onclick={dismissAssistant}>{$_('common.dismiss')}</button>
 		{:else if assistantState.status === 'error'}
 			<p>{assistantState.message}</p>
-			<button class="dismiss" onclick={dismissAssistant}>Dismiss</button>
+			<button class="dismiss" onclick={dismissAssistant}>{$_('common.dismiss')}</button>
 		{/if}
 	</div>
 {/if}
@@ -494,7 +506,7 @@
 									class="remove-button"
 									onpointerdown={(e) => e.stopPropagation()}
 									onclick={(e) => handleRemoveWidget(e, widget.id)}
-									aria-label="Remove widget"
+									aria-label={$_('dashboard.remove_widget')}
 								>
 									✕
 								</button>
@@ -503,7 +515,7 @@
 									onpointerdown={(e) => onResizePointerDown(e, widget)}
 									onpointerup={onResizePointerUp}
 									onpointercancel={onResizePointerUp}
-									aria-label="Resize widget"
+									aria-label={$_('dashboard.resize_widget')}
 								>
 									⤡
 								</button>
@@ -536,7 +548,7 @@
 					{/if}
 					{#if editMode && tabIndex === clampedIndex}
 						<div class="cell add-widget-cell" style="grid-column: auto; grid-row: auto;">
-							<button class="add-widget-button" onclick={openAddWidget}>+ Add widget</button>
+							<button class="add-widget-button" onclick={openAddWidget}>{$_('dashboard.add_widget')}</button>
 							{#if addingWidget}
 								<div class="widget-picker">
 									{#each widgetTypeOptions as option (option.type)}
@@ -544,7 +556,7 @@
 											{option.name}
 										</button>
 									{/each}
-									<button class="widget-picker-cancel" onclick={closeAddWidget}>Cancel</button>
+									<button class="widget-picker-cancel" onclick={closeAddWidget}>{$_('common.cancel')}</button>
 								</div>
 							{/if}
 						</div>

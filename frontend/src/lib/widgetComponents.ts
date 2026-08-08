@@ -30,6 +30,13 @@ import SportsTile from '$lib/components/tiles/SportsTile.svelte';
 import SteamTile from '$lib/components/tiles/SteamTile.svelte';
 import BF6Tile from '$lib/components/tiles/BF6Tile.svelte';
 import GoodreadsTile from '$lib/components/tiles/GoodreadsTile.svelte';
+import QBittorrentTile from '$lib/components/tiles/QBittorrentTile.svelte';
+import SpeedtestTile from '$lib/components/tiles/SpeedtestTile.svelte';
+import ChoresTile from '$lib/components/tiles/ChoresTile.svelte';
+import ShoppingTile from '$lib/components/tiles/ShoppingTile.svelte';
+import PackageTile from '$lib/components/tiles/PackageTile.svelte';
+import NASATile from '$lib/components/tiles/NASATile.svelte';
+import FlightsTile from '$lib/components/tiles/FlightsTile.svelte';
 
 import WeatherDetail from '$lib/components/details/WeatherDetail.svelte';
 import AIDetail from '$lib/components/details/AIDetail.svelte';
@@ -56,6 +63,20 @@ import SportsDetail from '$lib/components/details/SportsDetail.svelte';
 import SteamDetail from '$lib/components/details/SteamDetail.svelte';
 import BF6Detail from '$lib/components/details/BF6Detail.svelte';
 import GoodreadsDetail from '$lib/components/details/GoodreadsDetail.svelte';
+import QBittorrentDetail from '$lib/components/details/QBittorrentDetail.svelte';
+import SpeedtestDetail from '$lib/components/details/SpeedtestDetail.svelte';
+import ChoresDetail from '$lib/components/details/ChoresDetail.svelte';
+import ShoppingDetail from '$lib/components/details/ShoppingDetail.svelte';
+import PackageDetail from '$lib/components/details/PackageDetail.svelte';
+import NASADetail from '$lib/components/details/NASADetail.svelte';
+import FlightsDetail from '$lib/components/details/FlightsDetail.svelte';
+
+import ClockScreensaver from '$lib/components/screensaver/ClockScreensaver.svelte';
+import DateScreensaver from '$lib/components/screensaver/DateScreensaver.svelte';
+import CalendarScreensaver from '$lib/components/screensaver/CalendarScreensaver.svelte';
+import PhotoScreensaver from '$lib/components/screensaver/PhotoScreensaver.svelte';
+import WeatherScreensaver from '$lib/components/screensaver/WeatherScreensaver.svelte';
+import FlightsScreensaver from '$lib/components/screensaver/FlightsScreensaver.svelte';
 
 type TileComponent =
 	| typeof WeatherTile
@@ -82,7 +103,14 @@ type TileComponent =
 	| typeof SportsTile
 	| typeof SteamTile
 	| typeof BF6Tile
-	| typeof GoodreadsTile;
+	| typeof GoodreadsTile
+	| typeof QBittorrentTile
+	| typeof SpeedtestTile
+	| typeof ChoresTile
+	| typeof ShoppingTile
+	| typeof PackageTile
+	| typeof NASATile
+	| typeof FlightsTile;
 
 type DetailComponent =
 	| typeof WeatherDetail
@@ -109,7 +137,14 @@ type DetailComponent =
 	| typeof SportsDetail
 	| typeof SteamDetail
 	| typeof BF6Detail
-	| typeof GoodreadsDetail;
+	| typeof GoodreadsDetail
+	| typeof QBittorrentDetail
+	| typeof SpeedtestDetail
+	| typeof ChoresDetail
+	| typeof ShoppingDetail
+	| typeof PackageDetail
+	| typeof NASADetail
+	| typeof FlightsDetail;
 
 export const TILE_COMPONENTS: Record<string, TileComponent> = {
 	weather: WeatherTile,
@@ -139,6 +174,13 @@ export const TILE_COMPONENTS: Record<string, TileComponent> = {
 	steam: SteamTile,
 	bf6: BF6Tile,
 	goodreads: GoodreadsTile,
+	qbittorrent: QBittorrentTile,
+	speedtest: SpeedtestTile,
+	chores: ChoresTile,
+	shopping: ShoppingTile,
+	packages: PackageTile,
+	nasa_apod: NASATile,
+	flights: FlightsTile,
 };
 
 export const DETAIL_COMPONENTS: Record<string, DetailComponent> = {
@@ -169,4 +211,30 @@ export const DETAIL_COMPONENTS: Record<string, DetailComponent> = {
 	steam: SteamDetail,
 	bf6: BF6Detail,
 	goodreads: GoodreadsDetail,
+	qbittorrent: QBittorrentDetail,
+	speedtest: SpeedtestDetail,
+	chores: ChoresDetail,
+	shopping: ShoppingDetail,
+	packages: PackageDetail,
+	nasa_apod: NASADetail,
+	flights: FlightsDetail,
+};
+
+type ScreensaverComponent =
+	| typeof ClockScreensaver
+	| typeof DateScreensaver
+	| typeof CalendarScreensaver
+	| typeof PhotoScreensaver
+	| typeof WeatherScreensaver
+	| typeof FlightsScreensaver;
+
+export const SCREENSAVER_COMPONENTS: Record<string, ScreensaverComponent> = {
+	clock: ClockScreensaver,
+	date: DateScreensaver,
+	calendar: CalendarScreensaver,
+	calendar_caldav: CalendarScreensaver,
+	calendar_microsoft: CalendarScreensaver,
+	photos: PhotoScreensaver,
+	weather: WeatherScreensaver,
+	flights: FlightsScreensaver,
 };
