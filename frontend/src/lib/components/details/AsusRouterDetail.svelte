@@ -2,6 +2,8 @@
 	import { page } from '$app/state';
 	import { api, type AsusRouterDetail, type AsusRouterTestConnectionResult } from '$lib/api';
 	import { user } from '$lib/stores/user';
+	import { _ } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	let { data: initialData }: { data: AsusRouterDetail } = $props();
 
@@ -46,7 +48,7 @@
 		try {
 			testResult = await api.asusRouterTestConnection(widgetId, currentFormSettings());
 		} catch {
-			testResult = { ok: false, product_id: null, error: 'Could not reach the backend.' };
+			testResult = { ok: false, product_id: null, error: get(_)('common.backend_unreachable') };
 		} finally {
 			testing = false;
 		}
@@ -60,7 +62,7 @@
 			router = await api.widgetDetail<AsusRouterDetail>(widgetId);
 			editing = false;
 		} catch {
-			error = 'Could not save the connection settings.';
+			error = get(_)('common.connection_save_error');
 		} finally {
 			saving = false;
 		}
@@ -83,7 +85,7 @@
 	<h1>Asus Router</h1>
 	{#if $user?.role === 'admin'}
 		<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
-			{editing ? 'Cancel' : 'Edit connection'}
+			{editing ? $_('common.cancel') : $_('common.edit_connection')}
 		</button>
 	{/if}
 </div>
@@ -91,33 +93,35 @@
 {#if editing}
 	<div class="settings-form">
 		<label>
-			Host
+			{$_('asus_router.detail.host_label')}
 			<input type="text" bind:value={hostInput} placeholder="router.asus.com" />
 		</label>
 		<label>
-			SSH port
+			{$_('asus_router.detail.ssh_port_label')}
 			<input type="number" min="1" max="65535" bind:value={sshPortInput} />
 		</label>
 		<label>
-			Username
+			{$_('asus_router.detail.username_label')}
 			<input type="text" bind:value={usernameInput} placeholder="admin" />
 		</label>
 		<label>
-			Password
+			{$_('asus_router.detail.password_label')}
 			<input
 				type="password"
 				bind:value={passwordInput}
-				placeholder={router.has_password ? 'Set — enter a new value to replace it' : 'Not set'}
+				placeholder={router.has_password ? $_('common.password_set_hint') : $_('common.password_not_set')}
 			/>
 		</label>
 
 		<div class="test-row">
 			<button class="test" disabled={testing} onclick={testConnection}>
-				{testing ? 'Testing…' : 'Test connection'}
+				{testing ? $_('common.testing') : $_('common.test_connection')}
 			</button>
 			{#if testResult}
 				{#if testResult.ok}
-					<span class="test-result ok">✓ Connected ({testResult.product_id})</span>
+					<span class="test-result ok"
+						>{$_('asus_router.detail.connected_result', { values: { product_id: testResult.product_id } })}</span
+					>
 				{:else}
 					<span class="test-result fail">✗ {testResult.error}</span>
 				{/if}
@@ -129,7 +133,7 @@
 		{/if}
 
 		<button class="save" disabled={saving} onclick={saveSettings}>
-			{saving ? 'Saving…' : 'Save'}
+			{saving ? $_('common.saving') : $_('common.save')}
 		</button>
 	</div>
 {:else if error}
@@ -138,7 +142,7 @@
 
 {#if !editing}
 	{#if !router.connected}
-		<p class="hint">Not connected yet — tap "Edit connection" to set up your router.</p>
+		<p class="hint">{$_('asus_router.detail.not_connected_hint')}</p>
 	{:else}
 		{#if router.error}
 			<p class="hint error">{router.error}</p>
@@ -146,25 +150,27 @@
 
 		<div class="system-info">
 			<div class="stat">
-				<div class="stat-value">{router.wan_connected ? 'Connected' : 'Down'}</div>
-				<div class="stat-label">WAN status</div>
+				<div class="stat-value">
+					{router.wan_connected ? $_('asus_router.detail.connected') : $_('asus_router.detail.down')}
+				</div>
+				<div class="stat-label">{$_('asus_router.detail.wan_status_label')}</div>
 			</div>
 			<div class="stat">
-				<div class="stat-value">{router.wan_ip ?? 'Unknown'}</div>
-				<div class="stat-label">WAN IP</div>
+				<div class="stat-value">{router.wan_ip ?? $_('common.unknown')}</div>
+				<div class="stat-label">{$_('asus_router.detail.wan_ip_label')}</div>
 			</div>
 			<div class="stat">
 				<div class="stat-value">{formatBytes(router.rx_bytes)}</div>
-				<div class="stat-label">Download</div>
+				<div class="stat-label">{$_('asus_router.detail.download_label')}</div>
 			</div>
 			<div class="stat">
 				<div class="stat-value">{formatBytes(router.tx_bytes)}</div>
-				<div class="stat-label">Upload</div>
+				<div class="stat-label">{$_('asus_router.detail.upload_label')}</div>
 			</div>
 		</div>
 
 		{#if router.clients.length === 0}
-			<p class="hint">No connected clients found.</p>
+			<p class="hint">{$_('asus_router.detail.no_clients')}</p>
 		{:else}
 			<ul class="clients">
 				{#each router.clients as client (client.name + client.ip)}

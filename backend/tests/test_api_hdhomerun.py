@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api import hdhomerun
+from app.auth import get_current_user
 from app.plugins.base import registry
 from app.plugins.hdhomerun.plugin import HDHomeRunPlugin
 
@@ -21,6 +22,22 @@ def register_plugin(**settings) -> HDHomeRunPlugin:
 def client():
     app = FastAPI()
     app.include_router(hdhomerun.router)
+    app.dependency_overrides[get_current_user] = lambda: {"id": "admin", "role": "admin"}
+    return TestClient(app)
+
+
+@pytest.fixture
+def member_client():
+    app = FastAPI()
+    app.include_router(hdhomerun.router)
+    app.dependency_overrides[get_current_user] = lambda: {"id": "member", "role": "member"}
+    return TestClient(app)
+
+
+@pytest.fixture
+def unauthenticated_client():
+    app = FastAPI()
+    app.include_router(hdhomerun.router)
     return TestClient(app)
 
 
@@ -32,6 +49,42 @@ def test_unknown_widget_returns_404_for_tuner_test(client):
 def test_unknown_widget_returns_404_for_dvr_test(client):
     response = client.post("/api/hdhomerun/nope/test-dvr-connection", json={})
     assert response.status_code == 404
+
+
+def test_test_tuner_connection_requires_login(unauthenticated_client):
+    register_plugin(tuner_host="hdhr.local")
+    response = unauthenticated_client.post("/api/hdhomerun/hdhr1/test-tuner-connection", json={})
+    assert response.status_code == 401
+
+
+def test_test_tuner_connection_rejects_member(member_client):
+    register_plugin(tuner_host="hdhr.local")
+    response = member_client.post("/api/hdhomerun/hdhr1/test-tuner-connection", json={})
+    assert response.status_code == 403
+
+
+def test_test_dvr_connection_requires_login(unauthenticated_client):
+    register_plugin(dvr_host="dvr.local")
+    response = unauthenticated_client.post("/api/hdhomerun/hdhr1/test-dvr-connection", json={})
+    assert response.status_code == 401
+
+
+def test_test_dvr_connection_rejects_member(member_client):
+    register_plugin(dvr_host="dvr.local")
+    response = member_client.post("/api/hdhomerun/hdhr1/test-dvr-connection", json={})
+    assert response.status_code == 403
+
+
+def test_stream_channel_requires_login(unauthenticated_client):
+    register_plugin(tuner_host="hdhr.local")
+    response = unauthenticated_client.get("/api/hdhomerun/hdhr1/stream/4.1")
+    assert response.status_code == 401
+
+
+def test_playlist_requires_login(unauthenticated_client):
+    register_plugin(tuner_host="hdhr.local")
+    response = unauthenticated_client.get("/api/hdhomerun/hdhr1/playlist/4.1")
+    assert response.status_code == 401
 
 
 @respx.mock
@@ -204,6 +257,25 @@ def test_stream_channel_uses_custom_ffmpeg_args(client, monkeypatch):
     args = captured["args"]
     assert "h264_v4l2m2m" in args
     assert "4M" in args
+
+
+def test_stream_channel_returns_400_for_unparseable_custom_ffmpeg_args(client, monkeypatch):
+    register_plugin(
+        tuner_host="hdhr.local",
+        playback_mode="server_transcode",
+        hwaccel="custom",
+        custom_ffmpeg_args='-c:v "libx264',
+    )
+
+    async def fake_create_subprocess_exec(*args, **kwargs):
+        raise AssertionError("ffmpeg should never be spawned for unparseable args")
+
+    monkeypatch.setattr(hdhomerun.asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+
+    response = client.get("/api/hdhomerun/hdhr1/stream/4.1")
+
+    assert response.status_code == 400
+    assert "invalid custom ffmpeg arguments" in response.json()["detail"].lower()
 
 
 def test_stream_channel_returns_502_when_ffmpeg_produces_no_output(client, monkeypatch):

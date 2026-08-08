@@ -3,6 +3,8 @@
 	import { api } from '$lib/api';
 	import { user } from '$lib/stores/user';
 	import { needsSetup } from '$lib/stores/setup';
+	import { _ } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	let name = $state('');
 	let avatar = $state('');
@@ -13,7 +15,7 @@
 	async function createAdmin() {
 		if (!name.trim()) return;
 		if (pin && !/^\d{4,8}$/.test(pin)) {
-			error = 'PIN must be 4-8 digits.';
+			error = get(_)('settings.profile.pin_invalid');
 			return;
 		}
 		creating = true;
@@ -24,7 +26,7 @@
 			needsSetup.set(false);
 			goto('/');
 		} catch {
-			error = 'Could not create your account. Please try again.';
+			error = get(_)('setup.create_error');
 		} finally {
 			creating = false;
 		}
@@ -32,27 +34,33 @@
 </script>
 
 <div class="setup-page">
-	<h1>Welcome to Tilora</h1>
-	<p class="hint">Let's create your account. As the first profile, you'll be the household admin.</p>
+	<h1>{$_('setup.title')}</h1>
+	<p class="hint">{$_('setup.intro')}</p>
 
 	<div class="setup-form">
 		<label>
-			Name
+			{$_('settings.profile.name_label')}
 			<input type="text" bind:value={name} placeholder="Alice" maxlength="40" />
 		</label>
 		<label>
-			Avatar (emoji, optional)
+			{$_('settings.profile.avatar_label')}
 			<input type="text" bind:value={avatar} placeholder="🐱" maxlength="8" />
 		</label>
 		<label>
-			PIN (optional)
-			<input type="password" inputmode="numeric" bind:value={pin} placeholder="4-8 digits" maxlength="8" />
+			{$_('setup.pin_label')}
+			<input
+				type="password"
+				inputmode="numeric"
+				bind:value={pin}
+				placeholder={$_('setup.pin_placeholder')}
+				maxlength="8"
+			/>
 		</label>
 		{#if error}
 			<p class="hint error">{error}</p>
 		{/if}
 		<button class="confirm-button" onclick={createAdmin} disabled={creating || !name.trim()}>
-			{creating ? 'Creating…' : 'Create account'}
+			{creating ? $_('setup.creating') : $_('setup.create_account')}
 		</button>
 	</div>
 </div>

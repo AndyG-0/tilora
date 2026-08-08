@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { _ } from 'svelte-i18n';
+
 	interface Props {
 		src: string;
 		title: string;
@@ -25,7 +27,7 @@
 <div class="overlay" role="dialog" aria-label={title} use:portal>
 	<div class="header">
 		<h2>{title}</h2>
-		<button class="close" onclick={onClose} aria-label="Close player">✕</button>
+		<button class="close" onclick={onClose} aria-label={$_('player.close')}>✕</button>
 	</div>
 	<!-- svelte-ignore a11y_media_has_caption -->
 	<video controls autoplay playsinline class="video" {src}></video>

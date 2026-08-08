@@ -3,17 +3,38 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import httpx
+import pytest
 import respx
 
+from app.plugins.discord import plugin as discord_plugin_module
 from app.plugins.discord.plugin import DISCORD_API_BASE, DiscordPlugin
 
 CHANNEL_ID = "111111111111111111"
 
 CHANNEL_RESPONSE = {"id": CHANNEL_ID, "name": "general"}
 
+# Noon UTC, safely away from a day boundary — used by the "today's messages"
+# tests below so their pass/fail doesn't depend on how close to real UTC
+# midnight the suite happens to run (a `minutes_ago=1` message computed
+# against the real wall clock can land on the wrong side of "today" if the
+# test runs within a few minutes of actual UTC midnight).
+_FIXED_NOW = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
 
-def _message(id: str, minutes_ago: int, content: str = "hi") -> dict:
-    timestamp = (datetime.now(UTC) - timedelta(minutes=minutes_ago)).isoformat()
+
+class _FrozenDatetime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return _FIXED_NOW.astimezone(tz) if tz else _FIXED_NOW.replace(tzinfo=None)
+
+
+@pytest.fixture
+def frozen_now(monkeypatch):
+    monkeypatch.setattr(discord_plugin_module, "datetime", _FrozenDatetime)
+    return _FIXED_NOW
+
+
+def _message(id: str, minutes_ago: int, content: str = "hi", now: datetime | None = None) -> dict:
+    timestamp = ((now or datetime.now(UTC)) - timedelta(minutes=minutes_ago)).isoformat()
     return {
         "id": id,
         "content": content,
@@ -108,10 +129,15 @@ async def test_get_ai_tools_exposes_recent_messages_tool():
 
 
 @respx.mock
-async def test_get_todays_messages_excludes_messages_from_before_midnight(tmp_db):
-    # 26 hours ago is always before today's local midnight, however late in
-    # the day "now" happens to be when the test runs.
-    _mock_discord([_message("today", minutes_ago=1), _message("yesterday", minutes_ago=26 * 60)])
+async def test_get_todays_messages_excludes_messages_from_before_midnight(tmp_db, frozen_now):
+    # 26 hours before the frozen "now" is always before that day's local
+    # midnight.
+    _mock_discord(
+        [
+            _message("today", minutes_ago=1, now=frozen_now),
+            _message("yesterday", minutes_ago=26 * 60, now=frozen_now),
+        ]
+    )
     plugin = make_plugin()
 
     tools = plugin.get_ai_tools()
@@ -121,10 +147,10 @@ async def test_get_todays_messages_excludes_messages_from_before_midnight(tmp_db
 
 
 @respx.mock
-async def test_get_todays_messages_ignores_display_message_limit(tmp_db):
+async def test_get_todays_messages_ignores_display_message_limit(tmp_db, frozen_now):
     # message_limit caps the tile's display count, but "today's messages"
     # should still see every message from today regardless of that setting.
-    messages = [_message(str(i), minutes_ago=i) for i in range(10)]
+    messages = [_message(str(i), minutes_ago=i, now=frozen_now) for i in range(10)]
     _mock_discord(messages)
     plugin = make_plugin(message_limit=3)
 

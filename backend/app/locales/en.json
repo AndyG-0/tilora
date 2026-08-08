@@ -1,0 +1,110 @@
+{
+	"clock": {
+		"period": {
+			"am": "AM",
+			"pm": "PM"
+		}
+	},
+	"date": {
+		"weekday": {
+			"monday": "Monday",
+			"tuesday": "Tuesday",
+			"wednesday": "Wednesday",
+			"thursday": "Thursday",
+			"friday": "Friday",
+			"saturday": "Saturday",
+			"sunday": "Sunday"
+		},
+		"month": {
+			"january": "January",
+			"february": "February",
+			"march": "March",
+			"april": "April",
+			"may": "May",
+			"june": "June",
+			"july": "July",
+			"august": "August",
+			"september": "September",
+			"october": "October",
+			"november": "November",
+			"december": "December"
+		}
+	},
+	"weather": {
+		"condition": {
+			"clear_sky": "Clear sky",
+			"mainly_clear": "Mainly clear",
+			"partly_cloudy": "Partly cloudy",
+			"overcast": "Overcast",
+			"fog": "Fog",
+			"depositing_rime_fog": "Depositing rime fog",
+			"light_drizzle": "Light drizzle",
+			"moderate_drizzle": "Moderate drizzle",
+			"dense_drizzle": "Dense drizzle",
+			"slight_rain": "Slight rain",
+			"moderate_rain": "Moderate rain",
+			"heavy_rain": "Heavy rain",
+			"slight_snow": "Slight snow",
+			"moderate_snow": "Moderate snow",
+			"heavy_snow": "Heavy snow",
+			"slight_rain_showers": "Slight rain showers",
+			"moderate_rain_showers": "Moderate rain showers",
+			"violent_rain_showers": "Violent rain showers",
+			"thunderstorm": "Thunderstorm",
+			"unknown": "Unknown"
+		},
+		"air_quality": {
+			"good": "Good",
+			"moderate": "Moderate",
+			"unhealthy_sensitive": "Unhealthy for sensitive groups",
+			"unhealthy": "Unhealthy",
+			"very_unhealthy": "Very unhealthy",
+			"hazardous": "Hazardous"
+		}
+	},
+	"sports": {
+		"error": {
+			"no_team_configured": "No team configured.",
+			"unsupported_league": "Unsupported league '{league}'."
+		}
+	},
+	"steam": {
+		"status": {
+			"offline": "Offline",
+			"online": "Online",
+			"busy": "Busy",
+			"away": "Away",
+			"snooze": "Snooze",
+			"looking_to_trade": "Looking to trade",
+			"looking_to_play": "Looking to play"
+		}
+	},
+	"flights": {
+		"your_location": "Your location"
+	},
+	"bf6": {
+		"error": {
+			"server_not_found": "No server found matching '{server_name}'."
+		}
+	},
+	"ai_insights": {
+		"summary": {
+			"no_briefing": "No briefing generated yet."
+		}
+	},
+	"calendar": {
+		"event": {
+			"untitled": "(untitled)"
+		}
+	},
+	"discord": {
+		"unknown_channel": "unknown-channel",
+		"unknown_author": "unknown"
+	},
+	"jellyfin": {
+		"section": {
+			"recently_added": "Recently added",
+			"continue_watching": "Continue watching"
+		}
+	}
+}

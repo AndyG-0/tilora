@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { api } from '$lib/api';
+	import { renderMarkdown } from '$lib/markdown';
 	import { isSpeechSynthesisSupported, speak } from '$lib/speech';
+	import { voiceSelection } from '$lib/stores/voice';
+	import { _, locale } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	interface AIRun {
 		ran_at: string;
@@ -21,6 +25,7 @@
 		prompt: string;
 		cron: string;
 		topics: string[];
+		language: string;
 	}
 
 	let { data: initialData }: { data: AIDetailData } = $props();
@@ -32,6 +37,7 @@
 	let editingPrompt = $state(false);
 	let promptInput = $state('');
 	let topicsInput = $state<string[]>([]);
+	let languageInput = $state('en');
 	let topicCatalog = $state<AITopic[]>([]);
 	let saving = $state(false);
 	let regenerating = $state(false);
@@ -40,6 +46,7 @@
 	async function openEditor() {
 		promptInput = ai.prompt;
 		topicsInput = [...ai.topics];
+		languageInput = ai.language;
 		editingPrompt = true;
 		try {
 			topicCatalog = await api.assistantTopics();
@@ -56,11 +63,15 @@
 		saving = true;
 		error = null;
 		try {
-			await api.updateWidgetSettings(page.params.id!, { prompt: promptInput, topics: topicsInput });
+			await api.updateWidgetSettings(page.params.id!, {
+				prompt: promptInput,
+				topics: topicsInput,
+				language: languageInput,
+			});
 			ai = await api.widgetDetail<AIDetailData>(page.params.id!);
 			editingPrompt = false;
 		} catch {
-			error = 'Could not update the prompt.';
+			error = get(_)('ai_insights.detail.save_error');
 		} finally {
 			saving = false;
 		}
@@ -72,7 +83,7 @@
 		try {
 			ai = await api.runAiWidget<AIDetailData>(page.params.id!);
 		} catch {
-			error = 'Could not regenerate the briefing.';
+			error = get(_)('ai_insights.detail.regenerate_error');
 		} finally {
 			regenerating = false;
 		}
@@ -83,13 +94,15 @@
 	<h1>{ai.title}</h1>
 	<div class="actions">
 		<button class="regenerate" disabled={regenerating} onclick={regenerateNow}>
-			{regenerating ? 'Regenerating…' : 'Regenerate now'}
+			{regenerating ? $_('ai_insights.detail.regenerating') : $_('ai_insights.detail.regenerate_now')}
 		</button>
 		{#if isSpeechSynthesisSupported()}
-			<button class="read-aloud" onclick={() => speak(ai.text)}>🔊 Read aloud</button>
+			<button class="read-aloud" onclick={() => speak(ai.text, $voiceSelection)}>
+				{$_('ai_insights.detail.read_aloud')}
+			</button>
 		{/if}
 		<button class="edit-settings" onclick={() => (editingPrompt ? (editingPrompt = false) : openEditor())}>
-			{editingPrompt ? 'Cancel' : 'Edit prompt'}
+			{editingPrompt ? $_('common.cancel') : $_('ai_insights.detail.edit_prompt')}
 		</button>
 	</div>
 </div>
@@ -97,13 +110,13 @@
 {#if editingPrompt}
 	<div class="settings-form">
 		<label>
-			Prompt
+			{$_('ai_insights.detail.prompt_label')}
 			<textarea rows="6" bind:value={promptInput}></textarea>
 		</label>
 
 		<div class="topics">
-			<span class="topics-label">Cover in this summary</span>
-			<p class="hint">Leave all unchecked to let the summary draw on everything voice control can access.</p>
+			<span class="topics-label">{$_('ai_insights.detail.topics_label')}</span>
+			<p class="hint">{$_('ai_insights.detail.topics_hint')}</p>
 			<div class="topics-list">
 				{#each topicCatalog as topic (topic.id)}
 					<label class="topic">
@@ -114,30 +127,46 @@
 			</div>
 		</div>
 
+		<label>
+			{$_('ai_insights.detail.language_label')}
+			<select bind:value={languageInput}>
+				<option value="en">English</option>
+				<option value="es">Español</option>
+				<option value="fr">Français</option>
+				<option value="de">Deutsch</option>
+			</select>
+		</label>
+
 		{#if error}
 			<p class="hint error">{error}</p>
 		{/if}
 
 		<button class="save" disabled={saving} onclick={savePrompt}>
-			{saving ? 'Saving…' : 'Save'}
+			{saving ? $_('common.saving') : $_('common.save')}
 		</button>
 	</div>
 {:else if error}
 	<p class="hint error">{error}</p>
 {/if}
 
-<p class="current">{ai.text}</p>
+<!-- eslint-disable-next-line svelte/no-at-html-tags -- renderMarkdown sanitizes with DOMPurify against an explicit tag/attribute allowlist before this reaches the DOM. -->
+<div class="current">{@html renderMarkdown(ai.text)}</div>
 {#if ai.ran_at}
-	<p class="timestamp">Last updated {new Date(ai.ran_at).toLocaleString()}</p>
+	<p class="timestamp">
+		{$_('ai_insights.detail.last_updated', {
+			values: { date: new Date(ai.ran_at).toLocaleString(get(locale) ?? undefined) },
+		})}
+	</p>
 {/if}
 
 {#if ai.history.length > 1}
-	<h2>History</h2>
+	<h2>{$_('ai_insights.detail.history_heading')}</h2>
 	<div class="history">
 		{#each ai.history.slice(1) as run (run.ran_at)}
 			<div class="run">
-				<div class="timestamp">{new Date(run.ran_at).toLocaleString()}</div>
-				<div>{run.text}</div>
+				<div class="timestamp">{new Date(run.ran_at).toLocaleString(get(locale) ?? undefined)}</div>
+				<!-- eslint-disable-next-line svelte/no-at-html-tags -- renderMarkdown sanitizes with DOMPurify against an explicit tag/attribute allowlist before this reaches the DOM. -->
+				<div class="run-text">{@html renderMarkdown(run.text)}</div>
 			</div>
 		{/each}
 	</div>
@@ -246,6 +275,64 @@
 	.current {
 		font-size: 1.3rem;
 		line-height: 1.5;
+	}
+
+	/* {@html}-injected markdown sits outside Svelte's scoped-style tree. */
+	.current :global(p),
+	.run-text :global(p) {
+		margin: 0 0 0.6em;
+	}
+
+	.current :global(p:last-child),
+	.run-text :global(p:last-child) {
+		margin-bottom: 0;
+	}
+
+	.current :global(ul),
+	.current :global(ol),
+	.run-text :global(ul),
+	.run-text :global(ol) {
+		margin: 0 0 0.6em;
+		padding-left: 1.4em;
+	}
+
+	.current :global(h1),
+	.current :global(h2),
+	.current :global(h3),
+	.run-text :global(h1),
+	.run-text :global(h2),
+	.run-text :global(h3) {
+		margin: 0.75em 0 0.4em;
+	}
+
+	.current :global(blockquote),
+	.run-text :global(blockquote) {
+		margin: 0 0 0.6em;
+		padding-left: 0.75em;
+		border-left: 3px solid var(--color-border);
+		color: var(--color-text-muted);
+	}
+
+	.current :global(code),
+	.run-text :global(code) {
+		background: var(--color-surface);
+		border-radius: 0.25rem;
+		padding: 0.1em 0.3em;
+	}
+
+	.current :global(pre),
+	.run-text :global(pre) {
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		padding: 0.75em;
+		overflow-x: auto;
+	}
+
+	.current :global(pre code),
+	.run-text :global(pre code) {
+		background: none;
+		padding: 0;
 	}
 
 	.timestamp {

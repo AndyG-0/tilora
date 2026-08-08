@@ -8,7 +8,9 @@ import app.scheduler as scheduler_module
 from app import config
 from app.plugins.ai_insights.plugin import AIInsightsPlugin
 from app.plugins.base import registry
+from app.plugins.packages.plugin import PackagesPlugin
 from app.plugins.photos.plugin import PhotosPlugin
+from app.plugins.speedtest.plugin import SpeedtestPlugin
 from app.plugins.weather.plugin import WeatherPlugin
 from app.storage import db
 
@@ -27,6 +29,14 @@ def make_ai_plugin() -> AIInsightsPlugin:
 
 def make_photos_plugin(**settings) -> PhotosPlugin:
     return PhotosPlugin({"id": "photos", "settings": {"directory": "/tmp/does-not-matter", **settings}})
+
+
+def make_speedtest_plugin(**settings) -> SpeedtestPlugin:
+    return SpeedtestPlugin({"id": "speedtest", "settings": {"title": "Speedtest", "interval_minutes": 60, **settings}})
+
+
+def make_packages_plugin(**settings) -> PackagesPlugin:
+    return PackagesPlugin({"id": "packages", "settings": {"title": "Packages", **settings}})
 
 
 def test_schedule_ai_widgets_only_schedules_ai_insights_plugins():
@@ -91,6 +101,43 @@ async def test_run_ai_widget_passes_none_when_no_topics_selected(tmp_db, dashboa
     await scheduler_module.run_ai_widget(plugin)
 
     assert captured["allowed_widget_ids"] is None
+
+
+async def test_run_ai_widget_passes_no_system_prompt_for_default_language(tmp_db, dashboard_yaml, monkeypatch):
+    plugin = make_ai_plugin()
+    registry.register(plugin)
+    captured = {}
+
+    async def fake_ask(text, system_prompt=None, user=None, device=None, allowed_widget_ids=None):
+        captured["system_prompt"] = system_prompt
+        return "Sunny and 75."
+
+    monkeypatch.setattr(scheduler_module.assistant, "ask", fake_ask)
+
+    await scheduler_module.run_ai_widget(plugin)
+
+    assert captured["system_prompt"] is None
+
+
+async def test_run_ai_widget_passes_locale_instruction_for_configured_language(tmp_db, dashboard_yaml, monkeypatch):
+    plugin = AIInsightsPlugin(
+        {
+            "id": "ai-insights",
+            "settings": {"cron": "30 6 * * *", "prompt": "Say hello", "language": "es"},
+        }
+    )
+    registry.register(plugin)
+    captured = {}
+
+    async def fake_ask(text, system_prompt=None, user=None, device=None, allowed_widget_ids=None):
+        captured["system_prompt"] = system_prompt
+        return "Sunny and 75."
+
+    monkeypatch.setattr(scheduler_module.assistant, "ask", fake_ask)
+
+    await scheduler_module.run_ai_widget(plugin)
+
+    assert captured["system_prompt"] == "Respond in Spanish."
 
 
 async def test_run_ai_widget_swallows_exceptions(tmp_db, monkeypatch):
@@ -166,3 +213,177 @@ def test_unschedule_widget_removes_ai_and_photo_index_jobs():
 
 def test_unschedule_widget_is_a_noop_for_unknown_widget():
     scheduler_module.unschedule_widget("does-not-exist")  # must not raise
+
+
+def test_schedule_speedtest_widgets_only_schedules_speedtest_plugins():
+    registry.register(make_speedtest_plugin())
+    registry.register(WeatherPlugin({"id": "weather", "settings": {"latitude": 0, "longitude": 0}}))
+
+    scheduler_module.schedule_speedtest_widgets()
+    try:
+        job_ids = {job.id for job in scheduler_module.scheduler.get_jobs()}
+        assert job_ids == {"speedtest:speedtest"}
+    finally:
+        scheduler_module.scheduler.remove_all_jobs()
+
+
+def test_schedule_speedtest_widget_uses_interval_minutes_setting():
+    plugin = make_speedtest_plugin(interval_minutes=15)
+
+    scheduler_module.schedule_speedtest_widget(plugin)
+    try:
+        job = scheduler_module.scheduler.get_job("speedtest:speedtest")
+        assert job.trigger.interval.total_seconds() == 15 * 60
+    finally:
+        scheduler_module.scheduler.remove_all_jobs()
+
+
+async def test_run_speedtest_widget_records_successful_run(tmp_db, monkeypatch):
+    plugin = make_speedtest_plugin()
+
+    def fake_run_speedtest():
+        return {"download_mbps": 300.0, "upload_mbps": 30.0, "ping_ms": 5.0, "server_name": "Fast ISP"}
+
+    monkeypatch.setattr(scheduler_module.speedtest_runner, "run_speedtest", fake_run_speedtest)
+
+    await scheduler_module.run_speedtest_widget(plugin)
+
+    latest = db.latest_speedtest_run(plugin.id)
+    assert latest["server_name"] == "Fast ISP"
+    assert latest["download_mbps"] == 300.0
+
+
+async def test_run_speedtest_widget_swallows_exceptions(tmp_db, monkeypatch):
+    plugin = make_speedtest_plugin()
+
+    def failing_run_speedtest():
+        raise RuntimeError("network unreachable")
+
+    monkeypatch.setattr(scheduler_module.speedtest_runner, "run_speedtest", failing_run_speedtest)
+
+    await scheduler_module.run_speedtest_widget(plugin)  # must not raise
+
+    assert db.latest_speedtest_run(plugin.id) is None
+
+
+def test_unschedule_widget_removes_speedtest_job():
+    plugin = make_speedtest_plugin()
+    scheduler_module.schedule_speedtest_widget(plugin)
+    try:
+        scheduler_module.unschedule_widget("speedtest")
+
+        assert scheduler_module.scheduler.get_job("speedtest:speedtest") is None
+    finally:
+        scheduler_module.scheduler.remove_all_jobs()
+
+
+def test_schedule_package_refresh_widgets_only_schedules_packages_plugins():
+    registry.register(make_packages_plugin())
+    registry.register(WeatherPlugin({"id": "weather", "settings": {"latitude": 0, "longitude": 0}}))
+
+    scheduler_module.schedule_package_refresh_widgets()
+    try:
+        job_ids = {job.id for job in scheduler_module.scheduler.get_jobs()}
+        assert job_ids == {"package-refresh:packages"}
+    finally:
+        scheduler_module.scheduler.remove_all_jobs()
+
+
+def test_schedule_package_refresh_uses_90_minute_interval():
+    plugin = make_packages_plugin()
+
+    scheduler_module.schedule_package_refresh(plugin)
+    try:
+        job = scheduler_module.scheduler.get_job("package-refresh:packages")
+        assert job.trigger.interval.total_seconds() == 90 * 60
+    finally:
+        scheduler_module.scheduler.remove_all_jobs()
+
+
+async def test_run_package_refresh_noop_without_api_key(tmp_db, monkeypatch):
+    monkeypatch.setattr(scheduler_module.settings, "track17_api_key", None)
+    plugin = make_packages_plugin()
+    package = db.add_package(plugin.id, "1Z999AA1")
+
+    await scheduler_module.run_package_refresh(plugin)
+
+    assert db.get_package(package["id"])["status"] is None
+
+
+async def test_run_package_refresh_noop_when_no_pending_packages(tmp_db, monkeypatch):
+    monkeypatch.setattr(scheduler_module.settings, "track17_api_key", "test-key")
+    plugin = make_packages_plugin()
+
+    async def fail_if_called(*args, **kwargs):
+        raise AssertionError("get_track_info should not be called with nothing pending")
+
+    monkeypatch.setattr(scheduler_module.track17_client, "get_track_info", fail_if_called)
+
+    await scheduler_module.run_package_refresh(plugin)  # must not raise
+
+
+async def test_run_package_refresh_updates_pending_packages(tmp_db, monkeypatch):
+    monkeypatch.setattr(scheduler_module.settings, "track17_api_key", "test-key")
+    plugin = make_packages_plugin()
+    package = db.add_package(plugin.id, "1Z999AA1")
+
+    async def fake_get_track_info(api_key, tracking_numbers):
+        assert api_key == "test-key"
+        assert tracking_numbers == ["1Z999AA1"]
+        return {
+            "1Z999AA1": {
+                "carrier": "UPS",
+                "status": "InTransit",
+                "last_event": "Departed facility",
+                "eta_date": "2026-08-10",
+                "delivered": False,
+            }
+        }
+
+    monkeypatch.setattr(scheduler_module.track17_client, "get_track_info", fake_get_track_info)
+
+    await scheduler_module.run_package_refresh(plugin)
+
+    updated = db.get_package(package["id"])
+    assert updated["carrier"] == "UPS"
+    assert updated["status"] == "InTransit"
+    assert updated["eta_date"] == "2026-08-10"
+
+
+async def test_run_package_refresh_skips_packages_17track_returns_nothing_for(tmp_db, monkeypatch):
+    monkeypatch.setattr(scheduler_module.settings, "track17_api_key", "test-key")
+    plugin = make_packages_plugin()
+    package = db.add_package(plugin.id, "1Z999AA1")
+
+    async def fake_get_track_info(api_key, tracking_numbers):
+        return {}
+
+    monkeypatch.setattr(scheduler_module.track17_client, "get_track_info", fake_get_track_info)
+
+    await scheduler_module.run_package_refresh(plugin)  # must not raise
+
+    assert db.get_package(package["id"])["status"] is None
+
+
+async def test_run_package_refresh_swallows_track17_errors(tmp_db, monkeypatch):
+    monkeypatch.setattr(scheduler_module.settings, "track17_api_key", "test-key")
+    plugin = make_packages_plugin()
+    db.add_package(plugin.id, "1Z999AA1")
+
+    async def failing_get_track_info(api_key, tracking_numbers):
+        raise scheduler_module.track17_client.Track17Error("boom")
+
+    monkeypatch.setattr(scheduler_module.track17_client, "get_track_info", failing_get_track_info)
+
+    await scheduler_module.run_package_refresh(plugin)  # must not raise
+
+
+def test_unschedule_widget_removes_package_refresh_job():
+    plugin = make_packages_plugin()
+    scheduler_module.schedule_package_refresh(plugin)
+    try:
+        scheduler_module.unschedule_widget("packages")
+
+        assert scheduler_module.scheduler.get_job("package-refresh:packages") is None
+    finally:
+        scheduler_module.scheduler.remove_all_jobs()

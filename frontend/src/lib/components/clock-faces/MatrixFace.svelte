@@ -1,8 +1,10 @@
 <script lang="ts">
+	import { locale } from 'svelte-i18n';
+
 	let { now, timezone, size }: { now: Date; timezone: string; size: 'tile' | 'detail' } = $props();
 
 	const formatted = $derived(
-		new Intl.DateTimeFormat(undefined, {
+		new Intl.DateTimeFormat($locale ?? undefined, {
 			timeZone: timezone,
 			hour: 'numeric',
 			minute: '2-digit',
@@ -102,7 +104,7 @@
 		position: relative;
 		font-family: 'Courier New', monospace;
 		font-weight: 700;
-		font-size: 1.8rem;
+		font-size: clamp(1.1rem, 22cqh, 2.2rem);
 		font-variant-numeric: tabular-nums;
 		color: #4dff8f;
 		text-shadow:

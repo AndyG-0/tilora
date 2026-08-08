@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import pytest
@@ -14,6 +15,9 @@ from app.plugins import scoping
 from app.plugins.ai_insights.plugin import AIInsightsPlugin
 from app.plugins.base import Plugin, registry
 from app.plugins.photos.plugin import PhotosPlugin
+from app.plugins.speedtest.plugin import SpeedtestPlugin
+from app.plugins.sports.plugin import SportsPlugin
+from app.plugins.weather.plugin import WeatherPlugin
 from app.storage import db
 
 TEST_USER_ID = "test-user"
@@ -71,6 +75,22 @@ class StubDeviceOverridablePlugin(StubPlugin):
     async def get_detail(self) -> dict[str, Any]:
         self.detail_calls += 1
         return {"value": self.config["settings"].get("value", "default")}
+
+
+class StubLocaleAwarePlugin(StubPlugin):
+    """A stub whose content reflects `self.locale`, so a test can tell which
+    locale a given response was rendered for."""
+
+    id = "locale-stub"
+    name = "Stub Locale Aware"
+
+    async def get_summary(self) -> dict[str, Any]:
+        self.summary_calls += 1
+        return {"value": self.locale}
+
+    async def get_detail(self) -> dict[str, Any]:
+        self.detail_calls += 1
+        return {"value": self.locale}
 
 
 class StubPersonalDeviceOverridablePlugin(StubPlugin):
@@ -229,7 +249,7 @@ def test_summary_returns_404_for_unregistered_widget(client, dashboard_yaml):
     assert response.status_code == 404
 
 
-def test_summary_returns_plugin_data(client, dashboard_yaml):
+def test_summary_returns_plugin_data(client, dashboard_yaml, tmp_db):
     plugin = StubPlugin({})
     registry.register(plugin)
 
@@ -239,7 +259,7 @@ def test_summary_returns_plugin_data(client, dashboard_yaml):
     assert response.json() == {"value": "summary"}
 
 
-def test_summary_is_cached_between_requests(client, dashboard_yaml):
+def test_summary_is_cached_between_requests(client, dashboard_yaml, tmp_db):
     plugin = StubPlugin({})
     registry.register(plugin)
 
@@ -249,7 +269,35 @@ def test_summary_is_cached_between_requests(client, dashboard_yaml):
     assert plugin.summary_calls == 1
 
 
-def test_detail_returns_plugin_data(client, dashboard_yaml):
+def test_summary_logs_latency_tagged_with_widget_id(client, dashboard_yaml, tmp_db, caplog):
+    plugin = StubPlugin({})
+    registry.register(plugin)
+
+    with caplog.at_level(logging.INFO, logger="app.api.widgets"):
+        response = client.get("/api/widgets/stub/summary")
+
+    assert response.status_code == 200
+    assert any("stub" in r.message and "summary" in r.message for r in caplog.records)
+
+
+def test_summary_logs_and_reraises_plugin_errors(client, dashboard_yaml, tmp_db, caplog):
+    class FailingPlugin(StubPlugin):
+        id = "failing-stub"
+
+        async def get_summary(self) -> dict[str, Any]:
+            raise RuntimeError("boom")
+
+    plugin = FailingPlugin({})
+    registry.register(plugin)
+
+    with caplog.at_level(logging.ERROR, logger="app.api.widgets"):
+        with pytest.raises(RuntimeError, match="boom"):
+            client.get("/api/widgets/failing-stub/summary")
+
+    assert any("failing-stub" in r.message and "failed" in r.message for r in caplog.records)
+
+
+def test_detail_returns_plugin_data(client, dashboard_yaml, tmp_db):
     plugin = StubPlugin({})
     registry.register(plugin)
 
@@ -257,6 +305,64 @@ def test_detail_returns_plugin_data(client, dashboard_yaml):
 
     assert response.status_code == 200
     assert response.json() == {"value": "detail"}
+
+
+def test_summary_reflects_users_locale_preference(client, dashboard_yaml, tmp_db):
+    plugin = StubLocaleAwarePlugin({"settings": {}})
+    registry.register(plugin)
+    db.save_user_preferences(TEST_USER_ID, {"locale": "es"})
+
+    response = client.get("/api/widgets/locale-stub/summary")
+
+    assert response.json() == {"value": "es"}
+    # Never mutated in place — scoped_plugin cloned a throwaway instance.
+    assert plugin.locale == "en"
+
+
+def test_summary_cache_is_scoped_per_locale(client, dashboard_yaml, tmp_db, monkeypatch):
+    plugin = StubLocaleAwarePlugin({"settings": {}})
+    registry.register(plugin)
+    calls: list[str] = []
+    original_get_summary = StubLocaleAwarePlugin.get_summary
+
+    async def counting_get_summary(self):
+        calls.append(self.locale)
+        return await original_get_summary(self)
+
+    monkeypatch.setattr(StubLocaleAwarePlugin, "get_summary", counting_get_summary)
+
+    assert client.get("/api/widgets/locale-stub/summary").json() == {"value": "en"}
+    db.save_user_preferences(TEST_USER_ID, {"locale": "es"})
+    assert client.get("/api/widgets/locale-stub/summary").json() == {"value": "es"}
+
+    # Distinct cache entries per locale — the Spanish request didn't serve
+    # the already-cached English response, and both were computed once.
+    assert calls == ["en", "es"]
+
+
+def test_switching_locale_back_still_hits_the_original_cache_entry(client, dashboard_yaml, tmp_db, monkeypatch):
+    plugin = StubLocaleAwarePlugin({"settings": {}})
+    registry.register(plugin)
+    calls: list[str] = []
+    original_get_summary = StubLocaleAwarePlugin.get_summary
+
+    async def counting_get_summary(self):
+        calls.append(self.locale)
+        return await original_get_summary(self)
+
+    monkeypatch.setattr(StubLocaleAwarePlugin, "get_summary", counting_get_summary)
+
+    client.get("/api/widgets/locale-stub/summary")
+    db.save_user_preferences(TEST_USER_ID, {"locale": "es"})
+    client.get("/api/widgets/locale-stub/summary")
+    db.save_user_preferences(TEST_USER_ID, {"locale": "en"})
+    response = client.get("/api/widgets/locale-stub/summary")
+
+    assert response.json() == {"value": "en"}
+    # The English response was already cached from the first request, so
+    # switching back to it doesn't recompute — only the one-time Spanish
+    # miss added a second call.
+    assert calls == ["en", "es"]
 
 
 def test_update_settings_returns_404_for_unregistered_widget(client, dashboard_yaml):
@@ -322,6 +428,28 @@ def test_update_settings_skips_reindex_for_unrelated_keys(client, dashboard_yaml
     assert calls == []
 
 
+def test_update_settings_reschedules_speedtest_when_interval_changes(client, dashboard_yaml, tmp_db, monkeypatch):
+    plugin = SpeedtestPlugin({"id": "speedtest", "settings": dict(SpeedtestPlugin.default_settings)})
+    registry.register(plugin)
+    calls = []
+    monkeypatch.setattr(widgets, "schedule_speedtest_widget", lambda p: calls.append(p.id))
+
+    client.patch("/api/widgets/speedtest/settings", json={"interval_minutes": 30})
+
+    assert calls == ["speedtest"]
+
+
+def test_update_settings_skips_speedtest_reschedule_for_unrelated_keys(client, dashboard_yaml, tmp_db, monkeypatch):
+    plugin = SpeedtestPlugin({"id": "speedtest", "settings": dict(SpeedtestPlugin.default_settings)})
+    registry.register(plugin)
+    calls = []
+    monkeypatch.setattr(widgets, "schedule_speedtest_widget", lambda p: calls.append(p.id))
+
+    client.patch("/api/widgets/speedtest/settings", json={"title": "Home Internet"})
+
+    assert calls == []
+
+
 def test_summary_requires_login(unauthenticated_client, dashboard_yaml):
     registry.register(StubPlugin({}))
     response = unauthenticated_client.get("/api/widgets/stub/summary")
@@ -369,6 +497,24 @@ def test_update_settings_allows_member_for_personal_scope_widget(member_client, 
     # this user's own override was written.
     assert plugin.config["settings"] == {"value": "default"}
     assert db.get_widget_user_settings("member-user", "personal-stub") == {"value": "mine"}
+
+
+def test_update_settings_allows_member_for_sports_widget(member_client, dashboard_yaml, tmp_db):
+    registry.register(SportsPlugin({"id": "sports", "settings": dict(SportsPlugin.default_settings)}))
+
+    response = member_client.patch("/api/widgets/sports/settings", json={"teams": [{"league": "nfl", "team": "PHI"}]})
+
+    assert response.status_code == 200
+    assert db.get_widget_user_settings("member-user", "sports")["teams"] == [{"league": "nfl", "team": "PHI"}]
+
+
+def test_update_settings_allows_member_for_weather_widget(member_client, dashboard_yaml, tmp_db):
+    registry.register(WeatherPlugin({"id": "weather", "settings": dict(WeatherPlugin.default_settings)}))
+
+    response = member_client.patch("/api/widgets/weather/settings", json={"location_name": "Austin, TX"})
+
+    assert response.status_code == 200
+    assert db.get_widget_user_settings("member-user", "weather")["location_name"] == "Austin, TX"
 
 
 def test_personal_scope_settings_and_summary_are_isolated_per_user(dashboard_yaml, tmp_db):
@@ -450,6 +596,24 @@ def test_run_triggers_generation_and_returns_fresh_detail(client, dashboard_yaml
     assert response.json()["text"] == "Fresh briefing"
 
 
+def test_run_triggers_speedtest_and_returns_fresh_detail(client, dashboard_yaml, tmp_db, monkeypatch):
+    plugin = SpeedtestPlugin({"id": "speedtest", "settings": dict(SpeedtestPlugin.default_settings)})
+    registry.register(plugin)
+
+    async def fake_run_speedtest_widget(run_plugin):
+        assert run_plugin is plugin
+        db.record_speedtest_run(
+            run_plugin.id, download_mbps=250.0, upload_mbps=25.0, ping_ms=8.0, server_name="Fresh ISP"
+        )
+
+    monkeypatch.setattr(widgets, "run_speedtest_widget", fake_run_speedtest_widget)
+
+    response = client.post("/api/widgets/speedtest/run")
+
+    assert response.status_code == 200
+    assert response.json()["server_name"] == "Fresh ISP"
+
+
 def test_widget_types_lists_all_registered_types(client):
     response = client.get("/api/widgets/types")
 
@@ -526,6 +690,43 @@ def test_add_widget_schedules_photo_index_job(client, dashboard_yaml, tmp_db):
         scheduler_module.scheduler.remove_all_jobs()
 
 
+def test_add_widget_schedules_speedtest_interval_job(client, dashboard_yaml, tmp_db):
+    try:
+        response = client.post(
+            "/api/widgets",
+            json={"type": "speedtest", "layout": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1}},
+        )
+        widget_id = response.json()["id"]
+
+        assert scheduler_module.scheduler.get_job(f"speedtest:{widget_id}") is not None
+    finally:
+        scheduler_module.scheduler.remove_all_jobs()
+
+
+def test_add_widget_requires_login(unauthenticated_client, dashboard_yaml, tmp_db):
+    response = unauthenticated_client.post(
+        "/api/widgets",
+        json={"type": "clock", "layout": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1}},
+    )
+    assert response.status_code == 401
+
+
+def test_add_widget_rejects_member_for_network_scope_widget_type(member_client, dashboard_yaml, tmp_db):
+    response = member_client.post(
+        "/api/widgets",
+        json={"type": "clock", "layout": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1}},
+    )
+    assert response.status_code == 403
+
+
+def test_add_widget_allows_member_for_personal_scope_widget_type(member_client, dashboard_yaml, tmp_db):
+    response = member_client.post(
+        "/api/widgets",
+        json={"type": "rss", "layout": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1}},
+    )
+    assert response.status_code == 200
+
+
 def test_add_widget_returns_400_for_unknown_type(client, dashboard_yaml, tmp_db):
     response = client.post(
         "/api/widgets",
@@ -538,6 +739,24 @@ def test_add_widget_returns_400_for_unknown_type(client, dashboard_yaml, tmp_db)
 def test_remove_widget_returns_404_for_unregistered_widget(client, dashboard_yaml, tmp_db):
     response = client.delete("/api/widgets/nonexistent")
     assert response.status_code == 404
+
+
+def test_remove_widget_requires_login(unauthenticated_client, dashboard_yaml, tmp_db):
+    registry.register(StubPlugin({}))
+    response = unauthenticated_client.delete("/api/widgets/stub")
+    assert response.status_code == 401
+
+
+def test_remove_widget_rejects_member_for_network_scope_widget(member_client, dashboard_yaml, tmp_db):
+    registry.register(StubPlugin({}))
+    response = member_client.delete("/api/widgets/stub")
+    assert response.status_code == 403
+
+
+def test_remove_widget_allows_member_for_personal_scope_widget(member_client, dashboard_yaml, tmp_db):
+    registry.register(StubPersonalPlugin({"id": "personal-stub", "settings": {}}))
+    response = member_client.delete("/api/widgets/personal-stub")
+    assert response.status_code == 200
 
 
 def test_remove_widget_unregisters_yaml_widget_via_soft_delete(client, dashboard_yaml, tmp_db):

@@ -4,6 +4,7 @@
 	import type { GoodreadsSummary } from '$lib/api';
 	import { scrollFade } from '$lib/scrollFade';
 	import TileCard from '$lib/components/TileCard.svelte';
+	import { _ } from 'svelte-i18n';
 
 	let { widgetId }: { widgetId: string } = $props();
 
@@ -22,37 +23,28 @@
 
 <TileCard {widgetId}>
 	{#if summary?.books.length}
-		{@const book = summary.books[0]}
-		{@const rest = summary.books.slice(1)}
 		<div class="frame">
-			{#if book.book_image_url}
-				<div class="cover-wrap">
-					<img class="cover" src={book.book_image_url} alt="" loading="lazy" decoding="async" />
-				</div>
-			{/if}
-			<div class="info">
-				<div class="book-title">{book.title}</div>
-				{#if book.author_name}
-					<div class="author">{book.author_name}</div>
-				{/if}
-			</div>
-			{#if rest.length > 0}
-				<div class="scroll-wrap">
-					<ul class="more-books" use:scrollFade={summary}>
-						{#each rest as more (more.link)}
-							<li>
-								<div class="book-title">{more.title}</div>
-								{#if more.author_name}
-									<div class="author">{more.author_name}</div>
+			<div class="title">Goodreads</div>
+			<div class="scroll-wrap">
+				<ul class="more-books" use:scrollFade={summary}>
+					{#each summary.books as book (book.link)}
+						<li>
+							{#if book.book_image_url}
+								<img class="thumb" src={book.book_image_url} alt="" loading="lazy" decoding="async" />
+							{/if}
+							<div class="book-text">
+								<div class="book-title">{book.title}</div>
+								{#if book.author_name}
+									<div class="author">{book.author_name}</div>
 								{/if}
-							</li>
-						{/each}
-					</ul>
-				</div>
-			{/if}
+							</div>
+						</li>
+					{/each}
+				</ul>
+			</div>
 		</div>
 	{:else}
-		<div class="empty">No books on this shelf</div>
+		<div class="empty">{$_('goodreads.tile.empty')}</div>
 	{/if}
 </TileCard>
 
@@ -66,26 +58,11 @@
 		overflow: hidden;
 	}
 
-	.cover-wrap {
-		flex: 1;
-		min-height: 0;
-		max-height: min(45%, 13rem);
-		position: relative;
-	}
-
-	.cover {
-		position: absolute;
-		inset: 0;
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-		border-radius: 0.75rem;
-		display: block;
-	}
-
-	.info {
-		flex-shrink: 0;
-		padding-top: 0.5rem;
+	.title {
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--color-text-muted);
+		margin: 0 0 0.35rem;
 	}
 
 	.book-title {
@@ -108,7 +85,6 @@
 		position: relative;
 		flex: 1;
 		min-height: 0;
-		margin-top: 0.5rem;
 	}
 
 	.scroll-wrap::before,
@@ -162,6 +138,9 @@
 	}
 
 	.more-books li {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
 		flex-shrink: 0;
 		padding-bottom: 0.4rem;
 		border-bottom: 1px solid var(--color-border);
@@ -170,6 +149,18 @@
 	.more-books li:last-child {
 		border-bottom: none;
 		padding-bottom: 0;
+	}
+
+	.thumb {
+		flex-shrink: 0;
+		width: 2rem;
+		height: 2.85rem;
+		object-fit: cover;
+		border-radius: 0.35rem;
+	}
+
+	.book-text {
+		min-width: 0;
 	}
 
 	.empty {

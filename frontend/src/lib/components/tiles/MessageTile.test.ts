@@ -32,4 +32,13 @@ describe('MessageTile', () => {
 		expect(await screen.findByText('Just the message body.')).toBeInTheDocument();
 		expect(screen.queryByText('Reminder')).not.toBeInTheDocument();
 	});
+
+	it('renders markdown in the message text', async () => {
+		widgetSummary.mockResolvedValue({ title: 'Reminder', text: '**Trash night** — put bins on the `curb`.' });
+
+		render(MessageTile, { props: { widgetId: 'message' } });
+
+		expect(await screen.findByText('Trash night', { selector: 'strong' })).toBeInTheDocument();
+		expect(screen.getByText('curb', { selector: 'code' })).toBeInTheDocument();
+	});
 });

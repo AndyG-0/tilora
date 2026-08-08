@@ -3,6 +3,7 @@
 	import { api } from '$lib/api';
 	import { scrollFade } from '$lib/scrollFade';
 	import TileCard from '$lib/components/TileCard.svelte';
+	import { _ } from 'svelte-i18n';
 
 	interface Movie {
 		id: number;
@@ -19,13 +20,13 @@
 		on_streaming_tv_shows?: Movie[];
 	}
 
-	const SECTIONS: { key: keyof MoviesSummary; title: string }[] = [
-		{ key: 'popular_movies', title: 'Popular Movies' },
-		{ key: 'trending_movies', title: 'Trending Movies' },
-		{ key: 'popular_tv_shows', title: 'Popular Shows' },
-		{ key: 'trending_tv_shows', title: 'Trending Shows' },
-		{ key: 'on_streaming_movies', title: 'On Streaming: Movies' },
-		{ key: 'on_streaming_tv_shows', title: 'On Streaming: Shows' },
+	const SECTIONS: { key: keyof MoviesSummary; titleKey: string }[] = [
+		{ key: 'popular_movies', titleKey: 'movies.section.popular_movies' },
+		{ key: 'trending_movies', titleKey: 'movies.section.trending_movies' },
+		{ key: 'popular_tv_shows', titleKey: 'movies.section.popular_tv_shows' },
+		{ key: 'trending_tv_shows', titleKey: 'movies.section.trending_tv_shows' },
+		{ key: 'on_streaming_movies', titleKey: 'movies.section.on_streaming_movies' },
+		{ key: 'on_streaming_tv_shows', titleKey: 'movies.section.on_streaming_tv_shows' },
 	];
 
 	let { widgetId }: { widgetId: string } = $props();
@@ -52,7 +53,7 @@
 						{@const items = summary[section.key]}
 						{#if items?.length}
 							<div class="section">
-								<div class="title">{section.title}</div>
+								<div class="title">{$_(section.titleKey)}</div>
 								<div class="posters">
 									{#each items as movie (movie.id)}
 										{#if movie.poster_url}
@@ -67,7 +68,7 @@
 			</div>
 		{:else}
 			<div class="title">Movies & Shows</div>
-			<div class="condition">Loading…</div>
+			<div class="condition">{$_('common.loading')}</div>
 		{/if}
 	</div>
 </TileCard>

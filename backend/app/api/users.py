@@ -14,7 +14,10 @@ from app.auth import (
     get_current_device,
     get_current_user,
     hash_pin,
+    is_locked_out,
     new_token,
+    record_failed_login,
+    record_successful_login,
     session_expiry,
     set_session_cookie,
     verify_pin,
@@ -57,6 +60,10 @@ class UpdateUserRequest(BaseModel):
 
 class UpdatePreferencesRequest(BaseModel):
     theme: str | None = None
+    voice_provider: str | None = None
+    voice_id: str | None = None
+    voice_name: str | None = None
+    locale: str | None = None
 
 
 def _profile_shape(user: dict[str, Any]) -> dict[str, Any]:
@@ -107,8 +114,12 @@ async def login(
         raise HTTPException(status_code=404, detail=f"Unknown profile '{user_id}'")
 
     if user["pin_hash"]:
+        if is_locked_out(user_id):
+            raise HTTPException(status_code=429, detail="Too many incorrect attempts. Try again shortly.")
         if not payload.pin or not verify_pin(payload.pin, user["pin_hash"], user["pin_salt"], user["pin_iterations"]):
+            record_failed_login(user_id)
             raise HTTPException(status_code=401, detail="Incorrect PIN")
+        record_successful_login(user_id)
 
     session_id = new_token()
     now = datetime.now(UTC).isoformat()

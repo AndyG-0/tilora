@@ -51,6 +51,21 @@ LEAGUE_LABELS: dict[str, str] = {
 
 _BASE_URL = "https://site.api.espn.com/apis/site/v2/sports"
 
+# espn.com's website uses its own (shorter, inconsistent with the JSON API's
+# sport/league path pairs) league path segments for team pages, e.g.
+# https://www.espn.com/nfl/team/_/name/dal. Only covers the leagues
+# `LEAGUE_PATHS` already supports.
+ESPN_WEBSITE_LEAGUE_PATHS: dict[str, str] = {
+    "nfl": "nfl",
+    "nba": "nba",
+    "mlb": "mlb",
+    "nhl": "nhl",
+    "wnba": "wnba",
+    "college-football": "college-football",
+    "college-basketball-men": "mens-college-basketball",
+    "college-basketball-women": "womens-college-basketball",
+}
+
 
 class ESPNError(Exception):
     """Raised when ESPN's site API can't be reached or returns something unusable."""
@@ -62,6 +77,14 @@ def is_supported_league(league: str) -> bool:
 
 def supported_leagues() -> list[str]:
     return list(LEAGUE_PATHS)
+
+
+def team_page_url(league: str, abbreviation: str) -> str | None:
+    """Build a link to a team's page on espn.com, or `None` if unsupported."""
+    website_league = ESPN_WEBSITE_LEAGUE_PATHS.get(league)
+    if not website_league or not abbreviation:
+        return None
+    return f"https://www.espn.com/{website_league}/team/_/name/{abbreviation.lower()}"
 
 
 async def fetch_team_schedule(league: str, team: str) -> dict[str, Any]:

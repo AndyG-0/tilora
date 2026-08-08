@@ -86,6 +86,53 @@ def test_login_with_a_pin_requires_the_correct_pin(client, tmp_db):
     assert correct.status_code == 200
 
 
+def test_login_locks_out_after_too_many_wrong_pins(client, tmp_db):
+    client.post("/api/devices/register")
+    client.post("/api/users", json={"name": "Bob", "pin": "1234"})
+    client.post("/api/users/logout")
+    user_id = db.list_users()[-1]["id"]
+
+    for _ in range(5):
+        response = client.post(f"/api/users/{user_id}/login", json={"pin": "0000"})
+        assert response.status_code == 401
+
+    locked = client.post(f"/api/users/{user_id}/login", json={"pin": "0000"})
+    assert locked.status_code == 429
+
+    still_locked = client.post(f"/api/users/{user_id}/login", json={"pin": "1234"})
+    assert still_locked.status_code == 429
+
+
+def test_login_lockout_is_scoped_per_profile(client, tmp_db):
+    client.post("/api/devices/register")
+    client.post("/api/users", json={"name": "Bob", "pin": "1234"})
+    client.post("/api/users", json={"name": "Alice", "pin": "5678"})
+    client.post("/api/users/logout")
+    users = {u["name"]: u["id"] for u in db.list_users()}
+
+    for _ in range(5):
+        client.post(f"/api/users/{users['Bob']}/login", json={"pin": "0000"})
+    assert client.post(f"/api/users/{users['Bob']}/login", json={"pin": "1234"}).status_code == 429
+
+    other = client.post(f"/api/users/{users['Alice']}/login", json={"pin": "5678"})
+    assert other.status_code == 200
+
+
+def test_login_success_resets_the_failed_attempt_count(client, tmp_db):
+    client.post("/api/devices/register")
+    client.post("/api/users", json={"name": "Bob", "pin": "1234"})
+    client.post("/api/users/logout")
+    user_id = db.list_users()[-1]["id"]
+
+    for _ in range(4):
+        client.post(f"/api/users/{user_id}/login", json={"pin": "0000"})
+    assert client.post(f"/api/users/{user_id}/login", json={"pin": "1234"}).status_code == 200
+
+    for _ in range(4):
+        response = client.post(f"/api/users/{user_id}/login", json={"pin": "0000"})
+        assert response.status_code == 401
+
+
 def test_logout_clears_the_session(client, tmp_db):
     client.post("/api/devices/register")
     client.post("/api/users", json={"name": "Alice"})
@@ -155,10 +202,36 @@ def test_get_and_patch_preferences_round_trip(client, tmp_db):
     client.post("/api/devices/register")
     client.post("/api/users", json={"name": "Alice"})
 
-    assert client.get("/api/users/me/preferences").json() == {"theme": "dark"}
+    defaults = {"theme": "dark", "voice_provider": "browser", "voice_id": "", "voice_name": "", "locale": "en"}
+    assert client.get("/api/users/me/preferences").json() == defaults
 
     response = client.patch("/api/users/me/preferences", json={"theme": "light"})
 
     assert response.status_code == 200
-    assert response.json() == {"theme": "light"}
-    assert client.get("/api/users/me/preferences").json() == {"theme": "light"}
+    assert response.json() == {**defaults, "theme": "light"}
+    assert client.get("/api/users/me/preferences").json() == {**defaults, "theme": "light"}
+
+
+def test_patch_preferences_round_trips_voice_selection(client, tmp_db):
+    client.post("/api/devices/register")
+    client.post("/api/users", json={"name": "Alice"})
+
+    response = client.patch(
+        "/api/users/me/preferences",
+        json={"voice_provider": "openai", "voice_id": "nova"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["voice_provider"] == "openai"
+    assert response.json()["voice_id"] == "nova"
+
+
+def test_patch_preferences_round_trips_locale(client, tmp_db):
+    client.post("/api/devices/register")
+    client.post("/api/users", json={"name": "Alice"})
+
+    response = client.patch("/api/users/me/preferences", json={"locale": "es"})
+
+    assert response.status_code == 200
+    assert response.json()["locale"] == "es"
+    assert client.get("/api/users/me/preferences").json()["locale"] == "es"

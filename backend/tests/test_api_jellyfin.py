@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api import jellyfin
+from app.auth import get_current_user
 from app.plugins.base import registry
 from app.plugins.jellyfin.plugin import JellyfinPlugin
 
@@ -21,12 +22,56 @@ def register_plugin(**settings) -> JellyfinPlugin:
 def client():
     app = FastAPI()
     app.include_router(jellyfin.router)
+    app.dependency_overrides[get_current_user] = lambda: {"id": "admin", "role": "admin"}
+    return TestClient(app)
+
+
+@pytest.fixture
+def member_client():
+    app = FastAPI()
+    app.include_router(jellyfin.router)
+    app.dependency_overrides[get_current_user] = lambda: {"id": "member", "role": "member"}
+    return TestClient(app)
+
+
+@pytest.fixture
+def unauthenticated_client():
+    app = FastAPI()
+    app.include_router(jellyfin.router)
     return TestClient(app)
 
 
 def test_unknown_widget_returns_404(client):
     response = client.get("/api/jellyfin/nope/libraries")
     assert response.status_code == 404
+
+
+def test_test_connection_requires_login(unauthenticated_client):
+    register_plugin(host="jf.local")
+    response = unauthenticated_client.post("/api/jellyfin/jf1/test-connection", json={})
+    assert response.status_code == 401
+
+
+def test_test_connection_rejects_member(member_client):
+    register_plugin(host="jf.local")
+    response = member_client.post("/api/jellyfin/jf1/test-connection", json={})
+    assert response.status_code == 403
+
+
+def test_list_libraries_requires_login(unauthenticated_client):
+    register_plugin(host="jf.local")
+    response = unauthenticated_client.get("/api/jellyfin/jf1/libraries")
+    assert response.status_code == 401
+
+
+@respx.mock
+def test_list_libraries_allows_member(member_client):
+    register_plugin(host="jf.local", api_key="k1")
+    respx.get("http://jf.local:8096/Library/MediaFolders").mock(return_value=httpx.Response(200, json={"Items": []}))
+
+    response = member_client.get("/api/jellyfin/jf1/libraries")
+
+    assert response.status_code == 200
 
 
 @respx.mock

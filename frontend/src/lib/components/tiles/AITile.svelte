@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { pollWidget } from '$lib/polling';
 	import { api } from '$lib/api';
+	import { renderMarkdown } from '$lib/markdown';
 	import TileCard from '$lib/components/TileCard.svelte';
+	import { _ } from 'svelte-i18n';
 
 	interface AISummary {
 		title: string;
@@ -27,9 +29,10 @@
 <TileCard {widgetId}>
 	{#if summary}
 		<div class="title">{summary.title}</div>
-		<div class="text">{summary.text}</div>
+		<!-- eslint-disable-next-line svelte/no-at-html-tags -- renderMarkdown sanitizes with DOMPurify against an explicit tag/attribute allowlist before this reaches the DOM. -->
+		<div class="text">{@html renderMarkdown(summary.text)}</div>
 	{:else}
-		<div class="text">Loading briefing…</div>
+		<div class="text">{$_('ai_insights.tile.loading')}</div>
 	{/if}
 </TileCard>
 
@@ -44,5 +47,26 @@
 	.text {
 		font-size: 1.1rem;
 		line-height: 1.4;
+	}
+
+	/* {@html}-injected markdown sits outside Svelte's scoped-style tree. */
+	.text :global(p) {
+		margin: 0 0 0.4em;
+	}
+
+	.text :global(p:last-child) {
+		margin-bottom: 0;
+	}
+
+	.text :global(ul),
+	.text :global(ol) {
+		margin: 0 0 0.4em;
+		padding-left: 1.2em;
+	}
+
+	.text :global(code) {
+		background: var(--color-surface);
+		border-radius: 0.25rem;
+		padding: 0.1em 0.3em;
 	}
 </style>

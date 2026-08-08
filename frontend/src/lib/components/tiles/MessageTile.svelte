@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { pollWidget } from '$lib/polling';
 	import { api } from '$lib/api';
+	import { renderMarkdown } from '$lib/markdown';
 	import TileCard from '$lib/components/TileCard.svelte';
+	import { _ } from 'svelte-i18n';
 
 	interface MessageSummary {
 		title: string;
@@ -28,9 +30,10 @@
 		{#if summary.title}
 			<div class="title">{summary.title}</div>
 		{/if}
-		<div class="text">{summary.text}</div>
+		<!-- eslint-disable-next-line svelte/no-at-html-tags -- renderMarkdown sanitizes with DOMPurify against an explicit tag/attribute allowlist before this reaches the DOM. -->
+		<div class="text">{@html renderMarkdown(summary.text)}</div>
 	{:else}
-		<div class="text">Loading…</div>
+		<div class="text">{$_('common.loading')}</div>
 	{/if}
 </TileCard>
 
@@ -45,7 +48,27 @@
 	.text {
 		font-size: 1.1rem;
 		line-height: 1.4;
-		white-space: pre-wrap;
 		overflow-wrap: break-word;
+	}
+
+	/* {@html}-injected markdown sits outside Svelte's scoped-style tree. */
+	.text :global(p) {
+		margin: 0 0 0.4em;
+	}
+
+	.text :global(p:last-child) {
+		margin-bottom: 0;
+	}
+
+	.text :global(ul),
+	.text :global(ol) {
+		margin: 0 0 0.4em;
+		padding-left: 1.2em;
+	}
+
+	.text :global(code) {
+		background: var(--color-surface);
+		border-radius: 0.25rem;
+		padding: 0.1em 0.3em;
 	}
 </style>

@@ -21,7 +21,7 @@ describe('JellyfinTile', () => {
 	});
 
 	it('shows a not-connected state', async () => {
-		widgetSummary.mockResolvedValue({ connected: false, recent_items: [] });
+		widgetSummary.mockResolvedValue({ connected: false, sections: [] });
 
 		render(JellyfinTile, { props: { widgetId: 'jellyfin' } });
 
@@ -29,19 +29,24 @@ describe('JellyfinTile', () => {
 	});
 
 	it('shows an empty state when connected with no recent items', async () => {
-		widgetSummary.mockResolvedValue({ connected: true, recent_items: [] });
+		widgetSummary.mockResolvedValue({ connected: true, sections: [{ label: 'Recently added', items: [] }] });
 
 		render(JellyfinTile, { props: { widgetId: 'jellyfin' } });
 
-		expect(await screen.findByText('No recently added items')).toBeInTheDocument();
+		expect(await screen.findByText('Nothing to show yet')).toBeInTheDocument();
 	});
 
 	it('renders posters only for items that have one', async () => {
 		widgetSummary.mockResolvedValue({
 			connected: true,
-			recent_items: [
-				{ id: '1', name: 'Movie With Poster', has_poster: true },
-				{ id: '2', name: 'Movie Without Poster', has_poster: false },
+			sections: [
+				{
+					label: 'Recently added',
+					items: [
+						{ id: '1', name: 'Movie With Poster', has_poster: true },
+						{ id: '2', name: 'Movie Without Poster', has_poster: false },
+					],
+				},
 			],
 		});
 
@@ -51,10 +56,25 @@ describe('JellyfinTile', () => {
 		expect(screen.queryByAltText('Movie Without Poster')).not.toBeInTheDocument();
 	});
 
+	it('shows a section label only when more than one section has items', async () => {
+		widgetSummary.mockResolvedValue({
+			connected: true,
+			sections: [
+				{ label: 'Recently added', items: [{ id: '1', name: 'Movie With Poster', has_poster: true }] },
+				{ label: 'Continue watching', items: [{ id: '2', name: 'Half-watched', has_poster: true }] },
+			],
+		});
+
+		render(JellyfinTile, { props: { widgetId: 'jellyfin' } });
+
+		expect(await screen.findByText('Recently added')).toBeInTheDocument();
+		expect(screen.getByText('Continue watching')).toBeInTheDocument();
+	});
+
 	it('opens the player when a poster is clicked, and closes it', async () => {
 		widgetSummary.mockResolvedValue({
 			connected: true,
-			recent_items: [{ id: '1', name: 'Movie With Poster', has_poster: true }],
+			sections: [{ label: 'Recently added', items: [{ id: '1', name: 'Movie With Poster', has_poster: true }] }],
 		});
 
 		render(JellyfinTile, { props: { widgetId: 'jellyfin' } });

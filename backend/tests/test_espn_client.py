@@ -131,6 +131,26 @@ def test_supported_leagues_lists_all_known_leagues():
         assert league in leagues
 
 
+def test_team_page_url_builds_a_lowercased_espn_website_url():
+    assert espn_client.team_page_url("nfl", "DAL") == "https://www.espn.com/nfl/team/_/name/dal"
+
+
+def test_team_page_url_maps_college_leagues_to_their_website_path():
+    assert (
+        espn_client.team_page_url("college-basketball-men", "DUKE")
+        == "https://www.espn.com/mens-college-basketball/team/_/name/duke"
+    )
+    assert (
+        espn_client.team_page_url("college-basketball-women", "UCONN")
+        == "https://www.espn.com/womens-college-basketball/team/_/name/uconn"
+    )
+
+
+def test_team_page_url_returns_none_for_unsupported_league_or_missing_abbreviation():
+    assert espn_client.team_page_url("xfl", "DAL") is None
+    assert espn_client.team_page_url("nfl", "") is None
+
+
 @respx.mock
 async def test_fetch_team_schedule_builds_correct_url_lowercased():
     route = respx.get("https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/dal/schedule").mock(

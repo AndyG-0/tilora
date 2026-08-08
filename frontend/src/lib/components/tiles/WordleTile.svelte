@@ -1,5 +1,6 @@
 <script lang="ts">
 	import TileCard from '$lib/components/TileCard.svelte';
+	import { _ } from 'svelte-i18n';
 
 	let { widgetId }: { widgetId: string } = $props();
 </script>
@@ -13,7 +14,7 @@
 		<span class="cell" data-status="absent">D</span>
 		<span class="cell" data-status="correct">S</span>
 	</div>
-	<div class="hint">Tap to play</div>
+	<div class="hint">{$_('wordle.tile.hint')}</div>
 </TileCard>
 
 <style>

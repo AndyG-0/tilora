@@ -8,10 +8,13 @@ not-connected state rather than raising, so the widget degrades gracefully.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.integrations import pihole_client
 from app.plugins.base import Plugin, ToolDef
+
+logger = logging.getLogger(__name__)
 
 _TOP_DOMAINS_COUNT = 5
 
@@ -49,6 +52,7 @@ class PiholePlugin(Plugin):
             summary = await pihole_client.get_summary_stats(settings, self.id)
             blocking = await pihole_client.get_blocking_status(settings, self.id)
         except pihole_client.PiholeError as exc:
+            logger.warning("Could not fetch Pi-hole stats for widget '%s': %s", self.id, exc)
             return {"error": str(exc)}
 
         queries = summary.get("queries") or {}
@@ -91,6 +95,7 @@ class PiholePlugin(Plugin):
                 settings, self.id, blocked=False, count=_TOP_DOMAINS_COUNT
             )
         except pihole_client.PiholeError as exc:
+            logger.warning("Could not fetch Pi-hole detail stats for widget '%s': %s", self.id, exc)
             return {**summary, "error": str(exc), **self._empty_detail_fields()}
 
         clients = raw_summary.get("clients") or {}

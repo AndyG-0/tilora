@@ -185,6 +185,27 @@ async def test_list_children_uses_items_endpoint_for_parent():
     assert items[0]["id"] == "m1"
 
 
+async def test_list_resume_items_returns_empty_for_api_key_auth():
+    items = await jellyfin_client.list_resume_items(API_KEY_SETTINGS, "w16")
+
+    assert items == []
+
+
+@respx.mock
+async def test_list_resume_items_uses_the_authenticated_users_resume_endpoint():
+    respx.post("http://jf.local:8096/Users/AuthenticateByName").mock(
+        return_value=httpx.Response(200, json={"AccessToken": "tok1", "User": {"Id": "u1"}})
+    )
+    route = respx.get("http://jf.local:8096/Users/u1/Items/Resume").mock(
+        return_value=httpx.Response(200, json={"Items": [{"Id": "m1", "Name": "Half-watched", "IsFolder": False}]})
+    )
+
+    items = await jellyfin_client.list_resume_items(PASSWORD_SETTINGS, "w17")
+
+    assert route.called
+    assert items[0]["id"] == "m1"
+
+
 @respx.mock
 async def test_fetch_image_bytes_returns_none_on_error():
     respx.get("http://jf.local:8096/Items/missing/Images/Primary").mock(return_value=httpx.Response(404))

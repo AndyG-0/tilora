@@ -18,6 +18,7 @@ from datetime import datetime
 from typing import Any, ClassVar
 
 from app.config import effective_settings, resolve_timezone
+from app.i18n import t
 from app.plugins.base import Plugin, ToolDef
 
 
@@ -43,7 +44,9 @@ class ClockPlugin(Plugin):
         async def get_current_time() -> dict[str, Any]:
             timezone_name = effective_settings()["timezone"]
             now = datetime.now(resolve_timezone(timezone_name))
-            return {"time": now.strftime("%I:%M %p").lstrip("0"), "timezone": timezone_name}
+            period_key = "clock.period.am" if now.strftime("%p") == "AM" else "clock.period.pm"
+            time_str = f"{now.strftime('%I:%M').lstrip('0')} {t(period_key, self.locale)}"
+            return {"time": time_str, "timezone": timezone_name}
 
         return [
             ToolDef(

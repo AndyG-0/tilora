@@ -191,6 +191,24 @@ async def list_recent_items(settings: dict[str, Any], widget_id: str, limit: int
     return [_item_dict(item) for item in items]
 
 
+async def list_resume_items(settings: dict[str, Any], widget_id: str, limit: int = 8) -> list[dict[str, Any]]:
+    conn = await resolve_connection(settings, widget_id)
+    if not conn.user_id:
+        # api_key auth has no user context, so there's no personal "continue
+        # watching" list to fall back to (unlike list_recent_items, which has
+        # a server-wide equivalent).
+        return []
+    response = await _request(
+        "GET",
+        f"/Users/{conn.user_id}/Items/Resume",
+        settings=settings,
+        widget_id=widget_id,
+        params={"Limit": limit, "Fields": "Overview"},
+    )
+    items = response.json().get("Items", [])
+    return [_item_dict(item) for item in items]
+
+
 # Posters are shown as small tiles (a few cm across, even at kiosk-display
 # DPI) — asking Jellyfin for the original artwork (often several MB, easily
 # 2000px+ on a side) wastes bandwidth and, worse, CPU decoding it in the

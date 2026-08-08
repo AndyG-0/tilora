@@ -232,11 +232,17 @@ async def test_on_streaming_narrows_to_selected_providers():
 async def test_get_detail_includes_overview_watch_providers_region_categories_and_providers():
     _mock_all_lists()
     respx.get(f"{TMDB_BASE_URL}/movie/1/watch/providers").mock(
-        return_value=httpx.Response(200, json={"results": {"US": {"flatrate": [{"provider_name": "Streamflix"}]}}})
+        return_value=httpx.Response(
+            200,
+            json={"results": {"US": {"flatrate": [{"provider_name": "Netflix", "logo_path": "/netflix.jpg"}]}}},
+        )
     )
     respx.get(f"{TMDB_BASE_URL}/movie/2/watch/providers").mock(return_value=httpx.Response(200, json={"results": {}}))
     respx.get(f"{TMDB_BASE_URL}/tv/11/watch/providers").mock(
-        return_value=httpx.Response(200, json={"results": {"US": {"flatrate": [{"provider_name": "Showflix"}]}}})
+        return_value=httpx.Response(
+            200,
+            json={"results": {"US": {"flatrate": [{"provider_name": "Showflix", "logo_path": "/showflix.jpg"}]}}},
+        )
     )
     respx.get(f"{TMDB_BASE_URL}/tv/12/watch/providers").mock(return_value=httpx.Response(200, json={"results": {}}))
     respx.get(f"{TMDB_BASE_URL}/movie/31/watch/providers").mock(
@@ -246,7 +252,7 @@ async def test_get_detail_includes_overview_watch_providers_region_categories_an
         return_value=httpx.Response(200, json={"results": {"US": {"flatrate": [{"provider_name": "Trendflix"}]}}})
     )
     respx.get(f"{TMDB_BASE_URL}/movie/41/watch/providers").mock(
-        return_value=httpx.Response(200, json={"results": {"US": {"flatrate": [{"provider_name": "Streamflix"}]}}})
+        return_value=httpx.Response(200, json={"results": {"US": {"flatrate": [{"provider_name": "Netflix"}]}}})
     )
     respx.get(f"{TMDB_BASE_URL}/tv/42/watch/providers").mock(
         return_value=httpx.Response(200, json={"results": {"US": {"flatrate": [{"provider_name": "Showflix"}]}}})
@@ -265,14 +271,20 @@ async def test_get_detail_includes_overview_watch_providers_region_categories_an
     ]
     assert detail["providers"] == [8]
     assert detail["popular_movies"][0]["overview"] == "First movie."
-    assert detail["popular_movies"][0]["where_to_watch"] == ["Streamflix"]
+    assert detail["popular_movies"][0]["where_to_watch"] == [
+        {"name": "Netflix", "logo_url": "https://image.tmdb.org/t/p/w45/netflix.jpg", "url": "https://www.netflix.com"}
+    ]
     assert detail["popular_movies"][1]["where_to_watch"] == []
     assert detail["popular_tv_shows"][0]["overview"] == "First show."
-    assert detail["popular_tv_shows"][0]["where_to_watch"] == ["Showflix"]
-    assert detail["trending_movies"][0]["where_to_watch"] == ["Trendflix"]
-    assert detail["trending_tv_shows"][0]["where_to_watch"] == ["Trendflix"]
-    assert detail["on_streaming_movies"][0]["where_to_watch"] == ["Streamflix"]
-    assert detail["on_streaming_tv_shows"][0]["where_to_watch"] == ["Showflix"]
+    assert detail["popular_tv_shows"][0]["where_to_watch"] == [
+        {"name": "Showflix", "logo_url": "https://image.tmdb.org/t/p/w45/showflix.jpg", "url": None}
+    ]
+    assert detail["trending_movies"][0]["where_to_watch"] == [{"name": "Trendflix", "logo_url": None, "url": None}]
+    assert detail["trending_tv_shows"][0]["where_to_watch"] == [{"name": "Trendflix", "logo_url": None, "url": None}]
+    assert detail["on_streaming_movies"][0]["where_to_watch"] == [
+        {"name": "Netflix", "logo_url": None, "url": "https://www.netflix.com"}
+    ]
+    assert detail["on_streaming_tv_shows"][0]["where_to_watch"] == [{"name": "Showflix", "logo_url": None, "url": None}]
 
 
 @respx.mock

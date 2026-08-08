@@ -15,10 +15,12 @@ vi.mock('$lib/api', () => ({
 vi.mock('$app/state', () => ({ page: { params: { id: 'photos' } } }));
 
 import PhotoDetail from './PhotoDetail.svelte';
+import { user } from '$lib/stores/user';
 
 describe('PhotoDetail', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		user.set({ id: 'admin-user', name: 'Admin', avatar: null, role: 'admin' });
 	});
 
 	it('renders the slideshow for a local provider', () => {
@@ -486,5 +488,53 @@ describe('PhotoDetail', () => {
 		await fireEvent.keyDown(input, { key: 'ArrowRight' });
 
 		expect(screen.getByAltText('a.jpg')).toBeInTheDocument();
+	});
+
+	it('switches provider via the source dropdown', async () => {
+		updateWidgetSettings.mockResolvedValue({});
+		widgetDetail.mockResolvedValue({
+			provider: 'icloud_private',
+			count: 0,
+			interval_seconds: 30,
+			photos: [],
+			connected: false,
+		});
+
+		render(PhotoDetail, {
+			props: {
+				data: { provider: 'local', count: 0, interval_seconds: 30, photos: [], directory: null },
+			},
+		});
+
+		await fireEvent.change(screen.getByLabelText('Photo source'), { target: { value: 'icloud_private' } });
+
+		await vi.waitFor(() => expect(updateWidgetSettings).toHaveBeenCalledWith('photos', { provider: 'icloud_private' }));
+		expect(widgetDetail).toHaveBeenCalledWith('photos');
+		expect(await screen.findByText('Connect iCloud')).toBeInTheDocument();
+	});
+
+	it('hides the source dropdown for a non-admin member', () => {
+		user.set({ id: 'member-user', name: 'Member', avatar: null, role: 'member' });
+
+		render(PhotoDetail, {
+			props: {
+				data: { provider: 'local', count: 0, interval_seconds: 30, photos: [], directory: null },
+			},
+		});
+
+		expect(screen.queryByLabelText('Photo source')).not.toBeInTheDocument();
+	});
+
+	it('hides the folder/album/Immich edit controls for a non-admin member', () => {
+		user.set({ id: 'member-user', name: 'Member', avatar: null, role: 'member' });
+
+		render(PhotoDetail, {
+			props: {
+				data: { provider: 'local', count: 0, interval_seconds: 30, photos: [], directory: null },
+			},
+		});
+
+		expect(screen.queryByText('Set folder')).not.toBeInTheDocument();
+		expect(screen.getByText('Photos')).toBeInTheDocument();
 	});
 });

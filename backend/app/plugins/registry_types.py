@@ -13,19 +13,26 @@ from app.plugins.asus_router.plugin import AsusRouterPlugin
 from app.plugins.bf6.plugin import BF6Plugin
 from app.plugins.bookmarks.plugin import BookmarksPlugin
 from app.plugins.calendar.plugin import CaldavCalendarPlugin, CalendarPlugin, MicrosoftCalendarPlugin
+from app.plugins.chores.plugin import ChoresPlugin
 from app.plugins.clock.plugin import ClockPlugin
 from app.plugins.container.plugin import ContainerPlugin
 from app.plugins.date.plugin import DatePlugin
 from app.plugins.discord.plugin import DiscordPlugin
+from app.plugins.flights.plugin import FlightsPlugin
 from app.plugins.game2048.plugin import Game2048Plugin
 from app.plugins.goodreads.plugin import GoodreadsPlugin
 from app.plugins.hdhomerun.plugin import HDHomeRunPlugin
 from app.plugins.jellyfin.plugin import JellyfinPlugin
 from app.plugins.message.plugin import MessagePlugin
 from app.plugins.movies.plugin import MoviesPlugin
+from app.plugins.nasa_apod.plugin import NASAApodPlugin
+from app.plugins.packages.plugin import PackagesPlugin
 from app.plugins.photos.plugin import PhotosPlugin
 from app.plugins.pihole.plugin import PiholePlugin
+from app.plugins.qbittorrent.plugin import QBittorrentPlugin
 from app.plugins.rss.plugin import RSSPlugin
+from app.plugins.shopping.plugin import ShoppingPlugin
+from app.plugins.speedtest.plugin import SpeedtestPlugin
 from app.plugins.sports.plugin import SportsPlugin
 from app.plugins.steam.plugin import SteamPlugin
 from app.plugins.synology.plugin import SynologyPlugin
@@ -47,6 +54,9 @@ PLUGIN_CLASSES_BY_TYPE = {
     "message": MessagePlugin,
     "bookmarks": BookmarksPlugin,
     "rss": RSSPlugin,
+    "flights": FlightsPlugin,
+    "chores": ChoresPlugin,
+    "shopping": ShoppingPlugin,
     "alert": AlertPlugin,
     "calendar": CalendarPlugin,
     "calendar_caldav": CaldavCalendarPlugin,
@@ -61,4 +71,8 @@ PLUGIN_CLASSES_BY_TYPE = {
     "synology": SynologyPlugin,
     "asus_router": AsusRouterPlugin,
     "goodreads": GoodreadsPlugin,
+    "qbittorrent": QBittorrentPlugin,
+    "speedtest": SpeedtestPlugin,
+    "packages": PackagesPlugin,
+    "nasa_apod": NASAApodPlugin,
 }

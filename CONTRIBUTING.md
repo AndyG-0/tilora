@@ -100,6 +100,42 @@ Themes are CSS-variable sets in `frontend/src/lib/themes/*.css`, selected via
 `frontend/src/routes/+layout.svelte`, and add `{id, name}` to `_THEMES` in
 `backend/app/api/theme.py`.
 
+## Internationalization (i18n)
+
+Supported locales are English (`en`, default/fallback), Spanish (`es`),
+French (`fr`), and German (`de`).
+
+Frontend catalogs live in `frontend/src/lib/i18n/locales/*.json` (flat
+dotted keys, e.g. `weather.detail.title`), loaded by
+[svelte-i18n](https://github.com/kaisermann/svelte-i18n) via
+`frontend/src/lib/i18n/index.ts`. In a component, `import { _ } from
+'svelte-i18n'` and replace literal text with `{$_('namespace.key')}`
+(`{$_('sports.live_status', { values: { status } })}` for interpolation).
+Inside `<script>` code (not markup), read the formatter with `get(_)('key')`
+from `svelte/store` — see `WeatherDetail.svelte`'s error-message assignments
+for the pattern.
+
+Backend catalogs live in `backend/app/locales/*.json`, looked up via
+`app.i18n.t(key, locale, **params)` (dotted-key lookup, `str.format()`
+interpolation, falls back to English then to the key itself). A plugin
+reads the current request's locale from `self.locale` (threaded through by
+`scoped_plugin`) and passes it to `t()`; see `weather/plugin.py` and
+`sports/plugin.py`. Widget REST responses are cached per-locale — the cache
+key always ends with `:{locale}` — so a plugin never needs to worry about a
+translated response leaking to a request in a different language.
+
+To translate a plugin: replace its hardcoded strings with `t()` calls, add
+the new keys to all four `backend/app/locales/*.json` files, and do the
+matching `$_()` migration plus key additions in all four
+`frontend/src/lib/i18n/locales/*.json` files for its tile/detail
+components. `TODO.md` tracks which plugins/components still need this.
+
+To add a fifth language: mirror the `en` JSON file in both locale
+directories, then add the language code to `SUPPORTED_LOCALES` in
+`backend/app/i18n.py`, the `register()` calls in
+`frontend/src/lib/i18n/index.ts`, and the `<option>` list in the Settings
+page's Language `<select>`.
+
 ## Testing
 
 **Backend** (pytest + `respx` for httpx mocking):
@@ -131,6 +167,26 @@ CI (`.github/workflows/ci.yml`) runs both suites on every push; a PR should
 pass both before merge. `./scripts/ci-check.sh` runs everything the
 `backend` and `frontend` CI jobs run, in the same order, so you can catch a
 failure locally before pushing.
+
+## Logging
+
+**Backend**: every module gets its own `logger = logging.getLogger(__name__)`;
+root config (level, format) is set once in `app/logging_config.py`, driven by
+`Settings.log_level` (default `INFO`). Log caught exceptions instead of
+swallowing them — an empty `except: pass`/fallback-and-move-on block hides
+real failures from anyone debugging later. Pick the level by severity:
+`logger.warning(...)` (with `exc_info=True` if the traceback is useful) for a
+handled-but-notable failure that degrades a widget's data, `logger.debug(...)`
+for an expected/frequent internal fallback, `logger.exception(...)` for an
+aborted operation where the traceback itself matters. Don't add logging to
+exceptions that are already surfaced to the caller (e.g. converted straight
+to an `HTTPException`) — those aren't silent.
+
+**Frontend**: use `frontend/src/lib/logger.ts`'s `logger.debug/info/warn/error`
+instead of raw `console.*`. `debug`/`info` are dev-only (`import.meta.env.DEV`);
+`warn`/`error` also log in production. See `api.ts`'s request-failure throws
+or `PhotoDetail.svelte`'s `saveDirectory`/`startConnect` for the pattern —
+log the caught error before converting it to a UI-facing message.
 
 ## Commits / PRs
 
@@ -165,5 +221,6 @@ notes auto-generated from merged PRs/commits since the last tag).
 ## Out of scope for now
 
 Distributing plugins as installable third-party packages (a marketplace/plugin
-store) isn't settled yet — see `TODO.md`. Until that lands, new
-plugins live in-tree under `backend/app/plugins/`.
+store) isn't settled yet — see `TODO.md` and the design proposal in
+[`docs/marketplace-design.md`](docs/marketplace-design.md). Until that
+lands, new plugins live in-tree under `backend/app/plugins/`.

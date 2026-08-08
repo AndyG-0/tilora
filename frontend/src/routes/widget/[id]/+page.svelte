@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { DETAIL_COMPONENTS } from '$lib/widgetComponents';
+	import { _ } from 'svelte-i18n';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -9,13 +10,13 @@
 </script>
 
 <div class="detail-page">
-	<button class="back" onclick={() => goto('/')}>← Back</button>
+	<button class="back" onclick={() => goto('/')}>{$_('common.back')}</button>
 	{#if Detail}
 		<!-- Shape is only known at runtime via `data.type`; each Detail
 		     component declares & validates its own expected shape. -->
 		<Detail data={data.detail as never} />
 	{:else}
-		<p>Unknown widget.</p>
+		<p>{$_('widget_detail.unknown_widget')}</p>
 	{/if}
 </div>
 

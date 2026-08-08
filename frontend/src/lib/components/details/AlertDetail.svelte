@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { api, type Alert, type AlertSeverity } from '$lib/api';
+	import { _ } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	interface AlertDetailData {
 		alerts: Alert[];
@@ -32,7 +34,7 @@
 			severity = 'info';
 			await refresh();
 		} catch {
-			error = 'Could not create the alert.';
+			error = get(_)('alert.detail.create_error');
 		} finally {
 			creating = false;
 		}
@@ -43,7 +45,7 @@
 			await api.dismissAlert(id);
 			await refresh();
 		} catch {
-			error = 'Could not dismiss the alert.';
+			error = get(_)('alert.detail.dismiss_error');
 		}
 	}
 </script>
@@ -57,22 +59,22 @@
 				<p class="severity-label">{alert.severity}</p>
 				<p class="message">{alert.message}</p>
 			</div>
-			<button class="dismiss" onclick={() => dismiss(alert.id)}>Dismiss</button>
+			<button class="dismiss" onclick={() => dismiss(alert.id)}>{$_('alert.detail.dismiss')}</button>
 		</div>
 	{:else}
-		<p class="hint">No active alerts.</p>
+		<p class="hint">{$_('alert.detail.empty')}</p>
 	{/each}
 </div>
 
 <form class="create" onsubmit={(e) => (e.preventDefault(), createAlert())}>
-	<h2>New alert</h2>
-	<input type="text" placeholder="Alert message…" bind:value={message} />
+	<h2>{$_('alert.detail.new_alert')}</h2>
+	<input type="text" placeholder={$_('alert.detail.message_placeholder')} bind:value={message} />
 	<select bind:value={severity}>
-		<option value="info">Info</option>
-		<option value="warning">Warning</option>
-		<option value="critical">Critical</option>
+		<option value="info">{$_('alert.detail.severity_info')}</option>
+		<option value="warning">{$_('alert.detail.severity_warning')}</option>
+		<option value="critical">{$_('alert.detail.severity_critical')}</option>
 	</select>
-	<button type="submit" disabled={creating || !message.trim()}>Add alert</button>
+	<button type="submit" disabled={creating || !message.trim()}>{$_('alert.detail.add_alert')}</button>
 	{#if error}
 		<p class="hint error">{error}</p>
 	{/if}
