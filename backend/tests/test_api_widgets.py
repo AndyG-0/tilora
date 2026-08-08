@@ -249,7 +249,7 @@ def test_summary_returns_404_for_unregistered_widget(client, dashboard_yaml):
     assert response.status_code == 404
 
 
-def test_summary_returns_plugin_data(client, dashboard_yaml):
+def test_summary_returns_plugin_data(client, dashboard_yaml, tmp_db):
     plugin = StubPlugin({})
     registry.register(plugin)
 
@@ -259,7 +259,7 @@ def test_summary_returns_plugin_data(client, dashboard_yaml):
     assert response.json() == {"value": "summary"}
 
 
-def test_summary_is_cached_between_requests(client, dashboard_yaml):
+def test_summary_is_cached_between_requests(client, dashboard_yaml, tmp_db):
     plugin = StubPlugin({})
     registry.register(plugin)
 
@@ -269,7 +269,7 @@ def test_summary_is_cached_between_requests(client, dashboard_yaml):
     assert plugin.summary_calls == 1
 
 
-def test_summary_logs_latency_tagged_with_widget_id(client, dashboard_yaml, caplog):
+def test_summary_logs_latency_tagged_with_widget_id(client, dashboard_yaml, tmp_db, caplog):
     plugin = StubPlugin({})
     registry.register(plugin)
 
@@ -280,7 +280,7 @@ def test_summary_logs_latency_tagged_with_widget_id(client, dashboard_yaml, capl
     assert any("stub" in r.message and "summary" in r.message for r in caplog.records)
 
 
-def test_summary_logs_and_reraises_plugin_errors(client, dashboard_yaml, caplog):
+def test_summary_logs_and_reraises_plugin_errors(client, dashboard_yaml, tmp_db, caplog):
     class FailingPlugin(StubPlugin):
         id = "failing-stub"
 
@@ -297,7 +297,7 @@ def test_summary_logs_and_reraises_plugin_errors(client, dashboard_yaml, caplog)
     assert any("failing-stub" in r.message and "failed" in r.message for r in caplog.records)
 
 
-def test_detail_returns_plugin_data(client, dashboard_yaml):
+def test_detail_returns_plugin_data(client, dashboard_yaml, tmp_db):
     plugin = StubPlugin({})
     registry.register(plugin)
 
