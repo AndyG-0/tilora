@@ -13,7 +13,36 @@
 
 	let player: ReturnType<typeof Mpegts.createPlayer> | undefined;
 	let errorMessage = $state<string | null>(null);
+	let errorDetail = $state<string | null>(null);
 	let destroyed = false;
+
+	function genericHint() {
+		return get(_)('hdhomerun.detail.playback_failed_hint', {
+			values: { action: get(_)('hdhomerun.detail.open_external') },
+		});
+	}
+
+	// mpegts.js reports a failed stream request as a bare "network error" and
+	// throws the response body away, so the backend's carefully built 502
+	// detail — which names the actual ffmpeg failure — never reaches the
+	// user. Re-requesting the same URL is the only way to read it, and it's
+	// cheap: the request has already failed, and the backend fails the same
+	// way again in well under a second.
+	async function fetchServerDetail() {
+		try {
+			const response = await fetch(src, { credentials: 'include' });
+			if (response.ok) {
+				// It works on a retry, so there's nothing more specific to
+				// say than the generic hint.
+				response.body?.cancel();
+				return null;
+			}
+			const body = await response.json();
+			return typeof body?.detail === 'string' ? body.detail : null;
+		} catch {
+			return null;
+		}
+	}
 
 	// See JellyfinPlayer.svelte for why this overlay is portaled to <body>.
 	function portal(node: HTMLElement) {
@@ -36,9 +65,11 @@
 				{ type: 'mse', isLive: true, url: src, withCredentials: true },
 				{ enableStashBuffer: false, liveBufferLatencyChasing: true },
 			);
-			player.on(mpegts.Events.ERROR, () => {
-				errorMessage = get(_)('hdhomerun.detail.playback_failed_hint', {
-					values: { action: get(_)('hdhomerun.detail.open_external') },
+			player.on(mpegts.Events.ERROR, (errorType: string) => {
+				errorMessage = genericHint();
+				if (errorType !== mpegts.ErrorTypes.NETWORK_ERROR) return;
+				fetchServerDetail().then((detail) => {
+					if (!destroyed) errorDetail = detail;
 				});
 			});
 			player.attachMediaElement(node);
@@ -68,7 +99,12 @@
 		<button class="close" onclick={onClose} aria-label={$_('player.close')}>✕</button>
 	</div>
 	{#if errorMessage}
-		<p class="error">{errorMessage}</p>
+		<p class="error">
+			{errorMessage}
+			{#if errorDetail}
+				<span class="error-detail">{errorDetail}</span>
+			{/if}
+		</p>
 	{/if}
 	<!-- svelte-ignore a11y_media_has_caption -->
 	<video controls autoplay playsinline class="video" use:attachPlayer></video>
@@ -118,6 +154,20 @@
 		padding: 0.75rem 1rem;
 		color: #ffb4b4;
 		background: rgba(224, 90, 90, 0.15);
+	}
+
+	.error-detail {
+		display: block;
+		margin-top: 0.35rem;
+		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+		font-size: 0.75rem;
+		/* ffmpeg output is long, unwrappable and often the whole answer —
+		   scroll it rather than letting it push the video off-screen. */
+		max-height: 6rem;
+		overflow: auto;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+		opacity: 0.85;
 	}
 
 	.video {

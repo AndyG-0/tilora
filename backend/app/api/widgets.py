@@ -276,6 +276,11 @@ async def update_widget_settings(
 ):
     plugin = _get_plugin(widget_id)
 
+    try:
+        plugin.validate_settings(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     if plugin.settings_scope == "personal":
         current = await asyncio.to_thread(get_widget_user_settings, user["id"], widget_id) or {}
         merged = {**plugin.config["settings"], **current, **payload}

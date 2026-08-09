@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { api, type HDHomeRunTranscodePreset } from '$lib/api';
+	import { api, type HDHomeRunTranscodePreset, type HWAccelDiagnostics } from '$lib/api';
 	import HDHomeRunPlayer from '$lib/components/HDHomeRunPlayer.svelte';
 	import { user } from '$lib/stores/user';
 	import { _ } from 'svelte-i18n';
@@ -69,6 +69,8 @@
 		playback_mode: string;
 		hwaccel: string;
 		custom_ffmpeg_args: string;
+		hwaccel_device: string;
+		ffmpeg_debug: boolean;
 		ffmpeg_command: string;
 		favorite_channels: string[];
 	}
@@ -83,11 +85,40 @@
 	let playbackModeInput = $state('server_transcode');
 	let hwaccelInput = $state('software');
 	let customFfmpegArgsInput = $state('');
+	let hwaccelDeviceInput = $state('/dev/dri/renderD128');
+	let ffmpegDebugInput = $state(false);
 	let saving = $state(false);
 	let error = $state<string | null>(null);
 
 	let transcodePresets = $state<HDHomeRunTranscodePreset[]>([]);
 	const selectedPreset = $derived(transcodePresets.find((p) => p.id === hwaccelInput) ?? null);
+
+	// Word-splits the way Python's shlex.split does — which is what the
+	// backend uses on custom_ffmpeg_args (transcoding._output_args). A plain
+	// split(/\s+/) disagrees with it on any quoted argument (a filter graph
+	// with spaces, a path with a space), so the preview would show a command
+	// the backend never runs.
+	function shlexSplit(input: string): string[] {
+		const tokens: string[] = [];
+		// A quoted run, an escaped char, or a run of unquoted non-space.
+		const pattern = /"((?:\\.|[^"\\])*)"|'([^']*)'|((?:\\.|[^\s'"\\])+)/g;
+		let token = '';
+		let end = 0;
+		for (const match of input.matchAll(pattern)) {
+			// A gap since the previous match means whitespace, i.e. a token
+			// boundary; adjacent matches ("-vf"x'y') are one token.
+			if (match.index > end && token) {
+				tokens.push(token);
+				token = '';
+			}
+			const [, doubleQuoted, singleQuoted, bare] = match;
+			if (singleQuoted !== undefined) token += singleQuoted;
+			else token += (doubleQuoted ?? bare).replace(/\\(.)/g, '$1');
+			end = match.index + match[0].length;
+		}
+		if (token) tokens.push(token);
+		return tokens;
+	}
 
 	// Mirrors transcoding.build_ffmpeg_args()'s argument order, so the
 	// command shown while editing matches what saving would actually run —
@@ -99,24 +130,43 @@
 		if (hwaccelInput === 'custom') {
 			const trimmed = customFfmpegArgsInput.trim();
 			outputArgs = trimmed
-				? trimmed.split(/\s+/)
+				? shlexSplit(trimmed)
 				: (transcodePresets.find((p) => p.id === 'software')?.output_args ?? []);
 		}
+		const device = hwaccelDeviceInput.trim() || '/dev/dri/renderD128';
+		const substitute = (args: string[]) => args.map((arg) => arg.replaceAll('{device}', device));
 		return [
 			'ffmpeg',
 			'-hide_banner',
 			'-loglevel',
-			'warning',
+			ffmpegDebugInput ? 'verbose' : 'warning',
 			'-nostats',
-			...selectedPreset.input_args,
+			...substitute(selectedPreset.input_args),
 			'-i',
 			'<channel stream>',
-			...outputArgs,
+			...substitute(outputArgs),
 			'-f',
 			'mpegts',
 			'pipe:1',
 		].join(' ');
 	});
+
+	let diagnostics = $state<HWAccelDiagnostics | null>(null);
+	let diagnosticsRunning = $state(false);
+	let diagnosticsError = $state<string | null>(null);
+
+	async function runDiagnostics() {
+		diagnosticsRunning = true;
+		diagnosticsError = null;
+		try {
+			diagnostics = await api.hdhomerunHwaccelDiagnostics(widgetId, hwaccelDeviceInput.trim() || undefined);
+		} catch {
+			diagnostics = null;
+			diagnosticsError = get(_)('hdhomerun.detail.diagnostics_failed');
+		} finally {
+			diagnosticsRunning = false;
+		}
+	}
 
 	let playingChannel = $state<HDHomeRunChannel | null>(null);
 
@@ -170,6 +220,8 @@
 		playbackModeInput = hdhomerun.playback_mode;
 		hwaccelInput = hdhomerun.hwaccel;
 		customFfmpegArgsInput = hdhomerun.custom_ffmpeg_args;
+		hwaccelDeviceInput = hdhomerun.hwaccel_device;
+		ffmpegDebugInput = hdhomerun.ffmpeg_debug;
 		editing = true;
 		if (transcodePresets.length === 0) {
 			try {
@@ -185,6 +237,8 @@
 			playback_mode: playbackModeInput,
 			hwaccel: hwaccelInput,
 			custom_ffmpeg_args: customFfmpegArgsInput,
+			hwaccel_device: hwaccelDeviceInput.trim(),
+			ffmpeg_debug: ffmpegDebugInput,
 		};
 	}
 
@@ -267,9 +321,97 @@
 				</label>
 			{/if}
 
+			<label>
+				{$_('hdhomerun.detail.hwaccel_device_label')}
+				<input bind:value={hwaccelDeviceInput} placeholder="/dev/dri/renderD128" />
+			</label>
+			<p class="hint">{$_('hdhomerun.detail.hwaccel_device_hint')}</p>
+
+			<label class="checkbox">
+				<input type="checkbox" bind:checked={ffmpegDebugInput} />
+				{$_('hdhomerun.detail.ffmpeg_debug_label')}
+			</label>
+			<p class="hint">{$_('hdhomerun.detail.ffmpeg_debug_hint')}</p>
+
 			<p class="hint ffmpeg-command">
 				<code>{livePreviewCommand}</code>
 			</p>
+
+			<div class="diagnostics">
+				<h3>{$_('hdhomerun.detail.diagnostics_heading')}</h3>
+				<p class="hint">{$_('hdhomerun.detail.diagnostics_hint')}</p>
+				<button type="button" class="diagnostics-run" disabled={diagnosticsRunning} onclick={runDiagnostics}>
+					{diagnosticsRunning ? $_('hdhomerun.detail.diagnostics_running') : $_('hdhomerun.detail.diagnostics_run')}
+				</button>
+
+				{#if diagnosticsError}
+					<p class="hint error">{diagnosticsError}</p>
+				{/if}
+
+				{#if diagnostics}
+					{#each diagnostics.summary as finding, index (index)}
+						<p class="finding">{finding}</p>
+					{/each}
+
+					<h4>{$_('hdhomerun.detail.diagnostics_devices_heading')}</h4>
+					{#if !diagnostics.dri.dir_exists}
+						<p class="hint">{$_('hdhomerun.detail.diagnostics_no_dri')}</p>
+					{:else if diagnostics.dri.devices.length === 0}
+						<p class="hint">{$_('hdhomerun.detail.diagnostics_no_devices')}</p>
+					{:else}
+						<ul class="diagnostics-list">
+							{#each diagnostics.dri.devices as device (device.path)}
+								<li>
+									<span class="status" class:ok={device.readable && device.writable}>
+										{device.readable && device.writable ? '✓' : '✗'}
+									</span>
+									<code>{device.path}</code>
+									<span class="muted">
+										{device.error ?? `${device.mode} ${device.owner_uid}:${device.owner_gid}`}
+									</span>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+					<p class="hint">
+						{$_('hdhomerun.detail.diagnostics_process', {
+							values: {
+								uid: diagnostics.process.uid,
+								gid: diagnostics.process.gid,
+								groups: diagnostics.process.groups.join(', ') || '—',
+							},
+						})}
+					</p>
+
+					{#if diagnostics.vainfo}
+						<h4>{$_('hdhomerun.detail.diagnostics_driver_heading')}</h4>
+						<p class="hint">
+							{diagnostics.vainfo.driver ?? $_('common.unknown')} ·
+							{$_('hdhomerun.detail.diagnostics_h264_encode')}: {diagnostics.vainfo.can_encode_h264 ? '✓' : '✗'} ·
+							{$_('hdhomerun.detail.diagnostics_mpeg2_decode')}: {diagnostics.vainfo.can_decode_mpeg2 ? '✓' : '✗'}
+						</p>
+						{#if !diagnostics.vainfo.ok}
+							<pre class="diagnostics-output">{diagnostics.vainfo.output}</pre>
+						{/if}
+					{/if}
+
+					<h4>{$_('hdhomerun.detail.diagnostics_presets_heading')}</h4>
+					{#if diagnostics.sample_error}
+						<p class="hint error">{diagnostics.sample_error}</p>
+					{/if}
+					<ul class="diagnostics-list">
+						{#each Object.entries(diagnostics.probes) as [presetId, probe] (presetId)}
+							<li>
+								<span class="status" class:ok={probe.ok}>{probe.ok ? '✓' : '✗'}</span>
+								<code>{presetId}</code>
+								{#if !probe.ok}
+									<pre class="diagnostics-output">{probe.output || $_('hdhomerun.detail.diagnostics_no_output')}</pre>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
 		{:else}
 			<p class="hint">
 				{$_('hdhomerun.detail.external_only_hint')}
@@ -517,7 +659,8 @@
 	}
 
 	.settings-form select,
-	.settings-form textarea {
+	.settings-form textarea,
+	.settings-form label > input:not([type]) {
 		font: inherit;
 		padding: 0.5rem 0.75rem;
 		border-radius: 0.5rem;
@@ -530,6 +673,92 @@
 		font-family: var(--font-mono, monospace);
 		font-size: 0.85rem;
 		resize: vertical;
+	}
+
+	.settings-form label.checkbox {
+		flex-direction: row;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.diagnostics {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		border-top: 1px solid var(--color-border);
+		padding-top: 0.75rem;
+	}
+
+	.diagnostics h3 {
+		margin: 0;
+		font-size: 0.95rem;
+	}
+
+	.diagnostics h4 {
+		margin: 0.5rem 0 0;
+		font-size: 0.85rem;
+		color: var(--color-text-muted);
+	}
+
+	.diagnostics-run {
+		align-self: flex-start;
+		background: none;
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		padding: 0.4rem 0.85rem;
+		font-size: 0.85rem;
+		color: var(--color-text);
+		cursor: pointer;
+	}
+
+	.diagnostics-run:disabled {
+		cursor: default;
+		opacity: 0.6;
+	}
+
+	.finding {
+		margin: 0;
+		font-size: 0.85rem;
+	}
+
+	.diagnostics-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		font-size: 0.85rem;
+	}
+
+	.diagnostics-list .status {
+		color: var(--color-danger, #e05a5a);
+		margin-right: 0.4rem;
+	}
+
+	.diagnostics-list .status.ok {
+		color: var(--color-success, #4caf50);
+	}
+
+	.diagnostics-list .muted {
+		color: var(--color-text-muted);
+		margin-left: 0.4rem;
+	}
+
+	.diagnostics-output {
+		margin: 0.25rem 0 0;
+		padding: 0.5rem 0.75rem;
+		border-radius: 0.5rem;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface);
+		font-family: var(--font-mono, monospace);
+		font-size: 0.75rem;
+		/* ffmpeg's verbose output runs to dozens of lines; cap it so a single
+		   failing preset can't push the rest of the report off the page. */
+		max-height: 12rem;
+		overflow: auto;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
 	}
 
 	.ffmpeg-command {

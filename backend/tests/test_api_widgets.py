@@ -15,6 +15,7 @@ from app.plugins import scoping
 from app.plugins.ai_insights.plugin import AIInsightsPlugin
 from app.plugins.base import Plugin, registry
 from app.plugins.container.plugin import ContainerPlugin
+from app.plugins.hdhomerun.plugin import HDHomeRunPlugin
 from app.plugins.photos.plugin import PhotosPlugin
 from app.plugins.pihole.plugin import PiholePlugin
 from app.plugins.speedtest.plugin import SpeedtestPlugin
@@ -93,6 +94,18 @@ class StubLocaleAwarePlugin(StubPlugin):
     async def get_detail(self) -> dict[str, Any]:
         self.detail_calls += 1
         return {"value": self.locale}
+
+
+class StubValidatingPlugin(StubPlugin):
+    """A stub that rejects a settings patch, covering the Plugin.validate_settings
+    hook — the point of which is that a bad value never reaches the database."""
+
+    id = "validating-stub"
+    name = "Stub Validating"
+
+    def validate_settings(self, payload: dict[str, Any]) -> None:
+        if payload.get("value") == "bad":
+            raise ValueError("value 'bad' is not allowed")
 
 
 class StubPersonalDeviceOverridablePlugin(StubPlugin):
@@ -412,6 +425,45 @@ def test_update_settings_persists_to_db(client, dashboard_yaml, tmp_db):
     client.patch("/api/widgets/stub/settings", json={"a": 2})
 
     assert db.get_widget_settings("stub") == {"a": 2}
+
+
+def test_update_settings_returns_400_when_the_plugin_rejects_the_payload(client, dashboard_yaml, tmp_db):
+    plugin = StubValidatingPlugin({"settings": {"value": "good"}})
+    registry.register(plugin)
+
+    response = client.patch("/api/widgets/validating-stub/settings", json={"value": "bad"})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "value 'bad' is not allowed"
+    # Rejected before anything is written, so neither the live plugin nor the
+    # database is left holding the bad value.
+    assert plugin.config["settings"] == {"value": "good"}
+    assert db.get_widget_settings("validating-stub") is None
+
+
+def test_update_settings_accepts_a_payload_the_plugin_allows(client, dashboard_yaml, tmp_db):
+    plugin = StubValidatingPlugin({"settings": {"value": "good"}})
+    registry.register(plugin)
+
+    response = client.patch("/api/widgets/validating-stub/settings", json={"value": "also-good"})
+
+    assert response.status_code == 200
+    assert plugin.config["settings"] == {"value": "also-good"}
+
+
+def test_update_settings_rejects_an_unknown_hdhomerun_hwaccel_preset(client, dashboard_yaml, tmp_db):
+    # Regression test: an unrecognised preset used to degrade silently to
+    # software in transcoding.resolve_preset, so the widget reported the
+    # setting the user chose while running something else entirely.
+    plugin = HDHomeRunPlugin({"id": "hdhomerun", "settings": {"hwaccel": "vaapi"}})
+    registry.register(plugin)
+
+    response = client.patch("/api/widgets/hdhomerun/settings", json={"hwaccel": "vappi"})
+
+    assert response.status_code == 400
+    assert "vappi" in response.json()["detail"]
+    assert "vaapi" in response.json()["detail"]
+    assert plugin.config["settings"]["hwaccel"] == "vaapi"
 
 
 def test_update_settings_invalidates_cached_summary_and_detail(client, dashboard_yaml, tmp_db):

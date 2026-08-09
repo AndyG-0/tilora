@@ -46,6 +46,74 @@ def test_build_ffmpeg_args_includes_hwaccel_input_args():
     assert args.index("h264_vaapi") > args.index("-i")
 
 
+def test_vaapi_and_qsv_upload_software_decoded_frames_to_the_gpu():
+    # Regression test for the 502-on-every-stream failure this fixes: the
+    # tuner sends MPEG-2, which newer Intel GPUs cannot hardware-decode, so
+    # ffmpeg decodes it in software. Without an explicit hwupload the
+    # hardware encoder is then handed system-memory frames and the filter
+    # graph dies with "Impossible to convert between the formats supported
+    # by the filter 'graph 0 input from stream 0:0' and the filter
+    # 'auto_scale_0'" — before a single byte reaches stdout.
+    for preset_id in ("vaapi", "qsv"):
+        args = transcoding.build_ffmpeg_args({"hwaccel": preset_id}, "url")
+        video_filter = args[args.index("-vf") + 1]
+        assert "hwupload" in video_filter, preset_id
+        assert "format=nv12" in video_filter, preset_id
+        # deint=interlaced, not a blanket deinterlace: 720p59.94 affiliates
+        # shouldn't pay for a filter pass they don't need.
+        assert "yadif=deint=interlaced" in video_filter, preset_id
+        # Software decode means *not* asking the decoder for GPU surfaces.
+        assert "-hwaccel_output_format" not in args, preset_id
+
+
+def test_vaapi_full_keeps_full_hardware_decode():
+    args = transcoding.build_ffmpeg_args({"hwaccel": "vaapi_full"}, "url")
+
+    assert args[args.index("-hwaccel_output_format") + 1] == "vaapi"
+    assert args.index("-hwaccel_output_format") < args.index("-i")
+    assert "hwupload" not in " ".join(args)
+
+
+def test_qsv_derives_its_device_from_a_vaapi_child_device():
+    # -qsv_device alone sets up the decoder's device and leaves the filter
+    # graph without one, so hwupload can't find a hardware context.
+    args = transcoding.build_ffmpeg_args({"hwaccel": "qsv"}, "url")
+
+    assert args[args.index("-filter_hw_device") + 1] == "hw"
+    assert "vaapi=va:/dev/dri/renderD128" in args
+    assert "qsv=hw@va" in args
+    assert args.index("-filter_hw_device") < args.index("-i")
+
+
+def test_hwaccel_device_setting_substitutes_into_every_preset():
+    # The iGPU isn't always renderD128 — a second DRM device shifts it to
+    # renderD129, which used to be unreachable without the custom preset.
+    for preset_id in ("vaapi", "vaapi_full", "qsv"):
+        args = transcoding.build_ffmpeg_args({"hwaccel": preset_id, "hwaccel_device": "/dev/dri/renderD129"}, "url")
+        joined = " ".join(args)
+        assert "/dev/dri/renderD129" in joined, preset_id
+        assert "renderD128" not in joined, preset_id
+        assert "{device}" not in joined, preset_id
+
+
+def test_blank_hwaccel_device_falls_back_to_the_default():
+    args = transcoding.build_ffmpeg_args({"hwaccel": "vaapi", "hwaccel_device": "  "}, "url")
+
+    assert args[args.index("-vaapi_device") + 1] == transcoding.DEFAULT_HWACCEL_DEVICE
+
+
+def test_ffmpeg_debug_raises_the_log_level():
+    args = transcoding.build_ffmpeg_args({"ffmpeg_debug": True}, "url")
+
+    assert args[args.index("-loglevel") + 1] == "verbose"
+
+
+def test_only_gpu_presets_are_marked_hardware():
+    hardware = {preset_id for preset_id, preset in transcoding.TRANSCODE_PRESETS.items() if preset.hardware}
+
+    assert hardware == {"videotoolbox", "qsv", "vaapi", "vaapi_full", "nvenc"}
+
+
 def test_build_ffmpeg_args_custom_uses_raw_args():
     args = transcoding.build_ffmpeg_args(
         {"hwaccel": "custom", "custom_ffmpeg_args": "-c:v h264_v4l2m2m -b:v 4M -c:a aac"}, "url"

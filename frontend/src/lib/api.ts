@@ -723,6 +723,48 @@ export interface HDHomeRunTranscodePreset {
 	description: string;
 	input_args: string[];
 	output_args: string[];
+	hardware: boolean;
+}
+
+export interface HWAccelDevice {
+	path: string;
+	mode?: string;
+	owner_uid?: number;
+	owner_gid?: number;
+	readable?: boolean;
+	writable?: boolean;
+	error?: string;
+}
+
+export interface HWAccelProbe {
+	ok: boolean;
+	command: string | null;
+	exit_code: number | null;
+	output: string;
+}
+
+/** Report from GET /api/hdhomerun/{id}/hwaccel-diagnostics — see backend/app/hwaccel.py. */
+export interface HWAccelDiagnostics {
+	device: string;
+	process: { uid: number; gid: number; groups: number[] };
+	dri: { dir_exists: boolean; devices: HWAccelDevice[] };
+	ffmpeg: {
+		version: string;
+		hwaccels: string[];
+		hardware_encoders: string[];
+		ffmpeg_available: boolean;
+	};
+	vainfo: {
+		ok: boolean;
+		output: string;
+		driver: string | null;
+		profiles: Record<string, string[]>;
+		can_decode_mpeg2: boolean;
+		can_encode_h264: boolean;
+	} | null;
+	probes: Record<string, HWAccelProbe>;
+	sample_error: string | null;
+	summary: string[];
 }
 
 export interface DeviceInfo {
@@ -962,6 +1004,12 @@ export const api = {
 	hdhomerunPlaybackUrl: (url: string) => (url.startsWith('/') ? `${env.PUBLIC_API_BASE_URL}${url}` : url),
 	hdhomerunPlaylistUrl: (id: string, channelNumber: string) =>
 		`${env.PUBLIC_API_BASE_URL}/api/hdhomerun/${id}/playlist/${channelNumber}`,
+	// Admin-only, and slow by design: it test-encodes a short clip through
+	// each plausible preset, so budget several seconds.
+	hdhomerunHwaccelDiagnostics: (id: string, device?: string) =>
+		getJSON<HWAccelDiagnostics>(
+			`/api/hdhomerun/${id}/hwaccel-diagnostics${device ? `?device=${encodeURIComponent(device)}` : ''}`,
+		),
 	piholeSetBlocking: (id: string, enabled: boolean, timer?: number | null) =>
 		postJSON<{ blocking: string; timer: number | null }>(`/api/pihole/${id}/blocking`, {
 			enabled,

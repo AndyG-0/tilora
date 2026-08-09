@@ -43,5 +43,13 @@ LockPersonality=true
 SystemCallArchitectures=native
 CapabilityBoundingSet=
 
+# The sandbox above also blocks GPU access, so the HDHomeRun widget's
+# qsv/vaapi hwaccel presets need both of these — not shipped enabled because
+# SupplementaryGroups= fails the unit outright on a host with no "render"
+# group. Add them with `systemctl edit tilora-backend` if you want hardware
+# transcoding; see deploy/README.md.
+# DeviceAllow=/dev/dri/renderD128 rw
+# SupplementaryGroups=render
+
 [Install]
 WantedBy=multi-user.target
