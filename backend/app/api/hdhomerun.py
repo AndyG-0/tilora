@@ -17,17 +17,22 @@ host, port) are edited at the network level now (see
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import logging
+import shlex
 from collections.abc import Coroutine
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
-from app import transcoding
-from app.auth import get_current_user
+from app import hwaccel, transcoding
+from app.auth import get_current_admin, get_current_user
 from app.integrations import hdhomerun_client
 from app.plugins.base import registry
 from app.plugins.hdhomerun.plugin import HDHomeRunPlugin
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/hdhomerun", tags=["hdhomerun"], dependencies=[Depends(get_current_user)])
 
@@ -36,6 +41,16 @@ _FFMPEG_STARTUP_TIMEOUT_SECONDS = 8
 _FFMPEG_TERMINATE_TIMEOUT_SECONDS = 5
 _DISCONNECT_POLL_INTERVAL_SECONDS = 1
 _STDERR_TAIL_BYTES = 4000
+# How long to wait for the stderr drain to reach EOF once ffmpeg has failed,
+# before giving up and reporting whatever was captured.
+_STDERR_FLUSH_TIMEOUT_SECONDS = 2
+# Ceiling on the diagnostic test-transcode run after a hwaccel preset fails.
+# It's spent on a request that has already failed, so it has to stay small
+# enough not to turn a quick error into an apparent hang.
+_FAILURE_PROBE_TIMEOUT_SECONDS = 15
+# Only the tail end of ffmpeg's output goes in the HTTP response; the log line
+# gets all of it.
+_DETAIL_REASON_CHARS = 500
 
 # Cleanup/drain tasks (killing ffmpeg, draining its stderr) are fired from
 # here instead of being awaited directly, and tracked in this set purely so
@@ -69,6 +84,7 @@ async def transcode_presets():
             "description": preset.description,
             "input_args": preset.input_args,
             "output_args": preset.output_args,
+            "hardware": preset.hardware,
         }
         for preset_id, preset in transcoding.TRANSCODE_PRESETS.items()
     ]
@@ -85,18 +101,91 @@ async def _terminate(process: asyncio.subprocess.Process) -> None:
         await process.wait()
 
 
-async def _drain_stderr(stderr: asyncio.StreamReader, tail: bytearray) -> None:
+async def _drain_stderr(stderr: asyncio.StreamReader, tail: bytearray, done: asyncio.Event) -> None:
     # ffmpeg writes a steady trickle of log lines to stderr; if nothing reads
     # them, the OS pipe buffer eventually fills and ffmpeg blocks on write(),
     # silently stalling an otherwise-healthy stream. This keeps the pipe
     # drained for the process's whole lifetime, keeping only the last few KB
     # around — enough to explain a startup failure (bad channel, busy tuner).
-    while True:
-        chunk = await stderr.read(4096)
-        if not chunk:
-            return
-        tail += chunk
-        del tail[: max(0, len(tail) - _STDERR_TAIL_BYTES)]
+    #
+    # `done` is what makes that tail trustworthy. This runs as a detached
+    # task, so when ffmpeg dies instantly the reader below can observe EOF on
+    # *stdout* and build its error message before this task has had its first
+    # turn on the event loop — leaving the tail empty and reporting "no error
+    # message from ffmpeg" for a process that in fact explained itself in
+    # detail. Callers wait on this event before reading `tail`.
+    try:
+        while True:
+            chunk = await stderr.read(4096)
+            if not chunk:
+                return
+            tail += chunk
+            del tail[: max(0, len(tail) - _STDERR_TAIL_BYTES)]
+    finally:
+        done.set()
+
+
+async def _describe_failure(
+    process: asyncio.subprocess.Process,
+    stderr_tail: bytearray,
+    drain_done: asyncio.Event,
+) -> tuple[str, str]:
+    """Why ffmpeg produced nothing: a one-line cause, and its stderr output."""
+    # Let the drain finish so the reason is built from complete stderr rather
+    # than whatever happened to have been read by now.
+    with contextlib.suppress(TimeoutError):
+        await asyncio.wait_for(drain_done.wait(), timeout=_STDERR_FLUSH_TIMEOUT_SECONDS)
+    # And let the process be reaped, so `returncode` distinguishes "ffmpeg
+    # died" from "ffmpeg is alive but produced nothing". Closing stdout is not
+    # the same event as exiting, and `returncode` stays None until waited on.
+    with contextlib.suppress(TimeoutError):
+        await asyncio.wait_for(process.wait(), timeout=_STDERR_FLUSH_TIMEOUT_SECONDS)
+
+    if process.returncode is not None:
+        cause = f"ffmpeg exited with code {process.returncode} before producing any output"
+    else:
+        cause = f"ffmpeg produced no output within {_FFMPEG_STARTUP_TIMEOUT_SECONDS}s and was still running"
+    return cause, bytes(stderr_tail).decode(errors="replace").strip()
+
+
+async def _describe_mid_stream_exit(
+    process: asyncio.subprocess.Process,
+    stderr_tail: bytearray,
+    drain_done: asyncio.Event,
+    widget_id: str,
+    channel_number: str,
+) -> None:
+    """Log a stream that started successfully and then died on its own."""
+    with contextlib.suppress(TimeoutError):
+        await asyncio.wait_for(process.wait(), timeout=_STDERR_FLUSH_TIMEOUT_SECONDS)
+    if process.returncode in (None, 0):
+        return
+    with contextlib.suppress(TimeoutError):
+        await asyncio.wait_for(drain_done.wait(), timeout=_STDERR_FLUSH_TIMEOUT_SECONDS)
+    logger.warning(
+        "HDHomeRun widget '%s' channel %s: ffmpeg exited with code %s mid-stream\nffmpeg output:\n%s",
+        widget_id,
+        channel_number,
+        process.returncode,
+        bytes(stderr_tail).decode(errors="replace").strip() or "(none)",
+    )
+
+
+async def _probe_after_failure(settings: dict[str, Any]) -> dict[str, Any] | None:
+    """Re-run the failed settings against a synthetic clip, or None if that couldn't be done.
+
+    Separates "the GPU can't do this" from "the tuner was busy / the channel
+    is dead", which the tuner-fed failure alone cannot distinguish. Bounded
+    and never raising: this runs inside an already-failing request, so a slow
+    or broken probe must not turn a clear 502 into a hang or a 500.
+    """
+    try:
+        return await asyncio.wait_for(hwaccel.probe_transcode(settings), timeout=_FAILURE_PROBE_TIMEOUT_SECONDS)
+    except TimeoutError:
+        return None
+    except Exception:
+        logger.exception("Diagnostic test transcode failed to run")
+        return None
 
 
 @router.get("/{widget_id}/stream/{channel_number}")
@@ -115,6 +204,11 @@ async def stream_channel(widget_id: str, channel_number: str, request: Request):
         ffmpeg_args = transcoding.build_ffmpeg_args(settings, raw_url)
     except transcoding.InvalidCustomFfmpegArgsError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    preset_id = settings.get("hwaccel", transcoding.DEFAULT_PRESET)
+    preset = transcoding.resolve_preset(preset_id)
+    device = transcoding.resolve_device(settings)
+    command = shlex.join(["ffmpeg", *ffmpeg_args])
 
     try:
         process = await asyncio.create_subprocess_exec(
@@ -137,8 +231,18 @@ async def stream_channel(widget_id: str, channel_number: str, request: Request):
     assert process.stdout is not None
     assert process.stderr is not None
 
+    logger.info(
+        "HDHomeRun widget '%s' channel %s: starting transcode (preset=%s, device=%s): %s",
+        widget_id,
+        channel_number,
+        preset_id,
+        device,
+        command,
+    )
+
     stderr_tail = bytearray()
-    _run_in_background(_drain_stderr(process.stderr, stderr_tail))
+    drain_done = asyncio.Event()
+    _run_in_background(_drain_stderr(process.stderr, stderr_tail, drain_done))
 
     # A StreamingResponse commits its 200 status as soon as it starts, so any
     # ffmpeg failure (busy tuner, unreachable channel, bad input) has to
@@ -153,10 +257,52 @@ async def stream_channel(widget_id: str, channel_number: str, request: Request):
         first_chunk = b""
 
     if not first_chunk:
+        cause, reason = await _describe_failure(process, stderr_tail, drain_done)
         _run_in_background(_terminate(process))
-        reason = bytes(stderr_tail).decode(errors="replace").strip()
-        detail = f"ffmpeg failed to start streaming channel {channel_number}"
-        detail += f": {reason[-500:]}" if reason else " (no output and no error message from ffmpeg)"
+        logger.error(
+            "HDHomeRun widget '%s' channel %s: %s (preset=%s, device=%s)\ncommand: %s\nffmpeg output:\n%s",
+            widget_id,
+            channel_number,
+            cause,
+            preset_id,
+            device,
+            command,
+            reason or "(none)",
+        )
+
+        detail = f"Could not start streaming channel {channel_number}: {cause}"
+        if reason:
+            detail += f". ffmpeg said: {reason[-_DETAIL_REASON_CHARS:]}"
+
+        # A hardware preset that fails at startup is the case where the raw
+        # stderr is least likely to be self-explanatory, and where the user
+        # has the fewest ways to investigate (no shell in the container, no
+        # spare tuner). Re-run the same arguments against a synthetic MPEG-2
+        # clip at verbose logging, so the very first failure carries a real
+        # explanation rather than requiring a second, manual round trip.
+        if preset.hardware:
+            probe = await _probe_after_failure(settings)
+            if probe is not None:
+                logger.error(
+                    "HDHomeRun widget '%s': diagnostic test transcode with the same settings %s\ncommand: %s\n%s",
+                    widget_id,
+                    "succeeded (so the tuner or channel is the likely problem, not the GPU)"
+                    if probe["ok"]
+                    else "also failed",
+                    probe.get("command"),
+                    probe.get("output") or "(no output)",
+                )
+                if not probe["ok"] and probe.get("output"):
+                    detail += (
+                        " A test transcode with these same settings also failed, so this is a hardware-acceleration "
+                        "problem rather than a tuner problem. Run the hardware acceleration diagnostics for details."
+                    )
+                elif probe["ok"]:
+                    detail += (
+                        " A test transcode with these same settings succeeded, so hardware acceleration is working — "
+                        "the tuner or this channel is the more likely problem."
+                    )
+
         raise HTTPException(status_code=502, detail=detail)
 
     async def body():
@@ -178,6 +324,12 @@ async def stream_channel(widget_id: str, channel_number: str, request: Request):
                 except TimeoutError:
                     continue
                 if not chunk:
+                    # EOF on stdout: ffmpeg is done. A clean exit is just the
+                    # tuner-side stream ending, but a non-zero code here is a
+                    # stream that started fine and then broke — the player
+                    # only sees playback stop, so without this it leaves no
+                    # trace anywhere.
+                    await _describe_mid_stream_exit(process, stderr_tail, drain_done, widget_id, channel_number)
                     break
                 yield chunk
         finally:
@@ -189,6 +341,37 @@ async def stream_channel(widget_id: str, channel_number: str, request: Request):
             _run_in_background(_terminate(process))
 
     return StreamingResponse(body(), media_type="video/mp2t")
+
+
+@router.get("/{widget_id}/hwaccel-diagnostics", dependencies=[Depends(get_current_admin)])
+async def hwaccel_diagnostics(widget_id: str, device: str | None = None):
+    """Probe every link in the hardware-acceleration chain and report back.
+
+    Admin-only despite the router's user-level dependency: this exposes host
+    hardware detail, device permissions and the backend's uid/gid.
+
+    Takes ~2-15s (it test-encodes a short clip through each plausible preset),
+    which is why it's an explicit request rather than part of the widget's
+    detail payload.
+    """
+    plugin = _get_plugin(widget_id)
+    settings = plugin.config["settings"]
+    report = await hwaccel.full_report(
+        device or transcoding.resolve_device(settings),
+        extra_settings={
+            "hwaccel": settings.get("hwaccel", transcoding.DEFAULT_PRESET),
+            "custom_ffmpeg_args": settings.get("custom_ffmpeg_args", ""),
+        },
+    )
+    # Also to the log, so a user reporting a bug can paste `docker compose
+    # logs backend` instead of having to re-run this against a cookie.
+    logger.info(
+        "HDHomeRun widget '%s': hardware acceleration diagnostics for %s\n%s",
+        widget_id,
+        report["device"],
+        "\n".join(report["summary"]) or "(no findings)",
+    )
+    return report
 
 
 @router.get("/{widget_id}/playlist/{channel_number}")

@@ -46,6 +46,31 @@ sudo apt install -y va-driver-all vainfo
 
 `vainfo` should then list your GPU's supported profiles instead of erroring.
 
+The service unit is sandboxed (`NoNewPrivileges=true`, `ProtectSystem=strict`,
+an empty `CapabilityBoundingSet`) and, by default, cannot open a GPU render
+node: the sandbox hides `/dev/dri`, and the `tilora` service user isn't in the
+host's `render` group. Both have to be granted explicitly. Add a drop-in:
+
+```bash
+sudo systemctl edit tilora-backend
+```
+
+```ini
+[Service]
+# Expose just the render nodes, not all of /dev.
+DeviceAllow=/dev/dri/renderD128 rw
+DeviceAllow=/dev/dri/renderD129 rw
+SupplementaryGroups=render
+```
+
+Then `sudo systemctl restart tilora-backend`. Verify with the widget's
+hardware-acceleration diagnostics (HDHomeRun widget → **Edit playback
+settings** → **Run diagnostics**), which reports the process's groups, each
+render node's permissions, the loaded driver, and a real test encode through
+every preset. Note the render node isn't always `renderD128` — a second DRM
+device shifts the iGPU to `renderD129`; the diagnostics list what's present,
+and the widget's **Render device** setting selects it.
+
 To use a non-default install location, download `install.sh` and invoke it
 with `TILORA_INSTALL_DIR=/your/path bash install.sh`. The one-line command
 uses the invoking user's home directory. First installation must run from an
@@ -67,7 +92,9 @@ Without it, the `/api/hdhomerun/{widget_id}/stream/{channel}` route returns a
 is installed but the tuner rejects the request (e.g. all physical tuners are
 already in use by another device — HDHomeRun's `805 All Tuners In Use`), the
 route returns a `502` with ffmpeg's error output in the response body instead
-of a silent empty stream.
+of a silent empty stream. The same failure is logged in full (command line,
+exit code, ffmpeg output) under `app.api.hdhomerun` — `journalctl -u
+tilora-backend`.
 
 ### Configure
 
