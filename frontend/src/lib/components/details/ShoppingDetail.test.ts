@@ -57,7 +57,7 @@ describe('ShoppingDetail', () => {
 		await fireEvent.input(screen.getByPlaceholderText('Add an item…'), { target: { value: 'Bread' } });
 		await fireEvent.click(screen.getByText('Add'));
 
-		await vi.waitFor(() => expect(createShoppingItem).toHaveBeenCalledWith('Bread'));
+		await vi.waitFor(() => expect(createShoppingItem).toHaveBeenCalledWith('shopping', 'Bread'));
 		expect(await screen.findByText('Bread')).toBeInTheDocument();
 	});
 

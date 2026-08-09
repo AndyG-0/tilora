@@ -49,7 +49,7 @@ describe('ChoresDetail', () => {
 		await fireEvent.input(screen.getByPlaceholderText('Add an item…'), { target: { value: 'New item' } });
 		await fireEvent.click(screen.getByText('Add'));
 
-		await vi.waitFor(() => expect(createChore).toHaveBeenCalledWith('New item'));
+		await vi.waitFor(() => expect(createChore).toHaveBeenCalledWith('chores', 'New item'));
 		expect(await screen.findByText('New item')).toBeInTheDocument();
 	});
 

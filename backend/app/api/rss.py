@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+import feedparser
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth import get_current_user
@@ -12,6 +14,22 @@ from app.storage import db
 from app.storage.cache import cache
 
 router = APIRouter(prefix="/api/rss", tags=["rss"], dependencies=[Depends(get_current_user)])
+
+
+async def _validate_feed_url(url: str) -> None:
+    # Catch a bad feed at add time rather than letting it 500 the widget on
+    # every later refresh — the settings editor is the only place a user can
+    # fix or remove a broken url, so it needs to reject one up front.
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            response = await client.get(url)
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=400, detail="Could not load a feed from that URL") from exc
+
+    parsed = feedparser.parse(response.content)
+    if not parsed.version and not parsed.entries:
+        raise HTTPException(status_code=400, detail="That URL does not look like a valid RSS/Atom feed")
 
 
 def _invalidate(user_id: str) -> None:
@@ -37,6 +55,7 @@ async def add_feed(payload: dict[str, Any], user: dict[str, Any] = Depends(get_c
         raise HTTPException(status_code=400, detail="A feed url is required")
     name = (payload.get("name") or "").strip() or None
     item_limit = int(payload.get("item_limit", 10))
+    await _validate_feed_url(url)
     feed = await asyncio.to_thread(db.add_rss_feed, user["id"], url, name, item_limit)
     _invalidate(user["id"])
     return feed

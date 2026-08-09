@@ -32,6 +32,25 @@ describe('NASATile', () => {
 		expect(await screen.findByText('A Beautiful Nebula')).toBeInTheDocument();
 		expect(screen.getByText('2026-08-05')).toBeInTheDocument();
 		expect(container.querySelector('img')).toHaveAttribute('src', 'https://apod.nasa.gov/apod/image/nebula.jpg');
+		expect(screen.queryByText('Cached')).not.toBeInTheDocument();
+	});
+
+	it('shows a stale badge when the summary is a cached fallback', async () => {
+		widgetSummary.mockResolvedValue({
+			title: 'Astronomy Picture of the Day',
+			available: true,
+			apod_title: 'A Beautiful Nebula',
+			date: '2026-08-05',
+			media_type: 'image',
+			thumbnail_url: 'https://apod.nasa.gov/apod/image/nebula.jpg',
+			stale: true,
+			fetched_at: '2026-08-05T12:00:00Z',
+		});
+
+		render(NASATile, { props: { widgetId: 'nasa_apod' } });
+
+		expect(await screen.findByText('A Beautiful Nebula')).toBeInTheDocument();
+		expect(screen.getByText('Cached')).toBeInTheDocument();
 	});
 
 	it('renders the youtube thumbnail for a video day', async () => {

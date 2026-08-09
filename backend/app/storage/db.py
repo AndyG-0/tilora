@@ -38,6 +38,14 @@ CREATE TABLE IF NOT EXISTS speedtest_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_speedtest_runs_widget_id ON speedtest_runs (widget_id, ran_at DESC);
 
+CREATE TABLE IF NOT EXISTS nasa_apod_fetches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    widget_id TEXT NOT NULL,
+    fetched_at TEXT NOT NULL,
+    result TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_nasa_apod_fetches_widget_id ON nasa_apod_fetches (widget_id, fetched_at DESC);
+
 CREATE TABLE IF NOT EXISTS chores (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     widget_id TEXT NOT NULL,
@@ -768,6 +776,25 @@ def speedtest_run_history(widget_id: str, limit: int = 50) -> list[dict[str, Any
             (widget_id, limit),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def record_nasa_apod_fetch(widget_id: str, result: dict[str, Any]) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO nasa_apod_fetches (widget_id, fetched_at, result) VALUES (?, ?, ?)",
+            (widget_id, datetime.now(UTC).isoformat(), json.dumps(result)),
+        )
+
+
+def latest_nasa_apod_fetch(widget_id: str) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT fetched_at, result FROM nasa_apod_fetches WHERE widget_id = ? ORDER BY fetched_at DESC LIMIT 1",
+            (widget_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {"fetched_at": row["fetched_at"], **json.loads(row["result"])}
 
 
 def save_widget_settings(widget_id: str, settings: dict[str, Any]) -> None:

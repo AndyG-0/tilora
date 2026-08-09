@@ -292,10 +292,12 @@
 	},
 	"nasa_apod": {
 		"tile": {
-			"unavailable": "Photo du jour indisponible"
+			"unavailable": "Photo du jour indisponible",
+			"stale_badge": "En cache"
 		},
 		"detail": {
-			"unavailable": "La photo du jour n'est pas disponible pour le moment."
+			"unavailable": "La photo du jour n'est pas disponible pour le moment.",
+			"stale_notice": "Impossible de charger la photo du jour — affichage de celle du {date}."
 		}
 	},
 	"bookmarks": {

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { NASAApodDetail } from '$lib/api';
-	import { _ } from 'svelte-i18n';
+	import { _, locale } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 
 	let { data: apod }: { data: NASAApodDetail } = $props();
 </script>
@@ -12,6 +13,13 @@
 		<h2>{apod.apod_title}</h2>
 		{#if apod.date}
 			<p class="date">{apod.date}</p>
+		{/if}
+		{#if apod.stale && apod.fetched_at}
+			<p class="stale-note">
+				{$_('nasa_apod.detail.stale_notice', {
+					values: { date: new Date(apod.fetched_at).toLocaleString(get(locale) ?? undefined) },
+				})}
+			</p>
 		{/if}
 
 		{#if apod.media_type === 'video' && apod.url}
@@ -44,6 +52,12 @@
 	}
 
 	.date {
+		color: var(--color-text-muted);
+		font-size: 0.85rem;
+		margin: 0 0 1rem;
+	}
+
+	.stale-note {
 		color: var(--color-text-muted);
 		font-size: 0.85rem;
 		margin: 0 0 1rem;

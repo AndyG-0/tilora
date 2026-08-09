@@ -33,6 +33,9 @@
 				{#if summary.date}
 					<div class="date">{summary.date}</div>
 				{/if}
+				{#if summary.stale}
+					<div class="stale-badge">{$_('nasa_apod.tile.stale_badge')}</div>
+				{/if}
 			</div>
 		</div>
 	{:else if summary}
@@ -83,6 +86,11 @@
 
 	.date {
 		font-size: 0.8rem;
+		color: var(--color-text-muted);
+	}
+
+	.stale-badge {
+		font-size: 0.7rem;
 		color: var(--color-text-muted);
 	}
 

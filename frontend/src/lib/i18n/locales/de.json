@@ -292,10 +292,12 @@
 	},
 	"nasa_apod": {
 		"tile": {
-			"unavailable": "Bild des Tages nicht verfügbar"
+			"unavailable": "Bild des Tages nicht verfügbar",
+			"stale_badge": "Zwischengespeichert"
 		},
 		"detail": {
-			"unavailable": "Das Bild des Tages ist gerade nicht verfügbar."
+			"unavailable": "Das Bild des Tages ist gerade nicht verfügbar.",
+			"stale_notice": "Das heutige Bild konnte nicht geladen werden – angezeigt wird das Bild vom {date}."
 		}
 	},
 	"bookmarks": {

@@ -26,7 +26,7 @@
 		adding = true;
 		error = null;
 		try {
-			await api.createPackage(trimmed, label.trim() || undefined);
+			await api.createPackage(page.params.id!, trimmed, label.trim() || undefined);
 			trackingNumber = '';
 			label = '';
 			await refresh();

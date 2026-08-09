@@ -117,6 +117,47 @@ async def test_get_detail_includes_full_feed_catalog_and_selection(tmp_db):
     assert {feed["id"] for feed in detail["all_feeds"]} == {one["id"], two["id"]}
 
 
+@respx.mock
+async def test_get_detail_degrades_a_failing_feed_to_an_error_without_dropping_others(tmp_db):
+    respx.get("https://example.com/broken.xml").mock(return_value=httpx.Response(404))
+    respx.get("https://example.com/two.xml").mock(return_value=httpx.Response(200, content=FEED_TWO))
+    broken = db.add_rss_feed("user-1", "https://example.com/broken.xml", "Broken")
+    two = db.add_rss_feed("user-1", "https://example.com/two.xml", "Custom")
+    plugin = make_plugin(feed_ids=[broken["id"], two["id"]])
+
+    detail = await plugin.get_detail()
+
+    groups = {group["name"]: group for group in detail["feed_groups"]}
+    assert groups["Broken"]["items"] == []
+    assert groups["Broken"]["error"]
+    assert groups["Custom"]["items"][0]["title"] == "Newer Item"
+    assert "error" not in groups["Custom"]
+
+
+@respx.mock
+async def test_get_detail_degrades_a_feed_that_times_out(tmp_db):
+    respx.get("https://example.com/slow.xml").mock(side_effect=httpx.ConnectTimeout("timed out"))
+    feed = db.add_rss_feed("user-1", "https://example.com/slow.xml", "Slow")
+    plugin = make_plugin(feed_ids=[feed["id"]])
+
+    detail = await plugin.get_detail()
+
+    assert detail["feed_groups"][0]["items"] == []
+    assert detail["feed_groups"][0]["error"]
+
+
+@respx.mock
+async def test_get_detail_degrades_a_feed_that_is_not_valid_xml(tmp_db):
+    respx.get("https://example.com/junk.xml").mock(return_value=httpx.Response(200, content=b"not xml at all"))
+    feed = db.add_rss_feed("user-1", "https://example.com/junk.xml", "Junk")
+    plugin = make_plugin(feed_ids=[feed["id"]])
+
+    detail = await plugin.get_detail()
+
+    assert detail["feed_groups"][0]["items"] == []
+    assert detail["feed_groups"][0]["error"]
+
+
 async def test_get_summary_without_a_requesting_user_returns_no_groups(tmp_db):
     feed = db.add_rss_feed("user-1", "https://example.com/one.xml", None)
     plugin = make_plugin(user_id=None, feed_ids=[feed["id"]])

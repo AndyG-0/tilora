@@ -106,5 +106,10 @@
 			"recently_added": "Ajouts récents",
 			"continue_watching": "Reprendre la lecture"
 		}
+	},
+	"rss": {
+		"error": {
+			"feed_unavailable": "Impossible de charger ce flux."
+		}
 	}
 }

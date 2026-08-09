@@ -4,6 +4,7 @@ feed catalog (`app.storage.db.rss_feeds`), grouped separately by feed."""
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from calendar import timegm
 from typing import Any, ClassVar
@@ -11,8 +12,11 @@ from typing import Any, ClassVar
 import feedparser
 import httpx
 
+from app.i18n import t
 from app.plugins.base import Plugin, ToolDef
 from app.storage import db
+
+logger = logging.getLogger(__name__)
 
 _TAG_RE = re.compile(r"<[^>]+>")
 
@@ -68,13 +72,37 @@ class RSSPlugin(Plugin):
         if not feeds:
             return []
 
-        async with httpx.AsyncClient(timeout=10) as client:
-            responses = await asyncio.gather(*(client.get(feed["url"]) for feed in feeds))
+        # follow_redirects: a feed that's moved permanently (e.g. a blog's RSS
+        # path changing) shouldn't be treated as broken.
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            responses = await asyncio.gather(*(client.get(feed["url"]) for feed in feeds), return_exceptions=True)
 
         groups: list[dict[str, Any]] = []
         for feed, response in zip(feeds, responses, strict=True):
-            response.raise_for_status()
-            parsed = feedparser.parse(response.content)
+            # One unreachable or malformed feed shouldn't take down every
+            # other feed in the tile — degrade that group to an error rather
+            # than letting the exception bubble up and 500 the whole widget.
+            try:
+                if isinstance(response, BaseException):
+                    raise response
+                response.raise_for_status()
+                parsed = feedparser.parse(response.content)
+                if not parsed.version and not parsed.entries:
+                    raise parsed.get("bozo_exception") or ValueError("Feed could not be parsed")
+            except Exception:
+                logger.warning(
+                    "Could not load rss feed %s (%s) for widget '%s'", feed["id"], feed["url"], self.id, exc_info=True
+                )
+                groups.append(
+                    {
+                        "feed_id": feed["id"],
+                        "name": feed.get("name") or feed["url"],
+                        "items": [],
+                        "error": t("rss.error.feed_unavailable", self.locale),
+                    }
+                )
+                continue
+
             source = feed.get("name") or parsed.feed.get("title", "")
             items = []
             for entry in parsed.entries[: feed["item_limit"]]:

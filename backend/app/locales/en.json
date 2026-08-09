@@ -106,5 +106,10 @@
 			"recently_added": "Recently added",
 			"continue_watching": "Continue watching"
 		}
+	},
+	"rss": {
+		"error": {
+			"feed_unavailable": "This feed could not be loaded."
+		}
 	}
 }

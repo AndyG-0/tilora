@@ -83,7 +83,8 @@ async def test_get_apod_sends_a_date_when_given():
 
 
 @respx.mock
-async def test_get_apod_raises_on_http_error():
+async def test_get_apod_raises_on_http_error(monkeypatch):
+    monkeypatch.setattr(nasa_client, "_RETRY_BACKOFF_SECONDS", 0)
     respx.get("https://api.nasa.gov/planetary/apod").mock(
         return_value=httpx.Response(429, json={"error": {"message": "rate limit exceeded"}})
     )
@@ -93,8 +94,75 @@ async def test_get_apod_raises_on_http_error():
 
 
 @respx.mock
-async def test_get_apod_raises_on_network_error():
+async def test_get_apod_raises_on_network_error(monkeypatch):
+    monkeypatch.setattr(nasa_client, "_RETRY_BACKOFF_SECONDS", 0)
     respx.get("https://api.nasa.gov/planetary/apod").mock(side_effect=httpx.ConnectError("boom"))
 
     with pytest.raises(nasa_client.NASAError):
         await nasa_client.get_apod("test-key")
+
+
+@respx.mock
+async def test_get_apod_retries_once_on_a_connection_error_then_succeeds(monkeypatch):
+    monkeypatch.setattr(nasa_client, "_RETRY_BACKOFF_SECONDS", 0)
+    route = respx.get("https://api.nasa.gov/planetary/apod").mock(
+        side_effect=[httpx.ConnectError("boom"), httpx.Response(200, json=IMAGE_RESPONSE)]
+    )
+
+    result = await nasa_client.get_apod("test-key")
+
+    assert result["title"] == "A Beautiful Nebula"
+    assert route.call_count == 2
+
+
+@respx.mock
+async def test_get_apod_retries_once_on_a_429_then_succeeds(monkeypatch):
+    monkeypatch.setattr(nasa_client, "_RETRY_BACKOFF_SECONDS", 0)
+    route = respx.get("https://api.nasa.gov/planetary/apod").mock(
+        side_effect=[
+            httpx.Response(429, json={"error": {"message": "rate limit exceeded"}}),
+            httpx.Response(200, json=IMAGE_RESPONSE),
+        ]
+    )
+
+    result = await nasa_client.get_apod("test-key")
+
+    assert result["title"] == "A Beautiful Nebula"
+    assert route.call_count == 2
+
+
+@respx.mock
+async def test_get_apod_retries_once_on_a_5xx_then_succeeds(monkeypatch):
+    monkeypatch.setattr(nasa_client, "_RETRY_BACKOFF_SECONDS", 0)
+    route = respx.get("https://api.nasa.gov/planetary/apod").mock(
+        side_effect=[httpx.Response(503), httpx.Response(200, json=IMAGE_RESPONSE)]
+    )
+
+    result = await nasa_client.get_apod("test-key")
+
+    assert result["title"] == "A Beautiful Nebula"
+    assert route.call_count == 2
+
+
+@respx.mock
+async def test_get_apod_does_not_retry_on_a_non_retryable_4xx(monkeypatch):
+    monkeypatch.setattr(nasa_client, "_RETRY_BACKOFF_SECONDS", 0)
+    route = respx.get("https://api.nasa.gov/planetary/apod").mock(
+        return_value=httpx.Response(400, json={"msg": "bad date"})
+    )
+
+    with pytest.raises(nasa_client.NASAError, match="bad date"):
+        await nasa_client.get_apod("test-key")
+
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_get_apod_raises_after_exhausting_retries(monkeypatch):
+    monkeypatch.setattr(nasa_client, "_RETRY_BACKOFF_SECONDS", 0)
+    route = respx.get("https://api.nasa.gov/planetary/apod").mock(return_value=httpx.Response(503))
+
+    with pytest.raises(nasa_client.NASAError):
+        await nasa_client.get_apod("test-key")
+
+    assert route.call_count == nasa_client._MAX_ATTEMPTS
