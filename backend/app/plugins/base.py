@@ -120,6 +120,18 @@ class Plugin(ABC):
         """Tools this plugin exposes to the AI layer. Optional to override."""
         return []
 
+    def validate_settings(self, payload: dict[str, Any]) -> None:
+        """Reject a settings patch before it's persisted, by raising ValueError.
+
+        `PATCH /api/widgets/{id}/settings` already restricts *which* keys can
+        be set (to those in `default_settings`), but says nothing about their
+        values, so a typo in a field the backend later looks up in a table
+        silently degrades to that table's default with no error anywhere.
+        Override to check the values that have a fixed set of valid ones;
+        the route turns the ValueError into a 400. Optional to override.
+        """
+        return None
+
     def with_settings(
         self, settings: dict[str, Any] | None = None, locale: str | None = None, user_id: str | None = None
     ) -> Plugin:

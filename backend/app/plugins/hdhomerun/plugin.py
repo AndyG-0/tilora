@@ -62,6 +62,16 @@ class HDHomeRunPlugin(Plugin):
         "hwaccel": transcoding.DEFAULT_PRESET,
         # Raw ffmpeg output arguments, only used when hwaccel == "custom".
         "custom_ffmpeg_args": "",
+        # DRM render node the VAAPI/QSV presets bind to. Not always
+        # /dev/dri/renderD128 — a second DRM device shifts the iGPU's node to
+        # renderD129 — so it has to be settable rather than hardcoded. The
+        # hardware-acceleration diagnostics list what's actually present.
+        "hwaccel_device": transcoding.DEFAULT_HWACCEL_DEVICE,
+        # Raise ffmpeg's own log level from "warning" to "verbose", so the
+        # backend log shows hwaccel device init and filter-graph format
+        # negotiation. Off by default: it's several lines per second per
+        # viewer.
+        "ffmpeg_debug": False,
         # Channel numbers (e.g. "4.1") the user has starred on the detail
         # page. Empty means "no preference yet" — the tile summary falls
         # back to showing whatever channels happen to have guide data,
@@ -69,6 +79,15 @@ class HDHomeRunPlugin(Plugin):
         "favorite_channels": [],
     }
     default_layout = {"colSpan": 2, "rowSpan": 1}
+
+    def validate_settings(self, payload: dict[str, Any]) -> None:
+        # An unrecognised hwaccel id silently falls back to the software
+        # preset (transcoding.resolve_preset), so a typo used to look like
+        # "hardware acceleration is on but has no effect" — indistinguishable
+        # from a GPU problem, and invisible in the logs.
+        if "hwaccel" in payload and payload["hwaccel"] not in transcoding.TRANSCODE_PRESETS:
+            valid = ", ".join(sorted(transcoding.TRANSCODE_PRESETS))
+            raise ValueError(f"Unknown hwaccel preset '{payload['hwaccel']}'. Valid presets: {valid}")
 
     def _settings(self) -> dict[str, Any]:
         return self.config["settings"]
@@ -153,6 +172,8 @@ class HDHomeRunPlugin(Plugin):
             "playback_mode": s.get("playback_mode", "server_transcode"),
             "hwaccel": s.get("hwaccel", transcoding.DEFAULT_PRESET),
             "custom_ffmpeg_args": s.get("custom_ffmpeg_args", ""),
+            "hwaccel_device": transcoding.resolve_device(s),
+            "ffmpeg_debug": bool(s.get("ffmpeg_debug", False)),
             "favorite_channels": s.get("favorite_channels") or [],
             # The exact ffmpeg command server_transcode playback will run —
             # always surfaced so the user can see what their hwaccel choice

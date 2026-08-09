@@ -60,8 +60,20 @@ services:
     # device mapped above. Find the real GID with `getent group render` on
     # the host (it's host-specific, not something this file can hardcode)
     # and set it as RENDER_GID, e.g. `RENDER_GID=108 docker compose up -d`.
+    # Note that `privileged: true` is NOT a substitute: a non-root process
+    # gets no effective capabilities from it, so CAP_DAC_OVERRIDE never
+    # applies and the open still fails.
     # group_add:
     #   - "${RENDER_GID:-108}"
+    # Two more things that commonly go wrong once the device is mapped, both
+    # reported by the widget's hardware-acceleration diagnostics (Widget ->
+    # Edit playback settings -> Run diagnostics):
+    #   * The render node isn't always renderD128. A second DRM device (a
+    #     discrete GPU, or a simpledrm/vkms node) shifts the iGPU to
+    #     renderD129; set the widget's "Render device" setting to match.
+    #   * Some Intel setups need the driver named explicitly. If vainfo
+    #     reports no driver, add LIBVA_DRIVER_NAME=iHD (Intel Gen8+),
+    #     i965 (older Intel) or radeonsi (AMD) to the environment above.
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]

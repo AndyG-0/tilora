@@ -183,6 +183,38 @@ image — uncomment the `/dev/dri` block under the backend service in
 `docker-compose.yml`/`docker-compose.prod.yml` and set `RENDER_GID` (see the
 comment there) to actually use them.
 
+### Hardware acceleration won't start (502 on the stream)
+
+Open the HDHomeRun widget → **Edit playback settings** → **Run diagnostics**
+(admin only). It checks each link in the chain independently — `/dev/dri`
+passthrough, device permissions, the VA-API driver, and a real test encode
+through every preset — and names the first thing that's actually broken. It
+needs no free tuner, so it works even while every tuner is in use. The same
+report is written to the backend log, so `docker compose logs backend` is
+enough for a bug report.
+
+The usual causes, in the order the diagnostics check them:
+
+- **`/dev/dri` missing** — the device block is still commented out, or the
+  container wasn't recreated after uncommenting it.
+- **Device present but not readable** — `group_add` is missing or has the
+  wrong GID (`getent group render` on the host). `privileged: true` does not
+  fix this, because the backend runs as a non-root user.
+- **Wrong render node** — a host with a second DRM device puts the iGPU on
+  `/dev/dri/renderD129`. Set the widget's **Render device** setting.
+- **No VA-API driver** — set `LIBVA_DRIVER_NAME` (`iHD` for Intel Gen8+,
+  `i965` for older Intel, `radeonsi` for AMD).
+- **VAAPI works, Quick Sync doesn't** — on Alder Lake-N and newer Intel
+  parts, QSV may be unavailable through the ffmpeg build the image ships.
+  Use the **VAAPI** preset there.
+- **VAAPI works but "VAAPI, full hardware decode + encode" doesn't** — the
+  GPU has no hardware MPEG-2 decoder, which newer Intel GPUs have dropped.
+  The plain **VAAPI** preset decodes in software for exactly this reason.
+
+`software` always works and is the right fallback; turn on **Verbose ffmpeg
+logging** in the same settings panel if you need ffmpeg's own view of a
+failure in the backend log.
+
 For native Debian, Ubuntu, and Raspberry Pi OS installation, run
 `curl -fsSL https://raw.githubusercontent.com/AndyG-0/tilora/main/deploy/install.sh | bash`.
 See `deploy/README.md` for configuration, upgrades, and the optional Raspberry
