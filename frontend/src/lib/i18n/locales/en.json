@@ -4,12 +4,7 @@
 		"fatal_hint": "Check that the backend is running and reachable, then reload this page.",
 		"name_device_title": "Name this device",
 		"name_device_hint": "Helps tell it apart in the device list — e.g. \"Kitchen Tablet\" or \"Living Room TV\".",
-		"done": "Done",
-		"setup_device_title": "Set up this device",
-		"setup_device_hint": "Copy your dashboard layout from one of your other devices, or start with the default layout.",
-		"start_fresh": "Start fresh",
-		"copy_layout": "Copy layout",
-		"copying": "Copying…"
+		"done": "Done"
 	},
 	"settings": {
 		"language": {
@@ -51,13 +46,7 @@
 			"forgetting": "Forgetting…",
 			"forget": "Forget",
 			"forget_device": "Forget device",
-			"forget_error": "Could not forget device.",
-			"copy_from_label": "Copy layout from another device",
-			"copy_confirm": "This will replace your layout on {target} with your layout from {source}. This can't be undone.",
-			"copying": "Copying…",
-			"copy_layout": "Copy layout",
-			"copy_layout_link": "Copy layout to this device…",
-			"copy_error": "Could not copy layout."
+			"forget_error": "Could not forget device."
 		},
 		"screensaver": {
 			"heading": "Screensaver",
@@ -213,15 +202,24 @@
 			"no_cities_found": "No cities found.",
 			"update_failed": "Could not update the location.",
 			"radius_label": "Search radius (nm)",
+			"map_label": "Flight map",
 			"empty": "No aircraft nearby.",
 			"column_flight": "Flight",
 			"column_type": "Type",
+			"column_route": "Route",
 			"column_altitude": "Altitude",
 			"column_speed": "Speed",
 			"column_distance": "Distance"
 		},
 		"screensaver": {
 			"no_aircraft": "NO AIRCRAFT NEARBY"
+		},
+		"aircraft_kind": {
+			"helicopter": "Helicopter",
+			"jet": "Jet",
+			"prop": "Propeller plane",
+			"other": "Aircraft",
+			"unknown": "Unknown aircraft type"
 		}
 	},
 	"game2048": {
@@ -350,7 +348,7 @@
 			"clear_password": "Clear password",
 			"connected_result": "✓ Connected (Pi-hole {version})",
 			"clear_password_error": "Could not clear the password.",
-			"not_connected_hint": "Not connected yet — tap \"Edit connection\" to set up Pi-hole.",
+			"not_connected_hint": "Not connected yet — set up Pi-hole in Network Settings.",
 			"blocking_enabled": "● Blocking enabled",
 			"blocking_paused": "⏸ Blocking paused",
 			"pause_30s": "Pause 30s",
@@ -400,11 +398,12 @@
 			"socket_path_label": "Socket path",
 			"host_label": "Host",
 			"port_label": "Port",
-			"not_connected_hint": "Not connected yet — tap \"Edit connection\" to set up {title}.",
+			"not_connected_hint": "Not connected yet — set up {title} in Network Settings.",
 			"running_label": "Running",
 			"stopped_label": "Stopped",
 			"total_label": "Total",
-			"empty": "No containers found."
+			"empty": "No containers found.",
+			"host_picker_label": "Host"
 		}
 	},
 	"synology": {
@@ -418,7 +417,7 @@
 			"username_label": "Username",
 			"password_label": "Password",
 			"connected_result": "✓ Connected ({model})",
-			"not_connected_hint": "Not connected yet — tap \"Edit connection\" to set up Synology.",
+			"not_connected_hint": "Not connected yet — set up Synology in Network Settings.",
 			"model_label": "Model",
 			"uptime_label": "Uptime",
 			"temp_label": "CPU temperature",
@@ -438,7 +437,7 @@
 			"username_label": "Username",
 			"password_label": "Password",
 			"connected_result": "✓ Connected ({product_id})",
-			"not_connected_hint": "Not connected yet — tap \"Edit connection\" to set up your router.",
+			"not_connected_hint": "Not connected yet — set up your router in Network Settings.",
 			"wan_status_label": "WAN status",
 			"wan_ip_label": "WAN IP",
 			"download_label": "Download",
@@ -726,7 +725,7 @@
 			"password_label": "Password",
 			"clear_password": "Clear password",
 			"test_ok": "✓ Connected to {name}",
-			"not_connected_hint": "Not connected yet — tap \"Edit connection\" to set up Jellyfin.",
+			"not_connected_hint": "Not connected yet — set up Jellyfin in Network Settings.",
 			"tile_content_heading": "Tile content",
 			"content_added": "Recently added",
 			"content_played": "Continue watching",
@@ -772,7 +771,7 @@
 			"xmltv_url_label": "XMLTV URL",
 			"xmltv_hint": "\"Now playing\" titles are tried first from a HDHomeRun DVR subscription. If you don't have one, set an XMLTV guide URL here instead (the format used by Plex, Channels DVR, TVheadend, etc.) — its channel ids must match your HDHomeRun channel numbers (e.g. \"4.1\").",
 			"dvr_settings_heading": "DVR recording engine",
-			"not_connected_hint": "Not connected yet — tap \"Edit connection\" to set up HDHomeRun.",
+			"not_connected_hint": "Not connected yet — set up HDHomeRun in Network Settings.",
 			"tuner_count": "{count} tuners",
 			"tuner_label": "Tuner {index}",
 			"tuner_signal": "Signal {percent}%",
@@ -792,7 +791,8 @@
 			"recording_until": "until {time}",
 			"no_recordings": "No recordings in progress.",
 			"upcoming_rules": "{count} upcoming recording rules.",
-			"playback_failed_hint": "Playback failed — this tuner may not support this playback mode. Try \"{action}\" instead."
+			"playback_failed_hint": "Playback failed — this tuner may not support this playback mode. Try \"{action}\" instead.",
+			"edit_playback_settings": "Edit playback settings"
 		}
 	},
 	"screensaver": {
@@ -854,5 +854,32 @@
 		"create": "Create",
 		"add_error": "Could not create profile.",
 		"add_profile": "Add profile"
+	},
+	"network_settings": {
+		"title": "Network Settings",
+		"subtitle": "Shared connection settings for LAN devices — edited once here instead of per widget.",
+		"nav_link": "Network Settings",
+		"admin_only_hint": "Only admins can view network settings.",
+		"loading": "Loading…",
+		"load_error": "Could not load network settings.",
+		"section_pihole": "Pi-hole",
+		"section_jellyfin": "Jellyfin",
+		"section_synology": "Synology",
+		"section_asus_router": "Asus Router",
+		"section_hdhomerun": "HDHomeRun",
+		"section_container": "Container hosts",
+		"test_ok": "✓ {detail}",
+		"test_fail": "✗ {error}",
+		"save_error": "Could not save these settings.",
+		"add_host_heading": "Add a host",
+		"host_name_label": "Name",
+		"host_name_placeholder": "Docker",
+		"add_host_button": "Add host",
+		"add_host_error": "Could not add this host.",
+		"delete_host_button": "Delete",
+		"confirm_delete_host": "Delete this host?",
+		"cancel_delete_host": "Cancel",
+		"delete_host_error": "Could not delete this host.",
+		"no_container_hosts": "No container hosts yet."
 	}
 }

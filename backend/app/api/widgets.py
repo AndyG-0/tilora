@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,6 +13,7 @@ from app.auth import get_current_device, get_current_user, require_write_access
 from app.config import list_widget_configs, load_dashboard_config, resolve_tabs
 from app.plugins.ai_insights.plugin import AIInsightsPlugin
 from app.plugins.base import Plugin, registry
+from app.plugins.network_settings import resolve_network_settings
 from app.plugins.photos.plugin import PhotosPlugin
 from app.plugins.registry_types import PLUGIN_CLASSES_BY_TYPE
 from app.plugins.scoping import scoped_plugin
@@ -61,6 +62,11 @@ _PHOTO_INDEX_RELEVANT_SETTINGS = {
 }
 
 
+# Which viewport class a layout applies to, not which physical device — see
+# the `widget_layout` table comment in app.storage.db.
+Breakpoint = Literal["wide", "narrow"]
+
+
 class WidgetLayout(BaseModel):
     col: int
     row: int
@@ -75,6 +81,7 @@ class WidgetLayoutUpdate(BaseModel):
 
 class UpdateWidgetsLayoutRequest(BaseModel):
     widgets: list[WidgetLayoutUpdate]
+    breakpoint: Breakpoint
 
 
 class AddWidgetRequest(BaseModel):
@@ -88,18 +95,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/widgets", tags=["widgets"])
 
 
-def _list_widgets_sync(user_id: str, device_id: str) -> list[dict[str, Any]]:
+def _list_widgets_sync(user_id: str, breakpoint: Breakpoint) -> list[dict[str, Any]]:
     config = load_dashboard_config()
     default_tab = resolve_tabs(config)[0]["id"]
-    layouts = list_widget_layouts(user_id, device_id)
+    layouts = list_widget_layouts(user_id, breakpoint)
     return [
         {
             "id": w["id"],
             "type": w["type"],
             # A drag-to-rearrange edit persisted at runtime overrides the
-            # dashboard.yaml position, scoped to this (user, device) pair —
-            # the same layering pattern widget settings overrides use, just
-            # with an extra dimension.
+            # dashboard.yaml position, scoped to this (user, breakpoint)
+            # pair — the same layering pattern widget settings overrides
+            # use, just with an extra dimension.
             "layout": {**w["layout"], **layouts.get(w["id"], {})},
             "tab": w.get("tab", default_tab),
         }
@@ -109,14 +116,12 @@ def _list_widgets_sync(user_id: str, device_id: str) -> list[dict[str, Any]]:
 
 
 @router.get("")
-async def list_widgets(
-    user: dict[str, Any] = Depends(get_current_user), device: dict[str, Any] = Depends(get_current_device)
-):
+async def list_widgets(breakpoint: Breakpoint, user: dict[str, Any] = Depends(get_current_user)):
     # One thread hop for the whole list (config-file read + one bulk layout
     # query) rather than one per widget — cheaper than to_thread-per-call
     # and this whole read is what needs to move off the event loop, not each
     # individual piece of it.
-    return await asyncio.to_thread(_list_widgets_sync, user["id"], device["id"])
+    return await asyncio.to_thread(_list_widgets_sync, user["id"], breakpoint)
 
 
 @router.get("/types")
@@ -131,10 +136,9 @@ async def widget_types():
 async def update_widgets_layout(
     payload: UpdateWidgetsLayoutRequest,
     user: dict[str, Any] = Depends(get_current_user),
-    device: dict[str, Any] = Depends(get_current_device),
 ):
     for entry in payload.widgets:
-        await asyncio.to_thread(save_widget_layout, user["id"], device["id"], entry.id, entry.layout.model_dump())
+        await asyncio.to_thread(save_widget_layout, user["id"], payload.breakpoint, entry.id, entry.layout.model_dump())
     return {"status": "ok"}
 
 
@@ -164,7 +168,10 @@ async def add_widget(payload: AddWidgetRequest, user: dict[str, Any] = Depends(g
     if settings:
         await asyncio.to_thread(save_widget_settings, widget_id, settings)
 
-    plugin = plugin_cls({"id": widget_id, "settings": settings})
+    live_settings = settings
+    if plugin_cls.network_integration_type:
+        live_settings = {**settings, **resolve_network_settings(plugin_cls, settings)}
+    plugin = plugin_cls({"id": widget_id, "settings": live_settings})
     registry.register(plugin)
     if isinstance(plugin, AIInsightsPlugin):
         schedule_ai_widget(plugin)
@@ -282,8 +289,32 @@ async def update_widget_settings(
         return merged
 
     require_write_access(plugin, user)
-    plugin.config["settings"].update(payload)
-    await asyncio.to_thread(save_widget_settings, widget_id, plugin.config["settings"])
+    plugin_cls = type(plugin)
+    if plugin_cls.network_integration_type:
+        # Connection fields (host, password, ...) live in a network
+        # integration row now, edited only via /api/network-settings — this
+        # route only accepts the plugin's remaining display-only keys (plus,
+        # for Container, network_integration_id).
+        allowed_keys = set(plugin_cls.default_settings.keys())
+        invalid_keys = set(payload.keys()) - allowed_keys
+        if invalid_keys:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Connection settings for this widget type are edited at the network level "
+                    f"(see /api/network-settings), not per-widget: {', '.join(sorted(invalid_keys))}"
+                ),
+            )
+        plugin.config["settings"].update(payload)
+        if not plugin_cls.network_integration_singleton:
+            # e.g. Container: picking a different network_integration_id
+            # means re-resolving which host's connection fields apply.
+            plugin.config["settings"].update(resolve_network_settings(plugin_cls, plugin.config["settings"]))
+        persisted = {k: v for k, v in plugin.config["settings"].items() if k in allowed_keys}
+        await asyncio.to_thread(save_widget_settings, widget_id, persisted)
+    else:
+        plugin.config["settings"].update(payload)
+        await asyncio.to_thread(save_widget_settings, widget_id, plugin.config["settings"])
     # Force the next summary/detail request to reflect the new settings
     # instead of serving a stale cached response. Every cache entry for this
     # widget starts with "{kind}:{widget_id}:" (locale is always appended,

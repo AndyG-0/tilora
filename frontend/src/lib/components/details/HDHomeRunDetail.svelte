@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { api, type HDHomeRunTestConnectionResult, type HDHomeRunTranscodePreset } from '$lib/api';
+	import { api, type HDHomeRunTranscodePreset } from '$lib/api';
 	import HDHomeRunPlayer from '$lib/components/HDHomeRunPlayer.svelte';
 	import { user } from '$lib/stores/user';
 	import { _ } from 'svelte-i18n';
@@ -66,11 +66,6 @@
 		dvr_info: HDHomeRunDvrInfo | null;
 		recordings_in_progress: HDHomeRunRecording[];
 		upcoming_recording_rules_count: number;
-		tuner_host: string;
-		tuner_port: number;
-		dvr_host: string;
-		dvr_port: number;
-		epg_url: string;
 		playback_mode: string;
 		hwaccel: string;
 		custom_ffmpeg_args: string;
@@ -85,21 +80,11 @@
 	let hdhomerun = $state(initialData);
 
 	let editing = $state(false);
-	let tunerHostInput = $state('');
-	let tunerPortInput = $state(80);
-	let dvrHostInput = $state('');
-	let dvrPortInput = $state(59090);
-	let epgUrlInput = $state('');
 	let playbackModeInput = $state('server_transcode');
 	let hwaccelInput = $state('software');
 	let customFfmpegArgsInput = $state('');
 	let saving = $state(false);
 	let error = $state<string | null>(null);
-
-	let testingTuner = $state(false);
-	let tunerTestResult = $state<HDHomeRunTestConnectionResult | null>(null);
-	let testingDvr = $state(false);
-	let dvrTestResult = $state<HDHomeRunTestConnectionResult | null>(null);
 
 	let transcodePresets = $state<HDHomeRunTranscodePreset[]>([]);
 	const selectedPreset = $derived(transcodePresets.find((p) => p.id === hwaccelInput) ?? null);
@@ -182,16 +167,9 @@
 	}
 
 	async function openEditor() {
-		tunerHostInput = hdhomerun.tuner_host;
-		tunerPortInput = hdhomerun.tuner_port;
-		dvrHostInput = hdhomerun.dvr_host;
-		dvrPortInput = hdhomerun.dvr_port;
-		epgUrlInput = hdhomerun.epg_url;
 		playbackModeInput = hdhomerun.playback_mode;
 		hwaccelInput = hdhomerun.hwaccel;
 		customFfmpegArgsInput = hdhomerun.custom_ffmpeg_args;
-		tunerTestResult = null;
-		dvrTestResult = null;
 		editing = true;
 		if (transcodePresets.length === 0) {
 			try {
@@ -204,39 +182,10 @@
 
 	function currentFormSettings(): Record<string, unknown> {
 		return {
-			tuner_host: tunerHostInput,
-			tuner_port: tunerPortInput,
-			dvr_host: dvrHostInput,
-			dvr_port: dvrPortInput,
-			epg_url: epgUrlInput,
 			playback_mode: playbackModeInput,
 			hwaccel: hwaccelInput,
 			custom_ffmpeg_args: customFfmpegArgsInput,
 		};
-	}
-
-	async function testTunerConnection() {
-		testingTuner = true;
-		tunerTestResult = null;
-		try {
-			tunerTestResult = await api.hdhomerunTestTunerConnection(widgetId, currentFormSettings());
-		} catch {
-			tunerTestResult = { ok: false, name: null, error: get(_)('common.backend_unreachable') };
-		} finally {
-			testingTuner = false;
-		}
-	}
-
-	async function testDvrConnection() {
-		testingDvr = true;
-		dvrTestResult = null;
-		try {
-			dvrTestResult = await api.hdhomerunTestDvrConnection(widgetId, currentFormSettings());
-		} catch {
-			dvrTestResult = { ok: false, name: null, error: get(_)('common.backend_unreachable') };
-		} finally {
-			testingDvr = false;
-		}
 	}
 
 	async function saveSettings() {
@@ -269,37 +218,13 @@
 	<h1>HDHomeRun</h1>
 	{#if $user?.role === 'admin'}
 		<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
-			{editing ? $_('common.cancel') : $_('common.edit_connection')}
+			{editing ? $_('common.cancel') : $_('hdhomerun.detail.edit_playback_settings')}
 		</button>
 	{/if}
 </div>
 
 {#if editing}
 	<div class="settings-form">
-		<h2>{$_('hdhomerun.detail.tuner_heading')}</h2>
-		<label>
-			{$_('hdhomerun.detail.host_label')}
-			<input type="text" bind:value={tunerHostInput} placeholder="hdhomerun.local" />
-		</label>
-		<label>
-			{$_('hdhomerun.detail.port_label')}
-			<input type="number" min="1" max="65535" bind:value={tunerPortInput} />
-		</label>
-		<div class="test-row">
-			<button class="test" disabled={testingTuner} onclick={testTunerConnection}>
-				{testingTuner ? $_('common.testing') : $_('common.test_connection')}
-			</button>
-			{#if tunerTestResult}
-				{#if tunerTestResult.ok}
-					<span class="test-result ok"
-						>{$_('hdhomerun.detail.test_ok', { values: { name: tunerTestResult.name } })}</span
-					>
-				{:else}
-					<span class="test-result fail">✗ {tunerTestResult.error}</span>
-				{/if}
-			{/if}
-		</div>
-
 		<h2>{$_('hdhomerun.detail.playback_heading')}</h2>
 		<div class="auth-mode">
 			<button
@@ -350,39 +275,6 @@
 				{$_('hdhomerun.detail.external_only_hint')}
 			</p>
 		{/if}
-
-		<h2>{$_('hdhomerun.detail.guide_heading')} <span class="optional">{$_('hdhomerun.detail.optional')}</span></h2>
-		<label>
-			{$_('hdhomerun.detail.xmltv_url_label')}
-			<input type="text" bind:value={epgUrlInput} placeholder="http://example.com/guide.xml" />
-		</label>
-		<p class="hint">
-			{$_('hdhomerun.detail.xmltv_hint')}
-		</p>
-
-		<h2>
-			{$_('hdhomerun.detail.dvr_settings_heading')} <span class="optional">{$_('hdhomerun.detail.optional')}</span>
-		</h2>
-		<label>
-			{$_('hdhomerun.detail.host_label')}
-			<input type="text" bind:value={dvrHostInput} placeholder="dvr.local" />
-		</label>
-		<label>
-			{$_('hdhomerun.detail.port_label')}
-			<input type="number" min="1" max="65535" bind:value={dvrPortInput} />
-		</label>
-		<div class="test-row">
-			<button class="test" disabled={testingDvr} onclick={testDvrConnection}>
-				{testingDvr ? $_('common.testing') : $_('common.test_connection')}
-			</button>
-			{#if dvrTestResult}
-				{#if dvrTestResult.ok}
-					<span class="test-result ok">{$_('hdhomerun.detail.test_ok', { values: { name: dvrTestResult.name } })}</span>
-				{:else}
-					<span class="test-result fail">✗ {dvrTestResult.error}</span>
-				{/if}
-			{/if}
-		</div>
 
 		{#if error}
 			<p class="hint error">{error}</p>
@@ -616,12 +508,6 @@
 		margin-top: 0;
 	}
 
-	.optional {
-		font-weight: normal;
-		color: var(--color-text-muted);
-		font-size: 0.85rem;
-	}
-
 	.settings-form label {
 		display: flex;
 		flex-direction: column;
@@ -630,8 +516,6 @@
 		color: var(--color-text-muted);
 	}
 
-	.settings-form input[type='text'],
-	.settings-form input[type='number'],
 	.settings-form select,
 	.settings-form textarea {
 		font: inherit;
@@ -682,34 +566,6 @@
 	.auth-mode button.active {
 		border-color: var(--color-accent);
 		color: var(--color-accent);
-	}
-
-	.test-row {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-	}
-
-	.test {
-		align-self: flex-start;
-		background: none;
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		padding: 0.5rem 1rem;
-		color: var(--color-accent);
-		cursor: pointer;
-	}
-
-	.test-result {
-		font-size: 0.85rem;
-	}
-
-	.test-result.ok {
-		color: var(--color-success);
-	}
-
-	.test-result.fail {
-		color: var(--color-error);
 	}
 
 	.save {

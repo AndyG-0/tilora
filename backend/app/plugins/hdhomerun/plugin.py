@@ -44,12 +44,15 @@ class HDHomeRunPlugin(Plugin):
     id = "hdhomerun"
     name = "HDHomeRun"
     refresh_interval_seconds = 120
-    default_settings = {
+    network_integration_type = "hdhomerun"
+    network_default_settings = {
         "tuner_host": "",
         "tuner_port": 80,
         "dvr_host": "",
         "dvr_port": 59090,
         "epg_url": "",
+    }
+    default_settings = {
         # "server_transcode" | "external" — see the module docstring for
         # the tradeoffs of each.
         "playback_mode": "server_transcode",

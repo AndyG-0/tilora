@@ -1,15 +1,6 @@
-import { render, screen, fireEvent } from '@testing-library/svelte';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/svelte';
+import { describe, expect, it } from 'vitest';
 
-const { widgetDetail, updateWidgetSettings, synologyTestConnection } = vi.hoisted(() => ({
-	widgetDetail: vi.fn(),
-	updateWidgetSettings: vi.fn(),
-	synologyTestConnection: vi.fn(),
-}));
-vi.mock('$lib/api', () => ({ api: { widgetDetail, updateWidgetSettings, synologyTestConnection } }));
-vi.mock('$app/state', () => ({ page: { params: { id: 'synology' } } }));
-
-import { user } from '$lib/stores/user';
 import SynologyDetail from './SynologyDetail.svelte';
 
 const notConnected = {
@@ -42,17 +33,10 @@ const connected = {
 };
 
 describe('SynologyDetail', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-		// The edit-connection controls are admin-only — see settings_scope
-		// "network" in the backend.
-		user.set({ id: 'admin-user', name: 'Admin', avatar: null, role: 'admin' });
-	});
-
 	it('shows a not-connected hint', () => {
 		render(SynologyDetail, { props: { data: notConnected } });
 
-		expect(screen.getByText('Not connected yet — tap "Edit connection" to set up Synology.')).toBeInTheDocument();
+		expect(screen.getByText('Not connected yet — set up Synology in Network Settings.')).toBeInTheDocument();
 	});
 
 	it('renders volumes and system info when connected', () => {
@@ -71,82 +55,5 @@ describe('SynologyDetail', () => {
 		render(SynologyDetail, { props: { data: { ...connected, error: 'Could not reach the Synology NAS' } } });
 
 		expect(screen.getByText('Could not reach the Synology NAS')).toBeInTheDocument();
-	});
-
-	it('opens the settings editor with the current connection values', async () => {
-		render(SynologyDetail, { props: { data: connected } });
-
-		await fireEvent.click(screen.getByText('Edit connection'));
-
-		expect(screen.getByPlaceholderText('synology.local')).toHaveValue('syno.local');
-		expect(screen.getByPlaceholderText('admin')).toHaveValue('admin');
-	});
-
-	it('tests the connection', async () => {
-		synologyTestConnection.mockResolvedValue({ ok: true, model: 'DS920+', error: null });
-
-		render(SynologyDetail, { props: { data: connected } });
-
-		await fireEvent.click(screen.getByText('Edit connection'));
-		await fireEvent.click(screen.getByText('Test connection'));
-
-		expect(await screen.findByText('✓ Connected (DS920+)')).toBeInTheDocument();
-		expect(synologyTestConnection).toHaveBeenCalledWith(
-			'synology',
-			expect.objectContaining({ host: 'syno.local', username: 'admin' }),
-		);
-	});
-
-	it('shows a failed test-connection result', async () => {
-		synologyTestConnection.mockResolvedValue({ ok: false, model: null, error: 'Synology rejected credentials' });
-
-		render(SynologyDetail, { props: { data: connected } });
-
-		await fireEvent.click(screen.getByText('Edit connection'));
-		await fireEvent.click(screen.getByText('Test connection'));
-
-		expect(await screen.findByText('✗ Synology rejected credentials')).toBeInTheDocument();
-	});
-
-	it('saves settings and refetches', async () => {
-		updateWidgetSettings.mockResolvedValue({ status: 'ok' });
-		widgetDetail.mockResolvedValue({ ...connected, host: 'newhost.local' });
-
-		render(SynologyDetail, { props: { data: connected } });
-
-		await fireEvent.click(screen.getByText('Edit connection'));
-		await fireEvent.input(screen.getByPlaceholderText('synology.local'), {
-			target: { value: 'newhost.local' },
-		});
-		await fireEvent.click(screen.getByText('Save'));
-
-		await vi.waitFor(() =>
-			expect(updateWidgetSettings).toHaveBeenCalledWith('synology', {
-				host: 'newhost.local',
-				port: 5000,
-				use_https: false,
-				username: 'admin',
-			}),
-		);
-		expect(widgetDetail).toHaveBeenCalledWith('synology');
-	});
-
-	it('shows an error if saving settings fails', async () => {
-		updateWidgetSettings.mockRejectedValue(new Error('boom'));
-
-		render(SynologyDetail, { props: { data: connected } });
-
-		await fireEvent.click(screen.getByText('Edit connection'));
-		await fireEvent.click(screen.getByText('Save'));
-
-		expect(await screen.findByText('Could not save the connection settings.')).toBeInTheDocument();
-	});
-
-	it('hides the edit-connection control for a non-admin', () => {
-		user.set({ id: 'member-user', name: 'Member', avatar: null, role: 'member' });
-
-		render(SynologyDetail, { props: { data: connected } });
-
-		expect(screen.queryByText('Edit connection')).not.toBeInTheDocument();
 	});
 });

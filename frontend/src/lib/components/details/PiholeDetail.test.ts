@@ -1,18 +1,15 @@
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-const { widgetDetail, updateWidgetSettings, piholeTestConnection, piholeSetBlocking } = vi.hoisted(() => ({
+const { widgetDetail, piholeSetBlocking } = vi.hoisted(() => ({
 	widgetDetail: vi.fn(),
-	updateWidgetSettings: vi.fn(),
-	piholeTestConnection: vi.fn(),
 	piholeSetBlocking: vi.fn(),
 }));
 vi.mock('$lib/api', () => ({
-	api: { widgetDetail, updateWidgetSettings, piholeTestConnection, piholeSetBlocking },
+	api: { widgetDetail, piholeSetBlocking },
 }));
 vi.mock('$app/state', () => ({ page: { params: { id: 'pihole' } } }));
 
-import { user } from '$lib/stores/user';
 import PiholeDetail from './PiholeDetail.svelte';
 
 const notConnected = {
@@ -51,13 +48,12 @@ const connected = {
 describe('PiholeDetail', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		user.set({ id: 'admin-user', name: 'Admin', avatar: null, role: 'admin' });
 	});
 
 	it('shows a not-connected hint', () => {
 		render(PiholeDetail, { props: { data: notConnected } });
 
-		expect(screen.getByText('Not connected yet — tap "Edit connection" to set up Pi-hole.')).toBeInTheDocument();
+		expect(screen.getByText('Not connected yet — set up Pi-hole in Network Settings.')).toBeInTheDocument();
 	});
 
 	it('renders stats and domain lists when connected', () => {
@@ -95,42 +91,5 @@ describe('PiholeDetail', () => {
 		await fireEvent.click(screen.getByText('Pause 5m'));
 
 		expect(piholeSetBlocking).toHaveBeenCalledWith('pihole', false, 300);
-	});
-
-	it('tests the connection and saves settings from the editor', async () => {
-		piholeTestConnection.mockResolvedValue({ ok: true, version: '5.0', error: null });
-		updateWidgetSettings.mockResolvedValue({ status: 'ok' });
-		widgetDetail.mockResolvedValue(connected);
-
-		render(PiholeDetail, { props: { data: connected } });
-
-		await fireEvent.click(screen.getByText('Edit connection'));
-		await fireEvent.click(screen.getByText('Test connection'));
-
-		expect(await screen.findByText('✓ Connected (Pi-hole 5.0)')).toBeInTheDocument();
-
-		await fireEvent.click(screen.getByText('Save'));
-
-		await vi.waitFor(() => expect(updateWidgetSettings).toHaveBeenCalled());
-		expect(widgetDetail).toHaveBeenCalledWith('pihole');
-	});
-
-	it('shows a failed test-connection result', async () => {
-		piholeTestConnection.mockResolvedValue({ ok: false, version: null, error: 'Pi-hole rejected credentials' });
-
-		render(PiholeDetail, { props: { data: connected } });
-
-		await fireEvent.click(screen.getByText('Edit connection'));
-		await fireEvent.click(screen.getByText('Test connection'));
-
-		expect(await screen.findByText('✗ Pi-hole rejected credentials')).toBeInTheDocument();
-	});
-
-	it('hides the edit-connection control for a non-admin', () => {
-		user.set({ id: 'member-user', name: 'Member', avatar: null, role: 'member' });
-
-		render(PiholeDetail, { props: { data: connected } });
-
-		expect(screen.queryByText('Edit connection')).not.toBeInTheDocument();
 	});
 });

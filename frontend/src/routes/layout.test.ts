@@ -15,7 +15,6 @@ const {
 	setupStatus,
 	getPreferences,
 	listWidgets,
-	layoutStatus,
 	pageState,
 	getScreensaverSettings,
 } = vi.hoisted(() => ({
@@ -27,7 +26,6 @@ const {
 	// Resolved immediately (not just in beforeEach) because $lib/stores/widgets
 	// calls this eagerly at module-import time, before any test body runs.
 	listWidgets: vi.fn().mockResolvedValue([]),
-	layoutStatus: vi.fn(),
 	pageState: { url: new URL('http://localhost/') },
 	// Never resolved by default so the screensaver stays inert (disabled) in
 	// tests that don't care about it — mirrors getPreferences below.
@@ -44,9 +42,7 @@ vi.mock('$lib/api', () => ({
 		setupStatus,
 		getPreferences,
 		listWidgets,
-		layoutStatus,
 		listDevices: vi.fn().mockResolvedValue([]),
-		copyDeviceLayout: vi.fn(),
 		getScreensaverSettings,
 		updateScreensaverSettings: vi.fn(),
 	},
@@ -80,9 +76,6 @@ describe('+layout.svelte', () => {
 		registerDevice.mockResolvedValue({ id: 'd1', name: 'New Device', is_new: false });
 		getPreferences.mockReturnValue(new Promise(() => {}));
 		getScreensaverSettings.mockReturnValue(new Promise(() => {}));
-		// Most tests don't exercise the "copy layout from another device" prompt —
-		// reporting a layout already exists keeps it from ever being offered.
-		layoutStatus.mockResolvedValue({ has_layout: true });
 	});
 
 	it('redirects to /setup on a fresh install with no admin yet', async () => {

@@ -5,8 +5,6 @@ const {
 	goto,
 	widgetDetail,
 	updateWidgetSettings,
-	hdhomerunTestTunerConnection,
-	hdhomerunTestDvrConnection,
 	hdhomerunTranscodePresets,
 	hdhomerunPlaylistUrl,
 	hdhomerunPlaybackUrl,
@@ -14,8 +12,6 @@ const {
 	goto: vi.fn(),
 	widgetDetail: vi.fn(),
 	updateWidgetSettings: vi.fn(),
-	hdhomerunTestTunerConnection: vi.fn(),
-	hdhomerunTestDvrConnection: vi.fn(),
 	hdhomerunTranscodePresets: vi.fn(),
 	hdhomerunPlaylistUrl: vi.fn((widgetId: string, ch: string) => `https://example.com/${widgetId}/playlist/${ch}`),
 	hdhomerunPlaybackUrl: vi.fn((url: string) => `https://example.com/proxy?src=${url}`),
@@ -25,8 +21,6 @@ vi.mock('$lib/api', () => ({
 	api: {
 		widgetDetail,
 		updateWidgetSettings,
-		hdhomerunTestTunerConnection,
-		hdhomerunTestDvrConnection,
 		hdhomerunTranscodePresets,
 		hdhomerunPlaylistUrl,
 		hdhomerunPlaybackUrl,
@@ -56,11 +50,6 @@ const notConnected = {
 	dvr_info: null,
 	recordings_in_progress: [],
 	upcoming_recording_rules_count: 0,
-	tuner_host: '',
-	tuner_port: 80,
-	dvr_host: '',
-	dvr_port: 59090,
-	epg_url: '',
 	playback_mode: 'server_transcode',
 	hwaccel: 'software',
 	custom_ffmpeg_args: '',
@@ -102,7 +91,7 @@ describe('HDHomeRunDetail', () => {
 	it('shows a not-connected hint', () => {
 		render(HDHomeRunDetail, { props: { data: notConnected } });
 
-		expect(screen.getByText('Not connected yet — tap "Edit connection" to set up HDHomeRun.')).toBeInTheDocument();
+		expect(screen.getByText('Not connected yet — set up HDHomeRun in Network Settings.')).toBeInTheDocument();
 	});
 
 	it('renders tuner info and the channel lineup with guide entries', () => {
@@ -168,41 +157,42 @@ describe('HDHomeRunDetail', () => {
 		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 	});
 
-	it('loads transcode presets when opening the editor and tests the tuner connection', async () => {
+	it('loads transcode presets when opening the playback settings editor', async () => {
 		hdhomerunTranscodePresets.mockResolvedValue([
 			{ id: 'software', label: 'Software', description: 'CPU only', input_args: [], output_args: ['-c:v', 'libx264'] },
 		]);
-		hdhomerunTestTunerConnection.mockResolvedValue({ ok: true, name: 'HDHomeRun Connect', error: null });
 
 		render(HDHomeRunDetail, { props: { data: connected } });
 
-		await fireEvent.click(screen.getByText('Edit connection'));
+		await fireEvent.click(screen.getByText('Edit playback settings'));
 
 		expect(await screen.findByText('Software')).toBeInTheDocument();
-
-		await fireEvent.click(screen.getAllByText('Test connection')[0]);
-
-		expect(await screen.findByText('✓ Connected to HDHomeRun Connect')).toBeInTheDocument();
 	});
 
-	it('saves connection settings and refetches', async () => {
+	it('saves playback settings and refetches', async () => {
 		updateWidgetSettings.mockResolvedValue({ status: 'ok' });
 		widgetDetail.mockResolvedValue(connected);
 
 		render(HDHomeRunDetail, { props: { data: connected } });
 
-		await fireEvent.click(screen.getByText('Edit connection'));
+		await fireEvent.click(screen.getByText('Edit playback settings'));
 		await fireEvent.click(screen.getByText('Save'));
 
-		await vi.waitFor(() => expect(updateWidgetSettings).toHaveBeenCalled());
+		await vi.waitFor(() =>
+			expect(updateWidgetSettings).toHaveBeenCalledWith('hdhomerun', {
+				playback_mode: 'server_transcode',
+				hwaccel: 'software',
+				custom_ffmpeg_args: '',
+			}),
+		);
 		expect(widgetDetail).toHaveBeenCalledWith('hdhomerun');
 	});
 
-	it('hides the edit-connection control for a non-admin', () => {
+	it('hides the edit-playback-settings control for a non-admin', () => {
 		user.set({ id: 'member-user', name: 'Member', avatar: null, role: 'member' });
 
 		render(HDHomeRunDetail, { props: { data: connected } });
 
-		expect(screen.queryByText('Edit connection')).not.toBeInTheDocument();
+		expect(screen.queryByText('Edit playback settings')).not.toBeInTheDocument();
 	});
 });

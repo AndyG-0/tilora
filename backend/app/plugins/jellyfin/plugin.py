@@ -30,7 +30,8 @@ class JellyfinPlugin(Plugin):
     # household policy — any user may override it for their own device even
     # though the rest of this plugin's settings are "network"-scope/admin-only.
     device_overridable_settings = frozenset({"playback_mode"})
-    default_settings = {
+    network_integration_type = "jellyfin"
+    network_default_settings = {
         "host": "",
         "port": 8096,
         "use_https": False,
@@ -38,6 +39,8 @@ class JellyfinPlugin(Plugin):
         "api_key": "",
         "username": "",
         "password": "",
+    }
+    default_settings = {
         "library_ids": [],  # optional filter; empty = show all libraries
         # "compatible" | "compatible_video" | "direct" — see jellyfin_client.open_video_stream
         "playback_mode": "compatible",
