@@ -134,6 +134,26 @@ describe('RSSDetail', () => {
 		expect(screen.getByText('No items yet.')).toBeInTheDocument();
 	});
 
+	it('shows a per-feed error instead of dropping a feed that failed to load', () => {
+		render(RSSDetail, {
+			props: {
+				data: {
+					...baseData,
+					all_feeds: [feedOne, feedTwo],
+					feed_ids: [1, 2],
+					feed_groups: [
+						...baseData.feed_groups,
+						{ feed_id: 2, name: 'Feed Two', items: [], error: 'This feed could not be loaded.' },
+					],
+				},
+			},
+		});
+
+		expect(screen.getByRole('heading', { level: 2, name: 'Feed Two' })).toBeInTheDocument();
+		expect(screen.getByText('This feed could not be loaded.')).toBeInTheDocument();
+		expect(screen.getByText('First headline')).toBeInTheDocument();
+	});
+
 	it('shows a distinct hint when no feeds are selected', () => {
 		render(RSSDetail, { props: { data: { ...baseData, feed_ids: [], feed_groups: [] } } });
 

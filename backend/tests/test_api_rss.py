@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import httpx
 import pytest
+import respx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -10,6 +12,15 @@ from app.plugins.base import registry
 from app.plugins.rss.plugin import RSSPlugin
 from app.storage import db
 from app.storage.cache import cache
+
+VALID_FEED = b"""<?xml version="1.0"?>
+<rss version="2.0">
+<channel>
+<title>A</title>
+<item><title>Item</title><link>https://example.com/item</link></item>
+</channel>
+</rss>
+"""
 
 
 @pytest.fixture
@@ -31,7 +42,10 @@ def test_list_feeds_returns_the_requesting_users_catalog(client, tmp_db):
     assert urls == ["https://a.example/feed.xml"]
 
 
+@respx.mock
 def test_add_feed_persists_and_returns_it(client, tmp_db):
+    respx.get("https://a.example/feed.xml").mock(return_value=httpx.Response(200, content=VALID_FEED))
+
     response = client.post("/api/rss/feeds", json={"url": "https://a.example/feed.xml", "name": "A"})
 
     assert response.status_code == 200
@@ -48,7 +62,29 @@ def test_add_feed_requires_a_url(client, tmp_db):
     assert response.status_code == 400
 
 
+@respx.mock
+def test_add_feed_rejects_an_unreachable_url(client, tmp_db):
+    respx.get("https://a.example/feed.xml").mock(return_value=httpx.Response(404))
+
+    response = client.post("/api/rss/feeds", json={"url": "https://a.example/feed.xml"})
+
+    assert response.status_code == 400
+    assert db.list_rss_feeds("user-1") == []
+
+
+@respx.mock
+def test_add_feed_rejects_a_url_that_is_not_a_feed(client, tmp_db):
+    respx.get("https://a.example/feed.xml").mock(return_value=httpx.Response(200, content=b"<html></html>"))
+
+    response = client.post("/api/rss/feeds", json={"url": "https://a.example/feed.xml"})
+
+    assert response.status_code == 400
+    assert db.list_rss_feeds("user-1") == []
+
+
+@respx.mock
 def test_add_feed_invalidates_every_rss_widgets_cache_for_this_user(client, tmp_db):
+    respx.get("https://a.example/feed.xml").mock(return_value=httpx.Response(200, content=VALID_FEED))
     registry.register(RSSPlugin({"id": "rss", "settings": {}}))
     registry.register(RSSPlugin({"id": "rss-abc12345", "settings": {}}))
     cache.set("summary:rss:user-1:en", {"stale": True}, ttl_seconds=60)

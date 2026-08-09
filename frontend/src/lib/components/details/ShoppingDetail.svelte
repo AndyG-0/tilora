@@ -25,7 +25,7 @@
 		adding = true;
 		error = null;
 		try {
-			await api.createShoppingItem(trimmed);
+			await api.createShoppingItem(page.params.id!, trimmed);
 			text = '';
 			await refresh();
 		} catch {

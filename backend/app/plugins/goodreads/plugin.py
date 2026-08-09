@@ -11,12 +11,15 @@ standard `title`/`link`.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, ClassVar
 
 import feedparser
 import httpx
 
 from app.plugins.base import Plugin
+
+logger = logging.getLogger(__name__)
 
 _SUMMARY_ITEM_COUNT = 5
 _DETAIL_ITEM_COUNT = 20
@@ -47,9 +50,17 @@ class GoodreadsPlugin(Plugin):
             return []
 
         url = f"https://www.goodreads.com/review/list_rss/{self.user_id}"
-        async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.get(url, params={"shelf": self.shelf})
-        response.raise_for_status()
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get(url, params={"shelf": self.shelf})
+            response.raise_for_status()
+        except httpx.HTTPError:
+            # A bad user_id or a Goodreads-side hiccup shouldn't 500 the
+            # whole widget — that would also lock the settings editor behind
+            # the same failing fetch, leaving no way to fix a bad setting
+            # from the UI (the editor lives in the detail view it crashes).
+            logger.warning("Could not fetch Goodreads shelf for widget '%s'", self.id, exc_info=True)
+            return []
 
         parsed = feedparser.parse(response.content)
         books = []
