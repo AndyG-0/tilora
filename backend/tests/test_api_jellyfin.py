@@ -13,7 +13,8 @@ from app.plugins.jellyfin.plugin import JellyfinPlugin
 
 
 def register_plugin(**settings) -> JellyfinPlugin:
-    plugin = JellyfinPlugin({"id": "jf1", "settings": {**JellyfinPlugin.default_settings, **settings}})
+    merged = {**JellyfinPlugin.network_default_settings, **JellyfinPlugin.default_settings, **settings}
+    plugin = JellyfinPlugin({"id": "jf1", "settings": merged})
     registry.register(plugin)
     return plugin
 
@@ -46,18 +47,6 @@ def test_unknown_widget_returns_404(client):
     assert response.status_code == 404
 
 
-def test_test_connection_requires_login(unauthenticated_client):
-    register_plugin(host="jf.local")
-    response = unauthenticated_client.post("/api/jellyfin/jf1/test-connection", json={})
-    assert response.status_code == 401
-
-
-def test_test_connection_rejects_member(member_client):
-    register_plugin(host="jf.local")
-    response = member_client.post("/api/jellyfin/jf1/test-connection", json={})
-    assert response.status_code == 403
-
-
 def test_list_libraries_requires_login(unauthenticated_client):
     register_plugin(host="jf.local")
     response = unauthenticated_client.get("/api/jellyfin/jf1/libraries")
@@ -72,43 +61,6 @@ def test_list_libraries_allows_member(member_client):
     response = member_client.get("/api/jellyfin/jf1/libraries")
 
     assert response.status_code == 200
-
-
-@respx.mock
-def test_test_connection_ok(client):
-    register_plugin(host="jf.local", api_key="k1")
-    respx.get("http://jf.local:8096/System/Info").mock(
-        return_value=httpx.Response(200, json={"ServerName": "Home Server"})
-    )
-
-    response = client.post("/api/jellyfin/jf1/test-connection", json={})
-
-    assert response.json() == {"ok": True, "server_name": "Home Server", "error": None}
-
-
-@respx.mock
-def test_test_connection_uses_candidate_settings_override(client):
-    register_plugin(host="jf.local", api_key="k1")
-    route = respx.get("http://other.local:8096/System/Info").mock(
-        return_value=httpx.Response(200, json={"ServerName": "Other Server"})
-    )
-
-    response = client.post("/api/jellyfin/jf1/test-connection", json={"host": "other.local"})
-
-    assert route.called
-    assert response.json()["server_name"] == "Other Server"
-
-
-@respx.mock
-def test_test_connection_reports_failure_without_raising(client):
-    register_plugin(host="jf.local", api_key="k1")
-    respx.get("http://jf.local:8096/System/Info").mock(return_value=httpx.Response(500))
-
-    response = client.post("/api/jellyfin/jf1/test-connection", json={})
-
-    assert response.status_code == 200
-    assert response.json()["ok"] is False
-    assert response.json()["error"]
 
 
 @respx.mock

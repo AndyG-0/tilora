@@ -1,18 +1,17 @@
-"""HDHomeRun connection-test and stream-proxy routes.
+"""HDHomeRun stream-proxy routes.
 
 Most of what the widget needs (lineup, guide, tuner status, DVR recordings)
 already fits the generic summary/detail JSON shape handled by
-`app/api/widgets.py`. This router covers what doesn't: testing a candidate
-(not-yet-saved) host/port before the user commits to it (same as Jellyfin's
-`/test-connection`); transcoding a channel's raw MPEG-2 stream to H.264/AAC
-via a local `ffmpeg` subprocess when `playback_mode` is "server_transcode"
-so it's playable in-browser; and handing a channel's raw stream off to a
-native player app for "Open in external player" — no browser can decode raw
-MPEG-2 itself, and a bare link to the MPEG-TS URL just downloads an opaque
-blob, so `/playlist` wraps it in a tiny `.m3u` file instead, which the
-OS/browser hands to whatever's registered for playlists (VLC, IINA, etc).
-Tuner and DVR engine are independent devices, so each gets its own test
-route.
+`app/api/widgets.py`. This router covers what doesn't: transcoding a
+channel's raw MPEG-2 stream to H.264/AAC via a local `ffmpeg` subprocess when
+`playback_mode` is "server_transcode" so it's playable in-browser; and
+handing a channel's raw stream off to a native player app for "Open in
+external player" — no browser can decode raw MPEG-2 itself, and a bare link
+to the MPEG-TS URL just downloads an opaque blob, so `/playlist` wraps it in
+a tiny `.m3u` file instead, which the OS/browser hands to whatever's
+registered for playlists (VLC, IINA, etc). Connection settings (tuner/DVR
+host, port) are edited at the network level now (see
+`app/api/network_settings.py`), not per-widget.
 """
 
 from __future__ import annotations
@@ -25,7 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
 from app import transcoding
-from app.auth import get_current_user, require_write_access
+from app.auth import get_current_user
 from app.integrations import hdhomerun_client
 from app.plugins.base import registry
 from app.plugins.hdhomerun.plugin import HDHomeRunPlugin
@@ -55,34 +54,6 @@ def _get_plugin(widget_id: str) -> HDHomeRunPlugin:
     if not isinstance(plugin, HDHomeRunPlugin):
         raise HTTPException(status_code=404, detail=f"Unknown HDHomeRun widget '{widget_id}'")
     return plugin
-
-
-@router.post("/{widget_id}/test-tuner-connection")
-async def test_tuner_connection(
-    widget_id: str, payload: dict[str, Any], user: dict[str, Any] = Depends(get_current_user)
-):
-    plugin = _get_plugin(widget_id)
-    require_write_access(plugin, user)
-    candidate_settings = {**plugin.config["settings"], **payload}
-    try:
-        name = await hdhomerun_client.test_tuner_connection(candidate_settings)
-    except hdhomerun_client.HDHomeRunError as exc:
-        return {"ok": False, "name": None, "error": str(exc)}
-    return {"ok": True, "name": name, "error": None}
-
-
-@router.post("/{widget_id}/test-dvr-connection")
-async def test_dvr_connection(
-    widget_id: str, payload: dict[str, Any], user: dict[str, Any] = Depends(get_current_user)
-):
-    plugin = _get_plugin(widget_id)
-    require_write_access(plugin, user)
-    candidate_settings = {**plugin.config["settings"], **payload}
-    try:
-        name = await hdhomerun_client.test_dvr_connection(candidate_settings)
-    except hdhomerun_client.HDHomeRunError as exc:
-        return {"ok": False, "name": None, "error": str(exc)}
-    return {"ok": True, "name": name, "error": None}
 
 
 @router.get("/transcode-presets")

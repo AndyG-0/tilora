@@ -23,7 +23,8 @@ class PiholePlugin(Plugin):
     id = "pihole"
     name = "Pi-hole"
     refresh_interval_seconds = 60
-    default_settings = {
+    network_integration_type = "pihole"
+    network_default_settings = {
         "host": "",
         "port": 80,
         "use_https": False,

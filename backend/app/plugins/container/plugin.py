@@ -23,6 +23,7 @@ from typing import Any, ClassVar
 
 from app.integrations import container_client
 from app.plugins.base import Plugin, ToolDef
+from app.storage.db import get_network_integration
 
 logger = logging.getLogger(__name__)
 
@@ -36,12 +37,20 @@ class ContainerPlugin(Plugin):
     id = "container"
     name = "Container"
     refresh_interval_seconds = 30
-    default_settings: ClassVar[dict[str, Any]] = {
+    network_integration_type = "container"
+    network_integration_singleton = False
+    # Only used as the starter template when creating a *new* named host via
+    # the network-settings API — an existing Container widget has no
+    # connection fields of its own, just a network_integration_id reference.
+    network_default_settings: ClassVar[dict[str, Any]] = {
         "engine": "docker",  # "docker" | "podman"
         "connection": "socket",  # "socket" | "tcp"
         "socket_path": "/var/run/docker.sock",
         "host": "",
         "port": 2375,
+    }
+    default_settings: ClassVar[dict[str, Any]] = {
+        "network_integration_id": "",
     }
     default_layout: ClassVar[dict[str, int]] = {"colSpan": 2, "rowSpan": 1}
 
@@ -58,7 +67,11 @@ class ContainerPlugin(Plugin):
         s = self._settings()
         engine = self._engine()
         engine_defaults = _ENGINE_DEFAULTS.get(engine, _ENGINE_DEFAULTS["docker"])
+        integration_id = s.get("network_integration_id", "")
+        integration = get_network_integration(integration_id) if integration_id else None
         return {
+            "network_integration_id": integration_id,
+            "network_integration_name": integration["name"] if integration else None,
             "engine": engine,
             "connection": s.get("connection", "socket"),
             "socket_path": s.get("socket_path", engine_defaults["socket_path"]),

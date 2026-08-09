@@ -153,10 +153,13 @@ describe('+page.svelte', () => {
 
 		await fireEvent.pointerUp(window, { clientX: 150, clientY: 0, pointerId: 1 });
 
-		expect(updateWidgetsLayout).toHaveBeenCalledWith([
-			{ id: 'w1', layout: { col: 2, row: 1, colSpan: 2, rowSpan: 1 } },
-			{ id: 'w2', layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 } },
-		]);
+		expect(updateWidgetsLayout).toHaveBeenCalledWith(
+			[
+				{ id: 'w1', layout: { col: 2, row: 1, colSpan: 2, rowSpan: 1 } },
+				{ id: 'w2', layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 } },
+			],
+			'wide',
+		);
 		expect(source.getAttribute('style')).toContain('grid-column: 2 / span 2');
 		expect(target.getAttribute('style')).toContain('grid-column: 1 / span 1');
 	});
@@ -176,9 +179,10 @@ describe('+page.svelte', () => {
 		await fireEvent.pointerMove(window, { clientX: 200, clientY: 0, pointerId: 1 });
 		await fireEvent.pointerUp(window, { clientX: 200, clientY: 0, pointerId: 1 });
 
-		expect(updateWidgetsLayout).toHaveBeenCalledWith([
-			{ id: 'w1', layout: { col: 3, row: 1, colSpan: 1, rowSpan: 1 } },
-		]);
+		expect(updateWidgetsLayout).toHaveBeenCalledWith(
+			[{ id: 'w1', layout: { col: 3, row: 1, colSpan: 1, rowSpan: 1 } }],
+			'wide',
+		);
 	});
 
 	it('resizes a widget by dragging its resize handle', async () => {
@@ -197,9 +201,10 @@ describe('+page.svelte', () => {
 
 		await fireEvent.pointerUp(window, { clientX: 100, clientY: 0, pointerId: 1 });
 
-		expect(updateWidgetsLayout).toHaveBeenCalledWith([
-			{ id: 'w1', layout: { col: 1, row: 1, colSpan: 2, rowSpan: 1 } },
-		]);
+		expect(updateWidgetsLayout).toHaveBeenCalledWith(
+			[{ id: 'w1', layout: { col: 1, row: 1, colSpan: 2, rowSpan: 1 } }],
+			'wide',
+		);
 		expect(cell).not.toHaveClass('resizing');
 	});
 });

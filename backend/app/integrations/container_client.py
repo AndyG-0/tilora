@@ -71,6 +71,11 @@ def _container_dict(entry: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+async def test_connection(settings: dict[str, Any]) -> str:
+    containers = await fetch_containers(settings)
+    return f"Connected ({len(containers)} container{'s' if len(containers) != 1 else ''} found)"
+
+
 async def fetch_containers(settings: dict[str, Any]) -> list[dict[str, Any]]:
     async with _client(settings) as client:
         try:

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { pollWidget } from '$lib/polling';
 	import { api } from '$lib/api';
+	import { scrollFade } from '$lib/scrollFade';
 	import TileCard from '$lib/components/TileCard.svelte';
 	import JellyfinPlayer from '$lib/components/JellyfinPlayer.svelte';
 	import type { JellyfinItem, JellyfinSection } from '$lib/api';
@@ -36,44 +37,48 @@
 </script>
 
 <TileCard {widgetId}>
-	<div class="title">Jellyfin</div>
-	{#if !summary}
-		<div class="condition">{$_('common.loading')}</div>
-	{:else if !summary.connected}
-		<div class="condition">{$_('common.not_connected')}</div>
-	{:else if summary.sections.some((section) => section.items.length > 0)}
-		<div class="sections">
-			{#each summary.sections as section (section.label)}
-				{#if section.items.length > 0}
-					<div class="section">
-						{#if summary.sections.length > 1}
-							<div class="section-label">{section.label}</div>
-						{/if}
-						<div class="posters">
-							{#each section.items as item (item.id)}
-								{#if item.has_poster}
-									<span
-										class="poster-btn"
-										role="button"
-										tabindex="0"
-										aria-label={$_('jellyfin.tile.play_aria', { values: { name: item.name } })}
-										onclick={(event) => playItem(event, item)}
-										onkeydown={(event) => {
-											if (event.key === 'Enter' || event.key === ' ') playItem(event, item);
-										}}
-									>
-										<img class="poster" src={api.jellyfinImageUrl(widgetId, item.id)} alt={item.name} />
-									</span>
+	<div class="widget">
+		<div class="title">Jellyfin</div>
+		{#if !summary}
+			<div class="condition">{$_('common.loading')}</div>
+		{:else if !summary.connected}
+			<div class="condition">{$_('common.not_connected')}</div>
+		{:else if summary.sections.some((section) => section.items.length > 0)}
+			<div class="scroll-wrap">
+				<div class="sections" use:scrollFade={summary}>
+					{#each summary.sections as section (section.label)}
+						{#if section.items.length > 0}
+							<div class="section">
+								{#if summary.sections.length > 1}
+									<div class="section-label">{section.label}</div>
 								{/if}
-							{/each}
-						</div>
-					</div>
-				{/if}
-			{/each}
-		</div>
-	{:else}
-		<div class="condition">{$_('jellyfin.tile.nothing_to_show')}</div>
-	{/if}
+								<div class="posters">
+									{#each section.items as item (item.id)}
+										{#if item.has_poster}
+											<span
+												class="poster-btn"
+												role="button"
+												tabindex="0"
+												aria-label={$_('jellyfin.tile.play_aria', { values: { name: item.name } })}
+												onclick={(event) => playItem(event, item)}
+												onkeydown={(event) => {
+													if (event.key === 'Enter' || event.key === ' ') playItem(event, item);
+												}}
+											>
+												<img class="poster" src={api.jellyfinImageUrl(widgetId, item.id)} alt={item.name} />
+											</span>
+										{/if}
+									{/each}
+								</div>
+							</div>
+						{/if}
+					{/each}
+				</div>
+			</div>
+		{:else}
+			<div class="condition">{$_('jellyfin.tile.nothing_to_show')}</div>
+		{/if}
+	</div>
 </TileCard>
 
 {#if playingItem}
@@ -85,6 +90,13 @@
 {/if}
 
 <style>
+	.widget {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		min-height: 0;
+	}
+
 	.title {
 		font-size: 1rem;
 		font-weight: 600;
@@ -92,11 +104,57 @@
 		margin: 0 0 0.35rem;
 	}
 
+	.scroll-wrap {
+		position: relative;
+		flex: 1;
+		min-height: 0;
+	}
+
+	.scroll-wrap::before,
+	.scroll-wrap::after {
+		content: '';
+		position: absolute;
+		left: 0;
+		right: 0;
+		height: 1.25rem;
+		pointer-events: none;
+		opacity: 0;
+		transition: opacity 0.15s ease;
+	}
+
+	.scroll-wrap::before {
+		top: 0;
+		background: linear-gradient(to bottom, var(--color-surface), transparent);
+	}
+
+	.scroll-wrap::after {
+		bottom: 0;
+		background: linear-gradient(to top, var(--color-surface), transparent);
+	}
+
+	.scroll-wrap:global(.fade-top)::before {
+		opacity: 1;
+	}
+
+	.scroll-wrap:global(.fade-bottom)::after {
+		opacity: 1;
+	}
+
 	.sections {
 		display: flex;
 		flex-direction: column;
 		gap: 0.6rem;
-		overflow: hidden;
+		height: 100%;
+		overflow-y: auto;
+	}
+
+	.sections::-webkit-scrollbar {
+		width: 4px;
+	}
+
+	.sections::-webkit-scrollbar-thumb {
+		background: var(--color-border);
+		border-radius: 2px;
 	}
 
 	.section-label {
@@ -111,11 +169,22 @@
 	.posters {
 		display: flex;
 		gap: 0.5rem;
-		overflow: hidden;
+		overflow-x: auto;
+		padding-bottom: 0.25rem;
+	}
+
+	.posters::-webkit-scrollbar {
+		height: 4px;
+	}
+
+	.posters::-webkit-scrollbar-thumb {
+		background: var(--color-border);
+		border-radius: 2px;
 	}
 
 	.poster-btn {
 		display: block;
+		flex-shrink: 0;
 		cursor: pointer;
 		border-radius: 0.5rem;
 	}

@@ -1,14 +1,10 @@
-"""Pi-hole test-connection and blocking-control routes.
+"""Pi-hole blocking-control route.
 
-A dedicated router rather than folding into `widgets.py`, since both routes
-need Pi-hole-specific behavior the generic summary/detail/settings endpoints
-don't cover: testing not-yet-saved connection settings, and immediately
-invalidating cached summary/detail data after a blocking-state change so the
-tile doesn't show a stale status until the next refresh interval. Settings
-are read from the *live* registered plugin instance (not
-`app.config.widget_config`, which only reflects `dashboard.yaml` and misses
-DB-persisted overrides) so a connection just saved from the widget's detail
-view works immediately — same reasoning as `app/api/jellyfin.py`.
+A dedicated router rather than folding into `widgets.py`, since it needs to
+immediately invalidate cached summary/detail data after a blocking-state
+change so the tile doesn't show a stale status until the next refresh
+interval. Connection settings are edited at the network level now (see
+`app/api/network_settings.py`), not per-widget.
 """
 
 from __future__ import annotations
@@ -31,18 +27,6 @@ def _get_plugin(widget_id: str) -> PiholePlugin:
     if not isinstance(plugin, PiholePlugin):
         raise HTTPException(status_code=404, detail=f"Unknown Pi-hole widget '{widget_id}'")
     return plugin
-
-
-@router.post("/{widget_id}/test-connection")
-async def test_connection(widget_id: str, payload: dict[str, Any], user: dict[str, Any] = Depends(get_current_user)):
-    plugin = _get_plugin(widget_id)
-    require_write_access(plugin, user)
-    candidate_settings = {**plugin.config["settings"], **payload}
-    try:
-        version = await pihole_client.test_connection(candidate_settings, widget_id)
-    except pihole_client.PiholeError as exc:
-        return {"ok": False, "version": None, "error": str(exc)}
-    return {"ok": True, "version": version, "error": None}
 
 
 @router.post("/{widget_id}/blocking")

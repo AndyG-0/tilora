@@ -33,7 +33,7 @@
 		import('mpegts.js').then(({ default: mpegts }) => {
 			if (destroyed) return;
 			player = mpegts.createPlayer(
-				{ type: 'mse', isLive: true, url: src },
+				{ type: 'mse', isLive: true, url: src, withCredentials: true },
 				{ enableStashBuffer: false, liveBufferLatencyChasing: true },
 			);
 			player.on(mpegts.Events.ERROR, () => {

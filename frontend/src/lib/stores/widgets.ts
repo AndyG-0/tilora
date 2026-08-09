@@ -1,11 +1,12 @@
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { api, type WidgetLayout, type WidgetSummaryMeta } from '$lib/api';
+import { breakpoint } from './breakpoint';
 
 export const widgets = writable<WidgetSummaryMeta[]>([]);
 
 export function reloadWidgets() {
 	return api
-		.listWidgets()
+		.listWidgets(get(breakpoint))
 		.then(widgets.set)
 		.catch(() => {
 			// keep whatever was last loaded successfully
@@ -33,4 +34,8 @@ export function removeWidgetLocal(id: string) {
 	widgets.update((current) => current.filter((widget) => widget.id !== id));
 }
 
-reloadWidgets();
+// Fires immediately on subscribe (covering the initial load) and again on
+// every subsequent breakpoint change (e.g. a tablet rotated, or the browser
+// window resized across the 700px threshold), keeping the widget list's
+// layout in sync with whichever breakpoint's positions now apply.
+breakpoint.subscribe(() => reloadWidgets());

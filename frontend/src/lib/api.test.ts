@@ -15,9 +15,9 @@ describe('api', () => {
 		];
 		vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => widgets }));
 
-		const result = await api.listWidgets();
+		const result = await api.listWidgets('wide');
 
-		expect(fetch).toHaveBeenCalledWith('http://api.test/api/widgets', { credentials: 'include' });
+		expect(fetch).toHaveBeenCalledWith('http://api.test/api/widgets?breakpoint=wide', { credentials: 'include' });
 		expect(result).toEqual(widgets);
 	});
 
@@ -216,26 +216,17 @@ describe('api', () => {
 		});
 	});
 
-	it('layoutStatus fetches the layout-status endpoint', async () => {
-		const status = { has_layout: true };
-		vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => status }));
-
-		const result = await api.layoutStatus();
-
-		expect(fetch).toHaveBeenCalledWith('http://api.test/api/devices/me/layout-status', { credentials: 'include' });
-		expect(result).toEqual(status);
-	});
-
-	it('copyDeviceLayout POSTs the source device id to the copy-layout endpoint', async () => {
+	it('updateWidgetsLayout PUTs the widgets and breakpoint to the layout endpoint', async () => {
 		vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ status: 'ok' }) }));
+		const widgets = [{ id: 'weather', layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 } }];
 
-		await api.copyDeviceLayout('dev1');
+		await api.updateWidgetsLayout(widgets, 'narrow');
 
-		expect(fetch).toHaveBeenCalledWith('http://api.test/api/devices/me/copy-layout', {
-			method: 'POST',
+		expect(fetch).toHaveBeenCalledWith('http://api.test/api/widgets/layout', {
+			method: 'PUT',
 			credentials: 'include',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ source_device_id: 'dev1' }),
+			body: JSON.stringify({ widgets, breakpoint: 'narrow' }),
 		});
 	});
 

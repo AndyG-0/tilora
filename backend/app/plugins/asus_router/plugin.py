@@ -23,7 +23,8 @@ class AsusRouterPlugin(Plugin):
     id = "asus_router"
     name = "Asus Router"
     refresh_interval_seconds = 30
-    default_settings: ClassVar[dict[str, Any]] = {
+    network_integration_type = "asus_router"
+    network_default_settings: ClassVar[dict[str, Any]] = {
         "host": "",
         "ssh_port": 22,
         "username": "",

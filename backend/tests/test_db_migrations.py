@@ -3,7 +3,9 @@ from __future__ import annotations
 import sqlite3
 
 import pytest
+import yaml
 
+from app import config
 from app.storage import db
 
 
@@ -269,7 +271,13 @@ def test_migration_004_rewrites_custom_widget_type_to_container(tmp_path, monkey
 
     widgets = {w["id"]: w["type"] for w in db.list_custom_widgets()}
     assert widgets == {"podman-abc12345": "container"}
-    assert db.get_widget_settings("podman-abc12345") == {"engine": "podman"}
+    # Migration 007 (which also runs as part of the same init_db() chain)
+    # then extracts the connection fields migration 004 wrote into a
+    # network_integrations row, leaving only the reference behind.
+    settings = db.get_widget_settings("podman-abc12345")
+    assert set(settings) == {"network_integration_id"}
+    integration = db.get_network_integration(settings["network_integration_id"])
+    assert integration["settings"]["engine"] == "podman"
 
 
 def test_migration_004_preserves_existing_settings_overrides(tmp_path, monkeypatch):
@@ -283,11 +291,15 @@ def test_migration_004_preserves_existing_settings_overrides(tmp_path, monkeypat
     monkeypatch.setattr(db, "DB_PATH", db_path)
     db.init_db()
 
-    assert db.get_widget_settings("docker-def67890") == {
+    settings = db.get_widget_settings("docker-def67890")
+    assert set(settings) == {"network_integration_id"}
+    integration = db.get_network_integration(settings["network_integration_id"])
+    assert integration["settings"] == {
         "connection": "tcp",
         "host": "nas.local",
         "port": 2375,
         "engine": "docker",
+        "socket_path": "/var/run/docker.sock",
     }
 
 
@@ -313,7 +325,10 @@ def test_migration_004_is_idempotent(tmp_path, monkeypatch):
 
     widgets = {w["id"]: w["type"] for w in db.list_custom_widgets()}
     assert widgets == {"podman-abc12345": "container"}
-    assert db.get_widget_settings("podman-abc12345") == {"engine": "podman"}
+    settings = db.get_widget_settings("podman-abc12345")
+    assert set(settings) == {"network_integration_id"}
+    integration = db.get_network_integration(settings["network_integration_id"])
+    assert integration["settings"]["engine"] == "podman"
 
 
 def _legacy_db_at_version_4(db_path, users=(), widget_settings=(), custom_widgets=()):
@@ -515,6 +530,156 @@ def test_migration_006_reuses_an_existing_catalog_entry_for_the_same_url(tmp_pat
 def test_migration_006_is_a_no_op_on_a_fresh_install(tmp_db):
     db.init_db()
     assert db.list_rss_feeds("nobody") == []
+
+
+def _write_dashboard_yaml(tmp_path, widgets):
+    """A minimal dashboard.yaml with just the given widgets, for exercising
+    migration 007 (which — unlike migrations 003/005/006 — has to read
+    dashboard.yaml, not just the DB) without touching the real, git-tracked
+    backend/config/dashboard.yaml."""
+    config_path = tmp_path / "dashboard.yaml"
+    config_path.write_text(yaml.safe_dump({"widgets": widgets}))
+    return config_path
+
+
+def _widget_entry(widget_id, type_, settings=None):
+    return {
+        "id": widget_id,
+        "type": type_,
+        "enabled": True,
+        "layout": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1},
+        "settings": settings or {},
+    }
+
+
+def _legacy_db_at_version_6(db_path, widget_settings=()):
+    """A DB shaped like one that already ran migrations 001-006 (full
+    schema, connection settings for the six LAN-device plugins still inline
+    in dashboard.yaml/widget_settings) — the starting point for exercising
+    migration 007 in isolation."""
+    conn = sqlite3.connect(db_path)
+    conn.executescript(db._SCHEMA)
+    conn.executemany("INSERT INTO widget_settings (widget_id, settings) VALUES (?, ?)", widget_settings)
+    conn.execute("PRAGMA user_version = 6")
+    conn.commit()
+    conn.close()
+
+
+def test_migration_007_creates_singleton_integration_from_yaml_defaults(tmp_path, monkeypatch):
+    db_path = tmp_path / "legacy.db"
+    _legacy_db_at_version_6(db_path)
+    _write_dashboard_yaml(tmp_path, [_widget_entry("pihole", "pihole", {"host": "pi.local", "port": 8080})])
+    monkeypatch.setattr(config, "DASHBOARD_CONFIG_PATH", tmp_path / "dashboard.yaml")
+
+    monkeypatch.setattr(db, "DB_PATH", db_path)
+    db.init_db()
+
+    integration = db.get_network_integration("pihole")
+    assert integration["type"] == "pihole"
+    assert integration["settings"]["host"] == "pi.local"
+    assert integration["settings"]["port"] == 8080
+    # No widget_settings row existed for "pihole" before the migration, so
+    # there's nothing to strip connection keys out of.
+    assert db.get_widget_settings("pihole") is None
+
+
+def test_migration_007_db_override_wins_over_yaml(tmp_path, monkeypatch):
+    db_path = tmp_path / "legacy.db"
+    _legacy_db_at_version_6(db_path, widget_settings=[("pihole", '{"host": "db.local"}')])
+    _write_dashboard_yaml(tmp_path, [_widget_entry("pihole", "pihole", {"host": "yaml.local"})])
+    monkeypatch.setattr(config, "DASHBOARD_CONFIG_PATH", tmp_path / "dashboard.yaml")
+
+    monkeypatch.setattr(db, "DB_PATH", db_path)
+    db.init_db()
+
+    integration = db.get_network_integration("pihole")
+    assert integration["settings"]["host"] == "db.local"
+    # The DB override's connection key was extracted into the integration
+    # row and stripped from the widget's own settings, leaving the row
+    # empty (it still exists — only its content was rewritten).
+    assert db.get_widget_settings("pihole") == {}
+
+
+def test_migration_007_preserves_non_connection_overrides_on_the_widget(tmp_path, monkeypatch):
+    db_path = tmp_path / "legacy.db"
+    _legacy_db_at_version_6(
+        db_path, widget_settings=[("hdhomerun", '{"tuner_host": "hdhr.local", "playback_mode": "direct"}')]
+    )
+    _write_dashboard_yaml(tmp_path, [_widget_entry("hdhomerun", "hdhomerun")])
+    monkeypatch.setattr(config, "DASHBOARD_CONFIG_PATH", tmp_path / "dashboard.yaml")
+
+    monkeypatch.setattr(db, "DB_PATH", db_path)
+    db.init_db()
+
+    integration = db.get_network_integration("hdhomerun")
+    assert integration["settings"]["tuner_host"] == "hdhr.local"
+    # "playback_mode" isn't a connection key (it's not in
+    # HDHomeRunPlugin.network_default_settings), so it stays behind on the
+    # widget's own settings row instead of being migrated.
+    assert db.get_widget_settings("hdhomerun") == {"playback_mode": "direct"}
+
+
+def test_migration_007_gives_each_container_widget_its_own_integration(tmp_path, monkeypatch):
+    db_path = tmp_path / "legacy.db"
+    _legacy_db_at_version_6(db_path)
+    _write_dashboard_yaml(
+        tmp_path,
+        [
+            _widget_entry("docker", "container", {"engine": "docker", "host": "nas.local"}),
+            _widget_entry("podman", "container", {"engine": "podman", "host": "pi.local"}),
+        ],
+    )
+    monkeypatch.setattr(config, "DASHBOARD_CONFIG_PATH", tmp_path / "dashboard.yaml")
+
+    monkeypatch.setattr(db, "DB_PATH", db_path)
+    db.init_db()
+
+    docker_settings = db.get_widget_settings("docker")
+    podman_settings = db.get_widget_settings("podman")
+    assert set(docker_settings) == {"network_integration_id"}
+    assert set(podman_settings) == {"network_integration_id"}
+    assert docker_settings["network_integration_id"] != podman_settings["network_integration_id"]
+
+    docker_integration = db.get_network_integration(docker_settings["network_integration_id"])
+    podman_integration = db.get_network_integration(podman_settings["network_integration_id"])
+    assert docker_integration["settings"]["engine"] == "docker"
+    assert docker_integration["settings"]["host"] == "nas.local"
+    assert podman_integration["settings"]["engine"] == "podman"
+    assert podman_integration["settings"]["host"] == "pi.local"
+
+
+def test_migration_007_is_idempotent(tmp_path, monkeypatch):
+    db_path = tmp_path / "legacy.db"
+    _legacy_db_at_version_6(db_path)
+    _write_dashboard_yaml(
+        tmp_path,
+        [
+            _widget_entry("pihole", "pihole", {"host": "pi.local"}),
+            _widget_entry("docker", "container", {"engine": "docker"}),
+        ],
+    )
+    monkeypatch.setattr(config, "DASHBOARD_CONFIG_PATH", tmp_path / "dashboard.yaml")
+
+    monkeypatch.setattr(db, "DB_PATH", db_path)
+    db.init_db()
+    db.init_db()
+
+    assert len(db.list_network_integrations("pihole")) == 1
+    assert len(db.list_network_integrations("container")) == 1
+    docker_settings = db.get_widget_settings("docker")
+    assert set(docker_settings) == {"network_integration_id"}
+
+
+def test_migration_007_is_a_no_op_when_no_matching_widgets_exist(tmp_path, monkeypatch):
+    db_path = tmp_path / "legacy.db"
+    _legacy_db_at_version_6(db_path)
+    _write_dashboard_yaml(tmp_path, [_widget_entry("weather", "weather")])
+    monkeypatch.setattr(config, "DASHBOARD_CONFIG_PATH", tmp_path / "dashboard.yaml")
+
+    monkeypatch.setattr(db, "DB_PATH", db_path)
+    db.init_db()
+
+    assert db.list_network_integrations() == []
 
 
 def test_a_failed_callable_migration_leaves_user_version_at_the_last_completed_one(tmp_path, monkeypatch):

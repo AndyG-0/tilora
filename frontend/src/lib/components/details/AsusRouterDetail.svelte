@@ -1,72 +1,8 @@
 <script lang="ts">
-	import { page } from '$app/state';
-	import { api, type AsusRouterDetail, type AsusRouterTestConnectionResult } from '$lib/api';
-	import { user } from '$lib/stores/user';
+	import { type AsusRouterDetail } from '$lib/api';
 	import { _ } from 'svelte-i18n';
-	import { get } from 'svelte/store';
 
-	let { data: initialData }: { data: AsusRouterDetail } = $props();
-
-	// svelte-ignore state_referenced_locally -- seed local state from the
-	// initial load once; subsequent updates come from saveSettings's refetch.
-	let router = $state(initialData);
-
-	let editing = $state(false);
-	let hostInput = $state('');
-	let sshPortInput = $state(22);
-	let usernameInput = $state('');
-	let passwordInput = $state('');
-	let saving = $state(false);
-	let error = $state<string | null>(null);
-	let testing = $state(false);
-	let testResult = $state<AsusRouterTestConnectionResult | null>(null);
-
-	const widgetId = $derived(page.params.id!);
-
-	function openEditor() {
-		hostInput = router.host;
-		sshPortInput = router.ssh_port;
-		usernameInput = router.username;
-		passwordInput = '';
-		testResult = null;
-		editing = true;
-	}
-
-	function currentFormSettings(): Record<string, unknown> {
-		const settings: Record<string, unknown> = {
-			host: hostInput,
-			ssh_port: sshPortInput,
-			username: usernameInput,
-		};
-		if (passwordInput) settings.password = passwordInput;
-		return settings;
-	}
-
-	async function testConnection() {
-		testing = true;
-		testResult = null;
-		try {
-			testResult = await api.asusRouterTestConnection(widgetId, currentFormSettings());
-		} catch {
-			testResult = { ok: false, product_id: null, error: get(_)('common.backend_unreachable') };
-		} finally {
-			testing = false;
-		}
-	}
-
-	async function saveSettings() {
-		saving = true;
-		error = null;
-		try {
-			await api.updateWidgetSettings(widgetId, currentFormSettings());
-			router = await api.widgetDetail<AsusRouterDetail>(widgetId);
-			editing = false;
-		} catch {
-			error = get(_)('common.connection_save_error');
-		} finally {
-			saving = false;
-		}
-	}
+	let { data: router }: { data: AsusRouterDetail } = $props();
 
 	function formatBytes(bytes: number): string {
 		if (bytes < 1024) return `${bytes} B`;
@@ -83,105 +19,48 @@
 
 <div class="header">
 	<h1>Asus Router</h1>
-	{#if $user?.role === 'admin'}
-		<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
-			{editing ? $_('common.cancel') : $_('common.edit_connection')}
-		</button>
-	{/if}
 </div>
 
-{#if editing}
-	<div class="settings-form">
-		<label>
-			{$_('asus_router.detail.host_label')}
-			<input type="text" bind:value={hostInput} placeholder="router.asus.com" />
-		</label>
-		<label>
-			{$_('asus_router.detail.ssh_port_label')}
-			<input type="number" min="1" max="65535" bind:value={sshPortInput} />
-		</label>
-		<label>
-			{$_('asus_router.detail.username_label')}
-			<input type="text" bind:value={usernameInput} placeholder="admin" />
-		</label>
-		<label>
-			{$_('asus_router.detail.password_label')}
-			<input
-				type="password"
-				bind:value={passwordInput}
-				placeholder={router.has_password ? $_('common.password_set_hint') : $_('common.password_not_set')}
-			/>
-		</label>
+{#if !router.connected}
+	<p class="hint">{$_('asus_router.detail.not_connected_hint')}</p>
+{:else}
+	{#if router.error}
+		<p class="hint error">{router.error}</p>
+	{/if}
 
-		<div class="test-row">
-			<button class="test" disabled={testing} onclick={testConnection}>
-				{testing ? $_('common.testing') : $_('common.test_connection')}
-			</button>
-			{#if testResult}
-				{#if testResult.ok}
-					<span class="test-result ok"
-						>{$_('asus_router.detail.connected_result', { values: { product_id: testResult.product_id } })}</span
-					>
-				{:else}
-					<span class="test-result fail">✗ {testResult.error}</span>
-				{/if}
-			{/if}
+	<div class="system-info">
+		<div class="stat">
+			<div class="stat-value">
+				{router.wan_connected ? $_('asus_router.detail.connected') : $_('asus_router.detail.down')}
+			</div>
+			<div class="stat-label">{$_('asus_router.detail.wan_status_label')}</div>
 		</div>
-
-		{#if error}
-			<p class="hint error">{error}</p>
-		{/if}
-
-		<button class="save" disabled={saving} onclick={saveSettings}>
-			{saving ? $_('common.saving') : $_('common.save')}
-		</button>
+		<div class="stat">
+			<div class="stat-value">{router.wan_ip ?? $_('common.unknown')}</div>
+			<div class="stat-label">{$_('asus_router.detail.wan_ip_label')}</div>
+		</div>
+		<div class="stat">
+			<div class="stat-value">{formatBytes(router.rx_bytes)}</div>
+			<div class="stat-label">{$_('asus_router.detail.download_label')}</div>
+		</div>
+		<div class="stat">
+			<div class="stat-value">{formatBytes(router.tx_bytes)}</div>
+			<div class="stat-label">{$_('asus_router.detail.upload_label')}</div>
+		</div>
 	</div>
-{:else if error}
-	<p class="hint error">{error}</p>
-{/if}
 
-{#if !editing}
-	{#if !router.connected}
-		<p class="hint">{$_('asus_router.detail.not_connected_hint')}</p>
+	{#if router.clients.length === 0}
+		<p class="hint">{$_('asus_router.detail.no_clients')}</p>
 	{:else}
-		{#if router.error}
-			<p class="hint error">{router.error}</p>
-		{/if}
-
-		<div class="system-info">
-			<div class="stat">
-				<div class="stat-value">
-					{router.wan_connected ? $_('asus_router.detail.connected') : $_('asus_router.detail.down')}
-				</div>
-				<div class="stat-label">{$_('asus_router.detail.wan_status_label')}</div>
-			</div>
-			<div class="stat">
-				<div class="stat-value">{router.wan_ip ?? $_('common.unknown')}</div>
-				<div class="stat-label">{$_('asus_router.detail.wan_ip_label')}</div>
-			</div>
-			<div class="stat">
-				<div class="stat-value">{formatBytes(router.rx_bytes)}</div>
-				<div class="stat-label">{$_('asus_router.detail.download_label')}</div>
-			</div>
-			<div class="stat">
-				<div class="stat-value">{formatBytes(router.tx_bytes)}</div>
-				<div class="stat-label">{$_('asus_router.detail.upload_label')}</div>
-			</div>
-		</div>
-
-		{#if router.clients.length === 0}
-			<p class="hint">{$_('asus_router.detail.no_clients')}</p>
-		{:else}
-			<ul class="clients">
-				{#each router.clients as client (client.name + client.ip)}
-					<li>
-						<span class="dot" class:offline={!client.online}></span>
-						<span class="name">{client.name}</span>
-						<span class="ip">{client.ip}</span>
-					</li>
-				{/each}
-			</ul>
-		{/if}
+		<ul class="clients">
+			{#each router.clients as client (client.name + client.ip)}
+				<li>
+					<span class="dot" class:offline={!client.online}></span>
+					<span class="name">{client.name}</span>
+					<span class="ip">{client.ip}</span>
+				</li>
+			{/each}
+		</ul>
 	{/if}
 {/if}
 
@@ -195,84 +74,6 @@
 
 	.header h1 {
 		margin: 0;
-	}
-
-	.edit-settings {
-		background: none;
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		padding: 0.4rem 0.75rem;
-		color: var(--color-accent);
-		cursor: pointer;
-	}
-
-	.settings-form {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-		max-width: 30rem;
-		margin: 1rem 0 1.5rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
-		border-radius: 0.75rem;
-		padding: 1rem;
-	}
-
-	.settings-form label {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		font-size: 0.9rem;
-		color: var(--color-text-muted);
-	}
-
-	.settings-form input[type='text'],
-	.settings-form input[type='number'],
-	.settings-form input[type='password'] {
-		font: inherit;
-		padding: 0.5rem 0.75rem;
-		border-radius: 0.5rem;
-		border: 1px solid var(--color-border);
-		background: var(--color-surface);
-		color: var(--color-text);
-	}
-
-	.test-row {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-	}
-
-	.test {
-		align-self: flex-start;
-		background: none;
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		padding: 0.5rem 1rem;
-		color: var(--color-accent);
-		cursor: pointer;
-	}
-
-	.test-result {
-		font-size: 0.85rem;
-	}
-
-	.test-result.ok {
-		color: var(--color-success);
-	}
-
-	.test-result.fail {
-		color: var(--color-error);
-	}
-
-	.save {
-		align-self: flex-start;
-		background: var(--color-accent);
-		color: var(--color-surface);
-		border: none;
-		border-radius: 0.5rem;
-		padding: 0.5rem 1rem;
-		cursor: pointer;
 	}
 
 	.hint {

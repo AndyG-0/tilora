@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import httpx
 import pytest
-import respx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -13,7 +11,8 @@ from app.plugins.hdhomerun.plugin import HDHomeRunPlugin
 
 
 def register_plugin(**settings) -> HDHomeRunPlugin:
-    plugin = HDHomeRunPlugin({"id": "hdhr1", "settings": {**HDHomeRunPlugin.default_settings, **settings}})
+    merged = {**HDHomeRunPlugin.network_default_settings, **HDHomeRunPlugin.default_settings, **settings}
+    plugin = HDHomeRunPlugin({"id": "hdhr1", "settings": merged})
     registry.register(plugin)
     return plugin
 
@@ -41,38 +40,9 @@ def unauthenticated_client():
     return TestClient(app)
 
 
-def test_unknown_widget_returns_404_for_tuner_test(client):
-    response = client.post("/api/hdhomerun/nope/test-tuner-connection", json={})
+def test_unknown_widget_returns_404(client):
+    response = client.get("/api/hdhomerun/nope/stream/4.1")
     assert response.status_code == 404
-
-
-def test_unknown_widget_returns_404_for_dvr_test(client):
-    response = client.post("/api/hdhomerun/nope/test-dvr-connection", json={})
-    assert response.status_code == 404
-
-
-def test_test_tuner_connection_requires_login(unauthenticated_client):
-    register_plugin(tuner_host="hdhr.local")
-    response = unauthenticated_client.post("/api/hdhomerun/hdhr1/test-tuner-connection", json={})
-    assert response.status_code == 401
-
-
-def test_test_tuner_connection_rejects_member(member_client):
-    register_plugin(tuner_host="hdhr.local")
-    response = member_client.post("/api/hdhomerun/hdhr1/test-tuner-connection", json={})
-    assert response.status_code == 403
-
-
-def test_test_dvr_connection_requires_login(unauthenticated_client):
-    register_plugin(dvr_host="dvr.local")
-    response = unauthenticated_client.post("/api/hdhomerun/hdhr1/test-dvr-connection", json={})
-    assert response.status_code == 401
-
-
-def test_test_dvr_connection_rejects_member(member_client):
-    register_plugin(dvr_host="dvr.local")
-    response = member_client.post("/api/hdhomerun/hdhr1/test-dvr-connection", json={})
-    assert response.status_code == 403
 
 
 def test_stream_channel_requires_login(unauthenticated_client):
@@ -85,67 +55,6 @@ def test_playlist_requires_login(unauthenticated_client):
     register_plugin(tuner_host="hdhr.local")
     response = unauthenticated_client.get("/api/hdhomerun/hdhr1/playlist/4.1")
     assert response.status_code == 401
-
-
-@respx.mock
-def test_test_tuner_connection_ok(client):
-    register_plugin(tuner_host="hdhr.local")
-    respx.get("http://hdhr.local:80/discover.json").mock(
-        return_value=httpx.Response(200, json={"FriendlyName": "HDHomeRun FLEX"})
-    )
-
-    response = client.post("/api/hdhomerun/hdhr1/test-tuner-connection", json={})
-
-    assert response.json() == {"ok": True, "name": "HDHomeRun FLEX", "error": None}
-
-
-@respx.mock
-def test_test_tuner_connection_uses_candidate_settings_override(client):
-    register_plugin(tuner_host="hdhr.local")
-    route = respx.get("http://other.local:80/discover.json").mock(
-        return_value=httpx.Response(200, json={"FriendlyName": "Other Tuner"})
-    )
-
-    response = client.post("/api/hdhomerun/hdhr1/test-tuner-connection", json={"tuner_host": "other.local"})
-
-    assert route.called
-    assert response.json()["name"] == "Other Tuner"
-
-
-@respx.mock
-def test_test_tuner_connection_reports_failure_without_raising(client):
-    register_plugin(tuner_host="hdhr.local")
-    respx.get("http://hdhr.local:80/discover.json").mock(return_value=httpx.Response(500))
-
-    response = client.post("/api/hdhomerun/hdhr1/test-tuner-connection", json={})
-
-    assert response.status_code == 200
-    assert response.json()["ok"] is False
-    assert response.json()["error"]
-
-
-@respx.mock
-def test_test_dvr_connection_ok(client):
-    register_plugin(dvr_host="dvr.local")
-    respx.get("http://dvr.local:59090/discover.json").mock(
-        return_value=httpx.Response(200, json={"FriendlyName": "HDHomeRun RECORD"})
-    )
-
-    response = client.post("/api/hdhomerun/hdhr1/test-dvr-connection", json={})
-
-    assert response.json() == {"ok": True, "name": "HDHomeRun RECORD", "error": None}
-
-
-@respx.mock
-def test_test_dvr_connection_reports_failure_without_raising(client):
-    register_plugin(dvr_host="dvr.local")
-    respx.get("http://dvr.local:59090/discover.json").mock(return_value=httpx.Response(500))
-
-    response = client.post("/api/hdhomerun/hdhr1/test-dvr-connection", json={})
-
-    assert response.status_code == 200
-    assert response.json()["ok"] is False
-    assert response.json()["error"]
 
 
 def test_transcode_presets_lists_software_and_custom(client):

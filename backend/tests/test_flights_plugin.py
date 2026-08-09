@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
+
 import httpx
 import respx
 
 from app.plugins.flights.airlines import lookup
-from app.plugins.flights.plugin import FlightsPlugin
+from app.plugins.flights.plugin import FlightsPlugin, _aircraft_kind, _route_cache_key
+from app.storage.cache import cache
 
 FAKE_RESPONSE = {
     "ac": [
@@ -13,6 +16,7 @@ FAKE_RESPONSE = {
             "flight": "UAL1698 ",
             "r": "N47282",
             "t": "B38M",
+            "category": "A3",
             "alt_baro": 36000,
             "gs": 460.3,
             "track": 314.91,
@@ -26,6 +30,7 @@ FAKE_RESPONSE = {
             "flight": "N126JH  ",
             "r": "N126JH",
             "t": "BE20",
+            "category": "A1",
             "alt_baro": 25000,
             "gs": 277.0,
             "track": 71.04,
@@ -39,6 +44,7 @@ FAKE_RESPONSE = {
             "flight": "XYZ123  ",
             "r": "N999XX",
             "t": "A320",
+            "category": "A2",
             "alt_baro": 10000,
             "gs": 200.0,
             "track": 90.0,
@@ -52,6 +58,7 @@ FAKE_RESPONSE = {
             "flight": "DAL500  ",
             "r": "N500DL",
             "t": "B739",
+            "category": "A5",
             "alt_baro": "ground",
             "gs": 0.0,
             "track": 0.0,
@@ -62,6 +69,12 @@ FAKE_RESPONSE = {
         },
     ]
 }
+
+ROUTESET_URL = "https://api.adsb.lol/api/0/routeset"
+
+
+def mock_routeset(response_json: list[dict] | None = None) -> respx.Route:
+    return respx.post(ROUTESET_URL).mock(return_value=httpx.Response(200, json=response_json or []))
 
 
 def make_plugin() -> FlightsPlugin:
@@ -98,11 +111,38 @@ def test_lookup_returns_none_for_tail_number_callsign():
     assert result == {"airline_code": None, "airline_name": None, "airline_iata": None}
 
 
+def test_aircraft_kind_classifies_rotorcraft_as_helicopter():
+    assert _aircraft_kind("A7") == "helicopter"
+
+
+def test_aircraft_kind_classifies_light_as_prop():
+    assert _aircraft_kind("A1") == "prop"
+
+
+def test_aircraft_kind_classifies_large_and_regional_as_jet():
+    assert _aircraft_kind("A3") == "jet"
+    assert _aircraft_kind("A5") == "jet"
+    # A2 is inherently ambiguous (regional turboprop vs. regional jet) —
+    # bucketed as jet, an accepted trade-off of the category-only approach.
+    assert _aircraft_kind("A2") == "jet"
+
+
+def test_aircraft_kind_classifies_unmapped_known_code_as_other():
+    assert _aircraft_kind("B2") == "other"
+    assert _aircraft_kind("C0") == "other"
+
+
+def test_aircraft_kind_classifies_missing_category_as_unknown():
+    assert _aircraft_kind(None) == "unknown"
+    assert _aircraft_kind("") == "unknown"
+
+
 @respx.mock
 async def test_get_summary_excludes_ground_traffic():
     respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
         return_value=httpx.Response(200, json=FAKE_RESPONSE)
     )
+    mock_routeset()
     plugin = make_plugin()
 
     summary = await plugin.get_summary()
@@ -117,6 +157,7 @@ async def test_get_summary_sorts_nearest_first():
     respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
         return_value=httpx.Response(200, json=FAKE_RESPONSE)
     )
+    mock_routeset()
     plugin = make_plugin()
 
     summary = await plugin.get_summary()
@@ -130,6 +171,7 @@ async def test_get_summary_maps_airline_fields():
     respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
         return_value=httpx.Response(200, json=FAKE_RESPONSE)
     )
+    mock_routeset()
     plugin = make_plugin()
 
     summary = await plugin.get_summary()
@@ -141,9 +183,26 @@ async def test_get_summary_maps_airline_fields():
 
 
 @respx.mock
+async def test_get_summary_maps_aircraft_kind():
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        return_value=httpx.Response(200, json=FAKE_RESPONSE)
+    )
+    mock_routeset()
+    plugin = make_plugin()
+
+    summary = await plugin.get_summary()
+
+    by_callsign = {f["callsign"]: f for f in summary["flights"]}
+    assert by_callsign["UAL1698"]["aircraft_kind"] == "jet"
+    assert by_callsign["N126JH"]["aircraft_kind"] == "prop"
+    assert by_callsign["XYZ123"]["aircraft_kind"] == "jet"
+
+
+@respx.mock
 async def test_get_summary_caps_at_eight():
     many = {"ac": [{**FAKE_RESPONSE["ac"][0], "hex": f"h{i}", "dst": float(i)} for i in range(12)]}
     respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(return_value=httpx.Response(200, json=many))
+    mock_routeset()
     plugin = make_plugin()
 
     summary = await plugin.get_summary()
@@ -156,12 +215,27 @@ async def test_get_summary_caps_at_eight():
 async def test_get_detail_caps_at_twenty():
     many = {"ac": [{**FAKE_RESPONSE["ac"][0], "hex": f"h{i}", "dst": float(i)} for i in range(25)]}
     respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(return_value=httpx.Response(200, json=many))
+    mock_routeset()
     plugin = make_plugin()
 
     detail = await plugin.get_detail()
 
     assert detail["count"] == 25
     assert len(detail["flights"]) == 20
+
+
+@respx.mock
+async def test_get_detail_includes_configured_coordinates():
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        return_value=httpx.Response(200, json=FAKE_RESPONSE)
+    )
+    mock_routeset()
+    plugin = make_plugin()
+
+    detail = await plugin.get_detail()
+
+    assert detail["latitude"] == 32.7555
+    assert detail["longitude"] == -97.3308
 
 
 @respx.mock
@@ -181,6 +255,7 @@ async def test_get_ai_tools_exposes_flights_summary_tool():
     respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
         return_value=httpx.Response(200, json=FAKE_RESPONSE)
     )
+    mock_routeset()
     plugin = make_plugin()
 
     tools = plugin.get_ai_tools()
@@ -189,3 +264,122 @@ async def test_get_ai_tools_exposes_flights_summary_tool():
     assert tools[0].name == "get_nearby_flights_summary"
     result = await tools[0].handler()
     assert result["count"] == 3
+
+
+@respx.mock
+async def test_get_summary_includes_route_when_plausible():
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        return_value=httpx.Response(200, json=FAKE_RESPONSE)
+    )
+    mock_routeset(
+        [
+            {
+                "callsign": "UAL1698",
+                "plausible": True,
+                "_airports": [
+                    {"iata": "ABQ", "icao": "KABQ", "location": "Albuquerque"},
+                    {"iata": "HOU", "icao": "KHOU", "location": "Houston"},
+                ],
+            }
+        ]
+    )
+    plugin = make_plugin()
+
+    summary = await plugin.get_summary()
+
+    by_callsign = {f["callsign"]: f for f in summary["flights"]}
+    assert by_callsign["UAL1698"]["origin"] == {"iata": "ABQ", "icao": "KABQ", "city": "Albuquerque"}
+    assert by_callsign["UAL1698"]["destination"] == {"iata": "HOU", "icao": "KHOU", "city": "Houston"}
+    # No route data for this callsign in the mocked response.
+    assert by_callsign["N126JH"]["origin"] is None
+    assert by_callsign["N126JH"]["destination"] is None
+
+
+@respx.mock
+async def test_get_summary_omits_route_when_not_plausible():
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        return_value=httpx.Response(200, json=FAKE_RESPONSE)
+    )
+    mock_routeset([{"callsign": "UAL1698", "plausible": False, "_airports": []}])
+    plugin = make_plugin()
+
+    summary = await plugin.get_summary()
+
+    by_callsign = {f["callsign"]: f for f in summary["flights"]}
+    assert by_callsign["UAL1698"]["origin"] is None
+    assert by_callsign["UAL1698"]["destination"] is None
+
+
+@respx.mock
+async def test_route_lookup_is_cached_between_polls():
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        return_value=httpx.Response(200, json=FAKE_RESPONSE)
+    )
+    route = mock_routeset(
+        [
+            {
+                "callsign": "UAL1698",
+                "plausible": True,
+                "_airports": [
+                    {"iata": "ABQ", "icao": "KABQ", "location": "Albuquerque"},
+                    {"iata": "HOU", "icao": "KHOU", "location": "Houston"},
+                ],
+            }
+        ]
+    )
+    plugin = make_plugin()
+
+    await plugin.get_summary()
+    await plugin.get_summary()
+
+    assert route.calls.call_count == 1
+
+
+@respx.mock
+async def test_route_lookup_skips_already_cached_callsigns_in_batch():
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        return_value=httpx.Response(200, json=FAKE_RESPONSE)
+    )
+    cache.set(
+        _route_cache_key("UAL1698"),
+        {"origin": {"iata": "ABQ", "icao": "KABQ", "city": "Albuquerque"}, "destination": None},
+        999,
+    )
+    route = mock_routeset()
+    plugin = make_plugin()
+
+    await plugin.get_summary()
+
+    requested_body = json.loads(route.calls.last.request.content)
+    requested_callsigns = [plane["callsign"] for plane in requested_body["planes"]]
+    assert "UAL1698" not in requested_callsigns
+
+
+@respx.mock
+async def test_requests_use_a_non_default_user_agent():
+    get_route = respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        return_value=httpx.Response(200, json=FAKE_RESPONSE)
+    )
+    post_route = mock_routeset()
+    plugin = make_plugin()
+
+    await plugin.get_summary()
+
+    assert not get_route.calls.last.request.headers["user-agent"].startswith("python-httpx/")
+    assert not post_route.calls.last.request.headers["user-agent"].startswith("python-httpx/")
+
+
+@respx.mock
+async def test_routeset_request_sends_an_adsb_lol_referer():
+    # The routeset endpoint silently 201s with an empty body unless Referer
+    # points at an adsb.lol-family site -- this is the actual gate, not
+    # User-Agent, confirmed against the live endpoint.
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        return_value=httpx.Response(200, json=FAKE_RESPONSE)
+    )
+    post_route = mock_routeset()
+    plugin = make_plugin()
+
+    await plugin.get_summary()
+
+    assert "adsb.lol" in post_route.calls.last.request.headers["referer"]

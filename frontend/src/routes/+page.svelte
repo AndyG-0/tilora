@@ -10,6 +10,7 @@
 	import { groupWidgetsByTab, resolveSwipe } from '$lib/tabNavigation';
 	import { computeResizedLayout, MAX_ROW_SPAN } from '$lib/resize';
 	import { computeEmptyCells, isRectFree } from '$lib/layout';
+	import { breakpoint } from '$lib/stores/breakpoint';
 	import { isSpeechRecognitionSupported, listenOnce, speak } from '$lib/speech';
 	import { voiceSelection } from '$lib/stores/voice';
 	import { TILE_COMPONENTS } from '$lib/widgetComponents';
@@ -119,6 +120,10 @@
 	let dropTargetId = $state<string | null>(null);
 	let dropEmptyCell = $state<{ col: number; row: number } | null>(null);
 	let dragStart = { x: 0, y: 0 };
+	// Captured at gesture-start rather than read live at pointer-up, so a
+	// breakpoint change mid-drag (e.g. a tablet rotated) doesn't write the
+	// gesture's result into the wrong breakpoint's saved layout.
+	let dragBreakpoint = get(breakpoint);
 
 	function toggleEditMode() {
 		editMode = !editMode;
@@ -130,6 +135,7 @@
 		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 		dragWidgetId = widgetId;
 		dragStart = { x: event.clientX, y: event.clientY };
+		dragBreakpoint = get(breakpoint);
 		dragDelta = { x: 0, y: 0 };
 		dropTargetId = null;
 		dropEmptyCell = null;
@@ -182,11 +188,11 @@
 				{ id: source.id, layout: target.layout },
 				{ id: target.id, layout: source.layout },
 			];
-			await api.updateWidgetsLayout(updates);
+			await api.updateWidgetsLayout(updates, dragBreakpoint);
 			applyLayoutUpdates(updates);
 		} else if (emptyCell) {
 			const updates = [{ id: source.id, layout: { ...source.layout, col: emptyCell.col, row: emptyCell.row } }];
-			await api.updateWidgetsLayout(updates);
+			await api.updateWidgetsLayout(updates, dragBreakpoint);
 			applyLayoutUpdates(updates);
 		}
 	}
@@ -205,6 +211,8 @@
 	let resizeStart = { x: 0, y: 0 };
 	let resizePreviewLayout = $state<WidgetLayout | null>(null);
 	let resizeLastPointer = { x: 0, y: 0 };
+	// Same gesture-start capture as dragBreakpoint above.
+	let resizeBreakpoint = get(breakpoint);
 
 	// Auto-scroll while resizing: on a kiosk the viewport is the physical
 	// screen, so a widget near the bottom can't grow past window height by
@@ -234,6 +242,7 @@
 		resizeWidgetId = widget.id;
 		resizeStartLayout = widget.layout;
 		resizePreviewLayout = widget.layout;
+		resizeBreakpoint = get(breakpoint);
 		resizeStart = { x: event.clientX, y: event.clientY };
 		resizeLastPointer = { x: event.clientX, y: event.clientY };
 		resizeScrollOffset = 0;
@@ -300,7 +309,7 @@
 		if (!widgetId || !layout) return;
 
 		const updates = [{ id: widgetId, layout }];
-		await api.updateWidgetsLayout(updates);
+		await api.updateWidgetsLayout(updates, resizeBreakpoint);
 		applyLayoutUpdates(updates);
 	}
 

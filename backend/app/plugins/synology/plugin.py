@@ -22,7 +22,8 @@ class SynologyPlugin(Plugin):
     id = "synology"
     name = "Synology"
     refresh_interval_seconds = 60
-    default_settings: ClassVar[dict[str, Any]] = {
+    network_integration_type = "synology"
+    network_default_settings: ClassVar[dict[str, Any]] = {
         "host": "",
         "port": 5000,
         "use_https": False,

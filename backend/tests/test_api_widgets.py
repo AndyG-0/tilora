@@ -14,7 +14,9 @@ from app.auth import get_current_device, get_current_user
 from app.plugins import scoping
 from app.plugins.ai_insights.plugin import AIInsightsPlugin
 from app.plugins.base import Plugin, registry
+from app.plugins.container.plugin import ContainerPlugin
 from app.plugins.photos.plugin import PhotosPlugin
+from app.plugins.pihole.plugin import PiholePlugin
 from app.plugins.speedtest.plugin import SpeedtestPlugin
 from app.plugins.sports.plugin import SportsPlugin
 from app.plugins.weather.plugin import WeatherPlugin
@@ -170,11 +172,32 @@ widgets:
 
 
 def test_list_widgets_excludes_disabled(client, dashboard_yaml, tmp_db):
-    response = client.get("/api/widgets")
+    response = client.get("/api/widgets?breakpoint=wide")
     assert response.status_code == 200
     assert response.json() == [
         {"id": "stub", "type": "stub", "layout": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1}, "tab": "default"}
     ]
+
+
+def test_list_widgets_requires_breakpoint_query_param(client, dashboard_yaml, tmp_db):
+    response = client.get("/api/widgets")
+    assert response.status_code == 422
+
+
+def test_list_widgets_rejects_an_unknown_breakpoint(client, dashboard_yaml, tmp_db):
+    response = client.get("/api/widgets?breakpoint=huge")
+    assert response.status_code == 422
+
+
+def test_list_widgets_narrow_and_wide_layouts_are_independent(client, dashboard_yaml, tmp_db):
+    db.save_widget_layout(TEST_USER_ID, "wide", "stub", {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1})
+    db.save_widget_layout(TEST_USER_ID, "narrow", "stub", {"col": 3, "row": 3, "colSpan": 2, "rowSpan": 2})
+
+    wide = client.get("/api/widgets?breakpoint=wide").json()
+    narrow = client.get("/api/widgets?breakpoint=narrow").json()
+
+    assert wide[0]["layout"] == {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1}
+    assert narrow[0]["layout"] == {"col": 3, "row": 3, "colSpan": 2, "rowSpan": 2}
 
 
 def test_list_widgets_includes_explicit_tab(client, tmp_path, monkeypatch, tmp_db):
@@ -202,7 +225,7 @@ widgets:
     )
     monkeypatch.setattr("app.api.widgets.load_dashboard_config", lambda: yaml.safe_load(path.read_text()))
 
-    response = client.get("/api/widgets")
+    response = client.get("/api/widgets?breakpoint=wide")
 
     assert response.status_code == 200
     tabs_by_id = {w["id"]: w["tab"] for w in response.json()}
@@ -210,9 +233,9 @@ widgets:
 
 
 def test_list_widgets_reflects_persisted_layout_override(client, dashboard_yaml, tmp_db):
-    db.save_widget_layout(TEST_USER_ID, TEST_DEVICE_ID, "stub", {"col": 3, "row": 2, "colSpan": 1, "rowSpan": 1})
+    db.save_widget_layout(TEST_USER_ID, "wide", "stub", {"col": 3, "row": 2, "colSpan": 1, "rowSpan": 1})
 
-    response = client.get("/api/widgets")
+    response = client.get("/api/widgets?breakpoint=wide")
 
     assert response.status_code == 200
     assert response.json()[0]["layout"] == {"col": 3, "row": 2, "colSpan": 1, "rowSpan": 1}
@@ -222,21 +245,22 @@ def test_update_widgets_layout_persists_and_swaps(client, dashboard_yaml, tmp_db
     response = client.put(
         "/api/widgets/layout",
         json={
+            "breakpoint": "wide",
             "widgets": [
                 {"id": "stub", "layout": {"col": 2, "row": 1, "colSpan": 1, "rowSpan": 1}},
                 {"id": "hidden", "layout": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1}},
-            ]
+            ],
         },
     )
 
     assert response.status_code == 200
-    assert db.get_widget_layout(TEST_USER_ID, TEST_DEVICE_ID, "stub") == {
+    assert db.get_widget_layout(TEST_USER_ID, "wide", "stub") == {
         "col": 2,
         "row": 1,
         "colSpan": 1,
         "rowSpan": 1,
     }
-    assert db.get_widget_layout(TEST_USER_ID, TEST_DEVICE_ID, "hidden") == {
+    assert db.get_widget_layout(TEST_USER_ID, "wide", "hidden") == {
         "col": 1,
         "row": 1,
         "colSpan": 1,
@@ -645,7 +669,7 @@ def test_add_widget_appears_in_list_widgets(client, dashboard_yaml, tmp_db):
     )
     widget_id = add_response.json()["id"]
 
-    response = client.get("/api/widgets")
+    response = client.get("/api/widgets?breakpoint=wide")
 
     ids = [w["id"] for w in response.json()]
     assert widget_id in ids
@@ -775,7 +799,7 @@ def test_remove_widget_hides_yaml_widget_from_list(client, dashboard_yaml, tmp_d
 
     client.delete("/api/widgets/stub")
 
-    response = client.get("/api/widgets")
+    response = client.get("/api/widgets?breakpoint=wide")
     assert "stub" not in [w["id"] for w in response.json()]
 
 
@@ -964,3 +988,40 @@ def test_remove_widget_deletes_device_settings(client, dashboard_yaml, tmp_db):
 
     assert response.status_code == 200
     assert db.get_widget_device_settings(TEST_DEVICE_ID, "device-stub") is None
+
+
+def test_update_settings_rejects_connection_keys_for_network_integration_plugins(client, tmp_db):
+    settings = {**PiholePlugin.network_default_settings, **PiholePlugin.default_settings}
+    registry.register(PiholePlugin({"id": "pihole", "settings": settings}))
+
+    response = client.patch("/api/widgets/pihole/settings", json={"host": "new.local"})
+
+    assert response.status_code == 400
+    assert "network-settings" in response.json()["detail"]
+    # The rejected key is never applied, even though it's part of the payload.
+    assert registry.get("pihole").config["settings"]["host"] == ""
+
+
+def test_update_settings_container_re_resolves_on_reference_change(client, tmp_db):
+    db.save_network_integration(
+        "container-docker", "container", "Docker", {**ContainerPlugin.network_default_settings, "host": "docker.local"}
+    )
+    db.save_network_integration(
+        "container-podman", "container", "Podman", {**ContainerPlugin.network_default_settings, "host": "podman.local"}
+    )
+    settings = {
+        "network_integration_id": "container-docker",
+        **ContainerPlugin.network_default_settings,
+        "host": "docker.local",
+    }
+    registry.register(ContainerPlugin({"id": "container-a", "settings": settings}))
+
+    response = client.patch("/api/widgets/container-a/settings", json={"network_integration_id": "container-podman"})
+
+    assert response.status_code == 200
+    assert response.json()["network_integration_id"] == "container-podman"
+    assert response.json()["host"] == "podman.local"
+    assert registry.get("container-a").config["settings"]["host"] == "podman.local"
+    # Only the display-only key is persisted to widget_settings — connection
+    # fields stay live-only, re-resolved from the integration row on read.
+    assert db.get_widget_settings("container-a") == {"network_integration_id": "container-podman"}

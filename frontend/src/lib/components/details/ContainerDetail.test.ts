@@ -1,17 +1,20 @@
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-const { widgetDetail, updateWidgetSettings } = vi.hoisted(() => ({
+const { widgetDetail, updateWidgetSettings, listContainerIntegrations } = vi.hoisted(() => ({
 	widgetDetail: vi.fn(),
 	updateWidgetSettings: vi.fn(),
+	listContainerIntegrations: vi.fn(),
 }));
-vi.mock('$lib/api', () => ({ api: { widgetDetail, updateWidgetSettings } }));
+vi.mock('$lib/api', () => ({ api: { widgetDetail, updateWidgetSettings, listContainerIntegrations } }));
 vi.mock('$app/state', () => ({ page: { params: { id: 'container' } } }));
 
 import { user } from '$lib/stores/user';
 import ContainerDetail from './ContainerDetail.svelte';
 
 const dockerNotConnected = {
+	network_integration_id: 'container-docker1',
+	network_integration_name: 'Docker',
 	engine: 'docker' as const,
 	connected: false,
 	connection: 'socket',
@@ -25,6 +28,8 @@ const dockerNotConnected = {
 };
 
 const dockerConnected = {
+	network_integration_id: 'container-docker1',
+	network_integration_name: 'Docker',
 	engine: 'docker' as const,
 	connected: true,
 	connection: 'tcp',
@@ -41,6 +46,8 @@ const dockerConnected = {
 };
 
 const podmanConnected = {
+	network_integration_id: 'container-podman1',
+	network_integration_name: 'Podman',
 	engine: 'podman' as const,
 	connected: true,
 	connection: 'socket',
@@ -53,16 +60,22 @@ const podmanConnected = {
 	total_count: 1,
 };
 
+const hosts = [
+	{ id: 'container-docker1', type: 'container', name: 'Docker', settings: {} },
+	{ id: 'container-podman1', type: 'container', name: 'Podman', settings: {} },
+];
+
 describe('ContainerDetail', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		listContainerIntegrations.mockResolvedValue(hosts);
 		user.set({ id: 'admin-user', name: 'Admin', avatar: null, role: 'admin' });
 	});
 
 	it('shows a not-connected hint titled for the current engine', () => {
 		render(ContainerDetail, { props: { data: dockerNotConnected } });
 
-		expect(screen.getByText('Not connected yet — tap "Edit connection" to set up Docker.')).toBeInTheDocument();
+		expect(screen.getByText('Not connected yet — set up Docker in Network Settings.')).toBeInTheDocument();
 	});
 
 	it('renders container counts and the container list when connected', () => {
@@ -88,103 +101,47 @@ describe('ContainerDetail', () => {
 		expect(screen.getByText('No containers found.')).toBeInTheDocument();
 	});
 
-	it('opens the settings editor with the current connection values', async () => {
+	it('shows the host picker for an admin with the current host selected', async () => {
 		render(ContainerDetail, { props: { data: dockerConnected } });
 
-		await fireEvent.click(screen.getByText('Edit connection'));
-
-		expect(screen.getByPlaceholderText('docker.local')).toHaveValue('docker.local');
+		const select = await screen.findByLabelText('Host');
+		expect(select).toHaveValue('container-docker1');
+		expect(screen.getByText('Docker', { selector: 'option' })).toBeInTheDocument();
+		expect(screen.getByText('Podman', { selector: 'option' })).toBeInTheDocument();
 	});
 
-	it('saves settings including the engine and refetches', async () => {
+	it('switches hosts and refetches detail', async () => {
 		updateWidgetSettings.mockResolvedValue({ status: 'ok' });
-		widgetDetail.mockResolvedValue({ ...dockerConnected, host: 'newhost.local' });
+		widgetDetail.mockResolvedValue(podmanConnected);
 
 		render(ContainerDetail, { props: { data: dockerConnected } });
 
-		await fireEvent.click(screen.getByText('Edit connection'));
-		await fireEvent.input(screen.getByPlaceholderText('docker.local'), {
-			target: { value: 'newhost.local' },
-		});
-		await fireEvent.click(screen.getByText('Save'));
+		const select = await screen.findByLabelText('Host');
+		await fireEvent.change(select, { target: { value: 'container-podman1' } });
 
 		await vi.waitFor(() =>
-			expect(updateWidgetSettings).toHaveBeenCalledWith('container', {
-				engine: 'docker',
-				connection: 'tcp',
-				socket_path: '/var/run/docker.sock',
-				host: 'newhost.local',
-				port: 2375,
-			}),
+			expect(updateWidgetSettings).toHaveBeenCalledWith('container', { network_integration_id: 'container-podman1' }),
 		);
 		expect(widgetDetail).toHaveBeenCalledWith('container');
 	});
 
-	it('shows an error if saving settings fails', async () => {
+	it('shows an error if switching hosts fails', async () => {
 		updateWidgetSettings.mockRejectedValue(new Error('boom'));
 
 		render(ContainerDetail, { props: { data: dockerConnected } });
 
-		await fireEvent.click(screen.getByText('Edit connection'));
-		await fireEvent.click(screen.getByText('Save'));
+		const select = await screen.findByLabelText('Host');
+		await fireEvent.change(select, { target: { value: 'container-podman1' } });
 
 		expect(await screen.findByText('Could not save the connection settings.')).toBeInTheDocument();
 	});
 
-	it('hides the edit-connection control for a non-admin', () => {
+	it('hides the host picker for a non-admin', async () => {
 		user.set({ id: 'member-user', name: 'Member', avatar: null, role: 'member' });
 
 		render(ContainerDetail, { props: { data: dockerConnected } });
 
-		expect(screen.queryByText('Edit connection')).not.toBeInTheDocument();
-	});
-
-	it('switching the engine re-prefills the socket path and port to that engine defaults', async () => {
-		render(ContainerDetail, {
-			props: { data: { ...dockerConnected, connection: 'socket', host: '' } },
-		});
-
-		await fireEvent.click(screen.getByText('Edit connection'));
-		expect(screen.getByPlaceholderText('/var/run/docker.sock')).toHaveValue('/var/run/docker.sock');
-
-		await fireEvent.change(screen.getByDisplayValue('Docker'), { target: { value: 'podman' } });
-
-		expect(screen.getByPlaceholderText('/run/podman/podman.sock')).toHaveValue('/run/podman/podman.sock');
-	});
-
-	it('does not clobber a socket path the user already customized when switching engines', async () => {
-		render(ContainerDetail, {
-			props: { data: { ...dockerConnected, connection: 'socket', host: '' } },
-		});
-
-		await fireEvent.click(screen.getByText('Edit connection'));
-		await fireEvent.input(screen.getByPlaceholderText('/var/run/docker.sock'), {
-			target: { value: '/custom/docker.sock' },
-		});
-
-		await fireEvent.change(screen.getByDisplayValue('Docker'), { target: { value: 'podman' } });
-
-		expect(screen.getByPlaceholderText('/run/podman/podman.sock')).toHaveValue('/custom/docker.sock');
-	});
-
-	it('saves settings for the podman engine', async () => {
-		updateWidgetSettings.mockResolvedValue({ status: 'ok' });
-		widgetDetail.mockResolvedValue(podmanConnected);
-
-		render(ContainerDetail, { props: { data: podmanConnected } });
-
-		await fireEvent.click(screen.getByText('Edit connection'));
-		await fireEvent.click(screen.getByText('Save'));
-
-		await vi.waitFor(() =>
-			expect(updateWidgetSettings).toHaveBeenCalledWith('container', {
-				engine: 'podman',
-				connection: 'socket',
-				socket_path: '/run/podman/podman.sock',
-				host: '',
-				port: 8080,
-			}),
-		);
-		expect(widgetDetail).toHaveBeenCalledWith('container');
+		await vi.waitFor(() => expect(listContainerIntegrations).toHaveBeenCalled());
+		expect(screen.queryByLabelText('Host')).not.toBeInTheDocument();
 	});
 });

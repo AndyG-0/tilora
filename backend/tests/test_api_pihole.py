@@ -16,7 +16,8 @@ AUTH_OK = {"session": {"valid": True, "sid": "sid1", "csrf": "csrf1", "validity"
 
 
 def register_plugin(**settings) -> PiholePlugin:
-    plugin = PiholePlugin({"id": "ph1", "settings": {**PiholePlugin.default_settings, **settings}})
+    merged = {**PiholePlugin.network_default_settings, **PiholePlugin.default_settings, **settings}
+    plugin = PiholePlugin({"id": "ph1", "settings": merged})
     registry.register(plugin)
     return plugin
 
@@ -45,20 +46,8 @@ def unauthenticated_client():
 
 
 def test_unknown_widget_returns_404(client):
-    response = client.post("/api/pihole/nope/test-connection", json={})
+    response = client.post("/api/pihole/nope/blocking", json={"enabled": True})
     assert response.status_code == 404
-
-
-def test_test_connection_requires_login(unauthenticated_client):
-    register_plugin(host="pi.local")
-    response = unauthenticated_client.post("/api/pihole/ph1/test-connection", json={})
-    assert response.status_code == 401
-
-
-def test_test_connection_rejects_member(member_client):
-    register_plugin(host="pi.local")
-    response = member_client.post("/api/pihole/ph1/test-connection", json={})
-    assert response.status_code == 403
 
 
 def test_set_blocking_requires_login(unauthenticated_client):
@@ -71,45 +60,6 @@ def test_set_blocking_rejects_member(member_client):
     register_plugin(host="pi.local")
     response = member_client.post("/api/pihole/ph1/blocking", json={"enabled": True})
     assert response.status_code == 403
-
-
-@respx.mock
-def test_test_connection_ok(client):
-    register_plugin(host="pi.local", password="secret")
-    respx.post("http://pi.local:80/api/auth").mock(return_value=httpx.Response(200, json=AUTH_OK))
-    respx.get("http://pi.local:80/api/info/version").mock(
-        return_value=httpx.Response(200, json={"version": {"core": {"local": {"version": "v6.0.1"}}}})
-    )
-
-    response = client.post("/api/pihole/ph1/test-connection", json={})
-
-    assert response.json() == {"ok": True, "version": "v6.0.1", "error": None}
-
-
-@respx.mock
-def test_test_connection_uses_candidate_settings_override(client):
-    register_plugin(host="pi.local", password="secret")
-    respx.post("http://other.local:80/api/auth").mock(return_value=httpx.Response(200, json=AUTH_OK))
-    route = respx.get("http://other.local:80/api/info/version").mock(
-        return_value=httpx.Response(200, json={"version": {"core": {"local": {"version": "v6.1.0"}}}})
-    )
-
-    response = client.post("/api/pihole/ph1/test-connection", json={"host": "other.local"})
-
-    assert route.called
-    assert response.json()["version"] == "v6.1.0"
-
-
-@respx.mock
-def test_test_connection_reports_failure_without_raising(client):
-    register_plugin(host="pi.local", password="wrong")
-    respx.post("http://pi.local:80/api/auth").mock(return_value=httpx.Response(401))
-
-    response = client.post("/api/pihole/ph1/test-connection", json={})
-
-    assert response.status_code == 200
-    assert response.json()["ok"] is False
-    assert response.json()["error"]
 
 
 @respx.mock
