@@ -25,7 +25,7 @@
 		adding = true;
 		error = null;
 		try {
-			await api.createChore(trimmed);
+			await api.createChore(page.params.id!, trimmed);
 			text = '';
 			await refresh();
 		} catch {

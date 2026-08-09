@@ -74,7 +74,7 @@ describe('PackageDetail', () => {
 		await fireEvent.input(screen.getByPlaceholderText('Tracking number…'), { target: { value: '1Z999AA2' } });
 		await fireEvent.click(screen.getByText('Add'));
 
-		await vi.waitFor(() => expect(createPackage).toHaveBeenCalledWith('1Z999AA2', undefined));
+		await vi.waitFor(() => expect(createPackage).toHaveBeenCalledWith('packages', '1Z999AA2', undefined));
 		expect(await screen.findByText(/1Z999AA2/)).toBeInTheDocument();
 	});
 
@@ -98,7 +98,7 @@ describe('PackageDetail', () => {
 		await fireEvent.input(screen.getByPlaceholderText('Label (optional)…'), { target: { value: 'Gift' } });
 		await fireEvent.click(screen.getByText('Add'));
 
-		await vi.waitFor(() => expect(createPackage).toHaveBeenCalledWith('1Z999AA1', 'Gift'));
+		await vi.waitFor(() => expect(createPackage).toHaveBeenCalledWith('packages', '1Z999AA1', 'Gift'));
 	});
 
 	it('shows an error if adding a package fails', async () => {

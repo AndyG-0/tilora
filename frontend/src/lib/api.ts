@@ -908,14 +908,19 @@ export const api = {
 	createAlert: (alert: { message: string; severity?: AlertSeverity; expires_in_minutes?: number }) =>
 		postJSON<Alert>('/api/alerts', alert),
 	dismissAlert: (id: number) => postJSON<{ status: string }>(`/api/alerts/${id}/dismiss`),
-	createChore: (text: string) => postJSON<Chore>('/api/chores', { text }),
+	createChore: (widgetId: string, text: string) => postJSON<Chore>('/api/chores', { widget_id: widgetId, text }),
 	completeChore: (id: number) => postJSON<Chore>(`/api/chores/${id}/complete`),
 	removeChore: (id: number) => deleteJSON<{ status: string }>(`/api/chores/${id}`),
-	createShoppingItem: (text: string) => postJSON<ShoppingItem>('/api/shopping', { text }),
+	createShoppingItem: (widgetId: string, text: string) =>
+		postJSON<ShoppingItem>('/api/shopping', { widget_id: widgetId, text }),
 	checkShoppingItem: (id: number) => postJSON<ShoppingItem>(`/api/shopping/${id}/check`),
 	removeShoppingItem: (id: number) => deleteJSON<{ status: string }>(`/api/shopping/${id}`),
-	createPackage: (trackingNumber: string, label?: string) =>
-		postJSON<Package>('/api/packages', { tracking_number: trackingNumber, ...(label && { label }) }),
+	createPackage: (widgetId: string, trackingNumber: string, label?: string) =>
+		postJSON<Package>('/api/packages', {
+			widget_id: widgetId,
+			tracking_number: trackingNumber,
+			...(label && { label }),
+		}),
 	removePackage: (id: number) => deleteJSON<{ status: string }>(`/api/packages/${id}`),
 	listRSSFeeds: () => getJSON<RSSFeed[]>('/api/rss/feeds'),
 	addRSSFeed: (url: string, name?: string, item_limit?: number) =>
