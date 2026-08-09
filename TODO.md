@@ -17,7 +17,3 @@ when each idea came up)
     Design proposal written, see [`docs/marketplace-design.md`](docs/marketplace-design.md)
     for the manifest format, sandboxing/permission model, dynamic-loading,
     and install lifecycle. Implementation intentionally not started.
-
-## Next Up
-
-1. On the flight widget add a map to the detail page.

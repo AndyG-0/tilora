@@ -235,6 +235,8 @@ class FlightsPlugin(Plugin):
         flights = await self._nearby_flights()
         return {
             "location_name": settings.get("location_name") or t("flights.your_location", self.locale),
+            "latitude": settings["latitude"],
+            "longitude": settings["longitude"],
             "radius_nm": settings.get("radius_nm", 15),
             "count": len(flights),
             "flights": flights[:_DETAIL_CAP],

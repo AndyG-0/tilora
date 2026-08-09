@@ -225,6 +225,20 @@ async def test_get_detail_caps_at_twenty():
 
 
 @respx.mock
+async def test_get_detail_includes_configured_coordinates():
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        return_value=httpx.Response(200, json=FAKE_RESPONSE)
+    )
+    mock_routeset()
+    plugin = make_plugin()
+
+    detail = await plugin.get_detail()
+
+    assert detail["latitude"] == 32.7555
+    assert detail["longitude"] == -97.3308
+
+
+@respx.mock
 async def test_fetch_uses_configured_coordinates_and_radius():
     route = respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
         return_value=httpx.Response(200, json={"ac": []})

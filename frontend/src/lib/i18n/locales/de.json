@@ -202,6 +202,7 @@
 			"no_cities_found": "Keine Städte gefunden.",
 			"update_failed": "Standort konnte nicht aktualisiert werden.",
 			"radius_label": "Suchradius (nm)",
+			"map_label": "Flugkarte",
 			"empty": "Keine Flugzeuge in der Nähe.",
 			"column_flight": "Flug",
 			"column_type": "Typ",

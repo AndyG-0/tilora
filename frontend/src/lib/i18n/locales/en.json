@@ -202,6 +202,7 @@
 			"no_cities_found": "No cities found.",
 			"update_failed": "Could not update the location.",
 			"radius_label": "Search radius (nm)",
+			"map_label": "Flight map",
 			"empty": "No aircraft nearby.",
 			"column_flight": "Flight",
 			"column_type": "Type",

@@ -202,6 +202,7 @@
 			"no_cities_found": "Aucune ville trouvée.",
 			"update_failed": "Impossible de mettre à jour l'emplacement.",
 			"radius_label": "Rayon de recherche (nm)",
+			"map_label": "Carte des vols",
 			"empty": "Aucun avion à proximité.",
 			"column_flight": "Vol",
 			"column_type": "Type",

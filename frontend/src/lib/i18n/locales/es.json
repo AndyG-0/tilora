@@ -202,6 +202,7 @@
 			"no_cities_found": "No se encontraron ciudades.",
 			"update_failed": "No se pudo actualizar la ubicación.",
 			"radius_label": "Radio de búsqueda (nm)",
+			"map_label": "Mapa de vuelos",
 			"empty": "Ninguna aeronave cerca.",
 			"column_flight": "Vuelo",
 			"column_type": "Tipo",

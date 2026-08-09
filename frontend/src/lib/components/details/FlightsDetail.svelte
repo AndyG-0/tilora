@@ -4,6 +4,7 @@
 	import { airlineLogoSrc } from '$lib/airlineLogos';
 	import LedText from '$lib/components/LedText.svelte';
 	import AircraftIcon from '$lib/components/AircraftIcon.svelte';
+	import FlightsMap from '$lib/components/FlightsMap.svelte';
 	import { _ } from 'svelte-i18n';
 	import { get } from 'svelte/store';
 
@@ -22,6 +23,9 @@
 		altitude_ft: number | null;
 		speed_kts: number | null;
 		distance_nm: number | null;
+		heading: number | null;
+		latitude: number | null;
+		longitude: number | null;
 		origin: AirportRef | null;
 		destination: AirportRef | null;
 	}
@@ -40,6 +44,8 @@
 
 	interface FlightsDetailData {
 		location_name: string;
+		latitude: number;
+		longitude: number;
 		radius_nm: number;
 		count: number;
 		flights: FlightItem[];
@@ -131,6 +137,8 @@
 		{editingLocation ? $_('flights.detail.cancel') : $_('flights.detail.change_location')}
 	</button>
 </div>
+
+<FlightsMap data={flightsData} />
 
 {#if editingLocation}
 	<div class="location-search">
