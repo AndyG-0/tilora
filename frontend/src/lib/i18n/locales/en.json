@@ -292,10 +292,12 @@
 	},
 	"nasa_apod": {
 		"tile": {
-			"unavailable": "Picture of the day unavailable"
+			"unavailable": "Picture of the day unavailable",
+			"stale_badge": "Cached"
 		},
 		"detail": {
-			"unavailable": "Picture of the day is unavailable right now."
+			"unavailable": "Picture of the day is unavailable right now.",
+			"stale_notice": "Couldn't fetch today's picture — showing the one from {date}."
 		}
 	},
 	"bookmarks": {

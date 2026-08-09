@@ -108,7 +108,7 @@
 		}
 	}
 
-	let groups = $derived(rss.feed_groups.filter((group) => group.items.length > 0));
+	let groups = $derived(rss.feed_groups.filter((group) => group.items.length > 0 || group.error));
 </script>
 
 {#snippet mediaList(items: RSSItem[])}
@@ -214,7 +214,11 @@
 		{#if groups.length > 1}
 			<h2 class="group-heading">{group.name}</h2>
 		{/if}
-		{@render mediaList(group.items)}
+		{#if group.error}
+			<p class="hint error">{group.error}</p>
+		{:else}
+			{@render mediaList(group.items)}
+		{/if}
 	{/each}
 {:else if rss.feed_ids.length === 0}
 	<p class="hint">{$_('rss.detail.no_feeds_selected_hint')}</p>

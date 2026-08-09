@@ -34,6 +34,12 @@ const unavailable = {
 	available: false,
 };
 
+const staleImageDay = {
+	...imageDay,
+	stale: true,
+	fetched_at: '2026-08-05T12:00:00Z',
+};
+
 describe('NASADetail', () => {
 	it('renders the image, explanation, and copyright for an image day', () => {
 		render(NASADetail, { props: { data: imageDay } });
@@ -42,6 +48,12 @@ describe('NASADetail', () => {
 		expect(screen.getByText('Some nebula.')).toBeInTheDocument();
 		expect(screen.getByText('© Jane Astronomer')).toBeInTheDocument();
 		expect(screen.getByRole('img')).toHaveAttribute('src', 'https://apod.nasa.gov/apod/image/nebula_hd.jpg');
+	});
+
+	it('shows a stale notice with the cached date when the picture is a cached fallback', () => {
+		render(NASADetail, { props: { data: staleImageDay } });
+
+		expect(screen.getByText(/Couldn't fetch today's picture/)).toBeInTheDocument();
 	});
 
 	it('renders an iframe embed for a video day', () => {

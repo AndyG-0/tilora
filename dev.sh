@@ -26,7 +26,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-(cd "$ROOT_DIR/backend" && uv sync && uv run uvicorn app.main:app --reload --port 8000) &
+(cd "$ROOT_DIR/backend" && uv sync && uv run uvicorn app.main:app --reload --host localhost --port 8000) &
 
 (cd "$ROOT_DIR/frontend" && npm install && npm run dev) &
 

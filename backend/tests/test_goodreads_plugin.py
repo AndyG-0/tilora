@@ -131,3 +131,24 @@ async def test_shelf_query_param_is_sent_to_goodreads():
 
 def test_default_settings_start_with_currently_reading_shelf():
     assert GoodreadsPlugin.default_settings == {"user_id": "", "shelf": "currently-reading"}
+
+
+@respx.mock
+async def test_get_detail_degrades_to_empty_when_goodreads_returns_error():
+    respx.get("https://www.goodreads.com/review/list_rss/bad-id").mock(return_value=httpx.Response(404))
+    plugin = make_plugin(user_id="bad-id", shelf="currently-reading")
+
+    detail = await plugin.get_detail()
+
+    assert detail["books"] == []
+    assert detail["user_id"] == "bad-id"
+
+
+@respx.mock
+async def test_get_summary_degrades_to_empty_when_goodreads_returns_error():
+    respx.get("https://www.goodreads.com/review/list_rss/bad-id").mock(return_value=httpx.Response(404))
+    plugin = make_plugin(user_id="bad-id", shelf="currently-reading")
+
+    summary = await plugin.get_summary()
+
+    assert summary["books"] == []

@@ -400,6 +400,7 @@ export interface RSSFeedGroup {
 	feed_id: number;
 	name: string;
 	items: RSSItem[];
+	error?: string;
 }
 
 export interface RSSSummary {
@@ -430,6 +431,8 @@ export interface NASAApodSummary {
 	date?: string;
 	media_type?: string;
 	thumbnail_url?: string | null;
+	stale?: boolean;
+	fetched_at?: string;
 }
 
 export interface NASAApodDetail {
@@ -443,6 +446,8 @@ export interface NASAApodDetail {
 	media_type?: string;
 	date?: string;
 	copyright?: string | null;
+	stale?: boolean;
+	fetched_at?: string;
 }
 
 export interface SystemMonitorSummary {
