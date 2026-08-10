@@ -3,16 +3,27 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 vi.mock('$env/dynamic/public', () => ({ env: { PUBLIC_API_BASE_URL: 'http://api.test' } }));
 
-const { updateWidgetSettings, widgetDetail, startIcloudAuth, verifyIcloudAuth } = vi.hoisted(() => ({
+const { goto, updateWidgetSettings, widgetDetail, startIcloudAuth, verifyIcloudAuth } = vi.hoisted(() => ({
+	goto: vi.fn(),
 	updateWidgetSettings: vi.fn(),
 	widgetDetail: vi.fn(),
 	startIcloudAuth: vi.fn(),
 	verifyIcloudAuth: vi.fn(),
 }));
+vi.mock('$app/navigation', () => ({ goto }));
 vi.mock('$lib/api', () => ({
 	api: { updateWidgetSettings, widgetDetail, startIcloudAuth, verifyIcloudAuth },
 }));
-vi.mock('$app/state', () => ({ page: { params: { id: 'photos' } } }));
+
+let pageUrl = new URL('http://localhost/widget/photos');
+vi.mock('$app/state', () => ({
+	page: {
+		params: { id: 'photos' },
+		get url() {
+			return pageUrl;
+		},
+	},
+}));
 
 import PhotoDetail from './PhotoDetail.svelte';
 import { user } from '$lib/stores/user';
@@ -20,6 +31,7 @@ import { user } from '$lib/stores/user';
 describe('PhotoDetail', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		pageUrl = new URL('http://localhost/widget/photos');
 		user.set({ id: 'admin-user', name: 'Admin', avatar: null, role: 'admin' });
 	});
 
@@ -405,6 +417,31 @@ describe('PhotoDetail', () => {
 
 		expect(screen.getByAltText('c.jpg')).toBeInTheDocument();
 		expect(screen.getByText('3 / 3')).toBeInTheDocument();
+	});
+
+	it('opens on the photo named in a ?photo= query param and strips it', async () => {
+		pageUrl = new URL('http://localhost/widget/photos?photo=b.jpg');
+
+		render(PhotoDetail, {
+			props: { data: { provider: 'local', count: 3, interval_seconds: 30, photos: threePhotos } },
+		});
+
+		expect(await screen.findByAltText('b.jpg')).toBeInTheDocument();
+		expect(screen.getByText('2 / 3')).toBeInTheDocument();
+		expect(goto).toHaveBeenCalledWith(expect.any(URL), { replaceState: true, noScroll: true, keepFocus: true });
+		const calledUrl = goto.mock.calls[0][0] as URL;
+		expect(calledUrl.searchParams.get('photo')).toBeNull();
+	});
+
+	it('ignores an unknown ?photo= filename and still strips the param', async () => {
+		pageUrl = new URL('http://localhost/widget/photos?photo=missing.jpg');
+
+		render(PhotoDetail, {
+			props: { data: { provider: 'local', count: 3, interval_seconds: 30, photos: threePhotos } },
+		});
+
+		expect(await screen.findByAltText('a.jpg')).toBeInTheDocument();
+		expect(goto).toHaveBeenCalledWith(expect.any(URL), { replaceState: true, noScroll: true, keepFocus: true });
 	});
 
 	it('swiping left on the slideshow advances to the next photo', async () => {

@@ -12,11 +12,14 @@ sensitive.
 
 from __future__ import annotations
 
+import logging
 import os
 
 from cryptography.fernet import Fernet, InvalidToken
 
 from app.config import SECRET_KEY_PATH
+
+logger = logging.getLogger(__name__)
 
 # Marks a value as ciphertext so `decrypt` can tell it apart from a plaintext
 # value written before this module existed (or restored from an old backup)
@@ -70,5 +73,14 @@ def decrypt(value: str) -> str:
     except InvalidToken:
         # The key file changed (or is missing/regenerated) since this value
         # was written — treat it as unreadable rather than crashing whatever
-        # feature is trying to use it.
+        # feature is trying to use it. Logged rather than silently swallowed:
+        # this is exactly what a misconfigured deployment (SECRET_KEY_PATH
+        # not pointed at persistent storage) looks like from the inside, and
+        # without a trace it just presents as "my password disappeared".
+        logger.warning(
+            "Could not decrypt a stored secret — SECRET_KEY_PATH (%s) doesn't match the key it was "
+            "encrypted with. If this follows a container/deployment recreation, SECRET_KEY_PATH is "
+            "probably not pointed at persistent storage.",
+            SECRET_KEY_PATH,
+        )
         return ""

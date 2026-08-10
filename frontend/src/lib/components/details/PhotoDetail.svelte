@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { env } from '$env/dynamic/public';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { api } from '$lib/api';
 	import { logger } from '$lib/logger';
 	import { resolveSwipe } from '$lib/tabNavigation';
@@ -66,6 +67,19 @@
 	function prevPhoto() {
 		goToPhoto(index - 1);
 	}
+
+	// A tile's current photo links here with ?photo=<filename> to open the
+	// carousel on that photo instead of always starting at index 0. The param
+	// is stripped immediately after use so it doesn't re-trigger later.
+	$effect(() => {
+		const target = page.url.searchParams.get('photo');
+		if (!target) return;
+		const idx = photoData.photos.findIndex((p) => p.filename === target);
+		if (idx !== -1) goToPhoto(idx);
+		const url = new URL(page.url);
+		url.searchParams.delete('photo');
+		goto(url, { replaceState: true, noScroll: true, keepFocus: true });
+	});
 
 	onMount(() => {
 		restartAutoAdvance();

@@ -2,18 +2,22 @@
 	import { goto } from '$app/navigation';
 	import type { Snippet } from 'svelte';
 
-	let { widgetId, children }: { widgetId: string; children: Snippet } = $props();
+	let { widgetId, href, children }: { widgetId: string; href?: string; children: Snippet } = $props();
+
+	function target() {
+		return href ?? `/widget/${widgetId}`;
+	}
 </script>
 
 <div
 	class="tile"
 	role="button"
 	tabindex="0"
-	onclick={() => goto(`/widget/${widgetId}`)}
+	onclick={() => goto(target())}
 	onkeydown={(e) => {
 		if (e.key === 'Enter' || e.key === ' ') {
 			e.preventDefault();
-			goto(`/widget/${widgetId}`);
+			goto(target());
 		}
 	}}
 >
