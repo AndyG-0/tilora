@@ -27,7 +27,10 @@
 	pollWidget(refresh, 60_000);
 </script>
 
-<TileCard {widgetId}>
+<TileCard
+	{widgetId}
+	href={summary?.current ? `/widget/${widgetId}?photo=${encodeURIComponent(summary.current.filename)}` : undefined}
+>
 	{#if summary?.current}
 		<div class="frame">
 			<img class="photo" src={`${env.PUBLIC_API_BASE_URL}${summary.current.url}`} alt="" />

@@ -48,7 +48,10 @@ _COMMAND_TIMEOUT_SECONDS = 15
 # it's explaining. Transcoding a 1s clip is otherwise near-instant, so a probe
 # anywhere near this limit is itself the finding.
 _PROBE_TIMEOUT_SECONDS = 15
-_SAMPLE_SECONDS = 1
+_SAMPLE_SECONDS = 3
+# At 30fps this puts several GOPs in the clip, so a resync point still
+# exists after _mpeg2_sample() truncates the lead-in (see its docstring).
+_SAMPLE_GOP_SIZE = 15
 # Probe output is verbose by design and ends up in both a log line and an
 # HTTP body; keep it bounded.
 _OUTPUT_LIMIT_CHARS = 6000
@@ -218,13 +221,22 @@ async def ffmpeg_capabilities() -> dict[str, Any]:
 
 
 async def _mpeg2_sample() -> tuple[bytes | None, str | None]:
-    """A ~1s MPEG-2/AC-3 transport stream, shaped like what the tuner sends.
+    """A few-GOP MPEG-2/AC-3 transport stream, joined mid-stream like the tuner sends.
 
     Probing with `-f lavfi -i testsrc` directly would exercise the encoder
     but *not* the decoder, so a preset like `vaapi_full` — whose whole risk
     is whether the GPU can still hardware-decode MPEG-2 — would pass the
-    probe and then fail on a real channel. Feeding real MPEG-2 in makes the
-    probe answer the question that actually matters.
+    probe and then fail on a real channel. Feeding real MPEG-2 in gets closer,
+    but a clip that starts clean at frame 0 still isn't representative: a
+    live tuner connection always joins mid-transport-stream, so the decoder
+    never sees the very first sequence header and has to resync at the next
+    GOP boundary instead. Some hardware MPEG-2 decoders handle that resync
+    badly — corrupt/zero-dimension frames until they lock on, which has been
+    observed to leave the downstream VAAPI encoder's coded-buffer sizing
+    wrong and crash on the first real frame — and a clip starting at frame 0
+    never exercises that path, so the probe passed while the same preset
+    failed on every real channel. Building multiple GOPs and discarding the
+    lead-in below reproduces the resync a live join forces.
     """
     argv = [
         "ffmpeg",
@@ -242,6 +254,8 @@ async def _mpeg2_sample() -> tuple[bytes | None, str | None]:
         f"sine=frequency=440:duration={_SAMPLE_SECONDS}",
         "-c:v",
         "mpeg2video",
+        "-g",
+        str(_SAMPLE_GOP_SIZE),
         "-b:v",
         "4M",
         "-c:a",
@@ -270,7 +284,14 @@ async def _mpeg2_sample() -> tuple[bytes | None, str | None]:
 
     if process.returncode != 0 or not stdout:
         return None, _truncate(stderr.decode(errors="replace")) or "ffmpeg produced no test sample"
-    return stdout, None
+
+    # Drop the lead-in GOP so the probe never sees the clip's very first
+    # sequence header, same as tuning into a channel already in progress.
+    # The mpegts demuxer resyncs on the next 0x47 sync byte regardless of
+    # where this cuts, and PAT/PMT repeat often enough in ffmpeg's muxer
+    # output that a later copy is always still ahead in the remaining bytes.
+    joined_mid_stream = stdout[len(stdout) // 4 :]
+    return joined_mid_stream, None
 
 
 async def probe_transcode(
