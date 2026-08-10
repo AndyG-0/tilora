@@ -24,9 +24,7 @@ body {
 		-apple-system,
 		'Segoe UI',
 		sans-serif;
-	/* Kiosk touchscreen: no text selection, no overscroll bounce, no callouts. */
-	-webkit-user-select: none;
-	user-select: none;
+	/* Kiosk touchscreen: no overscroll bounce. */
 	overscroll-behavior: none;
 	touch-action: manipulation;
 }
@@ -34,4 +32,11 @@ body {
 button {
 	font: inherit;
 	color: inherit;
+}
+
+/* Kiosk touchscreen: no text-selection callout on tap targets. Other text stays selectable/copyable. */
+button,
+[role='button'] {
+	-webkit-user-select: none;
+	user-select: none;
 }

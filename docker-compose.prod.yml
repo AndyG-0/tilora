@@ -6,6 +6,12 @@ services:
     environment:
       - DB_PATH=/app/data/storage.db
       - ICLOUD_SESSION_DIR=/app/data/icloud_session
+      # Same reasoning as ICLOUD_SESSION_DIR above: without this, the
+      # secret-encryption key (backend/app/crypto.py) defaults to
+      # /app/secret.key, which isn't backed by the volume below — every
+      # container recreation would generate a fresh key and strand every
+      # encrypted secret written under the old one.
+      - SECRET_KEY_PATH=/app/data/secret.key
       # Must match wherever the *browser* actually loads the frontend from —
       # this compose file serves it on port 3000, not the backend's own
       # 5173 default (that's the local Vite dev server's port). Overriding
