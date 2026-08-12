@@ -59,12 +59,30 @@ async def get_image(widget_id: str, item_id: str):
     return Response(content=content, media_type=content_type, headers={"Cache-Control": "public, max-age=3600"})
 
 
+@router.get("/{widget_id}/detail/{item_id}")
+async def get_item_detail(widget_id: str, item_id: str):
+    plugin = _get_plugin(widget_id)
+    try:
+        return await jellyfin_client.get_item_detail(plugin.config["settings"], widget_id, item_id)
+    except jellyfin_client.JellyfinError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/{widget_id}/subtitles/{item_id}/{stream_index}.vtt")
+async def get_subtitle(widget_id: str, item_id: str, stream_index: int):
+    plugin = _get_plugin(widget_id)
+    content = await jellyfin_client.fetch_subtitle_vtt(plugin.config["settings"], widget_id, item_id, stream_index)
+    if content is None:
+        raise HTTPException(status_code=404, detail="Subtitle track not found")
+    return Response(content=content, media_type="text/vtt", headers={"Cache-Control": "public, max-age=3600"})
+
+
 @router.get("/{widget_id}/stream/{item_id}")
-async def stream_item(widget_id: str, item_id: str, request: Request):
+async def stream_item(widget_id: str, item_id: str, request: Request, audio_stream_index: int | None = None):
     plugin = _get_plugin(widget_id)
     try:
         client, upstream = await jellyfin_client.open_video_stream(
-            plugin.config["settings"], widget_id, item_id, request.headers.get("range")
+            plugin.config["settings"], widget_id, item_id, request.headers.get("range"), audio_stream_index
         )
     except jellyfin_client.JellyfinError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

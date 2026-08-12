@@ -8,8 +8,12 @@ const {
 	updateWidgetDeviceSettings,
 	clearWidgetDeviceSettings,
 	jellyfinChildren,
+	jellyfinItemDetail,
+	jellyfinSubtitleUrl,
 	jellyfinImageUrl,
 	jellyfinStreamUrl,
+	updatePreferences,
+	getPreferences,
 } = vi.hoisted(() => ({
 	widgetDetail: vi.fn(),
 	updateWidgetSettings: vi.fn(),
@@ -17,8 +21,12 @@ const {
 	updateWidgetDeviceSettings: vi.fn(),
 	clearWidgetDeviceSettings: vi.fn(),
 	jellyfinChildren: vi.fn(),
+	jellyfinItemDetail: vi.fn(),
+	jellyfinSubtitleUrl: vi.fn(),
 	jellyfinImageUrl: vi.fn((widgetId: string, id: string) => `https://example.com/${widgetId}/${id}/image`),
 	jellyfinStreamUrl: vi.fn((widgetId: string, id: string) => `https://example.com/${widgetId}/${id}/stream`),
+	updatePreferences: vi.fn().mockResolvedValue({}),
+	getPreferences: vi.fn().mockResolvedValue({}),
 }));
 vi.mock('$lib/api', () => ({
 	api: {
@@ -28,8 +36,12 @@ vi.mock('$lib/api', () => ({
 		updateWidgetDeviceSettings,
 		clearWidgetDeviceSettings,
 		jellyfinChildren,
+		jellyfinItemDetail,
+		jellyfinSubtitleUrl,
 		jellyfinImageUrl,
 		jellyfinStreamUrl,
+		updatePreferences,
+		getPreferences,
 	},
 }));
 vi.mock('$app/state', () => ({ page: { params: { id: 'jellyfin' } } }));

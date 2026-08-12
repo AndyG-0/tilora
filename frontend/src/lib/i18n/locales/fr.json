@@ -819,7 +819,20 @@
 		"empty": "Économiseur d'écran"
 	},
 	"player": {
-		"close": "Fermer le lecteur"
+		"close": "Fermer le lecteur",
+		"subtitles": "Sous-titres",
+		"subtitles_off": "Désactivé",
+		"audio_tracks": "Pistes audio",
+		"chapters": "Chapitres",
+		"next_chapter": "Chapitre suivant",
+		"prev_chapter": "Chapitre précédent",
+		"playback_info": "Infos de lecture",
+		"video": "Vidéo",
+		"audio": "Audio",
+		"subtitle": "Sous-titre",
+		"container": "Conteneur",
+		"resolution": "Résolution",
+		"playback_mode": "Mode de lecture"
 	},
 	"clock": {
 		"aria_analog": "Cadran d'horloge analogique",

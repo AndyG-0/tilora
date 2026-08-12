@@ -283,3 +283,93 @@ async def test_open_video_stream_direct_mode_requests_static_passthrough():
     request = route.calls.last.request
     params = dict(httpx.QueryParams(request.url.query))
     assert params == {"static": "true"}
+
+
+@respx.mock
+async def test_get_item_detail_parses_streams_and_chapters():
+    item_payload = {
+        "Id": "m100",
+        "Name": "Sample Movie",
+        "Type": "Movie",
+        "Overview": "Overview text",
+        "ProductionYear": 2024,
+        "RunTimeTicks": 72000000000,
+        "Container": "mkv",
+        "MediaStreams": [
+            {
+                "Type": "Video",
+                "Index": 0,
+                "Codec": "h264",
+                "Width": 1920,
+                "Height": 1080,
+                "AspectRatio": "16:9",
+                "RealFrameRate": 24.0,
+                "BitRate": 5000000,
+            },
+            {
+                "Type": "Audio",
+                "Index": 1,
+                "Title": "English 5.1",
+                "DisplayTitle": "English (AAC 5.1)",
+                "Language": "eng",
+                "Codec": "aac",
+                "Channels": 6,
+                "IsDefault": True,
+            },
+            {
+                "Type": "Subtitle",
+                "Index": 2,
+                "DisplayTitle": "English SDH",
+                "Language": "eng",
+                "Codec": "subrip",
+                "IsDefault": True,
+                "IsForced": False,
+            },
+        ],
+        "Chapters": [
+            {"Name": "Chapter 1", "StartPositionTicks": 0},
+            {"Name": "Chapter 2", "StartPositionTicks": 3000000000},
+        ],
+    }
+    route = respx.get("http://jf.local:8096/Items/m100").mock(return_value=httpx.Response(200, json=item_payload))
+
+    detail = await jellyfin_client.get_item_detail(API_KEY_SETTINGS, "w18", "m100")
+
+    assert route.called
+    assert detail["name"] == "Sample Movie"
+    assert detail["year"] == 2024
+    assert detail["runtime_minutes"] == 120
+    assert len(detail["audio_streams"]) == 1
+    assert detail["audio_streams"][0]["display_title"] == "English (AAC 5.1)"
+    assert len(detail["subtitle_streams"]) == 1
+    assert detail["subtitle_streams"][0]["index"] == 2
+    assert len(detail["chapters"]) == 2
+    assert detail["chapters"][1]["start_seconds"] == 300.0
+
+
+@respx.mock
+async def test_fetch_subtitle_vtt_returns_content():
+    route = respx.get("http://jf.local:8096/Videos/vid1/Subtitles/2/0/Stream.vtt").mock(
+        return_value=httpx.Response(200, content=b"WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nHello")
+    )
+
+    content = await jellyfin_client.fetch_subtitle_vtt(API_KEY_SETTINGS, "w19", "vid1", 2)
+
+    assert route.called
+    assert content.startswith(b"WEBVTT")
+
+
+@respx.mock
+async def test_open_video_stream_with_audio_stream_index():
+    route = respx.get("http://jf.local:8096/Videos/vid1/stream").mock(return_value=httpx.Response(200, content=b"data"))
+
+    client, response = await jellyfin_client.open_video_stream(
+        API_KEY_SETTINGS, "w20", "vid1", None, audio_stream_index=2
+    )
+    await response.aclose()
+    await client.aclose()
+
+    assert route.called
+    request = route.calls.last.request
+    params = dict(httpx.QueryParams(request.url.query))
+    assert params["AudioStreamIndex"] == "2"
