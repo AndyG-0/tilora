@@ -261,23 +261,27 @@ async def get_item_detail(settings: dict[str, Any], widget_id: str, item_id: str
         lang = stream.get("Language", "")
         codec = stream.get("Codec", "")
         if stype == "Audio":
-            audio_streams.append({
-                "index": idx,
-                "display_title": display_title,
-                "language": lang,
-                "codec": codec,
-                "channels": stream.get("Channels", 2),
-                "is_default": bool(stream.get("IsDefault")),
-            })
+            audio_streams.append(
+                {
+                    "index": idx,
+                    "display_title": display_title,
+                    "language": lang,
+                    "codec": codec,
+                    "channels": stream.get("Channels", 2),
+                    "is_default": bool(stream.get("IsDefault")),
+                }
+            )
         elif stype == "Subtitle":
-            subtitle_streams.append({
-                "index": idx,
-                "display_title": display_title,
-                "language": lang,
-                "codec": codec,
-                "is_default": bool(stream.get("IsDefault")),
-                "is_forced": bool(stream.get("IsForced")),
-            })
+            subtitle_streams.append(
+                {
+                    "index": idx,
+                    "display_title": display_title,
+                    "language": lang,
+                    "codec": codec,
+                    "is_default": bool(stream.get("IsDefault")),
+                    "is_forced": bool(stream.get("IsForced")),
+                }
+            )
         elif stype == "Video" and video_stream is None:
             video_stream = {
                 "codec": codec,

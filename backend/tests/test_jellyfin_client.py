@@ -363,7 +363,9 @@ async def test_fetch_subtitle_vtt_returns_content():
 async def test_open_video_stream_with_audio_stream_index():
     route = respx.get("http://jf.local:8096/Videos/vid1/stream").mock(return_value=httpx.Response(200, content=b"data"))
 
-    client, response = await jellyfin_client.open_video_stream(API_KEY_SETTINGS, "w20", "vid1", None, audio_stream_index=2)
+    client, response = await jellyfin_client.open_video_stream(
+        API_KEY_SETTINGS, "w20", "vid1", None, audio_stream_index=2
+    )
     await response.aclose()
     await client.aclose()
 
@@ -371,4 +373,3 @@ async def test_open_video_stream_with_audio_stream_index():
     request = route.calls.last.request
     params = dict(httpx.QueryParams(request.url.query))
     assert params["AudioStreamIndex"] == "2"
-

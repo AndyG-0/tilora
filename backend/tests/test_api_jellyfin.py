@@ -162,4 +162,3 @@ def test_stream_forwards_audio_stream_index(client):
 
     assert response.status_code == 200
     assert response.content == b"stream-bytes"
-

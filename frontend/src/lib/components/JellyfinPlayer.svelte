@@ -23,7 +23,6 @@
 
 	let currentTime = $state(0);
 	let duration = $state(0);
-	let isPaused = $state(false);
 
 	let showAudioMenu = $state(false);
 	let showSubtitlesMenu = $state(false);
