@@ -83,6 +83,8 @@
 
 {#if playingItem}
 	<JellyfinPlayer
+		{widgetId}
+		itemId={playingItem.id}
 		src={api.jellyfinStreamUrl(widgetId, playingItem.id)}
 		title={playingItem.name}
 		onClose={() => (playingItem = null)}

@@ -819,7 +819,20 @@
 		"empty": "Screensaver"
 	},
 	"player": {
-		"close": "Close player"
+		"close": "Close player",
+		"subtitles": "Subtitles / Closed Captions",
+		"subtitles_off": "Off",
+		"audio_tracks": "Audio Tracks",
+		"chapters": "Chapters",
+		"next_chapter": "Next Chapter",
+		"prev_chapter": "Previous Chapter",
+		"playback_info": "Playback Info",
+		"video": "Video",
+		"audio": "Audio",
+		"subtitle": "Subtitle",
+		"container": "Container",
+		"resolution": "Resolution",
+		"playback_mode": "Playback Mode"
 	},
 	"clock": {
 		"aria_analog": "Analog clock face",

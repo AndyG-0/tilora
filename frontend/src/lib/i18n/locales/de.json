@@ -819,7 +819,20 @@
 		"empty": "Bildschirmschoner"
 	},
 	"player": {
-		"close": "Player schließen"
+		"close": "Player schließen",
+		"subtitles": "Untertitel",
+		"subtitles_off": "Aus",
+		"audio_tracks": "Tonspuren",
+		"chapters": "Kapitel",
+		"next_chapter": "Nächstes Kapitel",
+		"prev_chapter": "Vorheriges Kapitel",
+		"playback_info": "Wiedergabeinfo",
+		"video": "Video",
+		"audio": "Audio",
+		"subtitle": "Untertitel",
+		"container": "Container",
+		"resolution": "Auflösung",
+		"playback_mode": "Wiedergabemodus"
 	},
 	"clock": {
 		"aria_analog": "Analoges Zifferblatt",

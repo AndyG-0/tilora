@@ -118,3 +118,48 @@ def test_stream_forwards_range_header_and_status(client):
     assert response.content == b"partial-bytes"
     assert response.headers["content-range"] == "bytes 100-199/200"
     assert response.headers["accept-ranges"] == "bytes"
+
+
+@respx.mock
+def test_get_item_detail_endpoint(client):
+    register_plugin(host="jf.local", api_key="k1")
+    respx.get("http://jf.local:8096/Items/m1").mock(
+        return_value=httpx.Response(200, json={"Id": "m1", "Name": "Movie Title", "Type": "Movie"})
+    )
+
+    response = client.get("/api/jellyfin/jf1/detail/m1")
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "Movie Title"
+
+
+@respx.mock
+def test_get_subtitle_endpoint(client):
+    register_plugin(host="jf.local", api_key="k1")
+    respx.get("http://jf.local:8096/Videos/m1/Subtitles/2/0/Stream.vtt").mock(
+        return_value=httpx.Response(200, content=b"WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nCaption text")
+    )
+
+    response = client.get("/api/jellyfin/jf1/subtitles/m1/2.vtt")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/vtt")
+    assert b"WEBVTT" in response.content
+
+
+@respx.mock
+def test_stream_forwards_audio_stream_index(client):
+    register_plugin(host="jf.local", api_key="k1")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = dict(httpx.QueryParams(request.url.query))
+        assert params.get("AudioStreamIndex") == "3"
+        return httpx.Response(200, content=b"stream-bytes")
+
+    respx.get("http://jf.local:8096/Videos/vid1/stream").mock(side_effect=handler)
+
+    response = client.get("/api/jellyfin/jf1/stream/vid1?audio_stream_index=3")
+
+    assert response.status_code == 200
+    assert response.content == b"stream-bytes"
+

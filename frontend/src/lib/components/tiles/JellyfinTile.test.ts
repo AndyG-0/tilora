@@ -2,12 +2,16 @@ import { render, screen } from '@testing-library/svelte';
 import { fireEvent } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 
-const { widgetSummary, jellyfinImageUrl, jellyfinStreamUrl } = vi.hoisted(() => ({
+const { widgetSummary, jellyfinImageUrl, jellyfinStreamUrl, jellyfinItemDetail, jellyfinSubtitleUrl, updatePreferences, getPreferences } = vi.hoisted(() => ({
 	widgetSummary: vi.fn(),
+	jellyfinItemDetail: vi.fn(),
+	jellyfinSubtitleUrl: vi.fn(),
 	jellyfinImageUrl: vi.fn((widgetId: string, id: string) => `https://example.com/${widgetId}/${id}/image`),
 	jellyfinStreamUrl: vi.fn((widgetId: string, id: string) => `https://example.com/${widgetId}/${id}/stream`),
+	updatePreferences: vi.fn().mockResolvedValue({}),
+	getPreferences: vi.fn().mockResolvedValue({}),
 }));
-vi.mock('$lib/api', () => ({ api: { widgetSummary, jellyfinImageUrl, jellyfinStreamUrl } }));
+vi.mock('$lib/api', () => ({ api: { widgetSummary, jellyfinImageUrl, jellyfinStreamUrl, jellyfinItemDetail, jellyfinSubtitleUrl, updatePreferences, getPreferences } }));
 
 import JellyfinTile from './JellyfinTile.svelte';
 
