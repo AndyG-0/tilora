@@ -819,7 +819,20 @@
 		"empty": "Salvapantallas"
 	},
 	"player": {
-		"close": "Cerrar reproductor"
+		"close": "Cerrar reproductor",
+		"subtitles": "Subtítulos / Subtítulos cerrados",
+		"subtitles_off": "Desactivado",
+		"audio_tracks": "Pistas de audio",
+		"chapters": "Capítulos",
+		"next_chapter": "Siguiente capítulo",
+		"prev_chapter": "Capítulo anterior",
+		"playback_info": "Información de reproducción",
+		"video": "Vídeo",
+		"audio": "Audio",
+		"subtitle": "Subtítulo",
+		"container": "Contenedor",
+		"resolution": "Resolución",
+		"playback_mode": "Modo de reproducción"
 	},
 	"clock": {
 		"aria_analog": "Esfera de reloj analógico",

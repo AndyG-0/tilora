@@ -103,6 +103,52 @@ export interface IcloudAuthStartResult {
 	requires_2fa: boolean;
 }
 
+export interface JellyfinAudioStream {
+	index: number;
+	display_title: string;
+	language: string;
+	codec: string;
+	channels: number;
+	is_default: boolean;
+}
+
+export interface JellyfinSubtitleStream {
+	index: number;
+	display_title: string;
+	language: string;
+	codec: string;
+	is_default: boolean;
+	is_forced: boolean;
+}
+
+export interface JellyfinChapter {
+	name: string;
+	start_seconds: number;
+}
+
+export interface JellyfinVideoStream {
+	codec: string;
+	width: number | null;
+	height: number | null;
+	aspect_ratio: string;
+	framerate: number | null;
+	bitrate: number | null;
+}
+
+export interface JellyfinMediaDetail {
+	id: string;
+	name: string;
+	type: string;
+	overview: string | null;
+	year: number | null;
+	runtime_minutes: number | null;
+	container: string | null;
+	video_stream: JellyfinVideoStream | null;
+	audio_streams: JellyfinAudioStream[];
+	subtitle_streams: JellyfinSubtitleStream[];
+	chapters: JellyfinChapter[];
+}
+
 export interface JellyfinItem {
 	id: string;
 	name: string;
@@ -996,8 +1042,18 @@ export const api = {
 				? `/api/jellyfin/${id}/items?parent_id=${encodeURIComponent(parentId)}`
 				: `/api/jellyfin/${id}/libraries`,
 		),
+	jellyfinItemDetail: (id: string, itemId: string) =>
+		getJSON<JellyfinMediaDetail>(`/api/jellyfin/${id}/detail/${itemId}`),
+	jellyfinSubtitleUrl: (id: string, itemId: string, streamIndex: number) =>
+		`${env.PUBLIC_API_BASE_URL}/api/jellyfin/${id}/subtitles/${itemId}/${streamIndex}.vtt`,
 	jellyfinImageUrl: (id: string, itemId: string) => `${env.PUBLIC_API_BASE_URL}/api/jellyfin/${id}/images/${itemId}`,
-	jellyfinStreamUrl: (id: string, itemId: string) => `${env.PUBLIC_API_BASE_URL}/api/jellyfin/${id}/stream/${itemId}`,
+	jellyfinStreamUrl: (id: string, itemId: string, options?: { audioStreamIndex?: number }) => {
+		const base = `${env.PUBLIC_API_BASE_URL}/api/jellyfin/${id}/stream/${itemId}`;
+		if (options?.audioStreamIndex !== undefined) {
+			return `${base}?audio_stream_index=${options.audioStreamIndex}`;
+		}
+		return base;
+	},
 	hdhomerunTranscodePresets: () => getJSON<HDHomeRunTranscodePreset[]>('/api/hdhomerun/transcode-presets'),
 	// Channel playback_url is a backend-relative proxy path — resolve it
 	// against the API base the same way jellyfinImageUrl/jellyfinStreamUrl do.

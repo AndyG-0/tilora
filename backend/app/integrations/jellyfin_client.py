@@ -232,27 +232,110 @@ async def fetch_image_bytes(settings: dict[str, Any], widget_id: str, item_id: s
     return response.content, response.headers.get("content-type", "image/jpeg")
 
 
+async def get_item_detail(settings: dict[str, Any], widget_id: str, item_id: str) -> dict[str, Any]:
+    conn = await resolve_connection(settings, widget_id)
+    path = f"/Users/{conn.user_id}/Items/{item_id}" if conn.user_id else f"/Items/{item_id}"
+    response = await _request(
+        "GET",
+        path,
+        settings=settings,
+        widget_id=widget_id,
+        params={"Fields": "Overview,MediaStreams,Chapters,MediaSources"},
+    )
+    data = response.json()
+    runtime_ticks = data.get("RunTimeTicks")
+
+    chapters = []
+    for ch in data.get("Chapters") or []:
+        start_seconds = round((ch.get("StartPositionTicks") or 0) / 10_000_000, 2)
+        chapters.append({"name": ch.get("Name", ""), "start_seconds": start_seconds})
+
+    audio_streams = []
+    subtitle_streams = []
+    video_stream = None
+
+    for stream in data.get("MediaStreams") or []:
+        stype = stream.get("Type")
+        idx = stream.get("Index", 0)
+        display_title = stream.get("DisplayTitle") or stream.get("Title") or f"Track {idx}"
+        lang = stream.get("Language", "")
+        codec = stream.get("Codec", "")
+        if stype == "Audio":
+            audio_streams.append(
+                {
+                    "index": idx,
+                    "display_title": display_title,
+                    "language": lang,
+                    "codec": codec,
+                    "channels": stream.get("Channels", 2),
+                    "is_default": bool(stream.get("IsDefault")),
+                }
+            )
+        elif stype == "Subtitle":
+            subtitle_streams.append(
+                {
+                    "index": idx,
+                    "display_title": display_title,
+                    "language": lang,
+                    "codec": codec,
+                    "is_default": bool(stream.get("IsDefault")),
+                    "is_forced": bool(stream.get("IsForced")),
+                }
+            )
+        elif stype == "Video" and video_stream is None:
+            video_stream = {
+                "codec": codec,
+                "width": stream.get("Width"),
+                "height": stream.get("Height"),
+                "aspect_ratio": stream.get("AspectRatio", ""),
+                "framerate": stream.get("RealFrameRate") or stream.get("AverageFrameRate"),
+                "bitrate": stream.get("BitRate"),
+            }
+
+    container = data.get("Container")
+    if not container and data.get("MediaSources"):
+        container = data["MediaSources"][0].get("Container")
+
+    return {
+        "id": data.get("Id", item_id),
+        "name": data.get("Name", ""),
+        "type": data.get("Type", ""),
+        "overview": data.get("Overview"),
+        "year": data.get("ProductionYear"),
+        "runtime_minutes": round(runtime_ticks / 600_000_000) if runtime_ticks else None,
+        "container": container,
+        "video_stream": video_stream,
+        "audio_streams": audio_streams,
+        "subtitle_streams": subtitle_streams,
+        "chapters": chapters,
+    }
+
+
+async def fetch_subtitle_vtt(settings: dict[str, Any], widget_id: str, item_id: str, index: int) -> bytes | None:
+    try:
+        response = await _request(
+            "GET",
+            f"/Videos/{item_id}/Subtitles/{index}/0/Stream.vtt",
+            settings=settings,
+            widget_id=widget_id,
+        )
+        return response.content
+    except JellyfinError:
+        return None
+
+
 async def open_video_stream(
-    settings: dict[str, Any], widget_id: str, item_id: str, range_header: str | None
+    settings: dict[str, Any],
+    widget_id: str,
+    item_id: str,
+    range_header: str | None,
+    audio_stream_index: int | None = None,
 ) -> tuple[httpx.AsyncClient, httpx.Response]:
     conn = await resolve_connection(settings, widget_id)
     headers = dict(conn.headers)
     if range_header:
         headers["Range"] = range_header
 
-    # "direct" (static=true) hands back the source file byte-for-byte — zero
-    # transcoding cost on the Jellyfin server, but many source files (MKV
-    # rips especially) carry AC3/DTS/TrueHD audio that Chromium's <video>
-    # can't decode, so playback is silent even though the picture works.
-    # "compatible" (the default) asks Jellyfin to stream-copy the video
-    # (no re-encode — cheap) while transcoding only the audio track to AAC
-    # stereo, which every browser can decode. This is the same "Direct
-    # Stream" playback method Jellyfin's own web client falls back to for
-    # this exact situation.
-    # "compatible_video" additionally re-encodes the video track to H.264 —
-    # real transcode cost on the Jellyfin server, not just a stream-copy —
-    # for source codecs (e.g. some HEVC profiles) a given device's hardware
-    # decoder can't handle even after the audio/container fix above.
     playback_mode = settings.get("playback_mode", "compatible")
     if playback_mode == "direct":
         params: dict[str, Any] = {"static": "true"}
@@ -273,8 +356,9 @@ async def open_video_stream(
             "Container": "mp4",
         }
 
-    # read=None: a video stream has no natural read deadline; connect/write
-    # timeouts still guard against a genuinely unreachable server.
+    if audio_stream_index is not None:
+        params["AudioStreamIndex"] = str(audio_stream_index)
+
     client = httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=None, write=10, pool=10))
     request = client.build_request("GET", f"{conn.base_url}/Videos/{item_id}/stream", headers=headers, params=params)
     response = await client.send(request, stream=True)
