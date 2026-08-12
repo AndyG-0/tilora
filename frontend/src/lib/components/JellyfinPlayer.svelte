@@ -103,9 +103,7 @@
 		currentChapterIndex >= 0 && mediaDetail?.chapters ? mediaDetail.chapters[currentChapterIndex] : null,
 	);
 
-	const activeAudioTrack = $derived(
-		mediaDetail?.audio_streams?.find((s) => s.index === selectedAudioIndex) || null,
-	);
+	const activeAudioTrack = $derived(mediaDetail?.audio_streams?.find((s) => s.index === selectedAudioIndex) || null);
 
 	const activeSubtitleTrack = $derived(
 		mediaDetail?.subtitle_streams?.find((s) => s.index === selectedSubtitleIndex) || null,
@@ -425,7 +423,10 @@
 				<div class="info-body">
 					<div class="info-row">
 						<span class="label">Media:</span>
-						<span class="value">{mediaDetail.name} {#if mediaDetail.year}({mediaDetail.year}){/if}</span>
+						<span class="value"
+							>{mediaDetail.name}
+							{#if mediaDetail.year}({mediaDetail.year}){/if}</span
+						>
 					</div>
 					{#if mediaDetail.container}
 						<div class="info-row">
@@ -443,9 +444,7 @@
 						{#if mediaDetail.video_stream.width && mediaDetail.video_stream.height}
 							<div class="info-row">
 								<span class="label">{$_('player.resolution')}:</span>
-								<span class="value"
-									>{mediaDetail.video_stream.width}×{mediaDetail.video_stream.height}</span
-								>
+								<span class="value">{mediaDetail.video_stream.width}×{mediaDetail.video_stream.height}</span>
 							</div>
 						{/if}
 						{#if mediaDetail.video_stream.framerate}
@@ -477,7 +476,9 @@
 					<div class="info-section-heading">{$_('player.subtitle')}</div>
 					<div class="info-row">
 						<span class="label">Track:</span>
-						<span class="value">{activeSubtitleTrack ? activeSubtitleTrack.display_title : $_('player.subtitles_off')}</span>
+						<span class="value"
+							>{activeSubtitleTrack ? activeSubtitleTrack.display_title : $_('player.subtitles_off')}</span
+						>
 					</div>
 
 					{#if currentChapter}
