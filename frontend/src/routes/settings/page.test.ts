@@ -18,6 +18,7 @@ const {
 	ttsVoices,
 	listBrowserVoices,
 	speak,
+	listNetworkIntegrations,
 } = vi.hoisted(() => ({
 	goto: vi.fn(),
 	settings: vi.fn(),
@@ -33,6 +34,7 @@ const {
 	ttsVoices: vi.fn(),
 	listBrowserVoices: vi.fn(),
 	speak: vi.fn(),
+	listNetworkIntegrations: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock('$app/navigation', () => ({ goto }));
@@ -49,6 +51,7 @@ vi.mock('$lib/api', () => ({
 		updatePreferences,
 		listWidgets,
 		ttsVoices,
+		listNetworkIntegrations,
 	},
 }));
 vi.mock('$lib/speech', () => ({ listBrowserVoices, speak }));
@@ -104,6 +107,7 @@ describe('settings +page.svelte — voice sections', () => {
 		listWidgets.mockResolvedValue([]);
 		ttsVoices.mockResolvedValue([]);
 		listBrowserVoices.mockResolvedValue([]);
+		listNetworkIntegrations.mockResolvedValue([]);
 	});
 
 	it('lets an admin enable OpenAI and Piper TTS and saves the provider fields', async () => {
@@ -123,7 +127,7 @@ describe('settings +page.svelte — voice sections', () => {
 			target: { value: 'en_US-amy-medium|Amy' },
 		});
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Save app settings' }));
 
 		await waitFor(() => expect(updateSettings).toHaveBeenCalled());
 		expect(updateSettings).toHaveBeenCalledWith(
@@ -226,6 +230,7 @@ describe('settings +page.svelte — language section', () => {
 		listWidgets.mockResolvedValue([]);
 		ttsVoices.mockResolvedValue([]);
 		listBrowserVoices.mockResolvedValue([]);
+		listNetworkIntegrations.mockResolvedValue([]);
 	});
 
 	it('persists a locale change and translates the page', async () => {
@@ -264,6 +269,7 @@ describe('settings +page.svelte — screensaver test button', () => {
 		listWidgets.mockResolvedValue([]);
 		ttsVoices.mockResolvedValue([]);
 		listBrowserVoices.mockResolvedValue([]);
+		listNetworkIntegrations.mockResolvedValue([]);
 		screensaverSettings.set(null);
 		forceScreensaverPreview.set(false);
 	});
