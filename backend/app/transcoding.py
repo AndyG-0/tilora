@@ -271,21 +271,47 @@ def _output_args(settings: dict[str, Any]) -> list[str]:
     return resolve_preset(hwaccel).output_args
 
 
-def build_ffmpeg_args(settings: dict[str, Any], input_url: str) -> list[str]:
+def build_ffmpeg_args(
+    settings: dict[str, Any],
+    input_url: str,
+    *,
+    seek_seconds: float | None = None,
+    audio_index: int | None = None,
+) -> list[str]:
     """Full ffmpeg arg list (excluding the "ffmpeg" program name itself)."""
     preset = resolve_preset(settings.get("hwaccel", DEFAULT_PRESET))
     device = resolve_device(settings)
+
+    input_options = [*_substitute_device(preset.input_args, device)]
+    # Pace playback to 1x realtime for DVR recordings (files), which are served
+    # as fast as possible over HTTP. Live tuners pace themselves naturally.
+    if ":5004/auto/v" not in input_url:
+        input_options.insert(0, "-re")
+    if seek_seconds is not None:
+        # Input-side -ss (before -i) is demuxer seeking - it jumps to the
+        # nearest keyframe before decoding starts, which is what makes
+        # "seeking" through a recording playable in real time instead of
+        # decoding and discarding everything up to the target.
+        input_options[:0] = ["-ss", f"{seek_seconds:.3f}"]
+
+    output_args = _substitute_device(_output_args(settings), device)
+    if audio_index is not None:
+        # Explicit stream mapping is only needed once we're picking a
+        # non-default audio stream (e.g. an ATSC SAP track) - ffmpeg's
+        # default stream selection is otherwise left alone.
+        output_args = ["-map", "0:v:0", "-map", f"0:a:{audio_index}", *output_args]
+
     return [
         "-hide_banner",
         "-loglevel",
         resolve_loglevel(settings),
         "-nostats",
-        *_substitute_device(preset.input_args, device),
+        *input_options,
         "-i",
         input_url,
         # Custom args get the same substitution, so "{device}" is usable as a
         # portable stand-in there too rather than forcing a hardcoded path.
-        *_substitute_device(_output_args(settings), device),
+        *output_args,
         "-f",
         "mpegts",
         "pipe:1",

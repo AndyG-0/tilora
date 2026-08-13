@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 import pytest
 from fastapi import FastAPI
@@ -387,3 +388,244 @@ def test_playlist_returns_m3u_pointing_at_raw_stream(client):
     assert response.headers["content-disposition"] == 'inline; filename="4.1.m3u"'
     assert response.text.startswith("#EXTM3U\n")
     assert "http://hdhr.local:5004/auto/v4.1" in response.text
+
+
+def test_recording_stream_threads_start_and_audio_index_into_ffmpeg_args(client, monkeypatch):
+    register_plugin(dvr_host="dvr.local", dvr_port=50000, playback_mode="server_transcode")
+    fake_process = _FakeProcess([b"abc"])
+    captured: dict[str, object] = {}
+
+    async def fake_create_subprocess_exec(*args, **kwargs):
+        captured["args"] = args
+        return fake_process
+
+    monkeypatch.setattr(hdhomerun.asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+
+    response = client.get("/api/hdhomerun/hdhr1/recording-stream?url=/recorded/play?id=123&start=90.5&audio_index=1")
+
+    assert response.status_code == 200
+    args = captured["args"]
+    assert args[args.index("-ss") + 1] == "90.500"
+    assert args.index("-ss") < args.index("-i")
+    assert args[args.index("-map") + 1] == "0:v:0"
+    assert "0:a:1" in args
+
+
+def test_recording_stream_omits_seek_and_audio_map_when_not_given(client, monkeypatch):
+    register_plugin(dvr_host="dvr.local", dvr_port=50000, playback_mode="server_transcode")
+    fake_process = _FakeProcess([b"abc"])
+    captured: dict[str, object] = {}
+
+    async def fake_create_subprocess_exec(*args, **kwargs):
+        captured["args"] = args
+        return fake_process
+
+    monkeypatch.setattr(hdhomerun.asyncio, "create_subprocess_exec", fake_create_subprocess_exec)
+
+    response = client.get("/api/hdhomerun/hdhr1/recording-stream?url=/recorded/play?id=123")
+
+    assert response.status_code == 200
+    args = captured["args"]
+    assert "-ss" not in args
+    assert "-map" not in args
+
+
+def test_recording_detail_in_progress_when_record_end_missing(client):
+    register_plugin(dvr_host="dvr.local", dvr_port=50000)
+
+    response = client.get(
+        "/api/hdhomerun/hdhr1/recording-detail?url=/recorded/play?id=1&recording_id=rec1&start=1700000000"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["is_in_progress"] is True
+    assert body["video"] is None
+    assert body["audio"] == []
+    assert body["has_captions"] is False
+    assert body["duration_seconds"] is not None
+
+
+def test_recording_detail_in_progress_when_record_end_in_future(client):
+    register_plugin(dvr_host="dvr.local", dvr_port=50000)
+    future = time.time() + 3600
+
+    response = client.get(
+        f"/api/hdhomerun/hdhr1/recording-detail?url=/recorded/play?id=1&recording_id=rec2"
+        f"&start={time.time()}&record_end={future}"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["is_in_progress"] is True
+
+
+def test_recording_detail_completed_probes_and_caches(client, monkeypatch):
+    register_plugin(dvr_host="dvr.local", dvr_port=50000)
+    probe_calls = 0
+
+    async def fake_probe(url):
+        nonlocal probe_calls
+        probe_calls += 1
+        return {
+            "duration_seconds": 1800.0,
+            "video": {"codec": "h264", "width": 1920, "height": 1080, "fps": 29.97},
+            "audio": [{"index": 0, "codec": "aac", "channels": 2, "language": "eng"}],
+            "has_captions": True,
+        }
+
+    monkeypatch.setattr(hdhomerun.media_probe, "probe", fake_probe)
+    hdhomerun._probe_cache.pop("rec3", None)
+
+    past = time.time() - 60
+    url = f"/api/hdhomerun/hdhr1/recording-detail?url=/recorded/play?id=1&recording_id=rec3&start=0&record_end={past}"
+    response = client.get(url)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["is_in_progress"] is False
+    assert body["duration_seconds"] == 1800.0
+    assert body["has_captions"] is True
+
+    # Second request for the same recording reuses the cached probe result.
+    client.get(url)
+    assert probe_calls == 1
+    hdhomerun._probe_cache.pop("rec3", None)
+
+
+def test_recording_detail_falls_back_when_probe_fails(client, monkeypatch):
+    register_plugin(dvr_host="dvr.local", dvr_port=50000)
+
+    async def fake_probe(url):
+        return None
+
+    monkeypatch.setattr(hdhomerun.media_probe, "probe", fake_probe)
+    hdhomerun._probe_cache.pop("rec4", None)
+
+    past = time.time() - 60
+    response = client.get(
+        f"/api/hdhomerun/hdhr1/recording-detail?url=/recorded/play?id=1&recording_id=rec4&start=0&record_end={past}"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["is_in_progress"] is False
+    assert body["duration_seconds"] == past
+    assert body["video"] is None
+    hdhomerun._probe_cache.pop("rec4", None)
+
+
+def test_recording_captions_404_for_in_progress_recording(client):
+    register_plugin(dvr_host="dvr.local", dvr_port=50000)
+
+    response = client.get("/api/hdhomerun/hdhr1/recording-captions.vtt?url=/recorded/play?id=1&recording_id=rec5")
+
+    assert response.status_code == 404
+
+
+def test_recording_captions_returns_file_when_generated(client, monkeypatch, tmp_path):
+    register_plugin(dvr_host="dvr.local", dvr_port=50000)
+    vtt_path = tmp_path / "rec6.vtt"
+    vtt_path.write_text("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello\n")
+
+    async def fake_generate(url, recording_id):
+        return vtt_path
+
+    monkeypatch.setattr(hdhomerun.media_cache, "generate_captions_vtt", fake_generate)
+
+    past = time.time() - 60
+    response = client.get(
+        f"/api/hdhomerun/hdhr1/recording-captions.vtt?url=/recorded/play?id=1&recording_id=rec6&record_end={past}"
+    )
+
+    assert response.status_code == 200
+    assert "WEBVTT" in response.text
+
+
+def test_recording_captions_404_when_generation_fails(client, monkeypatch):
+    register_plugin(dvr_host="dvr.local", dvr_port=50000)
+
+    async def fake_generate(url, recording_id):
+        return None
+
+    monkeypatch.setattr(hdhomerun.media_cache, "generate_captions_vtt", fake_generate)
+
+    past = time.time() - 60
+    response = client.get(
+        f"/api/hdhomerun/hdhr1/recording-captions.vtt?url=/recorded/play?id=1&recording_id=rec7&record_end={past}"
+    )
+
+    assert response.status_code == 404
+
+
+def test_recording_thumbnails_404_when_disabled_in_settings(client, monkeypatch):
+    register_plugin(dvr_host="dvr.local", dvr_port=50000, thumbnails_enabled=False)
+
+    async def fake_generate(url, recording_id, duration_seconds):
+        raise AssertionError("should not generate thumbnails when disabled")
+
+    monkeypatch.setattr(hdhomerun.media_cache, "generate_thumbnail_sprite", fake_generate)
+
+    past = time.time() - 60
+    response = client.get(
+        f"/api/hdhomerun/hdhr1/recording-thumbnails/rec8.jpg?url=/recorded/play?id=1&record_end={past}"
+    )
+
+    assert response.status_code == 404
+
+
+def test_recording_thumbnails_404_for_in_progress_recording(client):
+    register_plugin(dvr_host="dvr.local", dvr_port=50000)
+
+    response = client.get("/api/hdhomerun/hdhr1/recording-thumbnails/rec9.jpg?url=/recorded/play?id=1")
+
+    assert response.status_code == 404
+
+
+def test_recording_thumbnails_returns_sprite_and_vtt_when_generated(client, monkeypatch, tmp_path):
+    register_plugin(dvr_host="dvr.local", dvr_port=50000)
+    jpg_path = tmp_path / "rec10.jpg"
+    jpg_path.write_bytes(b"\xff\xd8\xff")
+    vtt_path = tmp_path / "rec10.thumbs.vtt"
+    vtt_path.write_text("WEBVTT\n")
+
+    async def fake_probe(url):
+        return {"duration_seconds": 600.0, "video": None, "audio": [], "has_captions": False}
+
+    async def fake_generate(url, recording_id, duration_seconds):
+        assert duration_seconds == 600.0
+        return jpg_path, vtt_path
+
+    monkeypatch.setattr(hdhomerun.media_probe, "probe", fake_probe)
+    monkeypatch.setattr(hdhomerun.media_cache, "generate_thumbnail_sprite", fake_generate)
+    hdhomerun._probe_cache.pop("rec10", None)
+
+    past = time.time() - 60
+    jpg_response = client.get(
+        f"/api/hdhomerun/hdhr1/recording-thumbnails/rec10.jpg?url=/recorded/play?id=1&record_end={past}"
+    )
+    vtt_response = client.get(
+        f"/api/hdhomerun/hdhr1/recording-thumbnails/rec10.vtt?url=/recorded/play?id=1&record_end={past}"
+    )
+
+    assert jpg_response.status_code == 200
+    assert jpg_response.headers["content-type"] == "image/jpeg"
+    assert vtt_response.status_code == 200
+    assert "WEBVTT" in vtt_response.text
+    hdhomerun._probe_cache.pop("rec10", None)
+
+
+def test_recording_thumbnails_404_when_duration_unknown(client, monkeypatch):
+    register_plugin(dvr_host="dvr.local", dvr_port=50000)
+
+    async def fake_probe(url):
+        return None
+
+    monkeypatch.setattr(hdhomerun.media_probe, "probe", fake_probe)
+    hdhomerun._probe_cache.pop("rec11", None)
+
+    past = time.time() - 60
+    response = client.get(
+        f"/api/hdhomerun/hdhr1/recording-thumbnails/rec11.jpg?url=/recorded/play?id=1&record_end={past}"
+    )
+
+    assert response.status_code == 404
+    hdhomerun._probe_cache.pop("rec11", None)

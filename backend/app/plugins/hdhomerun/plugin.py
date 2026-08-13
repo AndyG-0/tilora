@@ -72,6 +72,13 @@ class HDHomeRunPlugin(Plugin):
         # negotiation. Off by default: it's several lines per second per
         # viewer.
         "ffmpeg_debug": False,
+        # Generate a scrub-bar hover-preview thumbnail sprite for each
+        # completed recording the first time it's opened — a one-time
+        # ffmpeg pass per recording, cached to disk after that. Real cost,
+        # but paid once, not per playback. Off switch for machines where
+        # that extra pass is too much (e.g. a Raspberry Pi already using
+        # "software_lowpower" for live transcode).
+        "thumbnails_enabled": True,
         # Channel numbers (e.g. "4.1") the user has starred on the detail
         # page. Empty means "no preference yet" — the tile summary falls
         # back to showing whatever channels happen to have guide data,
@@ -174,6 +181,7 @@ class HDHomeRunPlugin(Plugin):
             "custom_ffmpeg_args": s.get("custom_ffmpeg_args", ""),
             "hwaccel_device": transcoding.resolve_device(s),
             "ffmpeg_debug": bool(s.get("ffmpeg_debug", False)),
+            "thumbnails_enabled": bool(s.get("thumbnails_enabled", True)),
             "favorite_channels": s.get("favorite_channels") or [],
             # The exact ffmpeg command server_transcode playback will run —
             # always surfaced so the user can see what their hwaccel choice
@@ -202,13 +210,120 @@ class HDHomeRunPlugin(Plugin):
 
         dvr_info = None
         recording_rules: list[dict[str, Any]] = []
-        if self._dvr_connected():
-            try:
-                dvr_info = await hdhomerun_client.fetch_dvr_info(self._settings())
-            except hdhomerun_client.HDHomeRunError:
-                logger.warning("Could not fetch DVR info for HDHomeRun widget '%s'", self.id, exc_info=True)
-                dvr_info = None
+        all_recordings: list[dict[str, Any]] = []
+        if self._dvr_connected() or self._tuner_connected():
+            if self._dvr_connected():
+                try:
+                    dvr_info = await hdhomerun_client.fetch_dvr_info(self._settings())
+                except hdhomerun_client.HDHomeRunError:
+                    logger.warning("Could not fetch DVR info for HDHomeRun widget '%s'", self.id, exc_info=True)
+                    dvr_info = None
+                all_recordings = await hdhomerun_client.fetch_dvr_recordings(self._settings())
             recording_rules = await hdhomerun_client.fetch_dvr_recording_rules(self._settings())
+
+        now = time.time()
+        active_rules: list[dict[str, Any]] = []
+        for rule in recording_rules:
+            dt = rule.get("DateTimeOnly")
+            if dt is not None:
+                padding = rule.get("EndPadding") or 0
+                if dt + padding + 3600 < now:
+                    continue
+            active_rules.append(rule)
+
+        recordings_in_progress: list[dict[str, Any]] = []
+        seen_titles: set[str] = set()
+
+        settings = self._settings()
+        dvr_h = settings.get("dvr_host", "")
+
+        for r in all_recordings:
+            p_url = r.get("play_url")
+            if p_url and p_url.startswith("/") and dvr_h:
+                r["play_url"] = hdhomerun_client.resolve_recording_url(settings, p_url)
+            elif not p_url and r.get("recording_id") and dvr_h:
+                r["play_url"] = hdhomerun_client.resolve_recording_url(settings, f"/recorded/{r['recording_id']}")
+
+        for r in all_recordings:
+            rec_end = r.get("record_end")
+            rec_start = r.get("start")
+            if rec_end is not None and rec_end > now:
+                if rec_start is None or rec_start <= now + 300:
+                    recordings_in_progress.append(r)
+                    if r.get("title"):
+                        seen_titles.add(r["title"].lower())
+
+        for rule in active_rules:
+            dt = rule.get("DateTimeOnly")
+            title = rule.get("Title", "")
+            rule_id = rule.get("RecordingRuleID")
+            if dt is not None and title.lower() not in seen_titles:
+                start_p = rule.get("StartPadding") or 0
+                end_p = rule.get("EndPadding") or 0
+                ch_num = (rule.get("ChannelOnly") or "").split("|")[0]
+                tuner_h = self._settings().get("tuner_host", "")
+                play_u = hdhomerun_client.raw_stream_url(self._settings(), ch_num) if (ch_num and tuner_h) else None
+
+                if dt - start_p <= now < dt + 3600 + end_p:
+                    recordings_in_progress.append(
+                        {
+                            "title": title,
+                            "channel_name": rule.get("ChannelOnly", ""),
+                            "channel_number": ch_num,
+                            "start": dt,
+                            "record_end": dt + 3600 + end_p,
+                            "synopsis": rule.get("Synopsis"),
+                            "image_url": rule.get("ImageURL"),
+                            "play_url": play_u,
+                            "recording_id": rule_id,
+                            # No DVR file exists yet for this — play_url (if
+                            # any) is the bare live tuner stream, which
+                            # can't be seeked into. See _recording_dict's
+                            # is_dvr_file for the real-file case.
+                            "is_dvr_file": False,
+                        }
+                    )
+                    seen_titles.add(title.lower())
+
+        for channel in channels:
+            current_show = channel.get("now")
+            if not current_show or not isinstance(current_show, dict):
+                continue
+            show_title = current_show.get("title")
+            if not show_title or show_title.lower() in seen_titles:
+                continue
+            show_series_id = current_show.get("series_id")
+            channel_num = channel.get("channel_number")
+            for rule in active_rules:
+                rule_series_id = rule.get("SeriesID")
+                rule_channel = rule.get("ChannelOnly")
+                rule_id = rule.get("RecordingRuleID")
+                matches_series = rule_series_id and show_series_id and rule_series_id == show_series_id
+                matches_channel = not rule_channel or channel_num in rule_channel.split("|")
+                if matches_series and matches_channel:
+                    tuner_h = self._settings().get("tuner_host", "")
+                    play_u = (
+                        hdhomerun_client.raw_stream_url(self._settings(), channel_num)
+                        if (channel_num and tuner_h)
+                        else None
+                    )
+
+                    recordings_in_progress.append(
+                        {
+                            "title": show_title,
+                            "episode_title": current_show.get("episode_title"),
+                            "channel_name": channel.get("name") or channel_num,
+                            "channel_number": channel_num,
+                            "start": current_show.get("start"),
+                            "record_end": current_show.get("end"),
+                            "synopsis": current_show.get("synopsis"),
+                            "play_url": play_u,
+                            "recording_id": rule_id,
+                            "is_dvr_file": False,
+                        }
+                    )
+                    seen_titles.add(show_title.lower())
+                    break
 
         return {
             "tuner_connected": self._tuner_connected(),
@@ -218,8 +333,10 @@ class HDHomeRunPlugin(Plugin):
             "channels": channels,
             "tuners": tuners,
             "dvr_info": dvr_info,
-            "recordings_in_progress": await self._recordings_in_progress(),
-            "upcoming_recording_rules_count": len(recording_rules),
+            "recordings_in_progress": recordings_in_progress,
+            "all_recordings": all_recordings,
+            "recording_rules": active_rules,
+            "upcoming_recording_rules_count": len(active_rules),
             **self._settings_view(),
         }
 

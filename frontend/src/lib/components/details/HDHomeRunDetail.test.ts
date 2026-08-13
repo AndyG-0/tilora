@@ -9,6 +9,8 @@ const {
 	hdhomerunPlaylistUrl,
 	hdhomerunPlaybackUrl,
 	hdhomerunHwaccelDiagnostics,
+	hdhomerunRecordingStreamUrl,
+	getHDHomeRunGuide,
 } = vi.hoisted(() => ({
 	goto: vi.fn(),
 	widgetDetail: vi.fn(),
@@ -17,6 +19,10 @@ const {
 	hdhomerunPlaylistUrl: vi.fn((widgetId: string, ch: string) => `https://example.com/${widgetId}/playlist/${ch}`),
 	hdhomerunPlaybackUrl: vi.fn((url: string) => `https://example.com/proxy?src=${url}`),
 	hdhomerunHwaccelDiagnostics: vi.fn(),
+	hdhomerunRecordingStreamUrl: vi.fn(
+		(widgetId: string, playUrl: string) => `https://example.com/${widgetId}/recording-stream?url=${playUrl}`,
+	),
+	getHDHomeRunGuide: vi.fn(),
 }));
 vi.mock('$app/navigation', () => ({ goto }));
 vi.mock('$lib/api', () => ({
@@ -27,6 +33,8 @@ vi.mock('$lib/api', () => ({
 		hdhomerunPlaylistUrl,
 		hdhomerunPlaybackUrl,
 		hdhomerunHwaccelDiagnostics,
+		hdhomerunRecordingStreamUrl,
+		getHDHomeRunGuide,
 	},
 }));
 
@@ -60,6 +68,7 @@ const notConnected = {
 	ffmpeg_debug: false,
 	ffmpeg_command: '',
 	favorite_channels: [] as string[],
+	thumbnails_enabled: true,
 };
 
 const channel = {
@@ -72,6 +81,26 @@ const channel = {
 	now: { title: 'Evening News', episode_title: null, start: null, end: null },
 	next: { title: 'Nightly Show', episode_title: null, start: null, end: null },
 };
+
+const nowSeconds = () => Math.floor(Date.now() / 1000);
+
+// A guide entry with an airing currently in progress, for exercising the
+// grid's live-cell watch/record interactions.
+const guideWithLiveAiring = () => [
+	{
+		channel_number: '4.1',
+		channel_name: 'KDFW',
+		airings: [
+			{
+				series_id: 'SH123',
+				title: 'Evening News',
+				episode_title: null,
+				start: nowSeconds() - 60,
+				end: nowSeconds() + 30 * 60,
+			},
+		],
+	},
+];
 
 const connected = {
 	...notConnected,
@@ -89,6 +118,7 @@ const connected = {
 describe('HDHomeRunDetail', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		getHDHomeRunGuide.mockResolvedValue([]);
 		pageUrl = new URL('http://localhost/widget/hdhomerun');
 		user.set({ id: 'admin-user', name: 'Admin', avatar: null, role: 'admin' });
 	});
@@ -99,14 +129,15 @@ describe('HDHomeRunDetail', () => {
 		expect(screen.getByText('Not connected yet — set up HDHomeRun in Network Settings.')).toBeInTheDocument();
 	});
 
-	it('renders tuner info and the channel lineup with guide entries', () => {
+	it('renders tuner info and the channel lineup with guide entries', async () => {
+		getHDHomeRunGuide.mockResolvedValue(guideWithLiveAiring());
+
 		render(HDHomeRunDetail, { props: { data: connected } });
 
 		expect(screen.getByText(/HDHomeRun Connect/)).toBeInTheDocument();
+		expect(await screen.findByText('Evening News')).toBeInTheDocument();
 		expect(screen.getByText('4.1')).toBeInTheDocument();
 		expect(screen.getByText('KDFW')).toBeInTheDocument();
-		expect(screen.getByText(/Evening News/)).toBeInTheDocument();
-		expect(screen.getByText('Next: Nightly Show')).toBeInTheDocument();
 	});
 
 	it('toggles a channel as a favorite and persists it', async () => {
@@ -114,13 +145,13 @@ describe('HDHomeRunDetail', () => {
 
 		render(HDHomeRunDetail, { props: { data: connected } });
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Add to favorites' }));
+		await fireEvent.click(await screen.findByRole('button', { name: 'Add to favorites' }));
 
 		expect(updateWidgetSettings).toHaveBeenCalledWith('hdhomerun', { favorite_channels: ['4.1'] });
-		expect(await screen.findByText('Favorites — Now Playing')).toBeInTheDocument();
+		expect(await screen.findByRole('button', { name: 'Remove from favorites' })).toBeInTheDocument();
 	});
 
-	it('shows the DVR section with recordings in progress', () => {
+	it('shows the DVR section with recordings in progress', async () => {
 		render(HDHomeRunDetail, {
 			props: {
 				data: {
@@ -133,10 +164,11 @@ describe('HDHomeRunDetail', () => {
 			},
 		});
 
+		await fireEvent.click(screen.getByRole('button', { name: 'DVR' }));
+
 		expect(screen.getByText('● Recording')).toBeInTheDocument();
 		expect(screen.getByText('Big Game')).toBeInTheDocument();
 		expect(screen.getByText('Free space: 500.0 GB')).toBeInTheDocument();
-		expect(screen.getByText('3 upcoming recording rules.')).toBeInTheDocument();
 	});
 
 	it('auto-launches playback from a ?watch= query param and strips it', async () => {
@@ -151,9 +183,13 @@ describe('HDHomeRunDetail', () => {
 	});
 
 	it('opens the player when watch is clicked and closes it', async () => {
+		getHDHomeRunGuide.mockResolvedValue(guideWithLiveAiring());
+
 		render(HDHomeRunDetail, { props: { data: connected } });
 
-		await fireEvent.click(screen.getByRole('button', { name: '▶ Watch' }));
+		const liveCell = (await screen.findByText('Evening News')).closest('.airing-cell');
+		if (!liveCell) throw new Error('live airing cell not found');
+		await fireEvent.click(liveCell);
 
 		expect(screen.getByRole('dialog', { name: '4.1 KDFW' })).toBeInTheDocument();
 
@@ -190,6 +226,7 @@ describe('HDHomeRunDetail', () => {
 				custom_ffmpeg_args: '',
 				hwaccel_device: '/dev/dri/renderD128',
 				ffmpeg_debug: false,
+				thumbnails_enabled: true,
 			}),
 		);
 		expect(widgetDetail).toHaveBeenCalledWith('hdhomerun');
@@ -304,6 +341,69 @@ describe('HDHomeRunDetail', () => {
 		await fireEvent.click(await screen.findByText('Run diagnostics'));
 
 		expect(await screen.findByText('Could not run the diagnostics.')).toBeInTheDocument();
+	});
+
+	it('marks a completed DVR-file recording as seekable when playing it', async () => {
+		const { container } = render(HDHomeRunDetail, {
+			props: {
+				data: {
+					...connected,
+					dvr_connected: true,
+					dvr_info: { friendly_name: 'DVR', version: '1.0', free_space_bytes: 500_000_000_000 },
+					all_recordings: [
+						{
+							recording_id: 'rec1',
+							title: 'Finished Show',
+							channel_name: 'KDFW',
+							start: 1000,
+							record_end: 2000,
+							play_url: '/recorded/rec1',
+							is_dvr_file: true,
+						},
+					],
+				},
+			},
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'DVR' }));
+		const watchButton = container.querySelector<HTMLButtonElement>('button.watch');
+		if (!watchButton) throw new Error('watch button not found');
+		await fireEvent.click(watchButton);
+
+		expect(screen.getByRole('dialog', { name: 'Finished Show' })).toBeInTheDocument();
+		expect(hdhomerunRecordingStreamUrl).toHaveBeenCalledWith('hdhomerun', '/recorded/rec1');
+		expect(screen.getByRole('slider')).toBeInTheDocument();
+	});
+
+	it('does not mark a live-tuner placeholder (no DVR file yet) as seekable', async () => {
+		const { container } = render(HDHomeRunDetail, {
+			props: {
+				data: {
+					...connected,
+					dvr_connected: true,
+					dvr_info: { friendly_name: 'DVR', version: '1.0', free_space_bytes: 500_000_000_000 },
+					all_recordings: [
+						{
+							recording_id: 'rec2',
+							title: 'Currently Airing',
+							channel_name: 'KDFW',
+							start: 1000,
+							record_end: null,
+							play_url: '/auto/v4.1',
+							is_dvr_file: false,
+						},
+					],
+				},
+			},
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'DVR' }));
+		const watchButton = container.querySelector<HTMLButtonElement>('button.watch');
+		if (!watchButton) throw new Error('watch button not found');
+		await fireEvent.click(watchButton);
+
+		expect(screen.getByRole('dialog', { name: 'Currently Airing' })).toBeInTheDocument();
+		expect(screen.queryByRole('slider')).not.toBeInTheDocument();
 	});
 
 	it('hides the edit-playback-settings control for a non-admin', () => {

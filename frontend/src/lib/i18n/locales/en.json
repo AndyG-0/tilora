@@ -771,6 +771,9 @@
 			"hwaccel_device_hint": "Which GPU node the VAAPI/Quick Sync presets use. Usually /dev/dri/renderD128, but a machine with a second graphics device shifts it to renderD129 — run the diagnostics below to see what is actually there.",
 			"ffmpeg_debug_label": "Verbose ffmpeg logging",
 			"ffmpeg_debug_hint": "Raises ffmpeg's own log level so hardware setup and filter details show up in the backend log. Worth turning on while diagnosing a failure, noisy the rest of the time.",
+			"thumbnails_enabled_label": "Scrub bar thumbnail previews",
+			"thumbnails_enabled_hint": "Generates a hover-preview thumbnail sprite the first time a completed recording is opened, cached to disk after that. Turn off on machines where that one-time ffmpeg pass is too costly.",
+			"recording_in_progress": "Recording…",
 			"diagnostics_heading": "Hardware acceleration diagnostics",
 			"diagnostics_hint": "Checks each step in turn — device passthrough, permissions, driver, and a real test encode through every preset. Takes a few seconds and does not need a free tuner.",
 			"diagnostics_run": "Run diagnostics",
@@ -812,7 +815,20 @@
 			"no_recordings": "No recordings in progress.",
 			"upcoming_rules": "{count} upcoming recording rules.",
 			"playback_failed_hint": "Playback failed — this tuner may not support this playback mode. Try \"{action}\" instead.",
-			"edit_playback_settings": "Edit playback settings"
+			"edit_playback_settings": "Edit playback settings",
+			"record_episode": "Record Episode",
+			"record_series": "Record Series",
+			"recording_scheduled": "Scheduled",
+			"recordings_in_progress": "Current Recordings",
+			"scheduled_recordings": "Scheduled Recordings",
+			"recorded_programs": "Recorded Programs",
+			"cancel_recording": "Cancel",
+			"guide_tab": "Program Guide",
+			"channels_tab": "Channels",
+			"series_rule": "Series Rule",
+			"single_airing_rule": "Single Episode",
+			"no_scheduled_recordings": "No scheduled recordings.",
+			"no_recorded_programs": "No recorded programs available."
 		}
 	},
 	"screensaver": {
@@ -820,6 +836,8 @@
 	},
 	"player": {
 		"close": "Close player",
+		"rewind": "Rewind 10s",
+		"fast_forward": "Fast Forward 10s",
 		"subtitles": "Subtitles / Closed Captions",
 		"subtitles_off": "Off",
 		"audio_tracks": "Audio Tracks",
@@ -832,7 +850,8 @@
 		"subtitle": "Subtitle",
 		"container": "Container",
 		"resolution": "Resolution",
-		"playback_mode": "Playback Mode"
+		"playback_mode": "Playback Mode",
+		"duration": "Duration"
 	},
 	"clock": {
 		"aria_analog": "Analog clock face",
