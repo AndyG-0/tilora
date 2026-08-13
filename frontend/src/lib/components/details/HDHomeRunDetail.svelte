@@ -9,6 +9,7 @@
 		type HDHomeRunFullGuideChannel,
 	} from '$lib/api';
 	import HDHomeRunPlayer from '$lib/components/HDHomeRunPlayer.svelte';
+	import HDHomeRunGuideGrid from './HDHomeRunGuideGrid.svelte';
 	import { user } from '$lib/stores/user';
 	import { _ } from 'svelte-i18n';
 	import { get } from 'svelte/store';
@@ -213,7 +214,6 @@
 	let loadingGuide = $state(false);
 
 	const widgetId = $derived(page.params.id!);
-	const favoriteList = $derived(hdhomerun.channels.filter((c) => favoriteChannels.has(c.channel_number)));
 
 	function watchChannel(channel: HDHomeRunChannel) {
 		if (channel.playback_url) {
@@ -231,14 +231,24 @@
 		}
 	}
 
-	// Tab persistence via URL search param ?tab=lineup | guide | dvr
-	let activeTab = $state<'lineup' | 'guide' | 'recordings'>('lineup');
+	// Tab persistence via URL search param ?tab=guide | dvr. 'lineup' is kept
+	// as an alias for 'guide' so old bookmarks/links to the now-merged
+	// Channels tab still land somewhere sane.
+	let activeTab = $state<'guide' | 'recordings'>('guide');
+
+	// The merged grid tab is now the default view, so fetch its data on
+	// mount rather than only when a user explicitly switches to it.
+	$effect(() => {
+		if (activeTab === 'guide' && !fullGuide && !loadingGuide) {
+			loadGuide();
+		}
+	});
 
 	$effect(() => {
 		const paramTab = page.url.searchParams.get('tab');
 		if (paramTab) {
-			const target = paramTab === 'dvr' ? 'recordings' : (paramTab as 'lineup' | 'guide' | 'recordings');
-			if (activeTab !== target && (target === 'lineup' || target === 'guide' || target === 'recordings')) {
+			const target = paramTab === 'dvr' ? 'recordings' : paramTab === 'lineup' ? 'guide' : (paramTab as 'guide' | 'recordings');
+			if (activeTab !== target && (target === 'guide' || target === 'recordings')) {
 				activeTab = target;
 				if (target === 'guide' && !fullGuide) {
 					loadGuide();
@@ -247,7 +257,7 @@
 		}
 	});
 
-	function selectTab(tab: 'lineup' | 'guide' | 'recordings') {
+	function selectTab(tab: 'guide' | 'recordings') {
 		activeTab = tab;
 		const url = new URL(page.url);
 		url.searchParams.set('tab', tab === 'recordings' ? 'dvr' : tab);
@@ -452,9 +462,6 @@
 	<h1>HDHomeRun</h1>
 	<div class="header-actions">
 		<div class="view-tabs">
-			<button class:active={activeTab === 'lineup'} onclick={() => selectTab('lineup')}>
-				{$_('hdhomerun.detail.channels_tab')}
-			</button>
 			<button class:active={activeTab === 'guide'} onclick={() => selectTab('guide')}>
 				{$_('hdhomerun.detail.guide_tab')}
 			</button>
@@ -643,7 +650,7 @@
 			</p>
 		{/if}
 
-		{#if activeTab === 'lineup'}
+		{#if activeTab === 'guide'}
 			{#if hdhomerun.tuner_connected}
 				{#if !hdhomerun.guide_available}
 					<p class="hint">
@@ -651,161 +658,23 @@
 					</p>
 				{/if}
 
-				{#if favoriteList.length > 0}
-					<h2>{$_('hdhomerun.detail.favorites_heading')}</h2>
-					<div class="channels favorites">
-						{#each favoriteList as channel (channel.channel_number)}
-							<div class="channel">
-								<div class="channel-header">
-									<span class="channel-number">{channel.channel_number}</span>
-									<span class="channel-name">{channel.name}</span>
-									{#if channel.is_hd}<span class="badge">HD</span>{/if}
-								</div>
-								{#if channel.now}
-									<p class="guide-now">
-										{#if channel.now.episode_title}
-											{$_('hdhomerun.detail.guide_now_episode', {
-												values: { title: channel.now.title, episode: channel.now.episode_title },
-											})}
-										{:else}
-											{$_('hdhomerun.detail.guide_now', { values: { title: channel.now.title } })}
-										{/if}
-									</p>
-								{:else}
-									<p class="hint">{$_('hdhomerun.detail.no_guide_data')}</p>
-								{/if}
-								{#if channel.next}
-									<p class="guide-next">
-										{$_('hdhomerun.detail.guide_next', { values: { title: channel.next.title } })}
-									</p>
-								{/if}
-								<div class="channel-actions">
-									<button class="watch" onclick={() => watchChannel(channel)}
-										>{$_('hdhomerun.detail.watch_button')}</button
-									>
-									{#if channel.now}
-										<button
-											class="record-btn"
-											disabled={recordingLoading === (channel.now.series_id || channel.channel_number)}
-											onclick={() =>
-												recordShowEpisode(channel.now?.series_id, channel.channel_number, channel.now?.start)}
-										>
-											🔴 {$_('hdhomerun.detail.record_episode')}
-										</button>
-									{/if}
-								</div>
-							</div>
-						{/each}
-					</div>
+				{#if loadingGuide && !fullGuide}
+					<p class="hint">{$_('common.loading')}</p>
+				{:else}
+					<HDHomeRunGuideGrid
+						channels={hdhomerun.channels}
+						{fullGuide}
+						recordingRules={hdhomerun.recording_rules ?? []}
+						{favoriteChannels}
+						{savingFavorite}
+						{recordingLoading}
+						onWatch={watchChannel}
+						onRecordEpisode={recordShowEpisode}
+						onRecordSeries={recordShowSeries}
+						onCancelRule={cancelRecordingRule}
+						onToggleFavorite={toggleFavorite}
+					/>
 				{/if}
-
-				<div class="channels">
-					{#each hdhomerun.channels as channel (channel.channel_number)}
-						<div class="channel">
-							<div class="channel-header">
-								<button
-									class="favorite-toggle"
-									class:active={favoriteChannels.has(channel.channel_number)}
-									disabled={savingFavorite}
-									onclick={() => toggleFavorite(channel.channel_number)}
-									aria-label={favoriteChannels.has(channel.channel_number)
-										? $_('hdhomerun.detail.remove_favorite')
-										: $_('hdhomerun.detail.add_favorite')}
-								>
-									{favoriteChannels.has(channel.channel_number) ? '★' : '☆'}
-								</button>
-								<span class="channel-number">{channel.channel_number}</span>
-								<span class="channel-name">{channel.name}</span>
-								{#if channel.is_hd}<span class="badge">HD</span>{/if}
-							</div>
-							{#if channel.now}
-								<p class="guide-now">
-									{#if channel.now.episode_title}
-										{$_('hdhomerun.detail.guide_now_episode', {
-											values: { title: channel.now.title, episode: channel.now.episode_title },
-										})}
-									{:else}
-										{$_('hdhomerun.detail.guide_now', { values: { title: channel.now.title } })}
-									{/if}
-								</p>
-							{/if}
-							{#if channel.next}
-								<p class="guide-next">{$_('hdhomerun.detail.guide_next', { values: { title: channel.next.title } })}</p>
-							{/if}
-							<div class="channel-actions">
-								{#if channel.playback_url}
-									<button class="watch" onclick={() => watchChannel(channel)}>
-										{$_('hdhomerun.detail.watch_button')}
-									</button>
-								{/if}
-								{#if channel.now}
-									<button
-										class="record-btn"
-										disabled={recordingLoading === (channel.now.series_id || channel.channel_number)}
-										onclick={() =>
-											recordShowEpisode(channel.now?.series_id, channel.channel_number, channel.now?.start)}
-									>
-										🔴 {$_('hdhomerun.detail.record_episode')}
-									</button>
-								{/if}
-								<a
-									class="open-external"
-									href={api.hdhomerunPlaylistUrl(widgetId, channel.channel_number)}
-									target="_blank"
-									rel="noopener noreferrer"
-								>
-									{$_('hdhomerun.detail.open_external')}
-								</a>
-							</div>
-						</div>
-					{/each}
-				</div>
-			{/if}
-		{:else if activeTab === 'guide'}
-			<h2>{$_('hdhomerun.detail.guide_tab')}</h2>
-			{#if loadingGuide}
-				<p class="hint">{$_('common.loading')}</p>
-			{:else if fullGuide && fullGuide.length > 0}
-				<div class="guide-channels">
-					{#each fullGuide as channel (channel.channel_number)}
-						<div class="guide-channel-row">
-							<div class="guide-channel-header">
-								<span class="channel-number">{channel.channel_number}</span>
-								<span class="channel-name">{channel.channel_name}</span>
-							</div>
-							<div class="guide-airings">
-								{#each channel.airings as airing, i (i)}
-									<div class="airing-card">
-										<div class="airing-time">{formatDate(airing.start)}</div>
-										<div class="airing-title">{airing.title}</div>
-										{#if airing.episode_title}<div class="airing-episode">{airing.episode_title}</div>{/if}
-										{#if airing.synopsis}<div class="airing-synopsis">{airing.synopsis}</div>{/if}
-										{#if airing.series_id}
-											<div class="airing-actions">
-												<button
-													class="record-btn small"
-													disabled={recordingLoading === airing.series_id}
-													onclick={() => recordShowEpisode(airing.series_id!, channel.channel_number, airing.start)}
-												>
-													🔴 {$_('hdhomerun.detail.record_episode')}
-												</button>
-												<button
-													class="record-btn small secondary"
-													disabled={recordingLoading === airing.series_id}
-													onclick={() => recordShowSeries(airing.series_id!, channel.channel_number)}
-												>
-													{$_('hdhomerun.detail.record_series')}
-												</button>
-											</div>
-										{/if}
-									</div>
-								{/each}
-							</div>
-						</div>
-					{/each}
-				</div>
-			{:else}
-				<p class="hint">{$_('hdhomerun.detail.no_guide_data')}</p>
 			{/if}
 		{:else if activeTab === 'recordings'}
 			<h2>{$_('hdhomerun.detail.dvr_section_heading')}</h2>
@@ -1194,79 +1063,6 @@
 		margin: 1rem 0 0.5rem;
 	}
 
-	.channels {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
-		gap: 1rem;
-		margin: 0.5rem 0;
-	}
-
-	.channel {
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
-		border-radius: 0.75rem;
-		padding: 0.75rem;
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-	}
-
-	.channel-header {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.favorite-toggle {
-		background: none;
-		border: none;
-		padding: 0;
-		font-size: 1.1rem;
-		line-height: 1;
-		color: var(--color-accent);
-		cursor: pointer;
-	}
-
-	.favorite-toggle:disabled {
-		opacity: 0.6;
-		cursor: default;
-	}
-
-	.favorite-toggle:not(.active) {
-		color: var(--color-text-muted);
-	}
-
-	.channel-number {
-		color: var(--color-text-muted);
-	}
-
-	.channel-name {
-		font-weight: 600;
-	}
-
-	.badge {
-		font-size: 0.7rem;
-		border: 1px solid var(--color-accent);
-		color: var(--color-accent);
-		border-radius: 0.3rem;
-		padding: 0.05rem 0.3rem;
-	}
-
-	.guide-now,
-	.guide-next {
-		margin: 0;
-		font-size: 0.85rem;
-		color: var(--color-text-muted);
-	}
-
-	.channel-actions {
-		display: flex;
-		align-items: center;
-		flex-wrap: wrap;
-		gap: 0.5rem;
-		margin-top: 0.35rem;
-	}
-
 	.watch {
 		background: var(--color-accent);
 		color: var(--color-surface);
@@ -1280,32 +1076,6 @@
 	.watch.small {
 		padding: 0.2rem 0.5rem;
 		font-size: 0.75rem;
-	}
-
-	.record-btn {
-		background: var(--color-error, #e05a5a);
-		color: #fff;
-		border: none;
-		border-radius: 0.5rem;
-		padding: 0.35rem 0.65rem;
-		font-size: 0.8rem;
-		cursor: pointer;
-	}
-
-	.record-btn.small {
-		padding: 0.2rem 0.5rem;
-		font-size: 0.75rem;
-	}
-
-	.record-btn.secondary {
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
-		color: var(--color-text);
-	}
-
-	.record-btn:disabled {
-		opacity: 0.6;
-		cursor: default;
 	}
 
 	.open-external {
@@ -1452,65 +1222,6 @@
 		padding: 0.25rem 0.6rem;
 		font-size: 0.8rem;
 		cursor: pointer;
-	}
-
-	.guide-channels {
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-		margin-top: 1rem;
-	}
-
-	.guide-channel-row {
-		background: var(--color-surface);
-		border: 1px solid var(--color-border);
-		border-radius: 0.75rem;
-		padding: 0.85rem;
-	}
-
-	.guide-channel-header {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		margin-bottom: 0.5rem;
-		font-weight: 600;
-	}
-
-	.guide-airings {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
-		gap: 0.6rem;
-	}
-
-	.airing-card {
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		padding: 0.5rem;
-		display: flex;
-		flex-direction: column;
-		gap: 0.2rem;
-		font-size: 0.85rem;
-	}
-
-	.airing-time {
-		color: var(--color-accent);
-		font-size: 0.75rem;
-	}
-
-	.airing-title {
-		font-weight: 600;
-	}
-
-	.airing-episode,
-	.airing-synopsis {
-		color: var(--color-text-muted);
-		font-size: 0.8rem;
-	}
-
-	.airing-actions {
-		display: flex;
-		gap: 0.35rem;
-		margin-top: 0.35rem;
 	}
 
 	.hint {
