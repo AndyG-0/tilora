@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from app.api import hdhomerun
 from app.auth import get_current_user
 from app.integrations import hdhomerun_client
+from app.storage.cache import cache
 
 TUNER_SETTINGS = {"tuner_host": "hdhr.local", "tuner_port": 80, "dvr_host": "dvr.local", "dvr_port": 50000}
 
@@ -58,11 +59,13 @@ async def test_delete_recording_rule_success():
 @respx.mock
 @pytest.mark.asyncio
 async def test_fetch_full_guide():
+    cache.delete("hdhomerun_full_guide:hdhomerun")
     respx.get("http://hdhr.local:80/discover.json").mock(
         return_value=httpx.Response(200, json={"DeviceAuth": "test_auth_token"})
     )
-    respx.get("https://api.hdhomerun.com/api/guide.php?DeviceAuth=test_auth_token").mock(
-        return_value=httpx.Response(
+    guide_route = respx.get("https://api.hdhomerun.com/api/guide.php")
+    guide_route.side_effect = [
+        httpx.Response(
             200,
             json=[
                 {
@@ -73,8 +76,9 @@ async def test_fetch_full_guide():
                     ],
                 }
             ],
-        )
-    )
+        ),
+        httpx.Response(200, json=[]),
+    ]
 
     guide = await hdhomerun_client.fetch_full_guide(TUNER_SETTINGS, "hdhomerun")
     assert guide is not None

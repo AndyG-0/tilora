@@ -40,6 +40,16 @@ _GUIDE_URL = "https://api.hdhomerun.com/api/guide.php"
 _RULES_URL = "https://api.hdhomerun.com/api/recording_rules"
 _DISCOVER_CACHE_TTL_SECONDS = 3600
 _XMLTV_CACHE_TTL_SECONDS = 1800
+_FULL_GUIDE_CACHE_TTL_SECONDS = 3600
+# guide.php's "Duration" param caps a single request at 24 hours of programs
+# per channel (default is 4 if omitted). Getting more days requires repeated
+# requests, walking "Start" forward by _FULL_GUIDE_PAGE_HOURS each time. These
+# bound how far/long we'll page — 14 days matches SiliconDust's documented
+# DVR-subscriber ceiling; free accounts simply stop returning new data around
+# 3 days and the loop below ends naturally at that point.
+_FULL_GUIDE_PAGE_HOURS = 24
+_FULL_GUIDE_MAX_DAYS = 14
+_FULL_GUIDE_MAX_REQUESTS = 20
 _XMLTV_TIME_RE = re.compile(r"^(\d{14})(?:\s*([+-]\d{4}))?$")
 
 
@@ -229,46 +239,83 @@ async def fetch_guide(settings: dict[str, Any], widget_id: str) -> list[dict[str
 
 
 async def fetch_full_guide(settings: dict[str, Any], widget_id: str) -> list[dict[str, Any]] | None:
-    cache_key = f"hdhomerun_discover:{widget_id}"
-    discover = cache.get(cache_key)
+    guide_cache_key = f"hdhomerun_full_guide:{widget_id}"
+    cached = cache.get(guide_cache_key)
+    if cached is not None:
+        return cached
+
+    discover_cache_key = f"hdhomerun_discover:{widget_id}"
+    discover = cache.get(discover_cache_key)
     if discover is None:
         try:
             discover = await fetch_discover(settings)
         except HDHomeRunError:
             logger.debug("Could not fetch discover.json for cloud guide lookup", exc_info=True)
             return None
-        cache.set(cache_key, discover, _DISCOVER_CACHE_TTL_SECONDS)
+        cache.set(discover_cache_key, discover, _DISCOVER_CACHE_TTL_SECONDS)
 
     device_auth = discover.get("DeviceAuth")
     if not device_auth:
         return None
 
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.get(_GUIDE_URL, params={"DeviceAuth": device_auth})
-        if response.status_code >= 400:
-            return None
-        data = response.json()
-    except (httpx.HTTPError, ValueError):
-        logger.debug("Could not fetch cloud program guide", exc_info=True)
-        return None
+    channels_by_number: dict[str, dict[str, Any]] = {}
+    seen_starts_by_channel: dict[str, set[Any]] = {}
+    any_page_succeeded = False
+    page_start = int(time.time())
+    num_pages = _FULL_GUIDE_MAX_DAYS * 24 // _FULL_GUIDE_PAGE_HOURS
 
-    if not isinstance(data, list):
-        return None
-
-    result: list[dict[str, Any]] = []
-    for channel in data:
-        ch_num = channel.get("GuideNumber", "")
-        ch_name = channel.get("GuideName", "")
-        guide_entries = channel.get("Guide") or []
-        airings = [_guide_entry_dict(e, ch_num) for e in guide_entries if isinstance(e, dict)]
-        result.append(
-            {
-                "channel_number": ch_num,
-                "channel_name": ch_name,
-                "airings": airings,
+    async with httpx.AsyncClient(timeout=10) as client:
+        for _ in range(min(num_pages, _FULL_GUIDE_MAX_REQUESTS)):
+            params: dict[str, Any] = {
+                "DeviceAuth": device_auth,
+                "Start": page_start,
+                "Duration": _FULL_GUIDE_PAGE_HOURS,
             }
-        )
+            try:
+                response = await client.get(_GUIDE_URL, params=params)
+                if response.status_code >= 400:
+                    break
+                data = response.json()
+            except (httpx.HTTPError, ValueError):
+                logger.debug("Could not fetch cloud program guide", exc_info=True)
+                break
+
+            if not isinstance(data, list):
+                break
+            any_page_succeeded = True
+            if not data:
+                break  # No more data — past the free/subscribed guide window.
+
+            got_new_entries = False
+            for channel in data:
+                ch_num = channel.get("GuideNumber", "")
+                ch_name = channel.get("GuideName", "")
+                guide_entries = channel.get("Guide") or []
+                entry = channels_by_number.setdefault(
+                    ch_num, {"channel_number": ch_num, "channel_name": ch_name, "airings": []}
+                )
+                seen_starts = seen_starts_by_channel.setdefault(ch_num, set())
+
+                for e in guide_entries:
+                    if not isinstance(e, dict):
+                        continue
+                    start = e.get("StartTime")
+                    if start in seen_starts:
+                        continue
+                    seen_starts.add(start)
+                    entry["airings"].append(_guide_entry_dict(e, ch_num))
+                    got_new_entries = True
+
+            if not got_new_entries:
+                break  # No channel had anything for this page — reached the end.
+
+            page_start += _FULL_GUIDE_PAGE_HOURS * 3600
+
+    if not any_page_succeeded:
+        return None
+
+    result = list(channels_by_number.values())
+    cache.set(guide_cache_key, result, _FULL_GUIDE_CACHE_TTL_SECONDS)
     return result
 
 
