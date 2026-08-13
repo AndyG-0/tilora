@@ -805,6 +805,8 @@
 			"guide_now_episode": "Now: {title} — {episode}",
 			"no_guide_data": "No guide data",
 			"guide_next": "Next: {title}",
+			"guide_today": "Today",
+			"guide_tomorrow": "Tomorrow",
 			"watch_button": "▶ Watch",
 			"remove_favorite": "Remove from favorites",
 			"add_favorite": "Add to favorites",
