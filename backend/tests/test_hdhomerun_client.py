@@ -187,6 +187,93 @@ async def test_fetch_guide_caches_discover_response():
 
 
 @respx.mock
+async def test_fetch_full_guide_paginates_across_multiple_days():
+    cache.delete("hdhomerun_full_guide:w7")
+    now = int(time.time())
+    page1 = [
+        {
+            "GuideNumber": "4.1",
+            "GuideName": "WCMH-DT",
+            "Guide": [{"StartTime": now, "EndTime": now + 8 * 3600, "Title": "Show A"}],
+        }
+    ]
+    page2 = [
+        {
+            "GuideNumber": "4.1",
+            "GuideName": "WCMH-DT",
+            "Guide": [{"StartTime": now + 24 * 3600, "EndTime": now + 25 * 3600, "Title": "Show B"}],
+        }
+    ]
+    page3: list = []
+    respx.get("http://hdhr.local:80/discover.json").mock(return_value=httpx.Response(200, json=DISCOVER_RESPONSE))
+    guide_route = respx.get("https://api.hdhomerun.com/api/guide.php")
+    guide_route.side_effect = [
+        httpx.Response(200, json=page1),
+        httpx.Response(200, json=page2),
+        httpx.Response(200, json=page3),
+    ]
+
+    guide = await hdhomerun_client.fetch_full_guide(TUNER_SETTINGS, "w7")
+
+    assert guide_route.call_count == 3
+    assert len(guide) == 1
+    titles = [a["title"] for a in guide[0]["airings"]]
+    assert titles == ["Show A", "Show B"]
+    first_params = guide_route.calls[0].request.url.params
+    assert first_params["Start"] == str(now)
+    assert first_params["Duration"] == "24"
+    second_params = guide_route.calls[1].request.url.params
+    assert second_params["Start"] == str(now + 24 * 3600)
+
+
+@respx.mock
+async def test_fetch_full_guide_stops_when_page_has_no_entries():
+    cache.delete("hdhomerun_full_guide:w8")
+    now = int(time.time())
+    page1 = [
+        {
+            "GuideNumber": "4.1",
+            "GuideName": "WCMH-DT",
+            "Guide": [{"StartTime": now, "EndTime": now + 8 * 3600, "Title": "Show A"}],
+        }
+    ]
+    # A channel entry with an empty Guide list — reached the free/subscribed
+    # data ceiling but the response still lists the channel.
+    page2 = [{"GuideNumber": "4.1", "GuideName": "WCMH-DT", "Guide": []}]
+    respx.get("http://hdhr.local:80/discover.json").mock(return_value=httpx.Response(200, json=DISCOVER_RESPONSE))
+    guide_route = respx.get("https://api.hdhomerun.com/api/guide.php")
+    guide_route.side_effect = [httpx.Response(200, json=page1), httpx.Response(200, json=page2)]
+
+    guide = await hdhomerun_client.fetch_full_guide(TUNER_SETTINGS, "w8")
+
+    assert guide_route.call_count == 2
+    assert len(guide[0]["airings"]) == 1
+
+
+@respx.mock
+async def test_fetch_full_guide_caches_result():
+    cache.delete("hdhomerun_full_guide:w9")
+    guide_route = respx.get("https://api.hdhomerun.com/api/guide.php").mock(return_value=httpx.Response(200, json=[]))
+    respx.get("http://hdhr.local:80/discover.json").mock(return_value=httpx.Response(200, json=DISCOVER_RESPONSE))
+
+    await hdhomerun_client.fetch_full_guide(TUNER_SETTINGS, "w9")
+    await hdhomerun_client.fetch_full_guide(TUNER_SETTINGS, "w9")
+
+    assert guide_route.call_count == 1
+
+
+@respx.mock
+async def test_fetch_full_guide_returns_none_on_total_failure():
+    cache.delete("hdhomerun_full_guide:w10")
+    respx.get("http://hdhr.local:80/discover.json").mock(return_value=httpx.Response(200, json=DISCOVER_RESPONSE))
+    respx.get("https://api.hdhomerun.com/api/guide.php").mock(return_value=httpx.Response(403))
+
+    guide = await hdhomerun_client.fetch_full_guide(TUNER_SETTINGS, "w10")
+
+    assert guide is None
+
+
+@respx.mock
 async def test_build_lineup_with_guide_degrades_when_guide_unavailable():
     respx.get("http://hdhr.local:80/lineup.json").mock(return_value=httpx.Response(200, json=LINEUP_RESPONSE))
     respx.get("http://hdhr.local:80/discover.json").mock(

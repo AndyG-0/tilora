@@ -39,6 +39,7 @@
 	const PX_PER_SEC = 4 / 60; // 4px per minute — a 30-minute slot is 120px wide.
 	const MIN_CELL_WIDTH = 90;
 	const HOUR_SECONDS = 3600;
+	const DAY_SECONDS = 86400;
 
 	let scrollEl = $state<HTMLDivElement | null>(null);
 	let nowSeconds = $state(Math.floor(Date.now() / 1000));
@@ -87,6 +88,43 @@
 		let t = Math.ceil(start / HOUR_SECONDS) * HOUR_SECONDS;
 		for (; t < end; t += HOUR_SECONDS) {
 			marks.push({ seconds: t, label: new Date(t * 1000).toLocaleTimeString([], { hour: 'numeric' }) });
+		}
+		return marks;
+	});
+
+	function dayLabel(seconds: number): string {
+		const date = new Date(seconds * 1000);
+		const startOfToday = new Date();
+		startOfToday.setHours(0, 0, 0, 0);
+		const diffDays = Math.round((date.getTime() - startOfToday.getTime()) / (DAY_SECONDS * 1000));
+		if (diffDays === 0) return $_('hdhomerun.detail.guide_today');
+		if (diffDays === 1) return $_('hdhomerun.detail.guide_tomorrow');
+		return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+	}
+
+	// Segments the ruler into local-midnight-to-midnight spans so each day
+	// gets its own labeled header bar above the hour marks.
+	const dayMarks = $derived.by(() => {
+		const { start, end } = windowBounds;
+		const marks: { seconds: number; left: number; width: number; label: string }[] = [];
+		const firstDayStart = new Date(start * 1000);
+		firstDayStart.setHours(0, 0, 0, 0);
+		let t = Math.floor(firstDayStart.getTime() / 1000);
+		while (t < end) {
+			const nextDayStart = new Date(t * 1000);
+			nextDayStart.setDate(nextDayStart.getDate() + 1);
+			const nextT = Math.floor(nextDayStart.getTime() / 1000);
+			const segStart = Math.max(t, start);
+			const segEnd = Math.min(nextT, end);
+			if (segEnd > segStart) {
+				marks.push({
+					seconds: segStart,
+					left: (segStart - start) * PX_PER_SEC,
+					width: (segEnd - segStart) * PX_PER_SEC,
+					label: dayLabel(t),
+				});
+			}
+			t = nextT;
 		}
 		return marks;
 	});
@@ -225,6 +263,14 @@
 
 <div class="guide-grid" bind:this={scrollEl} onscroll={cancelPress}>
 	<div class="grid-inner" style={`width: ${totalWidth + 160}px;`}>
+		<div class="day-corner"></div>
+		<div class="day-ruler" style={`width: ${totalWidth}px;`}>
+			{#each dayMarks as mark (mark.seconds)}
+				<div class="day-segment" style={`left: ${mark.left}px; width: ${mark.width}px;`}>
+					<span class="day-label">{mark.label}</span>
+				</div>
+			{/each}
+		</div>
 		<div class="corner-cell"></div>
 		<div class="time-ruler" style={`width: ${totalWidth}px;`}>
 			{#each hourMarks as mark (mark.seconds)}
@@ -326,9 +372,20 @@
 		position: relative;
 	}
 
-	.corner-cell {
+	.day-corner {
 		position: sticky;
 		top: 0;
+		left: 0;
+		z-index: 6;
+		height: 1.5rem;
+		background: var(--color-surface);
+		border-right: 1px solid var(--color-border);
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.corner-cell {
+		position: sticky;
+		top: 1.5rem;
 		left: 0;
 		z-index: 4;
 		background: var(--color-surface);
@@ -336,9 +393,56 @@
 		border-bottom: 1px solid var(--color-border);
 	}
 
-	.time-ruler {
+	.day-ruler {
 		position: sticky;
 		top: 0;
+		z-index: 5;
+		height: 1.5rem;
+		background: var(--color-surface);
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.day-segment {
+		/* No overflow here — CSS treats any non-visible overflow as a scroll
+		   container, which would become .day-label's nearest scrolling
+		   ancestor instead of .guide-grid and break its stickiness. The
+		   sticky clamp to this box's edges (its containing block) still
+		   keeps the label from drifting into neighboring days without it. */
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		border-left: 1px solid var(--color-border);
+	}
+
+	/* Sticks to the left edge of the scrollport (just past the channel-name
+	   column) while its day segment is in view, then scrolls out with it —
+	   so the visible label always reflects whichever day is on screen.
+	   display:flex defaults to width:auto, which stretches a block-level
+	   flex container to fill its containing block (.day-segment, which is
+	   as wide as an entire day — thousands of px). A sticky element can
+	   only slide within its containing block's bounds, so a label already
+	   that wide has nowhere left to slide and never visually moves.
+	   inline-flex + max-width keeps it shrink-to-fit instead, leaving room
+	   for the sticky offset to actually take effect. */
+	.day-label {
+		position: sticky;
+		left: 10rem;
+		display: inline-flex;
+		align-items: center;
+		height: 1.5rem;
+		max-width: calc(100% - 0.5rem);
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--color-text);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		padding-left: 0.5rem;
+	}
+
+	.time-ruler {
+		position: sticky;
+		top: 1.5rem;
 		z-index: 3;
 		height: 2rem;
 		background: var(--color-surface);
