@@ -20,16 +20,21 @@ import asyncio
 import contextlib
 import logging
 import shlex
+import time
+from collections import OrderedDict
 from collections.abc import Coroutine
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel
 
-from app import hwaccel, transcoding
+from app import hwaccel, media_probe, transcoding
 from app.auth import get_current_admin, get_current_user
 from app.integrations import hdhomerun_client
 from app.plugins.base import registry
+from app.plugins.hdhomerun import media_cache
 from app.plugins.hdhomerun.plugin import HDHomeRunPlugin
 
 logger = logging.getLogger(__name__)
@@ -56,6 +61,22 @@ _DETAIL_REASON_CHARS = 500
 # here instead of being awaited directly, and tracked in this set purely so
 # asyncio doesn't garbage-collect a task mid-flight — see `_run_in_background`.
 _background_tasks: set[asyncio.Task[None]] = set()
+
+# ffprobe metadata for a completed recording never changes, so it's cached
+# in-process per recording_id rather than re-run on every /recording-detail
+# poll (the player refetches this periodically while a recording is still
+# in-progress, but once it flips to completed the same result is reused).
+# Capped and LRU-evicted (via move_to_end/popitem) so a DVR that's been
+# recording for months doesn't grow this without bound.
+_PROBE_CACHE_MAX_ENTRIES = 500
+_probe_cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
+
+
+def _probe_cache_set(recording_id: str, result: dict[str, Any]) -> None:
+    _probe_cache[recording_id] = result
+    _probe_cache.move_to_end(recording_id)
+    while len(_probe_cache) > _PROBE_CACHE_MAX_ENTRIES:
+        _probe_cache.popitem(last=False)
 
 
 def _run_in_background(coro: Coroutine[Any, Any, None]) -> None:
@@ -388,3 +409,262 @@ async def channel_playlist(widget_id: str, channel_number: str):
         media_type="audio/x-mpegurl",
         headers={"Content-Disposition": f'inline; filename="{channel_number}.m3u"'},
     )
+
+
+class RecordingRuleCreateRequest(BaseModel):
+    series_id: str | None = None
+    date_time: int | None = None
+    channel: str | None = None
+    recent_only: bool | None = None
+    start_padding: int | None = None
+    end_padding: int | None = None
+
+
+@router.get("/{widget_id}/guide")
+async def handle_get_guide(widget_id: str):
+    plugin = _get_plugin(widget_id)
+    settings = plugin.config["settings"]
+    guide = await hdhomerun_client.fetch_full_guide(settings, widget_id)
+    if guide is None:
+        return []
+    return guide
+
+
+@router.post("/{widget_id}/recording-rules")
+async def handle_create_recording_rule(widget_id: str, payload: RecordingRuleCreateRequest):
+    plugin = _get_plugin(widget_id)
+    settings = plugin.config["settings"]
+    try:
+        rules = await hdhomerun_client.add_recording_rule(settings, payload.model_dump())
+        return rules
+    except hdhomerun_client.HDHomeRunError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/{widget_id}/recording-rules/{rule_id}")
+async def handle_delete_recording_rule(widget_id: str, rule_id: str):
+    plugin = _get_plugin(widget_id)
+    settings = plugin.config["settings"]
+    try:
+        rules = await hdhomerun_client.delete_recording_rule(settings, rule_id)
+        return rules
+    except hdhomerun_client.HDHomeRunError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{widget_id}/recording-stream")
+async def handle_stream_recording(widget_id: str, url: str, start: float | None = None, audio_index: int | None = None):
+    plugin = _get_plugin(widget_id)
+    settings = plugin.config["settings"]
+    target_url = hdhomerun_client.resolve_recording_url(settings, url)
+
+    mode = settings.get("playback_mode", "server_transcode")
+    if mode == "server_transcode":
+        try:
+            ffmpeg_args = transcoding.build_ffmpeg_args(
+                settings, target_url, seek_seconds=start, audio_index=audio_index
+            )
+        except transcoding.InvalidCustomFfmpegArgsError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        preset_id = settings.get("hwaccel", transcoding.DEFAULT_PRESET)
+        device = transcoding.resolve_device(settings)
+        command = shlex.join(["ffmpeg", *ffmpeg_args])
+
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "ffmpeg",
+                *ffmpeg_args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=503, detail="ffmpeg is not installed on PATH") from exc
+
+        assert process.stdout is not None
+        assert process.stderr is not None
+
+        logger.info(
+            "HDHomeRun widget '%s': starting recording transcode for %s (preset=%s, device=%s): %s",
+            widget_id,
+            target_url,
+            preset_id,
+            device,
+            command,
+        )
+
+        stderr_tail = bytearray()
+        drain_done = asyncio.Event()
+        _run_in_background(_drain_stderr(process.stderr, stderr_tail, drain_done))
+
+        try:
+            first_chunk = await asyncio.wait_for(
+                process.stdout.read(_STREAM_CHUNK_BYTES), timeout=_FFMPEG_STARTUP_TIMEOUT_SECONDS
+            )
+        except TimeoutError:
+            first_chunk = b""
+
+        if not first_chunk:
+            cause, reason = await _describe_failure(process, stderr_tail, drain_done)
+            _run_in_background(_terminate(process))
+            logger.error(
+                "HDHomeRun widget '%s': recording transcode failed for %s: %s\nffmpeg output:\n%s",
+                widget_id,
+                target_url,
+                cause,
+                reason or "(none)",
+            )
+            if "503" in reason or "Service Unavailable" in reason:
+                detail = (
+                    "All hardware tuner units on the HDHomeRun device are currently busy "
+                    "(HTTP 503 Service Unavailable)."
+                )
+            else:
+                detail = f"Could not start streaming recording: {cause}"
+                if reason:
+                    detail += f". ffmpeg said: {reason[-_DETAIL_REASON_CHARS:]}"
+            raise HTTPException(status_code=502, detail=detail)
+
+        async def transcode_generator():
+            try:
+                yield first_chunk
+                while True:
+                    chunk = await process.stdout.read(_STREAM_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                _run_in_background(_terminate(process))
+
+        return StreamingResponse(
+            transcode_generator(),
+            media_type="video/mp2t",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+        )
+
+    # Fallback raw stream proxy
+    async def stream_generator():
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                async with client.stream("GET", target_url) as resp:
+                    if resp.status_code >= 400:
+                        yield b""
+                        return
+                    async for chunk in resp.aiter_bytes(chunk_size=65536):
+                        yield chunk
+        except Exception as exc:
+            logger.debug("Recording stream proxy error from %s: %s", target_url, exc)
+            yield b""
+
+    return StreamingResponse(stream_generator(), media_type="video/mp2t")
+
+
+@router.get("/{widget_id}/recording-detail")
+async def handle_recording_detail(
+    widget_id: str,
+    url: str,
+    recording_id: str,
+    start: float | None = None,
+    record_end: float | None = None,
+):
+    """Duration/stream metadata driving the recordings player's scrub bar and menus.
+
+    In-progress recordings (no record_end yet, or one still in the future)
+    skip ffprobe entirely - the file is still being written, so probing it
+    is unreliable - and report an elapsed-time duration instead that grows
+    each time the player re-polls this route.
+    """
+    plugin = _get_plugin(widget_id)
+    settings = plugin.config["settings"]
+
+    if record_end is None or record_end > time.time():
+        return {
+            "is_in_progress": True,
+            "duration_seconds": max(0.0, time.time() - start) if start is not None else None,
+            "video": None,
+            "audio": [],
+            "has_captions": False,
+        }
+
+    if recording_id not in _probe_cache:
+        target_url = hdhomerun_client.resolve_recording_url(settings, url)
+        result = await media_probe.probe(target_url)
+        _probe_cache_set(
+            recording_id,
+            result
+            or {
+                "duration_seconds": (record_end - start) if start is not None else None,
+                "video": None,
+                "audio": [],
+                "has_captions": False,
+            },
+        )
+
+    return {"is_in_progress": False, **_probe_cache[recording_id]}
+
+
+@router.get("/{widget_id}/recording-captions.vtt")
+async def handle_recording_captions(widget_id: str, url: str, recording_id: str, record_end: float | None = None):
+    if record_end is None or record_end > time.time():
+        raise HTTPException(status_code=404, detail="Captions are only available for completed recordings")
+
+    plugin = _get_plugin(widget_id)
+    settings = plugin.config["settings"]
+    target_url = hdhomerun_client.resolve_recording_url(settings, url)
+
+    vtt_path = await media_cache.generate_captions_vtt(target_url, recording_id)
+    if vtt_path is None:
+        raise HTTPException(status_code=404, detail="No closed captions found for this recording")
+    return FileResponse(vtt_path, media_type="text/vtt")
+
+
+def _thumbnails_enabled(settings: dict[str, Any]) -> bool:
+    return bool(settings.get("thumbnails_enabled", True))
+
+
+async def _resolved_thumbnail_sprite(
+    widget_id: str, recording_id: str, url: str, record_end: float | None
+) -> tuple[str, str]:
+    """Shared validation/lookup for the sprite .jpg and .vtt routes below."""
+    plugin = _get_plugin(widget_id)
+    settings = plugin.config["settings"]
+    if not _thumbnails_enabled(settings):
+        raise HTTPException(status_code=404, detail="Thumbnail previews are disabled for this widget")
+    if record_end is None or record_end > time.time():
+        raise HTTPException(status_code=404, detail="Thumbnails are only available for completed recordings")
+
+    target_url = hdhomerun_client.resolve_recording_url(settings, url)
+    duration = await _resolved_duration(target_url, recording_id)
+    if duration is None:
+        raise HTTPException(status_code=404, detail="Could not determine recording duration")
+
+    sprite = await media_cache.generate_thumbnail_sprite(target_url, recording_id, duration)
+    if sprite is None:
+        raise HTTPException(status_code=404, detail="Could not generate thumbnail preview")
+    return sprite
+
+
+@router.get("/{widget_id}/recording-thumbnails/{recording_id}.jpg")
+async def handle_recording_thumbnail_sprite(
+    widget_id: str, recording_id: str, url: str, record_end: float | None = None
+):
+    sprite = await _resolved_thumbnail_sprite(widget_id, recording_id, url, record_end)
+    return FileResponse(sprite[0], media_type="image/jpeg")
+
+
+@router.get("/{widget_id}/recording-thumbnails/{recording_id}.vtt")
+async def handle_recording_thumbnail_vtt(widget_id: str, recording_id: str, url: str, record_end: float | None = None):
+    sprite = await _resolved_thumbnail_sprite(widget_id, recording_id, url, record_end)
+    return FileResponse(sprite[1], media_type="text/vtt")
+
+
+async def _resolved_duration(target_url: str, recording_id: str) -> float | None:
+    """The best known duration for a completed recording, probing (and caching) if needed."""
+    if recording_id not in _probe_cache:
+        result = await media_probe.probe(target_url)
+        if result is not None:
+            _probe_cache_set(recording_id, result)
+    cached = _probe_cache.get(recording_id)
+    if cached and cached.get("duration_seconds"):
+        return cached["duration_seconds"]
+    return None

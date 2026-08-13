@@ -166,10 +166,36 @@ export interface JellyfinSection {
 }
 
 export interface HDHomeRunGuideEntry {
+	series_id?: string | null;
 	title: string;
 	episode_title: string | null;
+	episode_number?: string | null;
+	synopsis?: string | null;
 	start: number | null;
 	end: number | null;
+	original_airdate?: number | string | null;
+	image_url?: string | null;
+	channel_number?: string;
+}
+
+export interface HDHomeRunRecordingRule {
+	RecordingRuleID: string;
+	SeriesID: string;
+	Title: string;
+	Synopsis?: string;
+	ImageURL?: string;
+	ChannelOnly?: string;
+	DateTimeOnly?: number;
+	Priority?: number;
+	StartPadding?: number;
+	EndPadding?: number;
+	RecentOnly?: number | boolean;
+}
+
+export interface HDHomeRunFullGuideChannel {
+	channel_number: string;
+	channel_name: string;
+	airings: HDHomeRunGuideEntry[];
 }
 
 export interface HDHomeRunChannel {
@@ -195,10 +221,43 @@ export interface HDHomeRunTuner {
 }
 
 export interface HDHomeRunRecording {
+	recording_id?: string | null;
+	series_id?: string | null;
 	title: string;
+	episode_title?: string | null;
+	episode_number?: string | null;
+	synopsis?: string | null;
+	channel_number?: string | null;
 	channel_name: string | null;
 	start: number | null;
 	record_end: number | null;
+	play_url?: string | null;
+	image_url?: string | null;
+	duration_seconds?: number | null;
+	is_dvr_file?: boolean;
+}
+
+export interface HDHomeRunRecordingVideoInfo {
+	codec: string | null;
+	width: number | null;
+	height: number | null;
+	fps: number | null;
+}
+
+export interface HDHomeRunRecordingAudioInfo {
+	index: number;
+	codec: string | null;
+	channels: number | null;
+	language: string | null;
+}
+
+/** GET /api/hdhomerun/{id}/recording-detail — see backend/app/api/hdhomerun.py. */
+export interface HDHomeRunRecordingDetail {
+	is_in_progress: boolean;
+	duration_seconds: number | null;
+	video: HDHomeRunRecordingVideoInfo | null;
+	audio: HDHomeRunRecordingAudioInfo[];
+	has_captions: boolean;
 }
 
 export interface PiholeDomainStat {
@@ -1058,6 +1117,53 @@ export const api = {
 	// Channel playback_url is a backend-relative proxy path — resolve it
 	// against the API base the same way jellyfinImageUrl/jellyfinStreamUrl do.
 	hdhomerunPlaybackUrl: (url: string) => (url.startsWith('/') ? `${env.PUBLIC_API_BASE_URL}${url}` : url),
+	hdhomerunRecordingStreamUrl: (id: string, playUrl: string, options?: { start?: number; audioIndex?: number }) => {
+		const params = new URLSearchParams({ url: playUrl });
+		if (options?.start !== undefined) params.set('start', String(options.start));
+		if (options?.audioIndex !== undefined) params.set('audio_index', String(options.audioIndex));
+		return `${env.PUBLIC_API_BASE_URL}/api/hdhomerun/${id}/recording-stream?${params.toString()}`;
+	},
+	hdhomerunRecordingDetail: (
+		id: string,
+		options: { url: string; recordingId: string; start?: number | null; recordEnd?: number | null },
+	) => {
+		const params = new URLSearchParams({ url: options.url, recording_id: options.recordingId });
+		if (options.start !== undefined && options.start !== null) params.set('start', String(options.start));
+		if (options.recordEnd !== undefined && options.recordEnd !== null) {
+			params.set('record_end', String(options.recordEnd));
+		}
+		return getJSON<HDHomeRunRecordingDetail>(`/api/hdhomerun/${id}/recording-detail?${params.toString()}`);
+	},
+	hdhomerunRecordingCaptionsUrl: (
+		id: string,
+		options: { url: string; recordingId: string; recordEnd?: number | null },
+	) => {
+		const params = new URLSearchParams({ url: options.url, recording_id: options.recordingId });
+		if (options.recordEnd !== undefined && options.recordEnd !== null) {
+			params.set('record_end', String(options.recordEnd));
+		}
+		return `${env.PUBLIC_API_BASE_URL}/api/hdhomerun/${id}/recording-captions.vtt?${params.toString()}`;
+	},
+	hdhomerunRecordingThumbnailSpriteUrl: (
+		id: string,
+		options: { url: string; recordingId: string; recordEnd?: number | null },
+	) => {
+		const params = new URLSearchParams({ url: options.url });
+		if (options.recordEnd !== undefined && options.recordEnd !== null) {
+			params.set('record_end', String(options.recordEnd));
+		}
+		return `${env.PUBLIC_API_BASE_URL}/api/hdhomerun/${id}/recording-thumbnails/${options.recordingId}.jpg?${params.toString()}`;
+	},
+	hdhomerunRecordingThumbnailVttUrl: (
+		id: string,
+		options: { url: string; recordingId: string; recordEnd?: number | null },
+	) => {
+		const params = new URLSearchParams({ url: options.url });
+		if (options.recordEnd !== undefined && options.recordEnd !== null) {
+			params.set('record_end', String(options.recordEnd));
+		}
+		return `${env.PUBLIC_API_BASE_URL}/api/hdhomerun/${id}/recording-thumbnails/${options.recordingId}.vtt?${params.toString()}`;
+	},
 	hdhomerunPlaylistUrl: (id: string, channelNumber: string) =>
 		`${env.PUBLIC_API_BASE_URL}/api/hdhomerun/${id}/playlist/${channelNumber}`,
 	// Admin-only, and slow by design: it test-encodes a short clip through
@@ -1066,6 +1172,20 @@ export const api = {
 		getJSON<HWAccelDiagnostics>(
 			`/api/hdhomerun/${id}/hwaccel-diagnostics${device ? `?device=${encodeURIComponent(device)}` : ''}`,
 		),
+	addHDHomeRunRecordingRule: (
+		id: string,
+		rule: {
+			series_id: string;
+			date_time?: number;
+			channel?: string;
+			recent_only?: boolean;
+			start_padding?: number;
+			end_padding?: number;
+		},
+	) => postJSON<HDHomeRunRecordingRule[]>(`/api/hdhomerun/${id}/recording-rules`, rule),
+	deleteHDHomeRunRecordingRule: (id: string, ruleId: string) =>
+		deleteJSON<HDHomeRunRecordingRule[]>(`/api/hdhomerun/${id}/recording-rules/${ruleId}`),
+	getHDHomeRunGuide: (id: string) => getJSON<HDHomeRunFullGuideChannel[]>(`/api/hdhomerun/${id}/guide`),
 	piholeSetBlocking: (id: string, enabled: boolean, timer?: number | null) =>
 		postJSON<{ blocking: string; timer: number | null }>(`/api/pihole/${id}/blocking`, {
 			enabled,

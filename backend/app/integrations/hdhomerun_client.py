@@ -37,6 +37,7 @@ from app.storage.cache import cache
 logger = logging.getLogger(__name__)
 
 _GUIDE_URL = "https://api.hdhomerun.com/api/guide.php"
+_RULES_URL = "https://api.hdhomerun.com/api/recording_rules"
 _DISCOVER_CACHE_TTL_SECONDS = 3600
 _XMLTV_CACHE_TTL_SECONDS = 1800
 _XMLTV_TIME_RE = re.compile(r"^(\d{14})(?:\s*([+-]\d{4}))?$")
@@ -79,6 +80,28 @@ def raw_stream_url(settings: dict[str, Any], channel_number: str) -> str:
 
 def _dvr_base_url(settings: dict[str, Any]) -> str:
     return f"http://{_normalize_host(settings['dvr_host'])}:{settings.get('dvr_port', 59090)}"
+
+
+def resolve_recording_url(settings: dict[str, Any], url: str) -> str:
+    """A recording/tuner-relative `play_url` resolved to a fully-qualified URL.
+
+    Shared by every route that needs to actually reach the bytes a
+    recording entry's `play_url` points at (streaming, probing, caption/
+    thumbnail generation) — previously duplicated inline in
+    app/api/hdhomerun.py's /recording-stream route.
+    """
+    if url.startswith("/"):
+        if url.startswith("/auto/v"):
+            tuner_host = _normalize_host(settings.get("tuner_host", ""))
+            return f"http://{tuner_host}:5004{url}"
+        dvr_host = _normalize_host(settings.get("dvr_host", ""))
+        dvr_port = settings.get("dvr_port", 50000)
+        return f"http://{dvr_host}:{dvr_port}{url}"
+    if not url.startswith("http"):
+        dvr_host = _normalize_host(settings.get("dvr_host", ""))
+        dvr_port = settings.get("dvr_port", 50000)
+        return f"http://{dvr_host}:{dvr_port}/{url}"
+    return url
 
 
 async def _get_json(url: str) -> Any:
@@ -144,12 +167,18 @@ async def fetch_tuner_status(settings: dict[str, Any]) -> list[dict[str, Any]]:
     return [_tuner_status_dict(entry, index) for index, entry in enumerate(data)]
 
 
-def _guide_entry_dict(entry: dict[str, Any]) -> dict[str, Any]:
+def _guide_entry_dict(entry: dict[str, Any], channel_number: str = "") -> dict[str, Any]:
     return {
+        "series_id": entry.get("SeriesID"),
         "title": entry.get("Title", ""),
         "episode_title": entry.get("EpisodeTitle"),
+        "episode_number": entry.get("EpisodeNumber"),
+        "synopsis": entry.get("Synopsis"),
         "start": entry.get("StartTime"),
         "end": entry.get("EndTime"),
+        "original_airdate": entry.get("OriginalAirdate"),
+        "image_url": entry.get("ImageURL"),
+        "channel_number": channel_number or entry.get("ChannelNumber", ""),
     }
 
 
@@ -186,15 +215,60 @@ async def fetch_guide(settings: dict[str, Any], widget_id: str) -> list[dict[str
     for channel in data:
         guide_entries = channel.get("Guide") or []
         current = next_up = None
+        ch_num = channel.get("GuideNumber", "")
         for entry in guide_entries:
             start, end = entry.get("StartTime"), entry.get("EndTime")
             if start is None or end is None:
                 continue
             if start <= now < end:
-                current = _guide_entry_dict(entry)
+                current = _guide_entry_dict(entry, ch_num)
             elif start > now and next_up is None:
-                next_up = _guide_entry_dict(entry)
-        result.append({"channel_number": channel.get("GuideNumber", ""), "now": current, "next": next_up})
+                next_up = _guide_entry_dict(entry, ch_num)
+        result.append({"channel_number": ch_num, "now": current, "next": next_up})
+    return result
+
+
+async def fetch_full_guide(settings: dict[str, Any], widget_id: str) -> list[dict[str, Any]] | None:
+    cache_key = f"hdhomerun_discover:{widget_id}"
+    discover = cache.get(cache_key)
+    if discover is None:
+        try:
+            discover = await fetch_discover(settings)
+        except HDHomeRunError:
+            logger.debug("Could not fetch discover.json for cloud guide lookup", exc_info=True)
+            return None
+        cache.set(cache_key, discover, _DISCOVER_CACHE_TTL_SECONDS)
+
+    device_auth = discover.get("DeviceAuth")
+    if not device_auth:
+        return None
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(_GUIDE_URL, params={"DeviceAuth": device_auth})
+        if response.status_code >= 400:
+            return None
+        data = response.json()
+    except (httpx.HTTPError, ValueError):
+        logger.debug("Could not fetch cloud program guide", exc_info=True)
+        return None
+
+    if not isinstance(data, list):
+        return None
+
+    result: list[dict[str, Any]] = []
+    for channel in data:
+        ch_num = channel.get("GuideNumber", "")
+        ch_name = channel.get("GuideName", "")
+        guide_entries = channel.get("Guide") or []
+        airings = [_guide_entry_dict(e, ch_num) for e in guide_entries if isinstance(e, dict)]
+        result.append(
+            {
+                "channel_number": ch_num,
+                "channel_name": ch_name,
+                "airings": airings,
+            }
+        )
     return result
 
 
@@ -314,11 +388,50 @@ async def fetch_dvr_info(settings: dict[str, Any]) -> dict[str, Any]:
 
 
 def _recording_dict(entry: dict[str, Any]) -> dict[str, Any]:
+    play_url = (
+        entry.get("PlayURL")
+        or entry.get("PlayUrl")
+        or entry.get("CmdURL")
+        or entry.get("CmdUrl")
+        or entry.get("URL")
+        or entry.get("Url")
+        or entry.get("RecordURL")
+        or entry.get("RecordUrl")
+    )
+    rec_id = entry.get("RecordingID") or entry.get("ProgramID") or entry.get("ID")
+    if not play_url and rec_id:
+        play_url = f"/recorded/{rec_id}"
+    elif not play_url and entry.get("Filename"):
+        play_url = entry.get("Filename")
+
+    start = entry.get("StartTime") or entry.get("RecordStartTime")
+    record_end = entry.get("RecordEndTime") or entry.get("EndTime")
+
     return {
+        "recording_id": rec_id,
+        "series_id": entry.get("SeriesID"),
         "title": entry.get("Title", ""),
+        "episode_title": entry.get("EpisodeTitle"),
+        "episode_number": entry.get("EpisodeNumber"),
+        "synopsis": entry.get("Synopsis"),
+        "channel_number": entry.get("ChannelNumber"),
         "channel_name": entry.get("ChannelAffiliate") or entry.get("ChannelName"),
-        "start": entry.get("StartTime") or entry.get("RecordStartTime"),
-        "record_end": entry.get("RecordEndTime"),
+        "start": start,
+        "record_end": record_end,
+        # Cheap/approximate — the exact duration for a completed recording
+        # comes from ffprobe instead (see app/media_probe.py), which the
+        # player prefers once it's fetched. This is what's shown before
+        # that request lands, and the only duration available at all for a
+        # still-recording (record_end in the future) entry.
+        "duration_seconds": (record_end - start) if (start is not None and record_end is not None) else None,
+        "play_url": play_url,
+        "image_url": entry.get("ImageURL"),
+        # Marks this as a real DVR file entry (as opposed to the
+        # synthesized "currently airing, no file yet" placeholders
+        # HDHomeRunPlugin.get_detail() adds from recording rules) — only
+        # these are seekable, since seeking needs an actual file/URL on the
+        # DVR to -ss into, not a bare live tuner stream.
+        "is_dvr_file": True,
     }
 
 
@@ -334,15 +447,136 @@ async def fetch_dvr_recordings(settings: dict[str, Any]) -> list[dict[str, Any]]
         return []
     if not isinstance(data, list):
         return []
-    return [_recording_dict(entry) for entry in data]
+
+    episodes = []
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            for entry in data:
+                episodes_url = entry.get("EpisodesURL")
+                if episodes_url:
+                    resp = await client.get(episodes_url)
+                    if resp.status_code < 400:
+                        episodes.extend(resp.json())
+                else:
+                    episodes.append(entry)
+    except (httpx.HTTPError, ValueError):
+        logger.debug("Could not fetch DVR episodes", exc_info=True)
+
+    return [_recording_dict(entry) for entry in episodes]
 
 
 async def fetch_dvr_recording_rules(settings: dict[str, Any]) -> list[dict[str, Any]]:
+    if is_tuner_configured(settings):
+        try:
+            discover = await fetch_discover(settings)
+            device_auth = discover.get("DeviceAuth")
+            if device_auth:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.get(_RULES_URL, params={"DeviceAuth": device_auth})
+                if resp.status_code < 400 and resp.json() is not None:
+                    res = resp.json()
+                    if isinstance(res, list):
+                        return res
+        except Exception:
+            logger.debug("Could not fetch cloud recording rules", exc_info=True)
+
+    if is_dvr_configured(settings):
+        try:
+            data = await _get_json(f"{_dvr_base_url(settings)}/recording_rules.json")
+            if isinstance(data, list):
+                return data
+        except HDHomeRunError:
+            logger.debug("Could not fetch local DVR recording rules", exc_info=True)
+
+    return []
+
+
+async def trigger_dvr_sync(settings: dict[str, Any]) -> None:
+    """Notify local DVR storage to recompute recording tasks after a rule change."""
+    if not is_dvr_configured(settings):
+        return
     try:
-        data = await _get_json(f"{_dvr_base_url(settings)}/recording_rules.json")
-    except HDHomeRunError:
-        logger.debug("Could not fetch DVR recording rules", exc_info=True)
-        return []
-    if not isinstance(data, list):
-        return []
-    return data
+        discover = await _get_json(f"{_dvr_base_url(settings)}/discover.json")
+        storage_url = discover.get("StorageURL")
+        if storage_url:
+            async with httpx.AsyncClient(timeout=5) as client:
+                await client.get(storage_url)
+    except (HDHomeRunError, httpx.HTTPError):
+        logger.debug("Could not send sync trigger to DVR StorageURL", exc_info=True)
+
+
+async def add_recording_rule(settings: dict[str, Any], rule_data: dict[str, Any]) -> list[dict[str, Any]]:
+    if not is_tuner_configured(settings):
+        raise HDHomeRunError("Tuner is not configured")
+
+    discover = await fetch_discover(settings)
+    device_auth = discover.get("DeviceAuth")
+    if not device_auth:
+        raise HDHomeRunError("No DeviceAuth token available from tuner discovery")
+
+    post_data: dict[str, Any] = {
+        "DeviceAuth": device_auth,
+        "Cmd": "add",
+    }
+    series_id = rule_data.get("series_id")
+    if series_id and series_id != "auto":
+        post_data["SeriesID"] = series_id
+
+    now_ts = int(time.time())
+    dt = rule_data.get("date_time")
+    if dt is not None:
+        # If date_time is in the past (e.g. current show's start time when recording a live airing),
+        # adjust to current timestamp so SiliconDust API records the active show instead of expiring
+        # or picking a future episode.
+        if dt < now_ts:
+            dt = now_ts
+        post_data["DateTimeOnly"] = dt
+
+    if "channel" in rule_data and rule_data["channel"]:
+        post_data["ChannelOnly"] = rule_data["channel"]
+    if "recent_only" in rule_data and rule_data["recent_only"] is not None:
+        post_data["RecentOnly"] = 1 if rule_data["recent_only"] else 0
+    if "start_padding" in rule_data and rule_data["start_padding"] is not None:
+        post_data["StartPadding"] = rule_data["start_padding"]
+    if "end_padding" in rule_data and rule_data["end_padding"] is not None:
+        post_data["EndPadding"] = rule_data["end_padding"]
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(_RULES_URL, data=post_data)
+        if response.status_code >= 400:
+            raise HDHomeRunError(f"Add recording rule failed (HTTP {response.status_code})")
+        rules = response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HDHomeRunError(f"Could not post recording rule: {exc}") from exc
+
+    await trigger_dvr_sync(settings)
+    return rules if isinstance(rules, list) else []
+
+
+async def delete_recording_rule(settings: dict[str, Any], rule_id: str) -> list[dict[str, Any]]:
+    if not is_tuner_configured(settings):
+        raise HDHomeRunError("Tuner is not configured")
+
+    discover = await fetch_discover(settings)
+    device_auth = discover.get("DeviceAuth")
+    if not device_auth:
+        raise HDHomeRunError("No DeviceAuth token available from tuner discovery")
+
+    post_data = {
+        "DeviceAuth": device_auth,
+        "Cmd": "delete",
+        "RecordingRuleID": rule_id,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(_RULES_URL, data=post_data)
+        if response.status_code >= 400:
+            raise HDHomeRunError(f"Delete recording rule failed (HTTP {response.status_code})")
+        rules = response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HDHomeRunError(f"Could not delete recording rule: {exc}") from exc
+
+    await trigger_dvr_sync(settings)
+    return rules if isinstance(rules, list) else []

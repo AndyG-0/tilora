@@ -6,7 +6,7 @@ from app import transcoding
 
 
 def test_build_ffmpeg_args_defaults_to_software_preset():
-    args = transcoding.build_ffmpeg_args({}, "http://tuner/stream")
+    args = transcoding.build_ffmpeg_args({}, "http://tuner:5004/auto/v11.7")
 
     assert args == [
         "-hide_banner",
@@ -14,7 +14,7 @@ def test_build_ffmpeg_args_defaults_to_software_preset():
         "warning",
         "-nostats",
         "-i",
-        "http://tuner/stream",
+        "http://tuner:5004/auto/v11.7",
         "-c:v",
         "libx264",
         "-preset",
@@ -33,6 +33,17 @@ def test_build_ffmpeg_args_unknown_hwaccel_falls_back_to_software():
     args = transcoding.build_ffmpeg_args({"hwaccel": "not-a-real-preset"}, "url")
 
     assert args == transcoding.build_ffmpeg_args({"hwaccel": "software"}, "url")
+
+
+def test_build_ffmpeg_args_adds_re_for_recorded_streams():
+    # If the URL is not a live tuner stream, we insert -re to pace the read rate.
+    args = transcoding.build_ffmpeg_args({}, "http://192.168.50.197:50000/recorded/play?id=123")
+    assert "-re" in args
+    assert args.index("-re") < args.index("-i")
+
+    # If it is a live tuner stream, -re must be omitted.
+    args_tuner = transcoding.build_ffmpeg_args({}, "http://192.168.50.33:5004/auto/v11.7")
+    assert "-re" not in args_tuner
 
 
 def test_build_ffmpeg_args_includes_hwaccel_input_args():
@@ -178,6 +189,42 @@ def test_videotoolbox_forces_level_4_0():
 
     assert args[args.index("-level") + 1] == "4.0"
     assert args[args.index("-profile:v") + 1] == "high"
+
+
+def test_build_ffmpeg_args_seek_seconds_inserts_ss_before_input():
+    args = transcoding.build_ffmpeg_args({}, "http://dvr.local:50000/recorded/play?id=1", seek_seconds=90.5)
+
+    assert args[args.index("-ss") + 1] == "90.500"
+    assert args.index("-ss") < args.index("-i")
+
+
+def test_build_ffmpeg_args_seek_seconds_comes_before_re():
+    # -re paces reads for recorded (non-live) sources; -ss must still land
+    # ahead of -i regardless, so ffmpeg seeks before it starts pacing reads.
+    args = transcoding.build_ffmpeg_args({}, "http://dvr.local:50000/recorded/play?id=1", seek_seconds=5)
+
+    assert args.index("-ss") < args.index("-re") < args.index("-i")
+
+
+def test_build_ffmpeg_args_without_seek_seconds_omits_ss():
+    args = transcoding.build_ffmpeg_args({}, "url")
+
+    assert "-ss" not in args
+
+
+def test_build_ffmpeg_args_audio_index_maps_explicit_streams():
+    args = transcoding.build_ffmpeg_args({}, "url", audio_index=1)
+
+    assert args[args.index("-map") + 1] == "0:v:0"
+    assert "0:a:1" in args
+    # The explicit maps must come before the rest of the output args.
+    assert args.index("-map") < args.index("-c:v")
+
+
+def test_build_ffmpeg_args_without_audio_index_omits_map():
+    args = transcoding.build_ffmpeg_args({}, "url")
+
+    assert "-map" not in args
 
 
 def test_all_hwaccel_presets_force_stereo_audio():
