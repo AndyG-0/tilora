@@ -25,6 +25,14 @@ ICLOUD_SESSION_DIR = Path(os.environ.get("ICLOUD_SESSION_DIR", str(BACKEND_ROOT 
 # live in the same persistent volume as the database, or a redeploy that
 # loses this file would strand every encrypted secret it holds.
 SECRET_KEY_PATH = Path(os.environ.get("SECRET_KEY_PATH", str(BACKEND_ROOT / "secret.key")))
+# Generated closed-caption WebVTT and scrub-bar thumbnail sprites for
+# completed HDHomeRun recordings, keyed by recording id (see
+# app/plugins/hdhomerun/media_cache.py). Overridable via env for the same
+# reason as DB_PATH — must live in the same persistent volume, or every
+# redeploy pays the ffmpeg/ffprobe cost again.
+HDHOMERUN_MEDIA_CACHE_DIR = Path(
+    os.environ.get("HDHOMERUN_MEDIA_CACHE_DIR", str(BACKEND_ROOT / "hdhomerun_media_cache"))
+)
 
 
 class Settings(BaseSettings):
