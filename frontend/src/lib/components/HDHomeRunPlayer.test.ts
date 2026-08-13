@@ -41,7 +41,8 @@ const {
 	),
 	hdhomerunRecordingDetail: vi.fn(),
 	hdhomerunRecordingCaptionsUrl: vi.fn(
-		(widgetId: string, opts: { recordingId: string }) => `https://example.com/${widgetId}/captions/${opts.recordingId}.vtt`,
+		(widgetId: string, opts: { recordingId: string }) =>
+			`https://example.com/${widgetId}/captions/${opts.recordingId}.vtt`,
 	),
 	hdhomerunRecordingThumbnailVttUrl: vi.fn(
 		(widgetId: string, opts: { recordingId: string }) =>
@@ -236,10 +237,7 @@ describe('HDHomeRunPlayer', () => {
 			has_captions: true,
 		});
 		const vtt = ['WEBVTT', '', '00:05:00.000 --> 00:05:02.000', 'Hello there', ''].join('\n');
-		vi.stubGlobal(
-			'fetch',
-			vi.fn().mockResolvedValue({ ok: true, text: async () => vtt, json: async () => ({}) }),
-		);
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, text: async () => vtt, json: async () => ({}) }));
 		vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
 			left: 0,
 			right: 1200,

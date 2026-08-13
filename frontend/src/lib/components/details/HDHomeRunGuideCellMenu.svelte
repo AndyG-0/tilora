@@ -15,8 +15,18 @@
 		onClose: () => void;
 	}
 
-	let { airing, channelName, x, y, existingRule, loading, onRecordEpisode, onRecordSeries, onCancelRule, onClose }: Props =
-		$props();
+	let {
+		airing,
+		channelName,
+		x,
+		y,
+		existingRule,
+		loading,
+		onRecordEpisode,
+		onRecordSeries,
+		onCancelRule,
+		onClose,
+	}: Props = $props();
 
 	let menuEl = $state<HTMLDivElement | null>(null);
 	// svelte-ignore state_referenced_locally -- seeds the initial position

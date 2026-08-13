@@ -247,7 +247,8 @@
 	$effect(() => {
 		const paramTab = page.url.searchParams.get('tab');
 		if (paramTab) {
-			const target = paramTab === 'dvr' ? 'recordings' : paramTab === 'lineup' ? 'guide' : (paramTab as 'guide' | 'recordings');
+			const target =
+				paramTab === 'dvr' ? 'recordings' : paramTab === 'lineup' ? 'guide' : (paramTab as 'guide' | 'recordings');
 			if (activeTab !== target && (target === 'guide' || target === 'recordings')) {
 				activeTab = target;
 				if (target === 'guide' && !fullGuide) {

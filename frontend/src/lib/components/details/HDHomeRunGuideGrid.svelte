@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { _ } from 'svelte-i18n';
-	import type { HDHomeRunChannel, HDHomeRunFullGuideChannel, HDHomeRunGuideEntry, HDHomeRunRecordingRule } from '$lib/api';
+	import type {
+		HDHomeRunChannel,
+		HDHomeRunFullGuideChannel,
+		HDHomeRunGuideEntry,
+		HDHomeRunRecordingRule,
+	} from '$lib/api';
 	import HDHomeRunGuideCellMenu from './HDHomeRunGuideCellMenu.svelte';
 
 	interface Props {
@@ -128,7 +133,11 @@
 		);
 	}
 
-	function isLoadingFor(airing: HDHomeRunGuideEntry, channel: HDHomeRunChannel, existingRule: HDHomeRunRecordingRule | null) {
+	function isLoadingFor(
+		airing: HDHomeRunGuideEntry,
+		channel: HDHomeRunChannel,
+		existingRule: HDHomeRunRecordingRule | null,
+	) {
 		if (existingRule) return recordingLoading === existingRule.RecordingRuleID;
 		const targetId = airing.series_id || channel.channel_number;
 		return recordingLoading === targetId;
@@ -176,7 +185,10 @@
 
 	function onCellPointerMove(e: PointerEvent) {
 		if (!pointerStart || !pressTimer) return;
-		if (Math.abs(e.clientX - pointerStart.x) > MOVE_CANCEL_PX || Math.abs(e.clientY - pointerStart.y) > MOVE_CANCEL_PX) {
+		if (
+			Math.abs(e.clientX - pointerStart.x) > MOVE_CANCEL_PX ||
+			Math.abs(e.clientY - pointerStart.y) > MOVE_CANCEL_PX
+		) {
 			cancelPress();
 		}
 	}
@@ -262,7 +274,9 @@
 					>
 						<span class="cell-time">{formatCellTime(cell.airing.start)}</span>
 						<span class="cell-title">{cell.airing.title}</span>
-						{#if findExistingRule(cell.airing, channel)}<span class="cell-live-badge">{$_('hdhomerun.tile.recording_badge')}</span>{/if}
+						{#if findExistingRule(cell.airing, channel)}<span class="cell-live-badge"
+								>{$_('hdhomerun.tile.recording_badge')}</span
+							>{/if}
 					</div>
 				{/each}
 			</div>
