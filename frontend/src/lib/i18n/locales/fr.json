@@ -8,10 +8,14 @@
 	},
 	"settings": {
 		"language": {
-			"title": "Langue"
+			"title": "Langue",
+			"save_error": "Impossible d'enregistrer la langue.",
+			"save": "Enregistrer la langue"
 		},
 		"appearance": {
-			"title": "Apparence"
+			"title": "Apparence",
+			"save_error": "Impossible d'enregistrer l'apparence.",
+			"save": "Enregistrer l'apparence"
 		},
 		"page": {
 			"title": "Paramètres"

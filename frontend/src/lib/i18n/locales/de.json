@@ -8,10 +8,14 @@
 	},
 	"settings": {
 		"language": {
-			"title": "Sprache"
+			"title": "Sprache",
+			"save_error": "Sprache konnte nicht gespeichert werden.",
+			"save": "Sprache speichern"
 		},
 		"appearance": {
-			"title": "Erscheinungsbild"
+			"title": "Erscheinungsbild",
+			"save_error": "Erscheinungsbild konnte nicht gespeichert werden.",
+			"save": "Erscheinungsbild speichern"
 		},
 		"page": {
 			"title": "Einstellungen"

@@ -61,9 +61,39 @@
 	let piperServerUrlInput = $state('');
 	let piperVoicesInput = $state('');
 	let timezoneOptions = $state<string[]>(['UTC']);
-	let saving = $state(false);
-	let saved = $state(false);
 	let error = $state<string | null>(null);
+
+	// Each admin-settings section below (AI provider, voice output, Google/MS
+	// calendar, CalDAV, iCloud, timezone) saves independently — see save*()
+	// functions below — rather than sharing one big PATCH, so editing one
+	// doesn't silently resubmit unrelated fields (e.g. API keys) from another.
+	let aiProviderSaving = $state(false);
+	let aiProviderSaved = $state(false);
+	let aiProviderError = $state<string | null>(null);
+
+	let voiceOutputSaving = $state(false);
+	let voiceOutputSaved = $state(false);
+	let voiceOutputError = $state<string | null>(null);
+
+	let googleCalendarSaving = $state(false);
+	let googleCalendarSaved = $state(false);
+	let googleCalendarError = $state<string | null>(null);
+
+	let microsoftCalendarSaving = $state(false);
+	let microsoftCalendarSaved = $state(false);
+	let microsoftCalendarError = $state<string | null>(null);
+
+	let caldavSaving = $state(false);
+	let caldavSaved = $state(false);
+	let caldavError = $state<string | null>(null);
+
+	let icloudSaving = $state(false);
+	let icloudSaved = $state(false);
+	let icloudError = $state<string | null>(null);
+
+	let timezoneSaving = $state(false);
+	let timezoneSaved = $state(false);
+	let timezoneError = $state<string | null>(null);
 
 	// Name/avatar/PIN for the logged-in profile — separate save flow from
 	// the app-wide settings above since it hits /api/users/me, not
@@ -678,6 +708,44 @@
 	let voiceError = $state<string | null>(null);
 	let voiceInitialized = false;
 
+	// Language and theme both apply live to the DOM the instant the store is
+	// set (see stores/theme.ts and $lib/i18n) — that live-preview stays, but
+	// the server write (persistLocale/persistTheme) waits for Save like every
+	// other section on this page, rather than firing on every selection.
+	let localeSaving = $state(false);
+	let localeSaved = $state(false);
+	let localeError = $state<string | null>(null);
+
+	let themeSaving = $state(false);
+	let themeSaved = $state(false);
+	let themeError = $state<string | null>(null);
+
+	async function saveLocale() {
+		localeSaving = true;
+		localeError = null;
+		try {
+			await persistLocale($locale ?? 'en');
+			localeSaved = true;
+		} catch {
+			localeError = get(_)('settings.language.save_error');
+		} finally {
+			localeSaving = false;
+		}
+	}
+
+	async function saveTheme() {
+		themeSaving = true;
+		themeError = null;
+		try {
+			await persistTheme($theme);
+			themeSaved = true;
+		} catch {
+			themeError = get(_)('settings.appearance.save_error');
+		} finally {
+			themeSaving = false;
+		}
+	}
+
 	$effect(() => {
 		if ($user && !voiceInitialized) {
 			voiceInitialized = true;
@@ -789,50 +857,138 @@
 		await loadDevices();
 	});
 
-	async function save() {
-		saving = true;
-		saved = false;
-		error = null;
+	async function saveAiProvider() {
+		aiProviderSaving = true;
+		aiProviderSaved = false;
+		aiProviderError = null;
 		try {
 			const partial: Record<string, string> = {
 				ai_model: aiModelInput,
 				ai_reasoning_effort: aiReasoningEffortInput,
-				timezone: timezoneInput,
-				caldav_url: caldavUrlInput,
-				caldav_username: caldavUsernameInput,
-				icloud_username: icloudUsernameInput,
-				openai_tts_enabled: openaiTtsEnabledInput ? 'true' : '',
-				openai_tts_model: openaiTtsModelInput,
-				piper_tts_enabled: piperTtsEnabledInput ? 'true' : '',
-				piper_server_url: piperServerUrlInput,
-				piper_voices: piperVoicesInput,
 			};
 			if (anthropicKeyInput) partial.anthropic_api_key = anthropicKeyInput;
 			if (openaiKeyInput) partial.openai_api_key = openaiKeyInput;
 			if (geminiKeyInput) partial.gemini_api_key = geminiKeyInput;
-			if (googleCalendarClientIdInput) partial.google_calendar_client_id = googleCalendarClientIdInput;
-			if (googleCalendarClientSecretInput) partial.google_calendar_client_secret = googleCalendarClientSecretInput;
-			if (microsoftCalendarClientIdInput) partial.microsoft_calendar_client_id = microsoftCalendarClientIdInput;
-			if (microsoftCalendarClientSecretInput)
-				partial.microsoft_calendar_client_secret = microsoftCalendarClientSecretInput;
-			if (caldavPasswordInput) partial.caldav_password = caldavPasswordInput;
-			if (icloudPasswordInput) partial.icloud_password = icloudPasswordInput;
 
 			settings = await api.updateSettings(partial);
 			anthropicKeyInput = '';
 			openaiKeyInput = '';
 			geminiKeyInput = '';
+			aiProviderSaved = true;
+		} catch {
+			aiProviderError = 'Could not save AI provider settings.';
+		} finally {
+			aiProviderSaving = false;
+		}
+	}
+
+	async function saveVoiceOutput() {
+		voiceOutputSaving = true;
+		voiceOutputSaved = false;
+		voiceOutputError = null;
+		try {
+			settings = await api.updateSettings({
+				openai_tts_enabled: openaiTtsEnabledInput ? 'true' : '',
+				openai_tts_model: openaiTtsModelInput,
+				piper_tts_enabled: piperTtsEnabledInput ? 'true' : '',
+				piper_server_url: piperServerUrlInput,
+				piper_voices: piperVoicesInput,
+			});
+			voiceOutputSaved = true;
+		} catch {
+			voiceOutputError = 'Could not save voice output settings.';
+		} finally {
+			voiceOutputSaving = false;
+		}
+	}
+
+	async function saveGoogleCalendar() {
+		googleCalendarSaving = true;
+		googleCalendarSaved = false;
+		googleCalendarError = null;
+		try {
+			const partial: Record<string, string> = {};
+			if (googleCalendarClientIdInput) partial.google_calendar_client_id = googleCalendarClientIdInput;
+			if (googleCalendarClientSecretInput) partial.google_calendar_client_secret = googleCalendarClientSecretInput;
+			settings = await api.updateSettings(partial);
 			googleCalendarClientIdInput = '';
 			googleCalendarClientSecretInput = '';
+			googleCalendarSaved = true;
+		} catch {
+			googleCalendarError = 'Could not save Google Calendar settings.';
+		} finally {
+			googleCalendarSaving = false;
+		}
+	}
+
+	async function saveMicrosoftCalendar() {
+		microsoftCalendarSaving = true;
+		microsoftCalendarSaved = false;
+		microsoftCalendarError = null;
+		try {
+			const partial: Record<string, string> = {};
+			if (microsoftCalendarClientIdInput) partial.microsoft_calendar_client_id = microsoftCalendarClientIdInput;
+			if (microsoftCalendarClientSecretInput)
+				partial.microsoft_calendar_client_secret = microsoftCalendarClientSecretInput;
+			settings = await api.updateSettings(partial);
 			microsoftCalendarClientIdInput = '';
 			microsoftCalendarClientSecretInput = '';
-			caldavPasswordInput = '';
-			icloudPasswordInput = '';
-			saved = true;
+			microsoftCalendarSaved = true;
 		} catch {
-			error = 'Could not save settings.';
+			microsoftCalendarError = 'Could not save Microsoft 365 Calendar settings.';
 		} finally {
-			saving = false;
+			microsoftCalendarSaving = false;
+		}
+	}
+
+	async function saveCaldav() {
+		caldavSaving = true;
+		caldavSaved = false;
+		caldavError = null;
+		try {
+			const partial: Record<string, string> = {
+				caldav_url: caldavUrlInput,
+				caldav_username: caldavUsernameInput,
+			};
+			if (caldavPasswordInput) partial.caldav_password = caldavPasswordInput;
+			settings = await api.updateSettings(partial);
+			caldavPasswordInput = '';
+			caldavSaved = true;
+		} catch {
+			caldavError = 'Could not save CalDAV settings.';
+		} finally {
+			caldavSaving = false;
+		}
+	}
+
+	async function saveIcloud() {
+		icloudSaving = true;
+		icloudSaved = false;
+		icloudError = null;
+		try {
+			const partial: Record<string, string> = { icloud_username: icloudUsernameInput };
+			if (icloudPasswordInput) partial.icloud_password = icloudPasswordInput;
+			settings = await api.updateSettings(partial);
+			icloudPasswordInput = '';
+			icloudSaved = true;
+		} catch {
+			icloudError = 'Could not save iCloud Photos settings.';
+		} finally {
+			icloudSaving = false;
+		}
+	}
+
+	async function saveTimezone() {
+		timezoneSaving = true;
+		timezoneSaved = false;
+		timezoneError = null;
+		try {
+			settings = await api.updateSettings({ timezone: timezoneInput });
+			timezoneSaved = true;
+		} catch {
+			timezoneError = 'Could not save timezone.';
+		} finally {
+			timezoneSaving = false;
 		}
 	}
 
@@ -847,12 +1003,13 @@
 			| 'microsoft_calendar_client_secret'
 			| 'caldav_password'
 			| 'icloud_password',
+		onError: (message: string) => void,
 	) {
-		error = null;
+		onError('');
 		try {
 			settings = await api.updateSettings({ [key]: '' });
 		} catch {
-			error = 'Could not clear the key.';
+			onError('Could not clear the key.');
 		}
 	}
 
@@ -1036,7 +1193,9 @@
 						/>
 					</label>
 					{#if settings.has_anthropic_api_key}
-						<button class="clear" onclick={() => clearKey('anthropic_api_key')}>Clear key</button>
+						<button class="clear" onclick={() => clearKey('anthropic_api_key', (m) => (aiProviderError = m))}
+							>Clear key</button
+						>
 					{/if}
 
 					<label>
@@ -1048,7 +1207,9 @@
 						/>
 					</label>
 					{#if settings.has_openai_api_key}
-						<button class="clear" onclick={() => clearKey('openai_api_key')}>Clear key</button>
+						<button class="clear" onclick={() => clearKey('openai_api_key', (m) => (aiProviderError = m))}
+							>Clear key</button
+						>
 					{/if}
 
 					<label>
@@ -1060,8 +1221,20 @@
 						/>
 					</label>
 					{#if settings.has_gemini_api_key}
-						<button class="clear" onclick={() => clearKey('gemini_api_key')}>Clear key</button>
+						<button class="clear" onclick={() => clearKey('gemini_api_key', (m) => (aiProviderError = m))}
+							>Clear key</button
+						>
 					{/if}
+
+					{#if aiProviderError}
+						<p class="hint error">{aiProviderError}</p>
+					{/if}
+					{#if aiProviderSaved}
+						<p class="hint">Saved.</p>
+					{/if}
+					<button class="save" disabled={aiProviderSaving} onclick={saveAiProvider}>
+						{aiProviderSaving ? 'Saving…' : 'Save AI provider'}
+					</button>
 				</section>
 
 				<section>
@@ -1105,6 +1278,16 @@
 							<code>|Display Name</code>.
 						</p>
 					{/if}
+
+					{#if voiceOutputError}
+						<p class="hint error">{voiceOutputError}</p>
+					{/if}
+					{#if voiceOutputSaved}
+						<p class="hint">Saved.</p>
+					{/if}
+					<button class="save" disabled={voiceOutputSaving} onclick={saveVoiceOutput}>
+						{voiceOutputSaving ? 'Saving…' : 'Save voice output'}
+					</button>
 				</section>
 
 				<section>
@@ -1118,7 +1301,11 @@
 						/>
 					</label>
 					{#if settings.has_google_calendar_client_id}
-						<button class="clear" onclick={() => clearKey('google_calendar_client_id')}> Clear client ID </button>
+						<button
+							class="clear"
+							onclick={() => clearKey('google_calendar_client_id', (m) => (googleCalendarError = m))}
+							>Clear client ID</button
+						>
 					{/if}
 
 					<label>
@@ -1132,7 +1319,10 @@
 						/>
 					</label>
 					{#if settings.has_google_calendar_client_secret}
-						<button class="clear" onclick={() => clearKey('google_calendar_client_secret')}>
+						<button
+							class="clear"
+							onclick={() => clearKey('google_calendar_client_secret', (m) => (googleCalendarError = m))}
+						>
 							Clear client secret
 						</button>
 					{/if}
@@ -1140,6 +1330,16 @@
 						From an OAuth 2.0 Client ID (console.cloud.google.com). Once saved, connect your account from the Calendar
 						widget's detail view.
 					</p>
+
+					{#if googleCalendarError}
+						<p class="hint error">{googleCalendarError}</p>
+					{/if}
+					{#if googleCalendarSaved}
+						<p class="hint">Saved.</p>
+					{/if}
+					<button class="save" disabled={googleCalendarSaving} onclick={saveGoogleCalendar}>
+						{googleCalendarSaving ? 'Saving…' : 'Save Google Calendar'}
+					</button>
 				</section>
 
 				<section>
@@ -1155,7 +1355,12 @@
 						/>
 					</label>
 					{#if settings.has_microsoft_calendar_client_id}
-						<button class="clear" onclick={() => clearKey('microsoft_calendar_client_id')}> Clear client ID </button>
+						<button
+							class="clear"
+							onclick={() => clearKey('microsoft_calendar_client_id', (m) => (microsoftCalendarError = m))}
+						>
+							Clear client ID
+						</button>
 					{/if}
 
 					<label>
@@ -1169,7 +1374,10 @@
 						/>
 					</label>
 					{#if settings.has_microsoft_calendar_client_secret}
-						<button class="clear" onclick={() => clearKey('microsoft_calendar_client_secret')}>
+						<button
+							class="clear"
+							onclick={() => clearKey('microsoft_calendar_client_secret', (m) => (microsoftCalendarError = m))}
+						>
 							Clear client secret
 						</button>
 					{/if}
@@ -1178,6 +1386,16 @@
 						your account from a Calendar widget's detail view whose
 						<code>provider</code> is <code>microsoft</code>.
 					</p>
+
+					{#if microsoftCalendarError}
+						<p class="hint error">{microsoftCalendarError}</p>
+					{/if}
+					{#if microsoftCalendarSaved}
+						<p class="hint">Saved.</p>
+					{/if}
+					<button class="save" disabled={microsoftCalendarSaving} onclick={saveMicrosoftCalendar}>
+						{microsoftCalendarSaving ? 'Saving…' : 'Save Microsoft 365 Calendar'}
+					</button>
 				</section>
 
 				<section>
@@ -1201,13 +1419,25 @@
 						/>
 					</label>
 					{#if settings.has_caldav_password}
-						<button class="clear" onclick={() => clearKey('caldav_password')}>Clear password</button>
+						<button class="clear" onclick={() => clearKey('caldav_password', (m) => (caldavError = m))}
+							>Clear password</button
+						>
 					{/if}
 					<p class="hint">
 						Works with iCloud, Fastmail, Nextcloud, and most self-hosted calendars — usually an app-specific password
 						rather than your account password. Set a calendar widget's
 						<code>provider</code> to <code>caldav</code> in <code>dashboard.yaml</code> to use it.
 					</p>
+
+					{#if caldavError}
+						<p class="hint error">{caldavError}</p>
+					{/if}
+					{#if caldavSaved}
+						<p class="hint">Saved.</p>
+					{/if}
+					<button class="save" disabled={caldavSaving} onclick={saveCaldav}>
+						{caldavSaving ? 'Saving…' : 'Save CalDAV'}
+					</button>
 				</section>
 
 				<section>
@@ -1226,7 +1456,9 @@
 						/>
 					</label>
 					{#if settings.has_icloud_password}
-						<button class="clear" onclick={() => clearKey('icloud_password')}>Clear password</button>
+						<button class="clear" onclick={() => clearKey('icloud_password', (m) => (icloudError = m))}
+							>Clear password</button
+						>
 					{/if}
 					<p class="hint">
 						Your real Apple ID and account password (Apple doesn't support app-specific passwords here), so this grants
@@ -1234,6 +1466,16 @@
 						then switch a Photos widget to <strong>iCloud (Private Library)</strong> from that widget's detail view and connect
 						(including any 2FA prompt) there.
 					</p>
+
+					{#if icloudError}
+						<p class="hint error">{icloudError}</p>
+					{/if}
+					{#if icloudSaved}
+						<p class="hint">Saved.</p>
+					{/if}
+					<button class="save" disabled={icloudSaving} onclick={saveIcloud}>
+						{icloudSaving ? 'Saving…' : 'Save iCloud Photos'}
+					</button>
 				</section>
 
 				<section>
@@ -1246,18 +1488,17 @@
 							{/each}
 						</select>
 					</label>
+
+					{#if timezoneError}
+						<p class="hint error">{timezoneError}</p>
+					{/if}
+					{#if timezoneSaved}
+						<p class="hint">Saved.</p>
+					{/if}
+					<button class="save" disabled={timezoneSaving} onclick={saveTimezone}>
+						{timezoneSaving ? 'Saving…' : 'Save timezone'}
+					</button>
 				</section>
-
-				{#if error}
-					<p class="hint error">{error}</p>
-				{/if}
-				{#if saved}
-					<p class="hint">Saved.</p>
-				{/if}
-
-				<button class="save" disabled={saving} onclick={save}>
-					{saving ? 'Saving…' : 'Save app settings'}
-				</button>
 			{/if}
 
 			<section>
@@ -1848,7 +2089,7 @@
 				value={$locale}
 				onchange={(e) => {
 					locale.set(e.currentTarget.value);
-					persistLocale(e.currentTarget.value);
+					localeSaved = false;
 				}}
 			>
 				<option value="en">English</option>
@@ -1856,6 +2097,16 @@
 				<option value="fr">Français</option>
 				<option value="de">Deutsch</option>
 			</select>
+
+			{#if localeError}
+				<p class="hint error">{localeError}</p>
+			{/if}
+			{#if localeSaved}
+				<p class="hint">{$_('common.saved')}</p>
+			{/if}
+			<button class="save" disabled={localeSaving} onclick={saveLocale}>
+				{localeSaving ? $_('common.saving') : $_('settings.language.save')}
+			</button>
 		</section>
 
 		<section>
@@ -1865,13 +2116,23 @@
 				value={$theme}
 				onchange={(e) => {
 					theme.set(e.currentTarget.value);
-					persistTheme(e.currentTarget.value);
+					themeSaved = false;
 				}}
 			>
 				{#each themeIds as id (id)}
 					<option value={id}>{themeNames[id] ?? id}</option>
 				{/each}
 			</select>
+
+			{#if themeError}
+				<p class="hint error">{themeError}</p>
+			{/if}
+			{#if themeSaved}
+				<p class="hint">{$_('common.saved')}</p>
+			{/if}
+			<button class="save" disabled={themeSaving} onclick={saveTheme}>
+				{themeSaving ? $_('common.saving') : $_('settings.appearance.save')}
+			</button>
 		</section>
 
 		{#if insecureOriginInfo?.needsInsecureOriginFlag}

@@ -127,18 +127,16 @@ describe('settings +page.svelte — voice sections', () => {
 			target: { value: 'en_US-amy-medium|Amy' },
 		});
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Save app settings' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Save voice output' }));
 
 		await waitFor(() => expect(updateSettings).toHaveBeenCalled());
-		expect(updateSettings).toHaveBeenCalledWith(
-			expect.objectContaining({
-				openai_tts_enabled: 'true',
-				openai_tts_model: 'gpt-4o-mini-tts',
-				piper_tts_enabled: 'true',
-				piper_server_url: 'http://piper.local:5000',
-				piper_voices: 'en_US-amy-medium|Amy',
-			}),
-		);
+		expect(updateSettings).toHaveBeenCalledWith({
+			openai_tts_enabled: 'true',
+			openai_tts_model: 'gpt-4o-mini-tts',
+			piper_tts_enabled: 'true',
+			piper_server_url: 'http://piper.local:5000',
+			piper_voices: 'en_US-amy-medium|Amy',
+		});
 	});
 
 	it('does not show the Voice output section to a non-admin member', async () => {
@@ -240,8 +238,12 @@ describe('settings +page.svelte — language section', () => {
 		const select = await screen.findByLabelText('Language');
 		await fireEvent.change(select, { target: { value: 'es' } });
 
-		await waitFor(() => expect(updatePreferences).toHaveBeenCalledWith({ locale: 'es' }));
 		expect(await screen.findByText('Idioma')).toBeInTheDocument();
+
+		// The locale (and this button's own label) switches live as soon as the
+		// select changes — the network write is what waits for Save.
+		await fireEvent.click(screen.getByRole('button', { name: 'Guardar idioma' }));
+		await waitFor(() => expect(updatePreferences).toHaveBeenCalledWith({ locale: 'es' }));
 
 		locale.set('en');
 		await waitLocale();

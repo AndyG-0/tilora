@@ -8,10 +8,14 @@
 	},
 	"settings": {
 		"language": {
-			"title": "Language"
+			"title": "Language",
+			"save_error": "Could not save language.",
+			"save": "Save language"
 		},
 		"appearance": {
-			"title": "Appearance"
+			"title": "Appearance",
+			"save_error": "Could not save appearance.",
+			"save": "Save appearance"
 		},
 		"page": {
 			"title": "Settings"
