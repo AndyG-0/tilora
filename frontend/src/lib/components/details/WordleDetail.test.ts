@@ -1,7 +1,13 @@
 import { render, screen, fireEvent, cleanup } from '@testing-library/svelte';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
+const { updateWidgetSettings } = vi.hoisted(() => ({ updateWidgetSettings: vi.fn() }));
+vi.mock('$lib/api', () => ({ api: { updateWidgetSettings } }));
+vi.mock('$app/state', () => ({ page: { params: { id: 'wordle' } } }));
+
 import WordleDetail from './WordleDetail.svelte';
+
+const DEFAULT_STATS = { played: 0, won: 0, currentStreak: 0, maxStreak: 0 };
 
 function rowCells(container: HTMLElement, rowIndex: number): HTMLElement[] {
 	const rows = container.querySelectorAll('.board .row');
@@ -17,6 +23,8 @@ function typeWord(word: string) {
 describe('WordleDetail', () => {
 	beforeEach(() => {
 		localStorage.clear();
+		vi.clearAllMocks();
+		updateWidgetSettings.mockResolvedValue({});
 		// Always resolves pickAnswer() to ANSWER_WORDS[0] ('ABOUT').
 		vi.spyOn(Math, 'random').mockReturnValue(0);
 	});
@@ -27,7 +35,7 @@ describe('WordleDetail', () => {
 	});
 
 	it('renders the title and an empty 6x5 grid initially', () => {
-		const { container } = render(WordleDetail, { props: { data: { title: 'Wordle' } } });
+		const { container } = render(WordleDetail, { props: { data: { title: 'Wordle', stats: DEFAULT_STATS } } });
 
 		expect(screen.getByRole('heading', { name: 'Wordle' })).toBeInTheDocument();
 		const cells = container.querySelectorAll('.board .cell');
@@ -39,7 +47,7 @@ describe('WordleDetail', () => {
 	});
 
 	it('scores a submitted guess against the answer', async () => {
-		const { container } = render(WordleDetail, { props: { data: { title: 'Wordle' } } });
+		const { container } = render(WordleDetail, { props: { data: { title: 'Wordle', stats: DEFAULT_STATS } } });
 
 		typeWord('ABOVE');
 		await fireEvent.keyDown(window, { key: 'Enter' });
@@ -56,7 +64,7 @@ describe('WordleDetail', () => {
 	});
 
 	it('shakes and does not advance when fewer than 5 letters are entered', async () => {
-		const { container } = render(WordleDetail, { props: { data: { title: 'Wordle' } } });
+		const { container } = render(WordleDetail, { props: { data: { title: 'Wordle', stats: DEFAULT_STATS } } });
 
 		typeWord('AB');
 		await fireEvent.keyDown(window, { key: 'Enter' });
@@ -67,7 +75,7 @@ describe('WordleDetail', () => {
 	});
 
 	it('shakes and does not advance when the guess is not a real word', async () => {
-		const { container } = render(WordleDetail, { props: { data: { title: 'Wordle' } } });
+		const { container } = render(WordleDetail, { props: { data: { title: 'Wordle', stats: DEFAULT_STATS } } });
 
 		typeWord('ZZZZZ');
 		await fireEvent.keyDown(window, { key: 'Enter' });
@@ -77,7 +85,7 @@ describe('WordleDetail', () => {
 	});
 
 	it('accepts letters typed via the on-screen keyboard', async () => {
-		const { container } = render(WordleDetail, { props: { data: { title: 'Wordle' } } });
+		const { container } = render(WordleDetail, { props: { data: { title: 'Wordle', stats: DEFAULT_STATS } } });
 
 		for (const letter of 'ABOVE') {
 			await fireEvent.click(screen.getByRole('button', { name: letter }));
@@ -88,19 +96,20 @@ describe('WordleDetail', () => {
 		expect(cells.map((c) => c.textContent)).toEqual(['A', 'B', 'O', 'V', 'E']);
 	});
 
-	it('shows a win overlay and persists stats when the guess matches the answer', async () => {
-		render(WordleDetail, { props: { data: { title: 'Wordle' } } });
+	it('shows a win overlay and persists stats to the backend when the guess matches the answer', async () => {
+		render(WordleDetail, { props: { data: { title: 'Wordle', stats: DEFAULT_STATS } } });
 
 		typeWord('ABOUT');
 		await fireEvent.keyDown(window, { key: 'Enter' });
 
 		expect(screen.getByText('You got it!')).toBeInTheDocument();
-		const stats = JSON.parse(localStorage.getItem('wordle-stats') ?? '{}');
-		expect(stats).toEqual({ played: 1, won: 1, currentStreak: 1, maxStreak: 1 });
+		expect(updateWidgetSettings).toHaveBeenCalledWith('wordle', {
+			stats: { played: 1, won: 1, currentStreak: 1, maxStreak: 1 },
+		});
 	});
 
 	it('shows a loss overlay revealing the answer and resets the streak after 6 wrong guesses', async () => {
-		render(WordleDetail, { props: { data: { title: 'Wordle' } } });
+		render(WordleDetail, { props: { data: { title: 'Wordle', stats: DEFAULT_STATS } } });
 
 		for (const guess of ['ABOVE', 'ABUSE', 'ACTOR', 'ACUTE', 'ADMIT', 'ADOPT']) {
 			typeWord(guess);
@@ -108,12 +117,13 @@ describe('WordleDetail', () => {
 		}
 
 		expect(screen.getByText('The word was ABOUT')).toBeInTheDocument();
-		const stats = JSON.parse(localStorage.getItem('wordle-stats') ?? '{}');
-		expect(stats).toEqual({ played: 1, won: 0, currentStreak: 0, maxStreak: 0 });
+		expect(updateWidgetSettings).toHaveBeenCalledWith('wordle', {
+			stats: { played: 1, won: 0, currentStreak: 0, maxStreak: 0 },
+		});
 	});
 
 	it('resets the board on New Game', async () => {
-		const { container } = render(WordleDetail, { props: { data: { title: 'Wordle' } } });
+		const { container } = render(WordleDetail, { props: { data: { title: 'Wordle', stats: DEFAULT_STATS } } });
 
 		typeWord('ABOVE');
 		await fireEvent.keyDown(window, { key: 'Enter' });
@@ -128,12 +138,33 @@ describe('WordleDetail', () => {
 		});
 	});
 
-	it('loads previously saved stats on mount', () => {
-		localStorage.setItem('wordle-stats', JSON.stringify({ played: 4, won: 3, currentStreak: 2, maxStreak: 3 }));
-
-		render(WordleDetail, { props: { data: { title: 'Wordle' } } });
+	it('shows stats handed down from the backend', () => {
+		render(WordleDetail, {
+			props: { data: { title: 'Wordle', stats: { played: 4, won: 3, currentStreak: 2, maxStreak: 3 } } },
+		});
 
 		expect(screen.getByText('4')).toBeInTheDocument();
 		expect(screen.getByText('2')).toBeInTheDocument();
+	});
+
+	it('migrates pre-existing localStorage stats to the backend once, on mount', () => {
+		localStorage.setItem('wordle-stats', JSON.stringify({ played: 4, won: 3, currentStreak: 2, maxStreak: 3 }));
+
+		render(WordleDetail, { props: { data: { title: 'Wordle', stats: DEFAULT_STATS } } });
+
+		expect(screen.getByText('4')).toBeInTheDocument();
+		expect(updateWidgetSettings).toHaveBeenCalledWith('wordle', {
+			stats: { played: 4, won: 3, currentStreak: 2, maxStreak: 3 },
+		});
+	});
+
+	it('does not migrate localStorage once the backend already has stats', () => {
+		localStorage.setItem('wordle-stats', JSON.stringify({ played: 9, won: 9, currentStreak: 9, maxStreak: 9 }));
+
+		render(WordleDetail, {
+			props: { data: { title: 'Wordle', stats: { played: 4, won: 3, currentStreak: 2, maxStreak: 3 } } },
+		});
+
+		expect(updateWidgetSettings).not.toHaveBeenCalled();
 	});
 });

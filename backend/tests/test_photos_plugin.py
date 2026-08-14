@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-from app.config import settings
 from app.integrations import icloud_photos, icloud_shared_album, immich_client
 from app.plugins.photos.indexer import index_photos
 from app.plugins.photos.plugin import PhotosPlugin
@@ -313,19 +312,33 @@ async def test_private_provider_with_no_credentials_reports_no_photos_and_discon
     assert summary == {"count": 0, "current": None, "connected": False}
 
 
-async def test_private_provider_get_summary_uses_configured_album(tmp_db, monkeypatch):
-    monkeypatch.setattr(settings, "icloud_username", "user@example.com")
-    monkeypatch.setattr(settings, "icloud_password", "hunter2")
+def _make_admin_with_icloud_credentials(username="user@example.com", password="hunter2") -> str:
+    # index_photos on an unscoped plugin (no requesting_user_id — how the
+    # background scheduler always calls it) fans out into one scan per user
+    # with saved iCloud credentials (see app.plugins.photos.indexer), so
+    # exercising the icloud_private path means seeding a real user +
+    # credentials rather than monkeypatching the old global
+    # settings.icloud_username/password fields (removed in favor of per-user
+    # `user_credentials`). get_summary/get_detail must then be read from a
+    # clone scoped to that same user (`plugin.with_settings(user_id=...)`),
+    # matching how a real request is scoped via app.plugins.scoping.
+    db.create_user("admin", "Admin", None, None, None, None, "2020-01-01T00:00:00Z", role="admin")
+    db.save_user_credentials("admin", "icloud", {"username": username, "password": password})
+    return "admin"
 
-    async def fake_iter_photo_chunks(username, password, album_name):
-        assert (username, password, album_name) == ("user@example.com", "hunter2", "All Photos")
+
+async def test_private_provider_get_summary_uses_configured_album(tmp_db, monkeypatch):
+    user_id = _make_admin_with_icloud_credentials()
+
+    async def fake_iter_photo_chunks(user_id, username, password, album_name):
+        assert (user_id, username, password, album_name) == ("admin", "user@example.com", "hunter2", "All Photos")
         yield [{"id": "id-1", "filename": "photo.jpg"}]
 
     monkeypatch.setattr(icloud_photos, "iter_photo_chunks", fake_iter_photo_chunks)
     plugin = make_private_plugin()
     await _index(plugin)
 
-    summary = await plugin.get_summary()
+    summary = await plugin.with_settings(user_id=user_id).get_summary()
 
     assert summary["count"] == 1
     assert summary["current"] == {"filename": "id-1", "url": "/api/photos/photos/id-1"}
@@ -333,29 +346,27 @@ async def test_private_provider_get_summary_uses_configured_album(tmp_db, monkey
 
 
 async def test_private_provider_reflects_connected_status(tmp_db, monkeypatch):
-    monkeypatch.setattr(settings, "icloud_username", "user@example.com")
-    monkeypatch.setattr(settings, "icloud_password", "hunter2")
+    user_id = _make_admin_with_icloud_credentials()
 
     async def fake_iter_photo_chunks(*a, **k):
         return
         yield  # pragma: no cover - makes this an async generator
 
     monkeypatch.setattr(icloud_photos, "iter_photo_chunks", fake_iter_photo_chunks)
-    monkeypatch.setattr(icloud_photos, "is_connected_cached", lambda: True)
+    monkeypatch.setattr(icloud_photos, "is_connected_cached", lambda user_id: True)
     plugin = make_private_plugin()
     await _index(plugin)
 
-    summary = await plugin.get_summary()
+    summary = await plugin.with_settings(user_id=user_id).get_summary()
 
     assert summary["connected"] is True
 
 
 async def test_private_provider_uses_custom_album_name(tmp_db, monkeypatch):
-    monkeypatch.setattr(settings, "icloud_username", "user@example.com")
-    monkeypatch.setattr(settings, "icloud_password", "hunter2")
+    _make_admin_with_icloud_credentials()
     seen_albums = []
 
-    async def fake_iter_photo_chunks(username, password, album_name):
+    async def fake_iter_photo_chunks(user_id, username, password, album_name):
         seen_albums.append(album_name)
         return
         yield  # pragma: no cover - makes this an async generator
@@ -368,17 +379,16 @@ async def test_private_provider_uses_custom_album_name(tmp_db, monkeypatch):
 
 
 async def test_private_provider_get_detail_lists_all_photos(tmp_db, monkeypatch):
-    monkeypatch.setattr(settings, "icloud_username", "user@example.com")
-    monkeypatch.setattr(settings, "icloud_password", "hunter2")
+    user_id = _make_admin_with_icloud_credentials()
 
-    async def fake_iter_photo_chunks(username, password, album_name):
+    async def fake_iter_photo_chunks(user_id, username, password, album_name):
         yield [{"id": "id-1", "filename": "a.jpg"}, {"id": "id-2", "filename": "b.jpg"}]
 
     monkeypatch.setattr(icloud_photos, "iter_photo_chunks", fake_iter_photo_chunks)
     plugin = make_private_plugin(interval_seconds=15)
     await _index(plugin)
 
-    detail = await plugin.get_detail()
+    detail = await plugin.with_settings(user_id=user_id).get_detail()
 
     assert detail["count"] == 2
     assert detail["interval_seconds"] == 15
@@ -387,15 +397,17 @@ async def test_private_provider_get_detail_lists_all_photos(tmp_db, monkeypatch)
 
 
 async def test_enumerate_photo_ids_chunks_icloud_private_yields_multiple_chunks(tmp_db, monkeypatch):
-    monkeypatch.setattr(settings, "icloud_username", "user@example.com")
-    monkeypatch.setattr(settings, "icloud_password", "hunter2")
+    user_id = _make_admin_with_icloud_credentials()
 
-    async def fake_iter_photo_chunks(username, password, album_name):
+    async def fake_iter_photo_chunks(user_id, username, password, album_name):
         yield [{"id": "id-1", "filename": "a.jpg"}]
         yield [{"id": "id-2", "filename": "b.jpg"}, {"id": "id-3", "filename": "c.jpg"}]
 
     monkeypatch.setattr(icloud_photos, "iter_photo_chunks", fake_iter_photo_chunks)
-    plugin = make_private_plugin()
+    # _enumerate_photo_ids_chunks only enumerates on an instance scoped to a
+    # specific connected user (see PhotosPlugin), matching how a live
+    # per-viewer request is scoped via app.plugins.scoping.scoped_plugin.
+    plugin = make_private_plugin().with_settings(user_id=user_id)
 
     chunks = [chunk async for chunk in plugin._enumerate_photo_ids_chunks()]
 

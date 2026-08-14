@@ -93,17 +93,20 @@ CREATE TABLE IF NOT EXISTS network_integrations (
 );
 CREATE INDEX IF NOT EXISTS idx_network_integrations_type ON network_integrations (type);
 
--- Keyed by breakpoint class ("wide"/"narrow"), not physical device: a tile's
--- position is shared by every device that renders at the same viewport
--- class, so a new phone automatically matches an old phone's arrangement
--- instead of starting from the dashboard.yaml defaults. See migration 008
--- below for how this replaced the original per-device keying.
+-- Keyed by (user, device, breakpoint): tile position/size is a "device
+-- settings" concern (see CONTRIBUTING.md's settings-tiers section) scoped to
+-- the specific household member using the specific physical screen, so two
+-- people sharing a screen — or one person's two screens — never see or
+-- clobber each other's arrangement. See migration 008 for the breakpoint-only
+-- keying this replaced (that was the direct cause of tiles from one device
+-- "leaking" onto another) and migration 009 for how device_id came back.
 CREATE TABLE IF NOT EXISTS widget_layout (
     user_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
     breakpoint TEXT NOT NULL,
     widget_id TEXT NOT NULL,
     layout TEXT NOT NULL,
-    PRIMARY KEY (user_id, breakpoint, widget_id)
+    PRIMARY KEY (user_id, device_id, breakpoint, widget_id)
 );
 CREATE INDEX IF NOT EXISTS idx_widget_layout_widget_id ON widget_layout (widget_id);
 
@@ -204,32 +207,71 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
     expires_at TEXT
 );
 
+-- owner_user_id/owner_device_id are NULL for a widget added before ownership
+-- tracking existed (migration 010) — grandfathered as visible to everyone,
+-- same as a dashboard.yaml widget, since there's no historical owner to
+-- recover and no previously-visible tile should disappear on upgrade. A
+-- widget added via the UI after that migration always has both set together:
+-- it's private to the (user, device) pair that created it until deleted, per
+-- the "widget settings" visibility rules in app.api.widgets.
 CREATE TABLE IF NOT EXISTS custom_widgets (
     id TEXT PRIMARY KEY,
     type TEXT NOT NULL,
     layout TEXT NOT NULL,
-    tab TEXT
+    tab TEXT,
+    owner_user_id TEXT,
+    owner_device_id TEXT
 );
 
+-- Superseded by hidden_widget_ids below (migration 011 seeds it from this
+-- table's contents) — left in place, unread by any code, as a harmless
+-- escape hatch rather than dropped outright.
 CREATE TABLE IF NOT EXISTS removed_widget_ids (
     widget_id TEXT PRIMARY KEY
 );
 
+-- A shared default tile (dashboard.yaml, or a legacy pre-ownership custom
+-- widget) hidden from just this (user, device) pair's own widget list —
+-- not a delete, since the tile still belongs to/is visible for everyone
+-- else. Any logged-in user may hide one for their own screen; this is
+-- intentionally not admin-gated (decluttering your own dashboard isn't a
+-- shared-state change). See app.api.widgets for how this and
+-- owner_user_id/owner_device_id above combine into the visibility rules.
+CREATE TABLE IF NOT EXISTS hidden_widget_ids (
+    user_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    widget_id TEXT NOT NULL,
+    PRIMARY KEY (user_id, device_id, widget_id)
+);
+
+-- `user_id` distinguishes whose library this row belongs to: '' (the
+-- default) for a widget-wide shared index (local/icloud_shared/immich, one
+-- library for the whole household), or an actual user id for icloud_private,
+-- where each connected household member has their own Apple ID and thus
+-- their own private library — see app.plugins.photos.indexer and
+-- PhotosPlugin._photo_index_user_id. Without this dimension, two users
+-- sharing one icloud_private widget clobbered each other's scan results.
 CREATE TABLE IF NOT EXISTS photo_index (
     widget_id TEXT NOT NULL,
+    user_id TEXT NOT NULL DEFAULT '',
     photo_id TEXT NOT NULL,
     position INTEGER NOT NULL,
     generation INTEGER NOT NULL,
-    PRIMARY KEY (widget_id, photo_id)
+    PRIMARY KEY (widget_id, user_id, photo_id)
 );
-CREATE INDEX IF NOT EXISTS idx_photo_index_widget_position ON photo_index (widget_id, position);
+-- Not indexed here: on an upgrade this CREATE TABLE is a no-op against the
+-- pre-existing (pre-`user_id`) table, so an index referencing `user_id`
+-- would fail before migration 014 gets a chance to add the column.
+-- Migration 014 creates this same index itself, after rebuilding the table.
 
 CREATE TABLE IF NOT EXISTS photo_index_meta (
-    widget_id TEXT PRIMARY KEY,
+    widget_id TEXT NOT NULL,
+    user_id TEXT NOT NULL DEFAULT '',
     generation INTEGER NOT NULL,
     updated_at TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'ok',
-    last_error TEXT
+    last_error TEXT,
+    PRIMARY KEY (widget_id, user_id)
 );
 
 -- Dedup for the severe-weather scheduler job: tracks which NWS alert (or
@@ -244,9 +286,14 @@ CREATE TABLE IF NOT EXISTS severe_weather_seen (
     PRIMARY KEY (widget_id, alert_key)
 );
 
+-- Deliberately per-user (user_id, added by migration 012 for an upgrade)
+-- rather than shared household-wide: each member tracks their own
+-- deliveries, the same "user-level settings" tier as Steam/Goodreads — see
+-- app.plugins.packages.plugin's settings_scope comment.
 CREATE TABLE IF NOT EXISTS packages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     widget_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
     tracking_number TEXT NOT NULL,
     carrier TEXT,
     label TEXT,
@@ -258,6 +305,11 @@ CREATE TABLE IF NOT EXISTS packages (
     updated_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_packages_widget ON packages (widget_id, delivered, eta_date);
+-- idx_packages_widget_user is NOT created here: on an upgrade this CREATE
+-- TABLE is a no-op against the pre-existing (pre-`user_id`) table, so an
+-- index referencing `user_id` would fail before migration 012 gets a chance
+-- to add the column. Migration 012 creates this same index itself, after
+-- adding the column.
 
 -- A household member's own RSS feed catalog, independent of any single
 -- widget instance — feeds are added/removed here once, then any of that
@@ -275,6 +327,20 @@ CREATE TABLE IF NOT EXISTS rss_feeds (
     UNIQUE (user_id, url)
 );
 CREATE INDEX IF NOT EXISTS idx_rss_feeds_user_id ON rss_feeds (user_id);
+
+-- Per-user third-party credentials (currently just iCloud) — the user-level
+-- analogue of network_integrations above, which holds one shared credential
+-- per physical LAN device for the whole household. `credentials` is a JSON
+-- blob with any password-shaped value Fernet-encrypted per-key (same
+-- mechanism as network_integrations/app_settings, see app.crypto). `provider`
+-- lets one user hold more than one kind of credential (e.g. iCloud today,
+-- something else later) without a new table per provider.
+CREATE TABLE IF NOT EXISTS user_credentials (
+    user_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    credentials TEXT NOT NULL,
+    PRIMARY KEY (user_id, provider)
+);
 """
 
 
@@ -535,16 +601,26 @@ _SINGLETON_PRIMARY_HOST_KEY = {
 def _migration_007_extract_network_integrations(conn: sqlite3.Connection) -> None:
     from uuid import uuid4
 
-    from app.config import DASHBOARD_CONFIG_PATH, list_widget_configs, load_dashboard_config
+    from app.config import DASHBOARD_CONFIG_PATH, load_dashboard_config
     from app.plugins.registry_types import PLUGIN_CLASSES_BY_TYPE
 
     # dashboard.yaml is gitignored (a per-deployment file; docker-entrypoint.sh
     # seeds it from dashboard.example.yaml before the app starts) and doesn't
     # exist yet in a fresh checkout or the CI/test environment. Fall back to
-    # no YAML-defined widgets rather than erroring — list_widget_configs still
-    # layers in DB-persisted custom widgets regardless.
+    # no YAML-defined widgets rather than erroring.
     yaml_config = load_dashboard_config() if DASHBOARD_CONFIG_PATH.exists() else {"widgets": []}
-    widgets = list_widget_configs(yaml_config)
+    # Deliberately not `app.config.list_widget_configs`/`db.list_custom_widgets`
+    # here: both now also select custom_widgets' owner_user_id/owner_device_id
+    # columns, which don't exist yet at this point in a fresh-to-current
+    # migration run (added later by migration 010) — and only `id`/`type`/
+    # `settings` are needed below anyway. Queried via this migration's own
+    # `conn` rather than a second `_connect()`'d connection, consistent with
+    # the rest of this function.
+    widgets = list(yaml_config.get("widgets", []))
+    widgets += [
+        {"id": row["id"], "type": row["type"], "settings": {}}
+        for row in conn.execute("SELECT id, type FROM custom_widgets")
+    ]
 
     def _db_overrides(widget_id: str) -> dict[str, Any]:
         row = conn.execute("SELECT settings FROM widget_settings WHERE widget_id = ?", (widget_id,)).fetchone()
@@ -658,6 +734,168 @@ CREATE INDEX IF NOT EXISTS idx_widget_layout_widget_id ON widget_layout (widget_
 """
 
 
+# `widget_layout` gained device_id back (see the table comment above):
+# migration 008's breakpoint-only keying meant tiles rearranged on one device
+# instantly rearranged on every other device at the same viewport class —
+# reported as tiles from one device "leaking" onto another. SQLite can't
+# ALTER a PRIMARY KEY, so this rebuilds under a temp name and swaps it in,
+# same approach as migrations 001/008. Every existing device is seeded with a
+# copy of its user's current (pre-migration, shared-by-breakpoint) layout —
+# preserves what's actually visible today on every screen rather than
+# resetting any of them to dashboard.yaml defaults or picking one device to
+# "win" and blanking the rest.
+_MIGRATION_009_WIDGET_LAYOUT_DEVICE = """
+CREATE TABLE IF NOT EXISTS widget_layout_new (
+    user_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    breakpoint TEXT NOT NULL,
+    widget_id TEXT NOT NULL,
+    layout TEXT NOT NULL,
+    PRIMARY KEY (user_id, device_id, breakpoint, widget_id)
+);
+
+INSERT INTO widget_layout_new (user_id, device_id, breakpoint, widget_id, layout)
+SELECT wl.user_id, d.id, wl.breakpoint, wl.widget_id, wl.layout
+FROM widget_layout wl
+CROSS JOIN devices d;
+
+DROP TABLE widget_layout;
+ALTER TABLE widget_layout_new RENAME TO widget_layout;
+CREATE INDEX IF NOT EXISTS idx_widget_layout_widget_id ON widget_layout (widget_id);
+"""
+
+
+# `custom_widgets` gained owner_user_id/owner_device_id (see the table
+# comment above) so a UI-added tile can be private to the (user, device) pair
+# that created it instead of appearing for the whole household on every
+# screen. No backfill: existing rows stay NULL/NULL, the grandfathered
+# visible-to-everyone case — there's no historical owner to recover, and no
+# tile that's currently visible somewhere should disappear on upgrade.
+def _migration_010_custom_widget_ownership(conn: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(custom_widgets)")}
+    if "owner_user_id" not in columns:
+        conn.execute("ALTER TABLE custom_widgets ADD COLUMN owner_user_id TEXT")
+    if "owner_device_id" not in columns:
+        conn.execute("ALTER TABLE custom_widgets ADD COLUMN owner_device_id TEXT")
+
+
+# Seeds the new per-(user, device) `hidden_widget_ids` table from the old
+# global `removed_widget_ids` table, cross-joined against every known (user,
+# device) pair — so a widget that was globally hidden before this migration
+# stays hidden everywhere immediately after upgrading, rather than
+# reappearing on every screen. `removed_widget_ids` itself is left alone
+# (nothing reads it anymore) rather than dropped — see that table's comment.
+def _migration_011_seed_hidden_widget_ids(conn: sqlite3.Connection) -> None:
+    removed = [row["widget_id"] for row in conn.execute("SELECT widget_id FROM removed_widget_ids")]
+    if not removed:
+        return
+    user_ids = [row["id"] for row in conn.execute("SELECT id FROM users")]
+    device_ids = [row["id"] for row in conn.execute("SELECT id FROM devices")]
+    conn.executemany(
+        "INSERT INTO hidden_widget_ids (user_id, device_id, widget_id) VALUES (?, ?, ?) "
+        "ON CONFLICT (user_id, device_id, widget_id) DO NOTHING",
+        [(user_id, device_id, widget_id) for user_id in user_ids for device_id in device_ids for widget_id in removed],
+    )
+
+
+# `packages` gained user_id (see the table comment above) as part of moving
+# package tracking from a single household-wide list to a per-user one (see
+# app.plugins.packages.plugin). Existing untagged rows are backfilled to the
+# household admin (the oldest-created one, same "promote the oldest"
+# precedent as _migration_002_user_roles) rather than left ownerless — an
+# ownerless row would simply become invisible once the packages API starts
+# filtering by requesting user, silently dropping whatever was already being
+# tracked.
+def _migration_012_packages_user_id(conn: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(packages)")}
+    if "user_id" not in columns:
+        conn.execute("ALTER TABLE packages ADD COLUMN user_id TEXT")
+    admin = conn.execute("SELECT id FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1").fetchone()
+    if admin is not None:
+        conn.execute("UPDATE packages SET user_id = ? WHERE user_id IS NULL", (admin["id"],))
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_packages_widget_user ON packages (widget_id, user_id, delivered, eta_date)")
+
+
+# iCloud Photos moved from one shared admin-configured login (`app_settings`'
+# icloud_username/icloud_password) to per-user credentials in the new
+# `user_credentials` table (see that table's comment and app.plugins.photos).
+# Seeds the admin's personal credential from whatever was previously the one
+# global login, so the admin doesn't lose their configured photo library on
+# upgrade — every other household member simply starts with no iCloud
+# credential of their own, same as a fresh install. Reads/writes app_settings
+# via raw SQL against this migration's own `conn` rather than
+# get_app_settings/save_app_settings, which each open their own connection
+# via `_connect()` and would contend with this function's open transaction
+# (same reasoning as _migration_007_extract_network_integrations).
+def _migration_013_seed_icloud_user_credentials(conn: sqlite3.Connection) -> None:
+    rows = {
+        row["key"]: row["value"]
+        for row in conn.execute(
+            "SELECT key, value FROM app_settings WHERE key IN ('icloud_username', 'icloud_password')"
+        )
+    }
+    username = rows.get("icloud_username")
+    if not username:
+        return
+    admin = conn.execute("SELECT id FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1").fetchone()
+    if admin is None:
+        return
+    encrypted_password = rows.get("icloud_password")
+    password = decrypt(encrypted_password) if encrypted_password else None
+    credentials = {"username": username, "password": encrypt(password) if password else None}
+    conn.execute(
+        "INSERT INTO user_credentials (user_id, provider, credentials) VALUES (?, 'icloud', ?) "
+        "ON CONFLICT (user_id, provider) DO NOTHING",
+        (admin["id"], json.dumps(credentials)),
+    )
+
+
+# `photo_index`/`photo_index_meta` gained a `user_id` column (see the table
+# comment above) so an icloud_private widget indexes each connected household
+# member's private library separately instead of one shared scan result
+# clobbered by whichever user's background scan ran most recently (plan §7).
+# SQLite can't ALTER a PRIMARY KEY, so both tables are rebuilt under a temp
+# name and swapped in, same approach as migrations 001/008/009. Every
+# existing row is backfilled under the '' shared-index sentinel: correct and
+# final for local/icloud_shared/immich widgets (still one library for the
+# whole household), and a harmless interim value for icloud_private widgets
+# that gets replaced within moments by the real per-user scans the app
+# schedules at startup — see app.plugins.photos.indexer.index_photos.
+_MIGRATION_014_PHOTO_INDEX_USER_ID = """
+CREATE TABLE IF NOT EXISTS photo_index_new (
+    widget_id TEXT NOT NULL,
+    user_id TEXT NOT NULL DEFAULT '',
+    photo_id TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    generation INTEGER NOT NULL,
+    PRIMARY KEY (widget_id, user_id, photo_id)
+);
+
+INSERT INTO photo_index_new (widget_id, user_id, photo_id, position, generation)
+SELECT widget_id, '', photo_id, position, generation FROM photo_index;
+
+DROP TABLE photo_index;
+ALTER TABLE photo_index_new RENAME TO photo_index;
+CREATE INDEX IF NOT EXISTS idx_photo_index_widget_user_position ON photo_index (widget_id, user_id, position);
+
+CREATE TABLE IF NOT EXISTS photo_index_meta_new (
+    widget_id TEXT NOT NULL,
+    user_id TEXT NOT NULL DEFAULT '',
+    generation INTEGER NOT NULL,
+    updated_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'ok',
+    last_error TEXT,
+    PRIMARY KEY (widget_id, user_id)
+);
+
+INSERT INTO photo_index_meta_new (widget_id, user_id, generation, updated_at, status, last_error)
+SELECT widget_id, '', generation, updated_at, status, last_error FROM photo_index_meta;
+
+DROP TABLE photo_index_meta;
+ALTER TABLE photo_index_meta_new RENAME TO photo_index_meta;
+"""
+
+
 _MIGRATIONS: tuple[str | Callable[[sqlite3.Connection], None], ...] = (
     _MIGRATION_001_USERS_DEVICES,
     _migration_002_user_roles,
@@ -667,6 +905,12 @@ _MIGRATIONS: tuple[str | Callable[[sqlite3.Connection], None], ...] = (
     _migration_006_seed_rss_feed_catalog,
     _migration_007_extract_network_integrations,
     _MIGRATION_008_WIDGET_LAYOUT_BREAKPOINT,
+    _MIGRATION_009_WIDGET_LAYOUT_DEVICE,
+    _migration_010_custom_widget_ownership,
+    _migration_011_seed_hidden_widget_ids,
+    _migration_012_packages_user_id,
+    _migration_013_seed_icloud_user_credentials,
+    _MIGRATION_014_PHOTO_INDEX_USER_ID,
 )
 
 
@@ -879,48 +1123,54 @@ def delete_network_integration(id: str) -> None:
         conn.execute("DELETE FROM network_integrations WHERE id = ?", (id,))
 
 
-def save_widget_layout(user_id: str, breakpoint: str, widget_id: str, layout: dict[str, Any]) -> None:
-    """Persist a widget's grid position for a given (user, breakpoint), overwriting any prior override.
+def save_widget_layout(user_id: str, device_id: str, breakpoint: str, widget_id: str, layout: dict[str, Any]) -> None:
+    """Persist a widget's grid position for a given (user, device, breakpoint), overwriting any prior override.
 
     Lets drag-to-rearrange edits made from the dashboard survive a backend
     restart without editing dashboard.yaml, the same way `save_widget_settings`
-    does for runtime settings changes. Scoped per (user, breakpoint) rather
-    than per physical device, so a new device that renders at the same
-    viewport class as an existing one automatically inherits its arrangement.
+    does for runtime settings changes. Scoped per (user, device) — a "device
+    settings" concern, see CONTRIBUTING.md — so rearranging one screen never
+    touches another user's, or another screen's, arrangement.
     """
     with _connect() as conn:
         _upsert(
             conn,
             "widget_layout",
-            {"user_id": user_id, "breakpoint": breakpoint, "widget_id": widget_id, "layout": json.dumps(layout)},
-            ("user_id", "breakpoint", "widget_id"),
+            {
+                "user_id": user_id,
+                "device_id": device_id,
+                "breakpoint": breakpoint,
+                "widget_id": widget_id,
+                "layout": json.dumps(layout),
+            },
+            ("user_id", "device_id", "breakpoint", "widget_id"),
         )
 
 
-def get_widget_layout(user_id: str, breakpoint: str, widget_id: str) -> dict[str, Any] | None:
+def get_widget_layout(user_id: str, device_id: str, breakpoint: str, widget_id: str) -> dict[str, Any] | None:
     with _connect() as conn:
         row = conn.execute(
-            "SELECT layout FROM widget_layout WHERE user_id = ? AND breakpoint = ? AND widget_id = ?",
-            (user_id, breakpoint, widget_id),
+            "SELECT layout FROM widget_layout WHERE user_id = ? AND device_id = ? AND breakpoint = ? AND widget_id = ?",
+            (user_id, device_id, breakpoint, widget_id),
         ).fetchone()
     return None if row is None else json.loads(row["layout"])
 
 
 def delete_widget_layout_for_widget(widget_id: str) -> None:
-    """Drop every (user, breakpoint) layout override for a widget that's been removed."""
+    """Drop every (user, device, breakpoint) layout override for a widget that's been removed."""
     with _connect() as conn:
         conn.execute("DELETE FROM widget_layout WHERE widget_id = ?", (widget_id,))
 
 
-def list_widget_layouts(user_id: str, breakpoint: str) -> dict[str, dict[str, Any]]:
-    """All layout overrides for a (user, breakpoint), keyed by widget_id.
+def list_widget_layouts(user_id: str, device_id: str, breakpoint: str) -> dict[str, dict[str, Any]]:
+    """All layout overrides for a (user, device, breakpoint), keyed by widget_id.
 
     One query for the whole dashboard list rather than one per widget.
     """
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT widget_id, layout FROM widget_layout WHERE user_id = ? AND breakpoint = ?",
-            (user_id, breakpoint),
+            "SELECT widget_id, layout FROM widget_layout WHERE user_id = ? AND device_id = ? AND breakpoint = ?",
+            (user_id, device_id, breakpoint),
         ).fetchall()
     return {row["widget_id"]: json.loads(row["layout"]) for row in rows}
 
@@ -1043,11 +1293,14 @@ def delete_widget_device_settings_for_widget(widget_id: str) -> None:
         conn.execute("DELETE FROM widget_device_settings WHERE widget_id = ?", (widget_id,))
 
 
-def begin_photo_index_scan(widget_id: str) -> int:
+def begin_photo_index_scan(widget_id: str, user_id: str = "") -> int:
     """Mints a new generation tag for a background photo-index scan of
-    widget_id. Every chunk upserted during this scan must use this
-    generation so `finish_photo_index_scan` can identify (and delete) rows
-    left over from a previous scan.
+    (widget_id, user_id) — user_id is the '' shared-index sentinel for every
+    provider except icloud_private, where it's the household member whose
+    private library this particular scan is for (see
+    PhotosPlugin._photo_index_user_id). Every chunk upserted during this scan
+    must use this generation so `finish_photo_index_scan` can identify (and
+    delete) rows left over from a previous scan.
 
     Uses the monotonic clock at nanosecond resolution rather than
     millisecond-truncated wall-clock time — two scans of a small photo
@@ -1059,74 +1312,84 @@ def begin_photo_index_scan(widget_id: str) -> int:
     return time.monotonic_ns()
 
 
-def upsert_photo_index_chunk(widget_id: str, generation: int, photo_ids: list[str], start_position: int) -> None:
+def upsert_photo_index_chunk(
+    widget_id: str, generation: int, photo_ids: list[str], start_position: int, user_id: str = ""
+) -> None:
     """Upserts one chunk of photo_ids (already in enumeration order) for an
-    in-progress scan. Safe to call multiple times per scan — each call is
-    its own committed transaction, so a concurrent reader only ever sees a
-    growing superset of the previous good index, never a truncated one.
+    in-progress (widget_id, user_id) scan. Safe to call multiple times per
+    scan — each call is its own committed transaction, so a concurrent
+    reader only ever sees a growing superset of the previous good index,
+    never a truncated one.
     """
     with _connect() as conn:
         conn.executemany(
-            "INSERT INTO photo_index (widget_id, photo_id, position, generation) "
-            "VALUES (?, ?, ?, ?) "
-            "ON CONFLICT (widget_id, photo_id) DO UPDATE SET "
+            "INSERT INTO photo_index (widget_id, user_id, photo_id, position, generation) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT (widget_id, user_id, photo_id) DO UPDATE SET "
             "position = excluded.position, generation = excluded.generation",
-            [(widget_id, photo_id, start_position + offset, generation) for offset, photo_id in enumerate(photo_ids)],
+            [
+                (widget_id, user_id, photo_id, start_position + offset, generation)
+                for offset, photo_id in enumerate(photo_ids)
+            ],
         )
 
 
-def finish_photo_index_scan(widget_id: str, generation: int) -> None:
-    """Drops any photo_index row for widget_id not written by `generation`
-    (i.e. photos removed from the source since the last scan), then marks
-    the scan as successful.
+def finish_photo_index_scan(widget_id: str, generation: int, user_id: str = "") -> None:
+    """Drops any (widget_id, user_id) photo_index row not written by
+    `generation` (i.e. photos removed from the source since the last scan),
+    then marks the scan as successful.
     """
     with _connect() as conn:
         conn.execute(
-            "DELETE FROM photo_index WHERE widget_id = ? AND generation != ?",
-            (widget_id, generation),
+            "DELETE FROM photo_index WHERE widget_id = ? AND user_id = ? AND generation != ?",
+            (widget_id, user_id, generation),
         )
         conn.execute(
-            "INSERT INTO photo_index_meta (widget_id, generation, updated_at, status, last_error) "
-            "VALUES (?, ?, ?, 'ok', NULL) "
-            "ON CONFLICT (widget_id) DO UPDATE SET generation = excluded.generation, "
+            "INSERT INTO photo_index_meta (widget_id, user_id, generation, updated_at, status, last_error) "
+            "VALUES (?, ?, ?, ?, 'ok', NULL) "
+            "ON CONFLICT (widget_id, user_id) DO UPDATE SET generation = excluded.generation, "
             "updated_at = excluded.updated_at, status = 'ok', last_error = NULL",
-            (widget_id, generation, datetime.now(UTC).isoformat()),
+            (widget_id, user_id, generation, datetime.now(UTC).isoformat()),
         )
 
 
-def mark_photo_index_scan_failed(widget_id: str, error: str) -> None:
-    """Records a failed scan without touching photo_index rows, so the
-    previous good index (if any) keeps serving reads.
+def mark_photo_index_scan_failed(widget_id: str, error: str, user_id: str = "") -> None:
+    """Records a failed (widget_id, user_id) scan without touching
+    photo_index rows, so the previous good index (if any) keeps serving reads.
     """
     with _connect() as conn:
         conn.execute(
-            "INSERT INTO photo_index_meta (widget_id, generation, updated_at, status, last_error) "
-            "VALUES (?, 0, ?, 'error', ?) "
-            "ON CONFLICT (widget_id) DO UPDATE SET updated_at = excluded.updated_at, "
+            "INSERT INTO photo_index_meta (widget_id, user_id, generation, updated_at, status, last_error) "
+            "VALUES (?, ?, 0, ?, 'error', ?) "
+            "ON CONFLICT (widget_id, user_id) DO UPDATE SET updated_at = excluded.updated_at, "
             "status = 'error', last_error = excluded.last_error",
-            (widget_id, datetime.now(UTC).isoformat(), error),
+            (widget_id, user_id, datetime.now(UTC).isoformat(), error),
         )
 
 
-def photo_index_photo_ids(widget_id: str) -> list[str]:
+def photo_index_photo_ids(widget_id: str, user_id: str = "") -> list[str]:
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT photo_id FROM photo_index WHERE widget_id = ? ORDER BY position ASC",
-            (widget_id,),
+            "SELECT photo_id FROM photo_index WHERE widget_id = ? AND user_id = ? ORDER BY position ASC",
+            (widget_id, user_id),
         ).fetchall()
     return [row["photo_id"] for row in rows]
 
 
-def photo_index_status(widget_id: str) -> dict[str, Any] | None:
+def photo_index_status(widget_id: str, user_id: str = "") -> dict[str, Any] | None:
     with _connect() as conn:
         row = conn.execute(
-            "SELECT widget_id, generation, updated_at, status, last_error FROM photo_index_meta WHERE widget_id = ?",
-            (widget_id,),
+            "SELECT widget_id, generation, updated_at, status, last_error FROM photo_index_meta "
+            "WHERE widget_id = ? AND user_id = ?",
+            (widget_id, user_id),
         ).fetchone()
     return None if row is None else dict(row)
 
 
 def delete_photo_index(widget_id: str) -> None:
+    """Drops every user's index rows for widget_id — used when the widget
+    itself is deleted, so intentionally not scoped to a single user_id.
+    """
     with _connect() as conn:
         conn.execute("DELETE FROM photo_index WHERE widget_id = ?", (widget_id,))
         conn.execute("DELETE FROM photo_index_meta WHERE widget_id = ?", (widget_id,))
@@ -1398,25 +1661,76 @@ def delete_rss_feed(user_id: str, feed_id: int) -> None:
         conn.execute("DELETE FROM rss_feeds WHERE id = ? AND user_id = ?", (feed_id, user_id))
 
 
+# Keys within a user_credentials row's `credentials` blob that get
+# Fernet-encrypted per-value before being stored — same mechanism as
+# NETWORK_INTEGRATION_SECRET_KEYS above, just for the per-user analogue.
+USER_CREDENTIAL_SECRET_KEYS = ("password",)
+
+
+def _encrypt_user_credentials(credentials: dict[str, Any]) -> dict[str, Any]:
+    return {k: (encrypt(v) if k in USER_CREDENTIAL_SECRET_KEYS and v else v) for k, v in credentials.items()}
+
+
+def _decrypt_user_credentials(credentials: dict[str, Any]) -> dict[str, Any]:
+    return {k: (decrypt(v) if k in USER_CREDENTIAL_SECRET_KEYS and v else v) for k, v in credentials.items()}
+
+
+def save_user_credentials(user_id: str, provider: str, credentials: dict[str, Any]) -> None:
+    """Create or overwrite a user's credentials for `provider` (its full value, not a partial merge)."""
+    stored = _encrypt_user_credentials(credentials)
+    with _connect() as conn:
+        _upsert(
+            conn,
+            "user_credentials",
+            {"user_id": user_id, "provider": provider, "credentials": json.dumps(stored)},
+            ("user_id", "provider"),
+        )
+
+
+def get_user_credentials(user_id: str, provider: str) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT credentials FROM user_credentials WHERE user_id = ? AND provider = ?", (user_id, provider)
+        ).fetchone()
+    return None if row is None else _decrypt_user_credentials(json.loads(row["credentials"]))
+
+
+def delete_user_credentials(user_id: str, provider: str) -> None:
+    with _connect() as conn:
+        conn.execute("DELETE FROM user_credentials WHERE user_id = ? AND provider = ?", (user_id, provider))
+
+
+def list_user_ids_with_credentials(provider: str) -> list[str]:
+    """Every user who has connected a `provider` credential — used by the
+    background photo indexer to fan out one scan per household member with
+    an icloud_private connection, instead of a single shared scan.
+    """
+    with _connect() as conn:
+        rows = conn.execute("SELECT user_id FROM user_credentials WHERE provider = ?", (provider,)).fetchall()
+    return [row["user_id"] for row in rows]
+
+
 _PACKAGE_COLUMNS = (
-    "id, widget_id, tracking_number, carrier, label, status, last_event, eta_date, delivered, added_at, updated_at"
+    "id, widget_id, user_id, tracking_number, carrier, label, status, last_event, eta_date, delivered, "
+    "added_at, updated_at"
 )
 
 
-def add_package(widget_id: str, tracking_number: str, label: str | None = None) -> dict[str, Any]:
+def add_package(widget_id: str, user_id: str, tracking_number: str, label: str | None = None) -> dict[str, Any]:
     added_at = datetime.now(UTC).isoformat()
     with _connect() as conn:
         cursor = conn.execute(
             "INSERT INTO packages "
-            "(widget_id, tracking_number, carrier, label, status, last_event, eta_date, delivered, "
+            "(widget_id, user_id, tracking_number, carrier, label, status, last_event, eta_date, delivered, "
             "added_at, updated_at) "
-            "VALUES (?, ?, NULL, ?, NULL, NULL, NULL, 0, ?, NULL)",
-            (widget_id, tracking_number, label, added_at),
+            "VALUES (?, ?, ?, NULL, ?, NULL, NULL, NULL, 0, ?, NULL)",
+            (widget_id, user_id, tracking_number, label, added_at),
         )
         package_id = cursor.lastrowid
     return {
         "id": package_id,
         "widget_id": widget_id,
+        "user_id": user_id,
         "tracking_number": tracking_number,
         "carrier": None,
         "label": label,
@@ -1429,14 +1743,33 @@ def add_package(widget_id: str, tracking_number: str, label: str | None = None) 
     }
 
 
-def list_packages(widget_id: str) -> list[dict[str, Any]]:
-    """A widget's tracked packages, active (not yet delivered) first, earliest ETA first within each group."""
+def list_packages(widget_id: str, user_id: str) -> list[dict[str, Any]]:
+    """A (widget, user)'s tracked packages, active (not yet delivered) first, earliest ETA first within each group.
+
+    Scoped per user (see the packages table comment) — each household member
+    tracks their own deliveries, so this only returns the requesting user's
+    packages for the widget, not every user's.
+    """
     with _connect() as conn:
         rows = conn.execute(
-            f"SELECT {_PACKAGE_COLUMNS} FROM packages WHERE widget_id = ? "
+            f"SELECT {_PACKAGE_COLUMNS} FROM packages WHERE widget_id = ? AND user_id = ? "
             "ORDER BY delivered ASC, eta_date IS NULL, eta_date ASC, added_at ASC",
-            (widget_id,),
+            (widget_id, user_id),
         ).fetchall()
+    return [dict(row) | {"delivered": bool(row["delivered"])} for row in rows]
+
+
+def list_all_packages_for_widget(widget_id: str) -> list[dict[str, Any]]:
+    """Every user's tracked packages for a widget, regardless of owner.
+
+    Used only by the background 17Track refresh job (see
+    app.scheduler.refresh_package_widget) — deliveries keep getting tracked
+    for every household member even while nobody's actively viewing the
+    widget; `list_packages` above is for the per-viewer read path, which
+    filters to just the requesting user.
+    """
+    with _connect() as conn:
+        rows = conn.execute(f"SELECT {_PACKAGE_COLUMNS} FROM packages WHERE widget_id = ?", (widget_id,)).fetchall()
     return [dict(row) | {"delivered": bool(row["delivered"])} for row in rows]
 
 
@@ -1532,13 +1865,34 @@ def save_oauth_access_token(provider: str, access_token: str, expires_at: str) -
         )
 
 
-def save_custom_widget(widget_id: str, type_: str, layout: dict[str, Any], tab: str | None) -> None:
-    """Persist a widget added via the UI (no dashboard.yaml entry to live in)."""
+def save_custom_widget(
+    widget_id: str,
+    type_: str,
+    layout: dict[str, Any],
+    tab: str | None,
+    owner_user_id: str | None = None,
+    owner_device_id: str | None = None,
+) -> None:
+    """Persist a widget added via the UI (no dashboard.yaml entry to live in).
+
+    A widget added through `POST /api/widgets` always passes both owner_* —
+    private to the (user, device) pair that created it (see
+    app.api.widgets.add_widget). The None default exists only for
+    migration/test convenience representing the legacy pre-ownership,
+    visible-to-everyone case (see the custom_widgets table comment).
+    """
     with _connect() as conn:
         _upsert(
             conn,
             "custom_widgets",
-            {"id": widget_id, "type": type_, "layout": json.dumps(layout), "tab": tab},
+            {
+                "id": widget_id,
+                "type": type_,
+                "layout": json.dumps(layout),
+                "tab": tab,
+                "owner_user_id": owner_user_id,
+                "owner_device_id": owner_device_id,
+            },
             ("id",),
         )
 
@@ -1550,14 +1904,30 @@ def delete_custom_widget(widget_id: str) -> None:
 
 def list_custom_widgets() -> list[dict[str, Any]]:
     with _connect() as conn:
-        rows = conn.execute("SELECT id, type, layout, tab FROM custom_widgets").fetchall()
+        rows = conn.execute(
+            "SELECT id, type, layout, tab, owner_user_id, owner_device_id FROM custom_widgets"
+        ).fetchall()
     return [
-        {"id": row["id"], "type": row["type"], "layout": json.loads(row["layout"]), "tab": row["tab"]} for row in rows
+        {
+            "id": row["id"],
+            "type": row["type"],
+            "layout": json.loads(row["layout"]),
+            "tab": row["tab"],
+            "owner_user_id": row["owner_user_id"],
+            "owner_device_id": row["owner_device_id"],
+        }
+        for row in rows
     ]
 
 
 def mark_widget_removed(widget_id: str) -> None:
-    """Soft-delete a dashboard.yaml-defined widget — the file itself is left alone."""
+    """Soft-delete a dashboard.yaml-defined widget — the file itself is left alone.
+
+    Superseded by hide_widget below (see the removed_widget_ids table
+    comment) — no remaining caller, kept only so migration 011 has a stable
+    function-free (raw-SQL) history to seed from; new code should call
+    hide_widget instead.
+    """
     with _connect() as conn:
         conn.execute(
             "INSERT INTO removed_widget_ids (widget_id) VALUES (?) ON CONFLICT (widget_id) DO NOTHING",
@@ -1565,10 +1935,33 @@ def mark_widget_removed(widget_id: str) -> None:
         )
 
 
-def removed_widget_ids() -> set[str]:
+def hide_widget(user_id: str, device_id: str, widget_id: str) -> None:
+    """Hide a shared/legacy-global widget from just this (user, device)'s own widget list.
+
+    Not a delete — the widget still exists and is still visible to everyone
+    else. See app.api.widgets.remove_widget for when this is used instead of
+    an actual delete.
+    """
     with _connect() as conn:
-        rows = conn.execute("SELECT widget_id FROM removed_widget_ids").fetchall()
+        conn.execute(
+            "INSERT INTO hidden_widget_ids (user_id, device_id, widget_id) VALUES (?, ?, ?) "
+            "ON CONFLICT (user_id, device_id, widget_id) DO NOTHING",
+            (user_id, device_id, widget_id),
+        )
+
+
+def hidden_widget_ids(user_id: str, device_id: str) -> set[str]:
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT widget_id FROM hidden_widget_ids WHERE user_id = ? AND device_id = ?", (user_id, device_id)
+        ).fetchall()
     return {row["widget_id"] for row in rows}
+
+
+def delete_hidden_widget_ids_for_widget(widget_id: str) -> None:
+    """Drop every (user, device)'s hidden-state for a widget that's been fully deleted."""
+    with _connect() as conn:
+        conn.execute("DELETE FROM hidden_widget_ids WHERE widget_id = ?", (widget_id,))
 
 
 def save_app_settings(overrides: dict[str, str | None]) -> None:
@@ -1602,12 +1995,17 @@ _USER_SCOPED_TABLES: tuple[tuple[str, str], ...] = (
     ("widget_user_settings", "user_id"),
     ("screensaver_settings", "user_id"),
     ("user_preferences", "user_id"),
+    ("hidden_widget_ids", "user_id"),
+    ("packages", "user_id"),
+    ("user_credentials", "user_id"),
 )
 
 _DEVICE_SCOPED_TABLES: tuple[tuple[str, str], ...] = (
     ("sessions", "device_id"),
     ("widget_device_settings", "device_id"),
     ("screensaver_settings", "device_id"),
+    ("widget_layout", "device_id"),
+    ("hidden_widget_ids", "device_id"),
 )
 
 

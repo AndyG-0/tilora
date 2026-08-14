@@ -814,7 +814,16 @@
 			"no_recordings": "Aucun enregistrement en cours.",
 			"upcoming_rules": "{count} règles d'enregistrement à venir.",
 			"playback_failed_hint": "Échec de la lecture — ce tuner ne prend peut-être pas en charge ce mode de lecture. Essayez « {action} » à la place.",
-			"edit_playback_settings": "Modifier les paramètres de lecture"
+			"edit_playback_settings": "Modifier les paramètres de lecture",
+			"search_placeholder": "Rechercher des programmes…",
+			"search_results_count": "{count} programmes trouvés",
+			"search_no_results": "Aucun programme trouvé pour « {query} »",
+			"search_clear": "Effacer la recherche",
+			"search_show_in_grid": "Afficher dans le guide",
+			"search_live_badge": "En direct",
+			"tuner_status_heading": "État des tuners",
+			"tuner_in_use": "En cours d'utilisation",
+			"tuner_status_unavailable": "État indisponible"
 		}
 	},
 	"screensaver": {

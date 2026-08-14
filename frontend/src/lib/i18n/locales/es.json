@@ -814,7 +814,16 @@
 			"no_recordings": "No hay grabaciones en curso.",
 			"upcoming_rules": "{count} reglas de grabación próximas.",
 			"playback_failed_hint": "La reproducción falló — es posible que este sintonizador no admita este modo de reproducción. Prueba \"{action}\" en su lugar.",
-			"edit_playback_settings": "Editar ajustes de reproducción"
+			"edit_playback_settings": "Editar ajustes de reproducción",
+			"search_placeholder": "Buscar programas…",
+			"search_results_count": "{count} programas encontrados",
+			"search_no_results": "No se encontraron programas para \"{query}\"",
+			"search_clear": "Borrar búsqueda",
+			"search_show_in_grid": "Mostrar en la guía",
+			"search_live_badge": "En vivo",
+			"tuner_status_heading": "Estado del sintonizador",
+			"tuner_in_use": "En uso",
+			"tuner_status_unavailable": "Estado no disponible"
 		}
 	},
 	"screensaver": {

@@ -13,16 +13,17 @@ as `app/api/jellyfin.py` and `app/api/pihole.py`.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import FileResponse, RedirectResponse
 
 from app.auth import get_current_user
-from app.config import effective_settings
 from app.integrations import icloud_photos, icloud_shared_album, immich_client
 from app.plugins.base import registry
 from app.plugins.photos.plugin import IMAGE_EXTENSIONS, PhotosPlugin
+from app.storage import db
 
 router = APIRouter(prefix="/api/photos", tags=["photos"], dependencies=[Depends(get_current_user)])
 
@@ -35,14 +36,14 @@ def _get_plugin(widget_id: str) -> PhotosPlugin:
 
 
 @router.get("/{widget_id}/{filename:path}")
-async def get_photo(widget_id: str, filename: str):
+async def get_photo(widget_id: str, filename: str, user: dict = Depends(get_current_user)):
     plugin = _get_plugin(widget_id)
     settings = plugin.config["settings"]
     provider = settings.get("provider")
     if provider == "icloud_shared":
         return await _get_icloud_photo(settings, filename)
     if provider == "icloud_private":
-        return await _get_icloud_private_photo(settings, filename)
+        return await _get_icloud_private_photo(user["id"], settings, filename)
     if provider == "immich":
         return await _get_immich_photo(settings, filename)
     return _get_local_photo(settings, filename)
@@ -82,9 +83,13 @@ async def _get_icloud_photo(settings: dict, guid: str) -> RedirectResponse:
     return RedirectResponse(asset_url, status_code=307)
 
 
-async def _get_icloud_private_photo(settings: dict, photo_id: str) -> Response:
-    creds = effective_settings()
-    username, password = creds.get("icloud_username"), creds.get("icloud_password")
+async def _get_icloud_private_photo(user_id: str, settings: dict, photo_id: str) -> Response:
+    # photo_id came from the requesting viewer's own photo_index rows (see
+    # PhotosPlugin._photo_index_user_id), so bytes are fetched with that same
+    # user's credentials — each household member's private library is fully
+    # independent.
+    creds = await asyncio.to_thread(db.get_user_credentials, user_id, "icloud") or {}
+    username, password = creds.get("username"), creds.get("password")
     if not icloud_photos.is_configured(username, password):
         raise HTTPException(status_code=404, detail="Photo not found")
 
@@ -92,7 +97,7 @@ async def _get_icloud_private_photo(settings: dict, photo_id: str) -> Response:
     # Private-library asset URLs require the authenticated session's cookies,
     # unlike the Shared Album's public CDN links, so bytes must be proxied
     # through the backend rather than redirected to.
-    result = await icloud_photos.fetch_photo_bytes(username, password, photo_id, album_name)
+    result = await icloud_photos.fetch_photo_bytes(user_id, username, password, photo_id, album_name)
     if result is None:
         raise HTTPException(status_code=404, detail="Photo not found")
 

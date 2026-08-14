@@ -29,6 +29,22 @@ const {
 	deleteHDHomeRunRecordingRule: vi.fn(),
 }));
 vi.mock('$app/navigation', () => ({ goto }));
+vi.mock('mpegts.js', () => ({
+	default: {
+		createPlayer: vi.fn(() => ({
+			on: vi.fn(),
+			attachMediaElement: vi.fn(),
+			load: vi.fn(),
+			play: vi.fn(),
+			pause: vi.fn(),
+			unload: vi.fn(),
+			detachMediaElement: vi.fn(),
+			destroy: vi.fn(),
+		})),
+		Events: { ERROR: 'error' },
+		ErrorTypes: { NETWORK_ERROR: 'NetworkError', MEDIA_ERROR: 'MediaError' },
+	},
+}));
 vi.mock('$lib/api', () => ({
 	api: {
 		widgetDetail,
@@ -530,5 +546,92 @@ describe('HDHomeRunDetail', () => {
 		render(HDHomeRunDetail, { props: { data: connected } });
 
 		expect(screen.queryByText('Edit playback settings')).not.toBeInTheDocument();
+	});
+
+	it('displays tuner status popover with active channel and idle tuners', () => {
+		const dataWithTuners = {
+			...connected,
+			tuners: [
+				{
+					index: 0,
+					in_use: true,
+					channel_number: '4.1',
+					channel_name: 'KDFW',
+					signal_strength_percent: 95,
+					signal_quality_percent: 100,
+					symbol_quality_percent: 100,
+					network_rate_bps: 12000000,
+				},
+				{
+					index: 1,
+					in_use: false,
+					channel_number: null,
+					channel_name: null,
+					signal_strength_percent: null,
+					signal_quality_percent: null,
+					symbol_quality_percent: null,
+					network_rate_bps: null,
+				},
+			],
+		};
+
+		const { container } = render(HDHomeRunDetail, { props: { data: dataWithTuners } });
+
+		expect(screen.getByText('2 tuners')).toBeInTheDocument();
+		const popover = container.querySelector('.tuner-status-popover') as HTMLElement;
+		expect(popover).toBeInTheDocument();
+		expect(within(popover).getByText('Tuner Status')).toBeInTheDocument();
+		expect(within(popover).getByText('Tuner 0')).toBeInTheDocument();
+		expect(within(popover).getByText('4.1')).toBeInTheDocument();
+		expect(within(popover).getByText('KDFW')).toBeInTheDocument();
+		expect(within(popover).getByText('Signal 95%')).toBeInTheDocument();
+		expect(within(popover).getByText('Tuner 1')).toBeInTheDocument();
+		expect(within(popover).getByText('Idle')).toBeInTheDocument();
+	});
+
+	it('allows searching through programs in the guide and shows results panel', async () => {
+		getHDHomeRunGuide.mockResolvedValue([
+			{
+				channel_number: '4.1',
+				channel_name: 'KDFW',
+				airings: [
+					{
+						series_id: 'SH101',
+						title: 'Morning News',
+						episode_title: 'Early Edition',
+						synopsis: 'Local breaking news and weather.',
+						start: nowSeconds() - 100,
+						end: nowSeconds() + 1800,
+					},
+					{
+						series_id: 'SH102',
+						title: 'Evening Comedy',
+						episode_title: null,
+						synopsis: 'Funny sitcom series.',
+						start: nowSeconds() + 7200,
+						end: nowSeconds() + 9000,
+					},
+				],
+			},
+		]);
+
+		const { container } = render(HDHomeRunDetail, { props: { data: connected } });
+
+		const searchInput = await screen.findByPlaceholderText('Search programs…');
+		expect(searchInput).toBeInTheDocument();
+
+		// Search for "comedy"
+		await fireEvent.input(searchInput, { target: { value: 'Comedy' } });
+
+		expect(await screen.findByText('1 programs found')).toBeInTheDocument();
+		const resultsPanel = container.querySelector('.search-results-panel') as HTMLElement;
+		expect(resultsPanel).toBeInTheDocument();
+		expect(within(resultsPanel).getByText('Evening Comedy')).toBeInTheDocument();
+		expect(within(resultsPanel).getByText('Funny sitcom series.')).toBeInTheDocument();
+		expect(within(resultsPanel).getByText('Show in guide')).toBeInTheDocument();
+
+		// Clear search
+		await fireEvent.click(screen.getAllByRole('button', { name: 'Clear search' })[0]);
+		expect(screen.queryByText('1 programs found')).not.toBeInTheDocument();
 	});
 });

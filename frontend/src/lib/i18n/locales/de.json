@@ -814,7 +814,16 @@
 			"no_recordings": "Keine laufenden Aufnahmen.",
 			"upcoming_rules": "{count} bevorstehende Aufnahmeregeln.",
 			"playback_failed_hint": "Wiedergabe fehlgeschlagen — dieser Tuner unterstützt diesen Wiedergabemodus möglicherweise nicht. Versuche stattdessen „{action}“.",
-			"edit_playback_settings": "Wiedergabeeinstellungen bearbeiten"
+			"edit_playback_settings": "Wiedergabeeinstellungen bearbeiten",
+			"search_placeholder": "Sendungen durchsuchen…",
+			"search_results_count": "{count} Sendungen gefunden",
+			"search_no_results": "Keine Sendungen für „{query}“ gefunden",
+			"search_clear": "Suche löschen",
+			"search_show_in_grid": "Im Guide anzeigen",
+			"search_live_badge": "Live",
+			"tuner_status_heading": "Tuner-Status",
+			"tuner_in_use": "In Verwendung",
+			"tuner_status_unavailable": "Status nicht verfügbar"
 		}
 	},
 	"screensaver": {

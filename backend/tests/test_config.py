@@ -94,6 +94,8 @@ def test_list_widget_configs_appends_custom_widgets(dashboard_yaml, tmp_db):
         "layout": {"col": 2, "row": 2, "colSpan": 1, "rowSpan": 1},
         "settings": {},
         "tab": "media",
+        "owner_user_id": None,
+        "owner_device_id": None,
     }
 
 
@@ -109,7 +111,11 @@ def test_list_widget_configs_omits_tab_key_when_unset(dashboard_yaml, tmp_db):
     assert "tab" not in custom
 
 
-def test_list_widget_configs_excludes_removed_yaml_widget(dashboard_yaml, tmp_db):
+def test_list_widget_configs_still_includes_removed_yaml_widget(dashboard_yaml, tmp_db):
+    # Existence vs. visibility split: list_widget_configs answers "does this
+    # widget exist" (used to construct every Plugin instance at startup) and
+    # must never filter by hidden/removed state — that's a per-(user,
+    # device) concern handled only by app.api.widgets's visibility filter.
     from app.storage import db
 
     db.mark_widget_removed("weather")
@@ -117,10 +123,10 @@ def test_list_widget_configs_excludes_removed_yaml_widget(dashboard_yaml, tmp_db
 
     widgets = config.list_widget_configs(parsed)
 
-    assert "weather" not in [w["id"] for w in widgets]
+    assert "weather" in [w["id"] for w in widgets]
 
 
-def test_list_widget_configs_excludes_removed_custom_widget(dashboard_yaml, tmp_db):
+def test_list_widget_configs_still_includes_removed_custom_widget(dashboard_yaml, tmp_db):
     from app.storage import db
 
     db.save_custom_widget("weather-abc123", "weather", {"col": 2, "row": 2, "colSpan": 1, "rowSpan": 1}, None)
@@ -129,4 +135,4 @@ def test_list_widget_configs_excludes_removed_custom_widget(dashboard_yaml, tmp_
 
     widgets = config.list_widget_configs(parsed)
 
-    assert "weather-abc123" not in [w["id"] for w in widgets]
+    assert "weather-abc123" in [w["id"] for w in widgets]

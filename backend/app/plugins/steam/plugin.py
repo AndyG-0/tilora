@@ -58,6 +58,9 @@ class SteamPlugin(Plugin):
     id = "steam"
     name = "Steam"
     refresh_interval_seconds = 60
+    # Which Steam account this reads is a personal choice, not a
+    # household-wide one — see CONTRIBUTING.md's settings tiers.
+    settings_scope = "personal"
     default_settings: ClassVar[dict[str, Any]] = {
         "steamid": "",
         "api_key": "",

@@ -832,7 +832,16 @@
 			"pending_confirmation": "Pending confirmation",
 			"pending_recording_badge": "⏳ Pending",
 			"no_scheduled_recordings": "No scheduled recordings.",
-			"no_recorded_programs": "No recorded programs available."
+			"no_recorded_programs": "No recorded programs available.",
+			"search_placeholder": "Search programs…",
+			"search_results_count": "{count} programs found",
+			"search_no_results": "No programs found matching \"{query}\"",
+			"search_clear": "Clear search",
+			"search_show_in_grid": "Show in guide",
+			"search_live_badge": "Live",
+			"tuner_status_heading": "Tuner Status",
+			"tuner_in_use": "In use",
+			"tuner_status_unavailable": "Status unavailable"
 		}
 	},
 	"screensaver": {

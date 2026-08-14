@@ -6,10 +6,10 @@ from fastapi.testclient import TestClient
 
 from app.api import photos
 from app.auth import get_current_user
-from app.config import settings
 from app.integrations import icloud_photos, icloud_shared_album, immich_client
 from app.plugins.base import registry
 from app.plugins.photos.plugin import PhotosPlugin
+from app.storage import db
 
 
 def register_plugin(**settings) -> PhotosPlugin:
@@ -143,15 +143,20 @@ def test_get_photo_404s_for_unknown_icloud_guid(client, icloud_widget, monkeypat
 
 
 @pytest.fixture
-def icloud_private_widget(monkeypatch):
+def icloud_private_widget():
+    # Photo bytes are fetched with the *requesting viewer's own* credentials
+    # (see app.api.photos._get_icloud_private_photo) — each household
+    # member's private library is independent, so this seeds credentials for
+    # "user", the id the `client` fixture's get_current_user override stubs.
     register_plugin(provider="icloud_private", album_name="Family")
-    monkeypatch.setattr(settings, "icloud_username", "user@example.com")
-    monkeypatch.setattr(settings, "icloud_password", "hunter2")
+    db.create_user("user", "User", None, None, None, None, "2020-01-01T00:00:00Z", role="member")
+    db.save_user_credentials("user", "icloud", {"username": "user@example.com", "password": "hunter2"})
 
 
 def test_get_photo_proxies_private_photo_bytes(client, icloud_private_widget, monkeypatch):
-    async def fake_fetch_photo_bytes(username, password, photo_id, album_name):
-        assert (username, password, photo_id, album_name) == (
+    async def fake_fetch_photo_bytes(user_id, username, password, photo_id, album_name):
+        assert (user_id, username, password, photo_id, album_name) == (
+            "user",
             "user@example.com",
             "hunter2",
             "id-1",
@@ -169,7 +174,7 @@ def test_get_photo_proxies_private_photo_bytes(client, icloud_private_widget, mo
 
 
 def test_get_photo_404s_for_unknown_private_photo_id(client, icloud_private_widget, monkeypatch):
-    async def fake_fetch_photo_bytes(username, password, photo_id, album_name):
+    async def fake_fetch_photo_bytes(user_id, username, password, photo_id, album_name):
         return None
 
     monkeypatch.setattr(icloud_photos, "fetch_photo_bytes", fake_fetch_photo_bytes)
@@ -179,10 +184,8 @@ def test_get_photo_404s_for_unknown_private_photo_id(client, icloud_private_widg
     assert response.status_code == 404
 
 
-def test_get_photo_404s_when_private_provider_not_configured(client, monkeypatch):
+def test_get_photo_404s_when_private_provider_not_configured(client, tmp_db):
     register_plugin(provider="icloud_private")
-    monkeypatch.setattr(settings, "icloud_username", None)
-    monkeypatch.setattr(settings, "icloud_password", None)
 
     response = client.get("/api/photos/photos/id-1")
 

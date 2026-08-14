@@ -68,15 +68,19 @@ def test_delete_device_cascades_sessions(tmp_db):
     assert db.get_session("sess1") is None
 
 
-def test_delete_device_does_not_touch_widget_layout(tmp_db):
-    # widget_layout is keyed by (user, breakpoint), not device — deleting a
-    # device must leave the user's saved tile positions untouched.
-    _create()
+def test_delete_device_cascades_widget_layout(tmp_db):
+    # widget_layout is keyed by (user, device, breakpoint) — deleting a
+    # device drops that screen's tile positions, but must leave the same
+    # user's layout on any other device untouched.
+    _create("dev1")
+    _create("dev2")
     db.create_user("alice", "Alice", None, None, None, None, "2026-01-01T00:00:00Z")
-    db.save_widget_layout("alice", "wide", "clock", {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1})
+    db.save_widget_layout("alice", "dev1", "wide", "clock", {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1})
+    db.save_widget_layout("alice", "dev2", "wide", "clock", {"col": 2, "row": 2, "colSpan": 1, "rowSpan": 1})
 
     db.delete_device("dev1")
 
-    assert db.list_widget_layouts("alice", "wide") == {
-        "clock": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1},
+    assert db.list_widget_layouts("alice", "dev1", "wide") == {}
+    assert db.list_widget_layouts("alice", "dev2", "wide") == {
+        "clock": {"col": 2, "row": 2, "colSpan": 1, "rowSpan": 1},
     }

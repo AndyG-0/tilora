@@ -43,7 +43,7 @@ def test_create_package_registers_with_17track_and_persists(client, tmp_db, monk
     body = response.json()
     assert body["tracking_number"] == "1Z999AA1"
     assert body["label"] == "Gift"
-    assert db.list_packages("packages")[0]["tracking_number"] == "1Z999AA1"
+    assert db.list_packages("packages", "user-1")[0]["tracking_number"] == "1Z999AA1"
 
 
 @respx.mock
@@ -64,13 +64,16 @@ def test_create_package_invalidates_the_shared_cache(client, tmp_db, monkeypatch
     respx.post("https://api.17track.net/track/v2.2/register").mock(
         return_value=httpx.Response(200, json={"code": 0, "data": {}})
     )
-    cache.set("summary:packages:en", {"stale": True}, ttl_seconds=60)
-    cache.set("detail:packages:en", {"stale": True}, ttl_seconds=60)
+    # Packages is a "personal"-scope plugin, so its cache key includes the
+    # requesting user (see app.api.widgets._cache_key_prefix) — not a flat
+    # "summary:packages:en" shared across the whole household.
+    cache.set("summary:packages:user-1:en", {"stale": True}, ttl_seconds=60)
+    cache.set("detail:packages:user-1:en", {"stale": True}, ttl_seconds=60)
 
     client.post("/api/packages", json={"tracking_number": "1Z999AA1"})
 
-    assert cache.get("summary:packages:en") is None
-    assert cache.get("detail:packages:en") is None
+    assert cache.get("summary:packages:user-1:en") is None
+    assert cache.get("detail:packages:user-1:en") is None
 
 
 @respx.mock
@@ -81,22 +84,31 @@ def test_create_package_returns_502_when_17track_rejects_registration(client, tm
     response = client.post("/api/packages", json={"tracking_number": "1Z999AA1"})
 
     assert response.status_code == 502
-    assert db.list_packages("packages") == []
+    assert db.list_packages("packages", "user-1") == []
 
 
 def test_remove_package_deletes_it(client, tmp_db):
-    package = db.add_package("packages", "1Z999AA1")
+    package = db.add_package("packages", "user-1", "1Z999AA1")
 
     response = client.delete(f"/api/packages/{package['id']}")
 
     assert response.status_code == 200
-    assert db.list_packages("packages") == []
+    assert db.list_packages("packages", "user-1") == []
 
 
 def test_remove_package_returns_404_for_unknown_id(client, tmp_db):
     response = client.delete("/api/packages/9999")
 
     assert response.status_code == 404
+
+
+def test_remove_package_returns_404_for_another_users_package(client, tmp_db):
+    package = db.add_package("packages", "someone-else", "1Z999AA1")
+
+    response = client.delete(f"/api/packages/{package['id']}")
+
+    assert response.status_code == 404
+    assert db.get_package(package["id"]) is not None
 
 
 def test_package_routes_require_a_session():
