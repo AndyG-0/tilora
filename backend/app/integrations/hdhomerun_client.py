@@ -552,6 +552,22 @@ async def trigger_dvr_sync(settings: dict[str, Any]) -> None:
         logger.debug("Could not send sync trigger to DVR StorageURL", exc_info=True)
 
 
+def _rules_or_raise(rules: Any) -> list[dict[str, Any]]:
+    """The recording_rules API always documents a JSON array as its success shape.
+
+    A rejected request (e.g. no active HDHomeRun DVR subscription) still comes
+    back as HTTP 200, but with an object/error body instead of a list — silently
+    treating that as "zero rules" would report success for a rule that was never
+    actually created, leaving nothing for the DVR engine to ever record.
+    """
+    if isinstance(rules, list):
+        return rules
+    message = None
+    if isinstance(rules, dict):
+        message = rules.get("error") or rules.get("Error") or rules.get("ErrorMessage")
+    raise HDHomeRunError(message or f"HDHomeRun rejected the recording rule request: {rules!r}")
+
+
 async def add_recording_rule(settings: dict[str, Any], rule_data: dict[str, Any]) -> list[dict[str, Any]]:
     if not is_tuner_configured(settings):
         raise HDHomeRunError("Tuner is not configured")
@@ -597,8 +613,9 @@ async def add_recording_rule(settings: dict[str, Any], rule_data: dict[str, Any]
     except (httpx.HTTPError, ValueError) as exc:
         raise HDHomeRunError(f"Could not post recording rule: {exc}") from exc
 
+    rules = _rules_or_raise(rules)
     await trigger_dvr_sync(settings)
-    return rules if isinstance(rules, list) else []
+    return rules
 
 
 async def delete_recording_rule(settings: dict[str, Any], rule_id: str) -> list[dict[str, Any]]:
@@ -625,5 +642,6 @@ async def delete_recording_rule(settings: dict[str, Any], rule_id: str) -> list[
     except (httpx.HTTPError, ValueError) as exc:
         raise HDHomeRunError(f"Could not delete recording rule: {exc}") from exc
 
+    rules = _rules_or_raise(rules)
     await trigger_dvr_sync(settings)
-    return rules if isinstance(rules, list) else []
+    return rules

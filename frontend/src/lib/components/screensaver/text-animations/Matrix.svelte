@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { segmentsToChars, type FormattedSegment } from '$lib/discordMarkdown';
+	import { getCursor, setCursor } from '$lib/stores/screensaverProgress';
 
 	// Conservative estimate of one .line row's rendered height (its
 	// clamp(1.5rem, 4vw, 3rem) font-size at ~1.2 line-height, plus its 1rem
@@ -12,9 +13,9 @@
 	const CHAR_DELAY_MS = 30;
 	const MATERIALIZE_DURATION_MS = 500;
 
-	let { lines, pauseSeconds = 8 }: { lines: FormattedSegment[][]; pauseSeconds?: number } = $props();
+	let { id, lines, pauseSeconds = 8 }: { id: string; lines: FormattedSegment[][]; pauseSeconds?: number } = $props();
 
-	let index = $state(0);
+	let index = $state(getCursor(id));
 	let matrixHeight = $state(0);
 
 	const rowsToShow = $derived(Math.max(1, Math.floor(matrixHeight / ROW_HEIGHT_PX)));
@@ -42,6 +43,10 @@
 			revealDurationMs + pauseSeconds * 1000,
 		);
 		return () => clearTimeout(timeout);
+	});
+
+	$effect(() => {
+		setCursor(id, index);
 	});
 
 	// Same falling-glyph-column technique as ClockFace's MatrixFace: a fixed

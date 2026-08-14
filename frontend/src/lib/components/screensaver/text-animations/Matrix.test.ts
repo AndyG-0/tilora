@@ -19,6 +19,7 @@ function mockClientHeight(height: number) {
 describe('Matrix', () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
+		localStorage.clear();
 	});
 
 	afterEach(() => {
@@ -29,7 +30,7 @@ describe('Matrix', () => {
 	it('shows a single line when the container is too short for more', () => {
 		mockClientHeight(40);
 
-		const { container } = render(Matrix, { props: { lines: [line('One'), line('Two'), line('Three')] } });
+		const { container } = render(Matrix, { props: { id: 'test', lines: [line('One'), line('Two'), line('Three')] } });
 
 		expect(container.querySelectorAll('.line')).toHaveLength(1);
 	});
@@ -38,7 +39,7 @@ describe('Matrix', () => {
 		mockClientHeight(4 * ROW_HEIGHT_PX);
 
 		const { container } = render(Matrix, {
-			props: { lines: [line('One'), line('Two'), line('Three'), line('Four'), line('Five')] },
+			props: { id: 'test', lines: [line('One'), line('Two'), line('Three'), line('Four'), line('Five')] },
 		});
 
 		expect(container.querySelectorAll('.line')).toHaveLength(4);
@@ -47,7 +48,7 @@ describe('Matrix', () => {
 	it('wraps around the lines array via modulo when rowsToShow exceeds the line count', () => {
 		mockClientHeight(4 * ROW_HEIGHT_PX);
 
-		const { container } = render(Matrix, { props: { lines: [line('Alpha'), line('Beta')] } });
+		const { container } = render(Matrix, { props: { id: 'test', lines: [line('Alpha'), line('Beta')] } });
 
 		const lineTexts = Array.from(container.querySelectorAll('.line')).map((el) => el.textContent?.trim());
 		expect(lineTexts).toEqual([lineTexts[0], lineTexts[1], lineTexts[0], lineTexts[1]]);
@@ -57,7 +58,7 @@ describe('Matrix', () => {
 		mockClientHeight(3 * ROW_HEIGHT_PX);
 
 		const { container } = render(Matrix, {
-			props: { lines: ['Row A', 'Row B', 'Row C', 'Row D', 'Row E', 'Row F'].map(line), pauseSeconds: 6 },
+			props: { id: 'test', lines: ['Row A', 'Row B', 'Row C', 'Row D', 'Row E', 'Row F'].map(line), pauseSeconds: 6 },
 		});
 
 		const normalize = (text: string | null | undefined) => text?.replace(/\u00A0/g, ' ').trim();
@@ -75,7 +76,7 @@ describe('Matrix', () => {
 		mockClientHeight(3 * ROW_HEIGHT_PX);
 
 		const { container } = render(Matrix, {
-			props: { lines: ['Row A', 'Row B', 'Row C', 'Row D', 'Row E', 'Row F'].map(line), pauseSeconds: 6 },
+			props: { id: 'test', lines: ['Row A', 'Row B', 'Row C', 'Row D', 'Row E', 'Row F'].map(line), pauseSeconds: 6 },
 		});
 
 		const normalize = (text: string | null | undefined) => text?.replace(/\u00A0/g, ' ').trim();
@@ -95,7 +96,7 @@ describe('Matrix', () => {
 		mockClientHeight(ROW_HEIGHT_PX);
 
 		const { container } = render(Matrix, {
-			props: { lines: [[{ text: 'ab', bold: true }, { text: 'c' }]] },
+			props: { id: 'test', lines: [[{ text: 'ab', bold: true }, { text: 'c' }]] },
 		});
 
 		const chars = Array.from(container.querySelectorAll('.ch'));
@@ -110,6 +111,7 @@ describe('Matrix', () => {
 
 		const { container } = render(Matrix, {
 			props: {
+				id: 'test',
 				lines: [[{ text: 'Row A' }], [{ text: '\u2588\u2588\u2588\u2588\u2588', spoiler: true }]],
 				pauseSeconds: 6,
 			},

@@ -829,6 +829,8 @@
 			"channels_tab": "Channels",
 			"series_rule": "Series Rule",
 			"single_airing_rule": "Single Episode",
+			"pending_confirmation": "Pending confirmation",
+			"pending_recording_badge": "⏳ Pending",
 			"no_scheduled_recordings": "No scheduled recordings.",
 			"no_recorded_programs": "No recorded programs available."
 		}

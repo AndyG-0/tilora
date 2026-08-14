@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, within } from '@testing-library/svelte';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const {
@@ -11,6 +11,8 @@ const {
 	hdhomerunHwaccelDiagnostics,
 	hdhomerunRecordingStreamUrl,
 	getHDHomeRunGuide,
+	addHDHomeRunRecordingRule,
+	deleteHDHomeRunRecordingRule,
 } = vi.hoisted(() => ({
 	goto: vi.fn(),
 	widgetDetail: vi.fn(),
@@ -23,6 +25,8 @@ const {
 		(widgetId: string, playUrl: string) => `https://example.com/${widgetId}/recording-stream?url=${playUrl}`,
 	),
 	getHDHomeRunGuide: vi.fn(),
+	addHDHomeRunRecordingRule: vi.fn(),
+	deleteHDHomeRunRecordingRule: vi.fn(),
 }));
 vi.mock('$app/navigation', () => ({ goto }));
 vi.mock('$lib/api', () => ({
@@ -35,6 +39,8 @@ vi.mock('$lib/api', () => ({
 		hdhomerunHwaccelDiagnostics,
 		hdhomerunRecordingStreamUrl,
 		getHDHomeRunGuide,
+		addHDHomeRunRecordingRule,
+		deleteHDHomeRunRecordingRule,
 	},
 }));
 
@@ -118,6 +124,7 @@ const connected = {
 describe('HDHomeRunDetail', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		localStorage.clear();
 		getHDHomeRunGuide.mockResolvedValue([]);
 		pageUrl = new URL('http://localhost/widget/hdhomerun');
 		user.set({ id: 'admin-user', name: 'Admin', avatar: null, role: 'admin' });
@@ -196,6 +203,117 @@ describe('HDHomeRunDetail', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Close player' }));
 
 		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+	});
+
+	it('surfaces the server-provided reason when a series recording rule is rejected', async () => {
+		vi.useFakeTimers({ shouldAdvanceTime: true });
+		getHDHomeRunGuide.mockResolvedValue(guideWithLiveAiring());
+		// Mirrors the backend: a rejected recording_rules request (e.g. no active
+		// HDHomeRun DVR subscription) surfaces as an Error carrying the server's
+		// detail message, not a silent "success" with zero rules.
+		addHDHomeRunRecordingRule.mockRejectedValue(new Error('no active DVR subscription'));
+
+		render(HDHomeRunDetail, { props: { data: connected } });
+
+		const liveCell = (await screen.findByText('Evening News')).closest('.airing-cell');
+		if (!liveCell) throw new Error('live airing cell not found');
+
+		await fireEvent.pointerDown(liveCell);
+		await vi.advanceTimersByTimeAsync(500);
+
+		await fireEvent.click(screen.getByRole('menuitem', { name: 'Record Series' }));
+
+		expect(await screen.findByText('no active DVR subscription')).toBeInTheDocument();
+		vi.useRealTimers();
+	});
+
+	it('shows a pending confirmation badge for a newly created rule until a later fetch confirms it', async () => {
+		vi.useFakeTimers({ shouldAdvanceTime: true });
+		getHDHomeRunGuide.mockResolvedValue(guideWithLiveAiring());
+		const newRule = {
+			RecordingRuleID: 'new-1',
+			SeriesID: 'SH123',
+			Title: 'Evening News',
+		};
+		addHDHomeRunRecordingRule.mockResolvedValue([newRule]);
+		// Simulates SiliconDust's cloud API being eventually consistent: the
+		// very next fetch right after creating the rule doesn't include it yet.
+		widgetDetail.mockResolvedValue({ ...connected, recording_rules: [] });
+
+		render(HDHomeRunDetail, { props: { data: connected } });
+
+		const liveCell = (await screen.findByText('Evening News')).closest('.airing-cell');
+		if (!liveCell) throw new Error('live airing cell not found');
+
+		await fireEvent.pointerDown(liveCell);
+		await vi.advanceTimersByTimeAsync(500);
+		await fireEvent.click(screen.getByRole('menuitem', { name: 'Record Series' }));
+
+		await vi.waitFor(() => expect(addHDHomeRunRecordingRule).toHaveBeenCalled());
+		await fireEvent.click(screen.getByRole('button', { name: 'DVR' }));
+
+		expect(await screen.findByText('Pending confirmation')).toBeInTheDocument();
+
+		// A later fetch that does include the rule should clear the pending badge.
+		widgetDetail.mockResolvedValue({ ...connected, recording_rules: [newRule] });
+		hdhomerunTranscodePresets.mockResolvedValue([
+			{ id: 'software', label: 'Software', description: 'CPU only', input_args: [], output_args: ['-c:v', 'libx264'] },
+		]);
+		updateWidgetSettings.mockResolvedValue({ status: 'ok' });
+		await fireEvent.click(screen.getByText('Edit playback settings'));
+		await fireEvent.click(screen.getByText('Save'));
+
+		await vi.waitFor(() => expect(screen.queryByText('Pending confirmation')).not.toBeInTheDocument());
+		vi.useRealTimers();
+	});
+
+	it('does not mark a pre-existing rule as pending just because it is missing from an unrelated fetch', async () => {
+		vi.useFakeTimers({ shouldAdvanceTime: true });
+		getHDHomeRunGuide.mockResolvedValue(guideWithLiveAiring());
+		const oldRule = { RecordingRuleID: 'old-1', SeriesID: 'SH999', Title: 'Old Show' };
+		const newRule = { RecordingRuleID: 'new-1', SeriesID: 'SH123', Title: 'Evening News' };
+		const withOldRule = { ...connected, recording_rules: [oldRule] };
+		addHDHomeRunRecordingRule.mockResolvedValue([oldRule, newRule]);
+		// The old rule is still present in the fresh fetch — only the brand
+		// new one hasn't propagated yet — so only the new one should ever be
+		// flagged pending.
+		widgetDetail.mockResolvedValue({ ...withOldRule, recording_rules: [oldRule] });
+
+		render(HDHomeRunDetail, { props: { data: withOldRule } });
+
+		const liveCell = (await screen.findByText('Evening News')).closest('.airing-cell');
+		if (!liveCell) throw new Error('live airing cell not found');
+
+		await fireEvent.pointerDown(liveCell);
+		await vi.advanceTimersByTimeAsync(500);
+		await fireEvent.click(screen.getByRole('menuitem', { name: 'Record Series' }));
+
+		await vi.waitFor(() => expect(addHDHomeRunRecordingRule).toHaveBeenCalled());
+		await fireEvent.click(screen.getByRole('button', { name: 'DVR' }));
+
+		const oldCard = (await screen.findByText('Old Show')).closest('.rule-card');
+		if (!oldCard) throw new Error('old rule card not found');
+		expect(within(oldCard as HTMLElement).queryByText('Pending confirmation')).not.toBeInTheDocument();
+
+		const newCard = screen.getByText('Evening News').closest('.rule-card');
+		if (!newCard) throw new Error('new rule card not found');
+		expect(within(newCard as HTMLElement).getByText('Pending confirmation')).toBeInTheDocument();
+		vi.useRealTimers();
+	});
+
+	it('keeps showing a pending rule as pending after a reload, until a fresh fetch confirms it', async () => {
+		getHDHomeRunGuide.mockResolvedValue([]);
+		const newRule = { RecordingRuleID: 'new-1', SeriesID: 'SH123', Title: 'Evening News' };
+		localStorage.setItem(
+			'hdhomerun-pending-rules:hdhomerun',
+			JSON.stringify([{ rule: newRule, createdAt: Date.now() }]),
+		);
+		// The initial server-rendered data (as if freshly reloaded) still
+		// doesn't include the rule — the pending flag must survive the reload.
+		render(HDHomeRunDetail, { props: { data: connected } });
+
+		await fireEvent.click(screen.getByRole('button', { name: 'DVR' }));
+		expect(await screen.findByText('Pending confirmation')).toBeInTheDocument();
 	});
 
 	it('loads transcode presets when opening the playback settings editor', async () => {

@@ -215,6 +215,63 @@
 
 	const widgetId = $derived(page.params.id!);
 
+	interface PendingRule {
+		rule: HDHomeRunRecordingRule;
+		createdAt: number;
+	}
+
+	// SiliconDust's cloud recording_rules API is eventually consistent: a
+	// rule created via one request sometimes isn't reflected yet in the very
+	// next widgetDetail fetch. Track rules we know were just created (from
+	// the mutation's own response) that a fresh fetch hasn't confirmed yet,
+	// so they stay visible (flagged as pending) instead of appearing to
+	// silently fail or vanish. Persisted per-widget so the pending flag
+	// survives a page reload, since the vendor can take longer to catch up
+	// than the user takes to navigate away and back.
+	const PENDING_RULES_STORAGE_KEY = `hdhomerun-pending-rules:${page.params.id}`;
+	const PENDING_RULE_MAX_AGE_MS = 30 * 60 * 1000;
+
+	function loadPendingRules(): PendingRule[] {
+		if (typeof localStorage === 'undefined') return [];
+		try {
+			const raw = localStorage.getItem(PENDING_RULES_STORAGE_KEY);
+			if (!raw) return [];
+			const parsed = JSON.parse(raw) as PendingRule[];
+			const cutoff = Date.now() - PENDING_RULE_MAX_AGE_MS;
+			return parsed.filter((p) => p.createdAt >= cutoff);
+		} catch {
+			return [];
+		}
+	}
+
+	// svelte-ignore state_referenced_locally -- seeds initial pending state
+	// from storage once; every subsequent change is written back out below.
+	let pendingRules = $state<PendingRule[]>(loadPendingRules());
+
+	const pendingRuleIds = $derived(new Set(pendingRules.map((p) => p.rule.RecordingRuleID)));
+
+	const displayedRecordingRules = $derived.by(() => {
+		const real = hdhomerun.recording_rules ?? [];
+		const realIds = new Set(real.map((r) => r.RecordingRuleID));
+		return [...real, ...pendingRules.filter((p) => !realIds.has(p.rule.RecordingRuleID)).map((p) => p.rule)];
+	});
+
+	$effect(() => {
+		const realIds = new Set((hdhomerun.recording_rules ?? []).map((r) => r.RecordingRuleID));
+		if (pendingRules.some((p) => realIds.has(p.rule.RecordingRuleID))) {
+			pendingRules = pendingRules.filter((p) => !realIds.has(p.rule.RecordingRuleID));
+		}
+	});
+
+	$effect(() => {
+		if (typeof localStorage === 'undefined') return;
+		if (pendingRules.length > 0) {
+			localStorage.setItem(PENDING_RULES_STORAGE_KEY, JSON.stringify(pendingRules));
+		} else {
+			localStorage.removeItem(PENDING_RULES_STORAGE_KEY);
+		}
+	});
+
 	function watchChannel(channel: HDHomeRunChannel) {
 		if (channel.playback_url) {
 			playingMedia = {
@@ -299,21 +356,43 @@
 		};
 	}
 
+	async function applyRuleMutation(mutate: () => Promise<HDHomeRunRecordingRule[]>) {
+		// Diff against what we already knew about *before* this mutation, so
+		// only genuinely new rules from this action get flagged pending —
+		// not older rules that simply happen to be missing from this
+		// particular fetch for unrelated reasons.
+		const previousIds = new Set((hdhomerun.recording_rules ?? []).map((r) => r.RecordingRuleID));
+		const knownRules = await mutate();
+		if (!Array.isArray(knownRules)) {
+			return;
+		}
+		hdhomerun.recording_rules = knownRules;
+		const newlyCreated = knownRules.filter((r) => !previousIds.has(r.RecordingRuleID));
+
+		hdhomerun = await api.widgetDetail<HDHomeRunDetailData>(widgetId);
+
+		const confirmedIds = new Set((hdhomerun.recording_rules ?? []).map((r) => r.RecordingRuleID));
+		const stillUnconfirmed = newlyCreated.filter((r) => !confirmedIds.has(r.RecordingRuleID));
+		const createdAt = Date.now();
+		pendingRules = [
+			...pendingRules.filter((p) => !confirmedIds.has(p.rule.RecordingRuleID)),
+			...stillUnconfirmed.map((rule) => ({ rule, createdAt })),
+		];
+	}
+
 	async function recordShowEpisode(seriesId?: string | null, channelNumber?: string, startTime?: number | null) {
 		const targetId = seriesId || channelNumber || 'now';
 		recordingLoading = targetId;
 		try {
-			const updatedRules = await api.addHDHomeRunRecordingRule(widgetId, {
-				series_id: seriesId || 'auto',
-				channel: channelNumber,
-				date_time: startTime ?? undefined,
-			});
-			if (Array.isArray(updatedRules)) {
-				hdhomerun.recording_rules = updatedRules;
-			}
-			hdhomerun = await api.widgetDetail<HDHomeRunDetailData>(widgetId);
-		} catch {
-			error = get(_)('common.connection_save_error');
+			await applyRuleMutation(() =>
+				api.addHDHomeRunRecordingRule(widgetId, {
+					series_id: seriesId || 'auto',
+					channel: channelNumber,
+					date_time: startTime ?? undefined,
+				}),
+			);
+		} catch (err) {
+			error = err instanceof Error && err.message ? err.message : get(_)('common.connection_save_error');
 		} finally {
 			recordingLoading = null;
 		}
@@ -322,16 +401,11 @@
 	async function recordShowSeries(seriesId: string, channelNumber?: string) {
 		recordingLoading = seriesId;
 		try {
-			const updatedRules = await api.addHDHomeRunRecordingRule(widgetId, {
-				series_id: seriesId,
-				channel: channelNumber,
-			});
-			if (Array.isArray(updatedRules)) {
-				hdhomerun.recording_rules = updatedRules;
-			}
-			hdhomerun = await api.widgetDetail<HDHomeRunDetailData>(widgetId);
-		} catch {
-			error = get(_)('common.connection_save_error');
+			await applyRuleMutation(() =>
+				api.addHDHomeRunRecordingRule(widgetId, { series_id: seriesId, channel: channelNumber }),
+			);
+		} catch (err) {
+			error = err instanceof Error && err.message ? err.message : get(_)('common.connection_save_error');
 		} finally {
 			recordingLoading = null;
 		}
@@ -340,13 +414,10 @@
 	async function cancelRecordingRule(ruleId: string) {
 		recordingLoading = ruleId;
 		try {
-			const updatedRules = await api.deleteHDHomeRunRecordingRule(widgetId, ruleId);
-			if (Array.isArray(updatedRules)) {
-				hdhomerun.recording_rules = updatedRules;
-			}
-			hdhomerun = await api.widgetDetail<HDHomeRunDetailData>(widgetId);
-		} catch {
-			error = get(_)('common.connection_save_error');
+			pendingRules = pendingRules.filter((p) => p.rule.RecordingRuleID !== ruleId);
+			await applyRuleMutation(() => api.deleteHDHomeRunRecordingRule(widgetId, ruleId));
+		} catch (err) {
+			error = err instanceof Error && err.message ? err.message : get(_)('common.connection_save_error');
 		} finally {
 			recordingLoading = null;
 		}
@@ -665,7 +736,8 @@
 					<HDHomeRunGuideGrid
 						channels={hdhomerun.channels}
 						{fullGuide}
-						recordingRules={hdhomerun.recording_rules ?? []}
+						recordingRules={displayedRecordingRules}
+						{pendingRuleIds}
 						{favoriteChannels}
 						{savingFavorite}
 						{recordingLoading}
@@ -786,9 +858,9 @@
 			{/if}
 
 			<h3>{$_('hdhomerun.detail.scheduled_recordings')}</h3>
-			{#if hdhomerun.recording_rules && hdhomerun.recording_rules.length > 0}
+			{#if displayedRecordingRules.length > 0}
 				<div class="recording-rules">
-					{#each hdhomerun.recording_rules as rule (rule.RecordingRuleID)}
+					{#each displayedRecordingRules as rule (rule.RecordingRuleID)}
 						<div class="rule-card">
 							<div class="rule-title">{rule.Title}</div>
 							<div class="rule-details">
@@ -797,6 +869,9 @@
 								</span>
 								{#if rule.ChannelOnly}<span class="rule-channel">Ch: {rule.ChannelOnly}</span>{/if}
 								{#if rule.DateTimeOnly}<span class="rule-time">{formatDate(rule.DateTimeOnly)}</span>{/if}
+								{#if pendingRuleIds.has(rule.RecordingRuleID)}
+									<span class="rule-badge rule-pending">{$_('hdhomerun.detail.pending_confirmation')}</span>
+								{/if}
 							</div>
 							<button
 								class="cancel-rule-btn"
@@ -1188,7 +1263,6 @@
 	.rule-card {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
 		gap: 1rem;
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
@@ -1197,11 +1271,17 @@
 	}
 
 	.rule-title {
+		flex: 0 0 20rem;
+		width: 20rem;
 		font-weight: 600;
+		white-space: normal;
+		overflow-wrap: break-word;
 	}
 
 	.rule-details {
 		display: flex;
+		flex: 1 1 auto;
+		flex-wrap: wrap;
 		align-items: center;
 		gap: 0.5rem;
 		font-size: 0.85rem;
@@ -1215,7 +1295,13 @@
 		font-size: 0.75rem;
 	}
 
+	.rule-pending {
+		border-color: var(--color-warning, #d9a441);
+		color: var(--color-warning, #d9a441);
+	}
+
 	.cancel-rule-btn {
+		flex-shrink: 0;
 		background: none;
 		border: 1px solid var(--color-border);
 		color: var(--color-error, #e05a5a);

@@ -12,6 +12,7 @@
 		channels: HDHomeRunChannel[];
 		fullGuide: HDHomeRunFullGuideChannel[] | null;
 		recordingRules: HDHomeRunRecordingRule[];
+		pendingRuleIds: Set<string>;
 		favoriteChannels: Set<string>;
 		savingFavorite: boolean;
 		recordingLoading: string | null;
@@ -26,6 +27,7 @@
 		channels,
 		fullGuide,
 		recordingRules,
+		pendingRuleIds,
 		favoriteChannels,
 		savingFavorite,
 		recordingLoading,
@@ -303,6 +305,7 @@
 			<div class="channel-track" style={`width: ${totalWidth}px;`}>
 				<div class="now-line"></div>
 				{#each cells as cell (cell.airing.start ?? cell.airing.title)}
+					{@const existingRule = findExistingRule(cell.airing, channel)}
 					<div
 						class="airing-cell"
 						class:live={isLive(cell.airing)}
@@ -320,9 +323,11 @@
 					>
 						<span class="cell-time">{formatCellTime(cell.airing.start)}</span>
 						<span class="cell-title">{cell.airing.title}</span>
-						{#if findExistingRule(cell.airing, channel)}<span class="cell-live-badge"
-								>{$_('hdhomerun.tile.recording_badge')}</span
-							>{/if}
+						{#if existingRule && pendingRuleIds.has(existingRule.RecordingRuleID)}
+							<span class="cell-live-badge cell-pending-badge">{$_('hdhomerun.detail.pending_recording_badge')}</span>
+						{:else if existingRule}
+							<span class="cell-live-badge">{$_('hdhomerun.tile.recording_badge')}</span>
+						{/if}
 					</div>
 				{/each}
 			</div>
@@ -338,6 +343,7 @@
 		y={menuState.y}
 		existingRule={findExistingRule(menuState.airing, menuState.channel)}
 		loading={isLoadingFor(menuState.airing, menuState.channel, findExistingRule(menuState.airing, menuState.channel))}
+		pending={pendingRuleIds.has(findExistingRule(menuState.airing, menuState.channel)?.RecordingRuleID ?? '')}
 		onRecordEpisode={() => {
 			if (!menuState) return;
 			onRecordEpisode(menuState.airing.series_id, menuState.channel.channel_number, menuState.airing.start);
@@ -577,5 +583,9 @@
 		font-size: 0.65rem;
 		color: var(--color-error, #e05a5a);
 		font-weight: 600;
+	}
+
+	.cell-pending-badge {
+		color: var(--color-warning, #d9a441);
 	}
 </style>

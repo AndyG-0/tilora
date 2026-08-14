@@ -976,6 +976,23 @@ async function patchJSON<T>(path: string, body: Record<string, unknown>): Promis
 	return response.json();
 }
 
+// Reads a failed response's `{detail: string}` body (FastAPI's HTTPException
+// shape), if present, so callers can surface the server's actual reason
+// (e.g. why an HDHomeRun DVR recording rule was rejected) instead of just a
+// bare status code. Falls back to the status-only message when the body
+// isn't JSON or has no `detail`.
+async function _errorMessage(path: string, response: Response): Promise<string> {
+	try {
+		const body = await response.json();
+		if (body && typeof body.detail === 'string' && body.detail) {
+			return body.detail;
+		}
+	} catch {
+		// Not JSON, or already consumed — fall through to the generic message.
+	}
+	return `Request to ${path} failed: ${response.status}`;
+}
+
 async function postJSON<T>(path: string, body?: Record<string, unknown>): Promise<T> {
 	const response = await fetch(`${env.PUBLIC_API_BASE_URL}${path}`, {
 		method: 'POST',
@@ -986,8 +1003,9 @@ async function postJSON<T>(path: string, body?: Record<string, unknown>): Promis
 		}),
 	});
 	if (!response.ok) {
+		const message = await _errorMessage(path, response);
 		logger.warn(`Request to ${path} failed: ${response.status}`);
-		throw new Error(`Request to ${path} failed: ${response.status}`);
+		throw new Error(message);
 	}
 	return response.json();
 }
@@ -1015,8 +1033,9 @@ async function deleteJSON<T>(path: string): Promise<T> {
 		credentials: 'include',
 	});
 	if (!response.ok) {
+		const message = await _errorMessage(path, response);
 		logger.warn(`Request to ${path} failed: ${response.status}`);
-		throw new Error(`Request to ${path} failed: ${response.status}`);
+		throw new Error(message);
 	}
 	return response.json();
 }

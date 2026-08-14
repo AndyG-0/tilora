@@ -60,6 +60,7 @@ const jellyfinWidget = (id: string) => ({
 describe('Screensaver', () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
+		localStorage.clear();
 		widgetDetail.mockReset();
 		widgets.set([dateWidget('w1'), dateWidget('w2')]);
 	});
@@ -125,6 +126,34 @@ describe('Screensaver', () => {
 		});
 
 		await vi.waitFor(() => expect(screen.getByText(/style=matrix/)).toBeInTheDocument());
+	});
+
+	it('resumes rotation from a previously stored rotation index', async () => {
+		localStorage.setItem('screensaver:rotationIndex', '1');
+		widgetDetail.mockImplementation((id: string) =>
+			Promise.resolve({ timezone: id === 'w1' ? 'UTC' : 'America/New_York' }),
+		);
+
+		render(Screensaver, {
+			props: { settings: settings({ widget_ids: ['w1', 'w2'] }), ondismiss: vi.fn() },
+		});
+
+		await vi.waitFor(() => expect(screen.getByText(/America\/New_York/)).toBeInTheDocument());
+	});
+
+	it('persists the rotation index to localStorage once it advances', async () => {
+		widgetDetail.mockImplementation((id: string) =>
+			Promise.resolve({ timezone: id === 'w1' ? 'UTC' : 'America/New_York' }),
+		);
+
+		render(Screensaver, {
+			props: { settings: settings({ widget_ids: ['w1', 'w2'], rotation_interval_seconds: 10 }), ondismiss: vi.fn() },
+		});
+		await vi.waitFor(() => expect(screen.getByText(/UTC/)).toBeInTheDocument());
+
+		await vi.advanceTimersByTimeAsync(10_000);
+
+		await vi.waitFor(() => expect(localStorage.getItem('screensaver:rotationIndex')).toBe('1'));
 	});
 
 	it('shows a fallback when there are no widget ids to rotate through', () => {
