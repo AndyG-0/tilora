@@ -67,4 +67,44 @@ describe('PhotoScreensaver', () => {
 
 		expect(await screen.findByAltText('a.jpg')).toBeInTheDocument();
 	});
+
+	it('shows not configured when configured is false', async () => {
+		render(PhotoScreensaver, {
+			props: {
+				id: 'photos-1',
+				data: { count: 0, interval_seconds: 5, photos: [], configured: false },
+			},
+		});
+
+		expect(await screen.findByText('Not configured')).toBeInTheDocument();
+	});
+
+	it('shows not connected when icloud_private is disconnected', async () => {
+		render(PhotoScreensaver, {
+			props: {
+				id: 'photos-1',
+				data: {
+					provider: 'icloud_private',
+					count: 0,
+					interval_seconds: 5,
+					photos: [],
+					configured: true,
+					connected: false,
+				},
+			},
+		});
+
+		expect(await screen.findByText('Not connected')).toBeInTheDocument();
+	});
+
+	it('shows indexing when indexing is true', async () => {
+		render(PhotoScreensaver, {
+			props: {
+				id: 'photos-1',
+				data: { count: 0, interval_seconds: 5, photos: [], configured: true, indexing: true },
+			},
+		});
+
+		expect(await screen.findByText('Indexing…')).toBeInTheDocument();
+	});
 });

@@ -14,6 +14,7 @@
 		count: number;
 		interval_seconds: number;
 		photos: Photo[];
+		configured?: boolean;
 		connected?: boolean;
 		indexing?: boolean;
 		index_error?: string;
@@ -65,6 +66,10 @@
 		{/key}
 	{:else if data.indexing}
 		<p class="caption">{$_('photos.tile.indexing')}</p>
+	{:else if data.configured === false}
+		<p class="caption">{$_('common.not_configured')}</p>
+	{:else if data.provider === 'icloud_private' && !data.connected}
+		<p class="caption">{$_('common.not_connected')}</p>
 	{:else}
 		<p class="caption">{$_('photos.tile.no_photos')}</p>
 	{/if}

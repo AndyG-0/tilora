@@ -45,7 +45,7 @@ async def test_get_summary_with_empty_directory_reports_no_photos(tmp_db, tmp_pa
 
     summary = await plugin.get_summary()
 
-    assert summary == {"count": 0, "current": None}
+    assert summary == {"provider": "local", "configured": True, "count": 0, "current": None}
 
 
 async def test_get_summary_reports_indexing_before_first_scan_completes(tmp_db, tmp_path):
@@ -53,7 +53,7 @@ async def test_get_summary_reports_indexing_before_first_scan_completes(tmp_db, 
 
     summary = await plugin.get_summary()
 
-    assert summary == {"count": 0, "current": None, "indexing": True}
+    assert summary == {"provider": "local", "configured": True, "count": 0, "current": None, "indexing": True}
 
 
 async def test_get_detail_reports_indexing_before_first_scan_completes(tmp_db, tmp_path):
@@ -61,7 +61,27 @@ async def test_get_detail_reports_indexing_before_first_scan_completes(tmp_db, t
 
     detail = await plugin.get_detail()
 
+    assert detail["configured"] is True
     assert detail["indexing"] is True
+    assert detail["photos"] == []
+
+
+async def test_get_summary_reports_not_configured_when_directory_unset(tmp_db):
+    plugin = PhotosPlugin({"id": "photos", "settings": {"provider": "local"}})
+
+    summary = await plugin.get_summary()
+
+    assert summary == {"provider": "local", "configured": False, "count": 0, "current": None}
+    assert "indexing" not in summary
+
+
+async def test_get_detail_reports_not_configured_when_directory_unset(tmp_db):
+    plugin = PhotosPlugin({"id": "photos", "settings": {"provider": "local"}})
+
+    detail = await plugin.get_detail()
+
+    assert detail["configured"] is False
+    assert "indexing" not in detail
     assert detail["photos"] == []
 
 
@@ -72,6 +92,8 @@ async def test_get_summary_reports_index_error_after_a_failed_scan(tmp_db, tmp_p
     summary = await plugin.get_summary()
 
     assert summary == {
+        "provider": "local",
+        "configured": True,
         "count": 0,
         "current": None,
         "index_error": "could not reach the source",
@@ -95,7 +117,7 @@ async def test_get_summary_ignores_missing_directory(tmp_db, tmp_path):
 
     summary = await plugin.get_summary()
 
-    assert summary == {"count": 0, "current": None}
+    assert summary == {"provider": "local", "configured": True, "count": 0, "current": None}
 
 
 async def test_get_summary_only_counts_image_files(tmp_db, tmp_path):
@@ -264,13 +286,14 @@ async def test_icloud_provider_parses_token_from_full_share_url(tmp_db, monkeypa
     assert seen_tokens == ["tok"]
 
 
-async def test_icloud_provider_with_no_album_token_reports_no_photos(tmp_db):
+async def test_icloud_provider_with_no_album_token_reports_not_configured(tmp_db):
     plugin = PhotosPlugin({"id": "photos", "settings": {"provider": "icloud_shared"}})
     await _index(plugin)
 
     summary = await plugin.get_summary()
 
-    assert summary == {"count": 0, "current": None}
+    assert summary == {"provider": "icloud_shared", "configured": False, "count": 0, "current": None}
+    assert "indexing" not in summary
 
 
 async def test_icloud_provider_get_detail_lists_all_photos(tmp_db, monkeypatch):
@@ -303,13 +326,43 @@ async def test_enumerate_photo_ids_chunks_icloud_shared_yields_one_chunk(monkeyp
     assert chunks == [["guid-1", "guid-2"]]
 
 
-async def test_private_provider_with_no_credentials_reports_no_photos_and_disconnected(tmp_db):
+async def test_private_provider_with_no_credentials_reports_not_configured_and_disconnected(tmp_db):
     plugin = make_private_plugin()
     await _index(plugin)
 
     summary = await plugin.get_summary()
 
-    assert summary == {"count": 0, "current": None, "connected": False}
+    assert summary == {
+        "provider": "icloud_private",
+        "configured": False,
+        "count": 0,
+        "current": None,
+        "connected": False,
+    }
+    assert "indexing" not in summary
+
+
+async def test_private_provider_with_credentials_but_disconnected_reports_not_indexing(tmp_db):
+    user_id = _make_admin_with_icloud_credentials()
+    plugin = make_private_plugin().with_settings(user_id=user_id)
+
+    summary = await plugin.get_summary()
+
+    assert summary["configured"] is True
+    assert summary["connected"] is False
+    assert "indexing" not in summary
+
+
+async def test_private_provider_connected_before_first_scan_reports_indexing(tmp_db, monkeypatch):
+    user_id = _make_admin_with_icloud_credentials()
+    monkeypatch.setattr(icloud_photos, "is_connected_cached", lambda uid: True)
+    plugin = make_private_plugin().with_settings(user_id=user_id)
+
+    summary = await plugin.get_summary()
+
+    assert summary["configured"] is True
+    assert summary["connected"] is True
+    assert summary["indexing"] is True
 
 
 def _make_admin_with_icloud_credentials(username="user@example.com", password="hunter2") -> str:
@@ -457,13 +510,14 @@ async def test_immich_provider_normalizes_base_url_trailing_slash(tmp_db, monkey
     assert seen_base_urls == ["http://192.168.1.50:2283/api"]
 
 
-async def test_immich_provider_with_incomplete_settings_reports_no_photos(tmp_db):
+async def test_immich_provider_with_incomplete_settings_reports_not_configured(tmp_db):
     plugin = PhotosPlugin({"id": "photos", "settings": {"provider": "immich", "base_url": "http://host/api"}})
     await _index(plugin)
 
     summary = await plugin.get_summary()
 
-    assert summary == {"count": 0, "current": None}
+    assert summary == {"provider": "immich", "configured": False, "count": 0, "current": None}
+    assert "indexing" not in summary
 
 
 async def test_immich_provider_get_detail_lists_all_photos_and_masks_api_key(tmp_db, monkeypatch):

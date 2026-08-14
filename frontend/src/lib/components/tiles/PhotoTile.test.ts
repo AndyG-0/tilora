@@ -30,8 +30,30 @@ describe('PhotoTile', () => {
 		expect(await screen.findByText('No photos found')).toBeInTheDocument();
 	});
 
+	it('shows a not-configured hint when the widget is not configured', async () => {
+		widgetSummary.mockResolvedValue({ count: 0, current: null, configured: false });
+
+		render(PhotoTile, { props: { widgetId: 'photos' } });
+
+		expect(await screen.findByText('Not configured')).toBeInTheDocument();
+	});
+
+	it('shows a not-connected hint when icloud_private is disconnected', async () => {
+		widgetSummary.mockResolvedValue({
+			provider: 'icloud_private',
+			count: 0,
+			current: null,
+			configured: true,
+			connected: false,
+		});
+
+		render(PhotoTile, { props: { widgetId: 'photos' } });
+
+		expect(await screen.findByText('Not connected')).toBeInTheDocument();
+	});
+
 	it('shows an indexing hint while the first scan is still running', async () => {
-		widgetSummary.mockResolvedValue({ count: 0, current: null, indexing: true });
+		widgetSummary.mockResolvedValue({ count: 0, current: null, configured: true, indexing: true });
 
 		render(PhotoTile, { props: { widgetId: 'photos' } });
 
@@ -42,6 +64,7 @@ describe('PhotoTile', () => {
 		widgetSummary.mockResolvedValue({
 			count: 0,
 			current: null,
+			configured: true,
 			index_error: 'could not reach the source',
 		});
 

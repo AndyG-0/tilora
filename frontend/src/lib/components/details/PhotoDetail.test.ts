@@ -54,7 +54,7 @@ describe('PhotoDetail', () => {
 
 	it('shows a hint when there are no photos', () => {
 		render(PhotoDetail, {
-			props: { data: { provider: 'local', count: 0, interval_seconds: 30, photos: [] } },
+			props: { data: { provider: 'local', directory: '/photos', count: 0, interval_seconds: 30, photos: [] } },
 		});
 
 		expect(screen.getByText('No photos found.')).toBeInTheDocument();
@@ -336,14 +336,68 @@ describe('PhotoDetail', () => {
 		expect(apiKeyInput.value).toBe('');
 	});
 
-	it('shows a connect prompt for a disconnected icloud_private widget', () => {
+	it('shows a not-configured hint for an unconfigured icloud_private widget', () => {
 		render(PhotoDetail, {
 			props: {
-				data: { provider: 'icloud_private', count: 0, interval_seconds: 30, photos: [], connected: false },
+				data: {
+					provider: 'icloud_private',
+					count: 0,
+					interval_seconds: 30,
+					photos: [],
+					has_credentials: false,
+					connected: false,
+				},
+			},
+		});
+
+		expect(
+			screen.getByText(
+				'Apple ID and password are not configured yet — set them on the Settings page to connect iCloud Photos.',
+			),
+		).toBeInTheDocument();
+		expect(screen.getByText('Settings page')).toHaveAttribute('href', '/settings');
+	});
+
+	it('shows a connect prompt for a disconnected icloud_private widget with credentials set', () => {
+		render(PhotoDetail, {
+			props: {
+				data: {
+					provider: 'icloud_private',
+					count: 0,
+					interval_seconds: 30,
+					photos: [],
+					has_credentials: true,
+					connected: false,
+				},
 			},
 		});
 
 		expect(screen.getByText('Connect iCloud')).toBeInTheDocument();
+	});
+
+	it('shows unconfigured hints for local, shared album, and immich when unset', () => {
+		const { unmount } = render(PhotoDetail, {
+			props: {
+				data: { provider: 'local', count: 0, interval_seconds: 30, photos: [], directory: null },
+			},
+		});
+		expect(screen.getByText('No photo folder configured yet.')).toBeInTheDocument();
+		unmount();
+
+		const r2 = render(PhotoDetail, {
+			props: {
+				data: { provider: 'icloud_shared', count: 0, interval_seconds: 30, photos: [], album_token: null },
+			},
+		});
+		expect(screen.getByText('No iCloud Shared Album link configured yet.')).toBeInTheDocument();
+		r2.unmount();
+
+		render(PhotoDetail, {
+			props: {
+				data: { provider: 'immich', count: 0, interval_seconds: 30, photos: [], immich_base_url: null },
+			},
+		});
+		expect(screen.getByText('Immich is not configured yet.')).toBeInTheDocument();
 	});
 
 	it('renders the slideshow for a connected icloud_private widget', () => {
