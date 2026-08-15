@@ -92,9 +92,9 @@ def make_plugin() -> FlightsPlugin:
     )
 
 
-def test_settings_scope_is_personal():
-    # Each household member cares about aircraft near their own location.
-    assert FlightsPlugin.settings_scope == "personal"
+def test_settings_scope_is_network():
+    # Flights location is a shared household setting across the dashboard.
+    assert FlightsPlugin.settings_scope == "network"
 
 
 def test_lookup_matches_known_airline():
@@ -425,3 +425,17 @@ async def test_routeset_request_sends_an_adsb_lol_referer():
     await plugin.get_summary()
 
     assert "adsb.lol" in post_route.calls.last.request.headers["referer"]
+
+
+def test_get_ai_tools_default_and_custom_instances():
+    default_plugin = FlightsPlugin({"id": "flights", "settings": {"location_name": "Austin, TX"}})
+    default_tools = default_plugin.get_ai_tools()
+    assert len(default_tools) == 1
+    assert default_tools[0].name == "get_nearby_flights_summary"
+    assert "Austin, TX" in default_tools[0].description
+
+    custom_plugin = FlightsPlugin({"id": "flights-custom-123", "settings": {"location_name": "London, UK"}})
+    custom_tools = custom_plugin.get_ai_tools()
+    assert len(custom_tools) == 1
+    assert custom_tools[0].name == "get_nearby_flights_summary_flights_custom_123"
+    assert "London, UK" in custom_tools[0].description

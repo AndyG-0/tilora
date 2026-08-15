@@ -133,9 +133,6 @@ class WeatherPlugin(Plugin):
     id = "weather"
     name = "Weather"
     refresh_interval_seconds = 600
-    # Each household member cares about their own location, not a shared
-    # one — see Plugin.settings_scope.
-    settings_scope = "personal"
     # A widget added via the UI has no dashboard.yaml entry to source
     # settings from, so it starts here — same Fort Worth, TX default as
     # dashboard.example.yaml — and the user swaps in their own city via the
@@ -277,12 +274,19 @@ class WeatherPlugin(Plugin):
         async def get_weather_summary() -> dict[str, Any]:
             return await self.get_summary()
 
+        tool_name = (
+            "get_weather_summary" if self.id == "weather" else f"get_weather_summary_{self.id.replace('-', '_')}"
+        )
+        location_name = self.config["settings"].get("location_name")
+        desc = (
+            f"Get the current temperature and weather condition for {location_name}."
+            if location_name
+            else "Get the current temperature and weather condition for the dashboard's configured location."
+        )
         return [
             ToolDef(
-                name="get_weather_summary",
-                description=(
-                    "Get the current temperature and weather condition for the dashboard's configured location."
-                ),
+                name=tool_name,
+                description=desc,
                 parameters={"type": "object", "properties": {}},
                 handler=get_weather_summary,
             )

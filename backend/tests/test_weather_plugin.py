@@ -52,10 +52,9 @@ def make_plugin() -> WeatherPlugin:
     )
 
 
-def test_settings_scope_is_personal():
-    # Each household member's location is their own, not shared — see
-    # Plugin.settings_scope.
-    assert WeatherPlugin.settings_scope == "personal"
+def test_settings_scope_is_network():
+    # Weather is a shared household location setting across the dashboard.
+    assert WeatherPlugin.settings_scope == "network"
 
 
 def test_condition_for_known_code():
@@ -242,3 +241,17 @@ async def test_get_detail_omits_air_quality_on_fetch_error():
     detail = await plugin.get_detail()
 
     assert "air_quality" not in detail
+
+
+def test_get_ai_tools_default_and_custom_instances():
+    default_plugin = WeatherPlugin({"id": "weather", "settings": {"location_name": "Austin, TX"}})
+    default_tools = default_plugin.get_ai_tools()
+    assert len(default_tools) == 1
+    assert default_tools[0].name == "get_weather_summary"
+    assert "Austin, TX" in default_tools[0].description
+
+    custom_plugin = WeatherPlugin({"id": "weather-custom-123", "settings": {"location_name": "London, UK"}})
+    custom_tools = custom_plugin.get_ai_tools()
+    assert len(custom_tools) == 1
+    assert custom_tools[0].name == "get_weather_summary_weather_custom_123"
+    assert "London, UK" in custom_tools[0].description

@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { api, type CityResult } from '$lib/api';
 	import WeatherIcon from '$lib/components/WeatherIcon.svelte';
+	import { user } from '$lib/stores/user';
 	import { _ } from 'svelte-i18n';
 	import { get } from 'svelte/store';
 
@@ -132,16 +133,20 @@
 			saving = false;
 		}
 	}
+
+	const isAdmin = $derived($user?.role === 'admin');
 </script>
 
 <div class="header">
 	<h1>{weather.location_name}</h1>
-	<button class="change-city" onclick={() => (editingCity = !editingCity)}>
-		{editingCity ? $_('weather.detail.cancel') : $_('weather.detail.change_city')}
-	</button>
+	{#if isAdmin}
+		<button class="change-city" onclick={() => (editingCity = !editingCity)}>
+			{editingCity ? $_('weather.detail.cancel') : $_('weather.detail.change_city')}
+		</button>
+	{/if}
 </div>
 
-{#if editingCity}
+{#if isAdmin && editingCity}
 	<div class="city-search">
 		<input
 			type="text"
@@ -170,15 +175,17 @@
 	</div>
 {/if}
 
-<label class="severe-weather-toggle">
-	<input
-		type="checkbox"
-		checked={severeWeatherAlerts}
-		disabled={savingSevereWeatherAlerts}
-		onchange={toggleSevereWeatherAlerts}
-	/>
-	{$_('weather.detail.severe_weather_alerts')}
-</label>
+{#if isAdmin}
+	<label class="severe-weather-toggle">
+		<input
+			type="checkbox"
+			checked={severeWeatherAlerts}
+			disabled={savingSevereWeatherAlerts}
+			onchange={toggleSevereWeatherAlerts}
+		/>
+		{$_('weather.detail.severe_weather_alerts')}
+	</label>
+{/if}
 
 <div class="current">
 	<div class="current-icon">

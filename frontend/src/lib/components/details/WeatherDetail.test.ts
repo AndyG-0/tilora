@@ -9,6 +9,7 @@ const { searchCities, updateWidgetSettings, widgetDetail } = vi.hoisted(() => ({
 vi.mock('$lib/api', () => ({ api: { searchCities, updateWidgetSettings, widgetDetail } }));
 vi.mock('$app/state', () => ({ page: { params: { id: 'weather' } } }));
 
+import { user } from '$lib/stores/user';
 import WeatherDetail from './WeatherDetail.svelte';
 
 const baseData = {
@@ -25,6 +26,7 @@ describe('WeatherDetail', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		vi.useFakeTimers();
+		user.set({ id: 'admin-user', name: 'Admin', avatar: null, role: 'admin' });
 	});
 
 	it('renders the current conditions and forecast', () => {
@@ -151,5 +153,13 @@ describe('WeatherDetail', () => {
 		await fireEvent.click(checkbox);
 
 		await vi.waitFor(() => expect(checkbox.checked).toBe(true));
+	});
+
+	it('hides edit controls for non-admin members', () => {
+		user.set({ id: 'member-user', name: 'Member', avatar: null, role: 'member' });
+		render(WeatherDetail, { props: { data: baseData } });
+
+		expect(screen.queryByText('Change city')).not.toBeInTheDocument();
+		expect(screen.queryByLabelText('Severe weather alerts')).not.toBeInTheDocument();
 	});
 });

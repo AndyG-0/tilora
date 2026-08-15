@@ -920,6 +920,45 @@ def _migration_015_deduplicate_device_names(conn: sqlite3.Connection) -> None:
             conn.execute("UPDATE devices SET name = ? WHERE id = ?", (candidate, device_id))
 
 
+def _migration_016_weather_flights_network_scope(conn: sqlite3.Connection) -> None:
+    """Migrates personal-scoped weather and flights settings back to network scope.
+
+    Copies each user's configured settings for weather/flights widgets into
+    widget_settings (prioritizing the admin user's row, if available) so
+    existing deployments keep their configured location on upgrade, and
+    cleans up the now-obsolete widget_user_settings rows.
+    """
+    custom_types = {row[0]: row[1] for row in conn.execute("SELECT id, type FROM custom_widgets")}
+    user_roles = {row[0]: row[1] for row in conn.execute("SELECT id, role FROM users")}
+
+    rows = conn.execute("SELECT user_id, widget_id, settings FROM widget_user_settings").fetchall()
+    settings_by_widget: dict[str, list[tuple[str, str]]] = {}
+    for row in rows:
+        user_id, widget_id, settings = row[0], row[1], row[2]
+        widget_type = custom_types.get(widget_id, widget_id)
+        if widget_type in ("weather", "flights"):
+            settings_by_widget.setdefault(widget_id, []).append((user_id, settings))
+
+    for widget_id, user_entries in settings_by_widget.items():
+        admin_entry = next((s for u_id, s in user_entries if user_roles.get(u_id) == "admin"), None)
+        chosen_settings = admin_entry if admin_entry is not None else user_entries[0][1]
+
+        conn.execute(
+            "INSERT INTO widget_settings (widget_id, settings) VALUES (?, ?) "
+            "ON CONFLICT (widget_id) DO UPDATE SET settings = excluded.settings",
+            (widget_id, chosen_settings),
+        )
+
+    for row in rows:
+        user_id, widget_id = row[0], row[1]
+        widget_type = custom_types.get(widget_id, widget_id)
+        if widget_type in ("weather", "flights"):
+            conn.execute(
+                "DELETE FROM widget_user_settings WHERE user_id = ? AND widget_id = ?",
+                (user_id, widget_id),
+            )
+
+
 _MIGRATIONS: tuple[str | Callable[[sqlite3.Connection], None], ...] = (
     _MIGRATION_001_USERS_DEVICES,
     _migration_002_user_roles,
@@ -936,6 +975,7 @@ _MIGRATIONS: tuple[str | Callable[[sqlite3.Connection], None], ...] = (
     _migration_013_seed_icloud_user_credentials,
     _MIGRATION_014_PHOTO_INDEX_USER_ID,
     _migration_015_deduplicate_device_names,
+    _migration_016_weather_flights_network_scope,
 )
 
 
