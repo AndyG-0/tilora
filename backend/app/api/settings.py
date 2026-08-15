@@ -19,6 +19,8 @@ _SECRET_KEYS = SECRET_APP_SETTINGS_KEYS
 # so the user can see/edit them without retyping.
 _PLAIN_KEYS = (
     "ai_reasoning_effort",
+    "ai_agent_name",
+    "searxng_url",
     "caldav_url",
     "caldav_username",
     "openai_tts_enabled",
@@ -41,6 +43,8 @@ class UpdateSettingsRequest(BaseModel):
 
     ai_model: str | None = None
     ai_reasoning_effort: str | None = None
+    ai_agent_name: str | None = None
+    searxng_url: str | None = None
     timezone: str | None = None
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None

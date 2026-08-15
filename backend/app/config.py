@@ -79,6 +79,13 @@ class Settings(BaseSettings):
     # see AIProvider.run_prompt.
     ai_reasoning_effort: str | None = None
 
+    # Name the AI assistant uses to identify itself when answering questions.
+    ai_agent_name: str = "Tilora"
+
+    # URL of a self-hosted SearXNG instance (e.g. "http://searxng:8080"). When
+    # configured, enables web search and fetch tools for the AI assistant.
+    searxng_url: str | None = None
+
     # IANA timezone (e.g. "America/Chicago"), used by any widget that
     # renders the current date/time (clock, date, ...).
     timezone: str = "UTC"
@@ -157,6 +164,8 @@ settings = Settings()
 APP_SETTINGS_KEYS = (
     "ai_model",
     "ai_reasoning_effort",
+    "ai_agent_name",
+    "searxng_url",
     "timezone",
     "anthropic_api_key",
     "openai_api_key",

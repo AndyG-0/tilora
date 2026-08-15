@@ -356,6 +356,26 @@
 		};
 	}
 
+	function watchLiveForRecording(recording: HDHomeRunRecording) {
+		if (!recording.channel_number) return;
+		const channel = hdhomerun.channels.find((c) => c.channel_number === recording.channel_number);
+		if (channel) {
+			watchChannel(channel);
+		} else {
+			const fallbackChannel: HDHomeRunChannel = {
+				channel_number: recording.channel_number,
+				name: recording.channel_name || recording.channel_number,
+				is_hd: true,
+				is_drm: false,
+				stream_url: '',
+				playback_url: `/api/hdhomerun/${widgetId}/watch/${recording.channel_number}`,
+				now: null,
+				next: null,
+			};
+			watchChannel(fallbackChannel);
+		}
+	}
+
 	async function applyRuleMutation(mutate: () => Promise<HDHomeRunRecordingRule[]>) {
 		// Diff against what we already knew about *before* this mutation, so
 		// only genuinely new rules from this action get flagged pending —
@@ -813,23 +833,13 @@
 			{#if hdhomerun.recordings_in_progress.length > 0}
 				<div class="recordings">
 					{#each hdhomerun.recordings_in_progress as recording, i (i)}
-						<div
-							class="recording clickable"
-							role="button"
-							tabindex="0"
-							onclick={() => playRecording(recording)}
-							onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && playRecording(recording)}
-						>
+						<div class="recording in-progress-card">
 							{#if recording.image_url}
 								<img class="rec-thumb" src={recording.image_url} alt="" />
 							{/if}
 							<div class="rec-info">
-								<span class="rec-badge">{$_('hdhomerun.tile.recording_badge')}</span>
-								<span class="rec-title">{recording.title}</span>
-								{#if recording.episode_title}<span class="rec-sub">{recording.episode_title}</span>{/if}
-								{#if recording.synopsis}<p class="rec-synopsis">{recording.synopsis}</p>{/if}
-								<div class="rec-meta">
-									{#if recording.channel_name}<span class="rec-channel">{recording.channel_name}</span>{/if}
+								<div class="rec-status-line">
+									<span class="rec-badge">{$_('hdhomerun.tile.recording_badge')}</span>
 									{#if recording.record_end}
 										<span class="rec-end"
 											>{$_('hdhomerun.detail.recording_until', {
@@ -838,17 +848,25 @@
 										>
 									{/if}
 								</div>
+								<span class="rec-title">{recording.title}</span>
+								{#if recording.episode_title}<span class="rec-sub">{recording.episode_title}</span>{/if}
+								{#if recording.synopsis}<p class="rec-synopsis">{recording.synopsis}</p>{/if}
+								<div class="rec-meta">
+									{#if recording.channel_name || recording.channel_number}
+										<span class="rec-channel"
+											>{recording.channel_number ? `${recording.channel_number} ` : ''}{recording.channel_name ||
+												''}</span
+										>
+									{/if}
+									<span class="rec-progress-notice">
+										{$_('hdhomerun.detail.recording_in_progress_hint')}
+									</span>
+								</div>
 							</div>
 							<div class="rec-actions">
-								{#if recording.play_url}
-									<button
-										class="watch small"
-										onclick={(e) => {
-											e.stopPropagation();
-											playRecording(recording);
-										}}
-									>
-										▶ {$_('hdhomerun.detail.watch_button')}
+								{#if recording.channel_number}
+									<button type="button" class="watch-live-btn small" onclick={() => watchLiveForRecording(recording)}>
+										{$_('hdhomerun.detail.watch_live_button')}
 									</button>
 								{/if}
 							</div>
@@ -1387,6 +1405,10 @@
 		padding: 0.6rem 0.85rem;
 	}
 
+	.recording.in-progress-card {
+		border-left: 3px solid var(--color-error);
+	}
+
 	.recording.clickable {
 		cursor: pointer;
 		transition:
@@ -1399,6 +1421,39 @@
 		background: var(--color-surface-hover, rgba(255, 255, 255, 0.08));
 		border-color: var(--color-accent, #3b82f6);
 		transform: translateY(-1px);
+	}
+
+	.rec-status-line {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.rec-progress-notice {
+		color: var(--color-text-muted);
+		font-style: italic;
+		font-size: 0.78rem;
+	}
+
+	.watch-live-btn {
+		background: var(--color-accent);
+		color: var(--color-surface);
+		border: none;
+		border-radius: 0.5rem;
+		padding: 0.35rem 0.75rem;
+		font-size: 0.85rem;
+		cursor: pointer;
+		font-weight: 500;
+		transition: opacity 0.15s ease;
+	}
+
+	.watch-live-btn:hover {
+		opacity: 0.9;
+	}
+
+	.watch-live-btn.small {
+		padding: 0.2rem 0.55rem;
+		font-size: 0.75rem;
 	}
 
 	.rec-thumb {

@@ -42,6 +42,8 @@
 	let insecureOriginInfo = $state<InsecureOriginInfo | null>(null);
 	let aiModelInput = $state('');
 	let aiReasoningEffortInput = $state('');
+	let aiAgentNameInput = $state('');
+	let searxngUrlInput = $state('');
 	let timezoneInput = $state('UTC');
 	let anthropicKeyInput = $state('');
 	let openaiKeyInput = $state('');
@@ -145,6 +147,8 @@
 			settings = await api.settings();
 			aiModelInput = settings.ai_model;
 			aiReasoningEffortInput = settings.ai_reasoning_effort;
+			aiAgentNameInput = settings.ai_agent_name;
+			searxngUrlInput = settings.searxng_url;
 			timezoneInput = settings.timezone;
 			caldavUrlInput = settings.caldav_url;
 			caldavUsernameInput = settings.caldav_username;
@@ -865,6 +869,8 @@
 			const partial: Record<string, string> = {
 				ai_model: aiModelInput,
 				ai_reasoning_effort: aiReasoningEffortInput,
+				ai_agent_name: aiAgentNameInput,
+				searxng_url: searxngUrlInput,
 			};
 			if (anthropicKeyInput) partial.anthropic_api_key = anthropicKeyInput;
 			if (openaiKeyInput) partial.openai_api_key = openaiKeyInput;
@@ -1158,12 +1164,27 @@
 				<section>
 					<h3>AI provider</h3>
 					<label>
+						Agent name
+						<input type="text" bind:value={aiAgentNameInput} placeholder="Tilora" />
+					</label>
+					<p class="hint">The name the AI assistant uses to identify itself when answering questions.</p>
+
+					<label>
 						Model
 						<input type="text" bind:value={aiModelInput} placeholder="anthropic/claude-sonnet-5" />
 					</label>
 					<p class="hint">
 						Follows litellm's "&lt;provider&gt;/&lt;model&gt;" convention, e.g. anthropic/claude-sonnet-5, openai/gpt-5,
 						or gemini/gemini-2.5-flash.
+					</p>
+
+					<label>
+						SearXNG URL (web search)
+						<input type="text" bind:value={searxngUrlInput} placeholder="http://searxng:8080" />
+					</label>
+					<p class="hint">
+						Optional. URL of a self-hosted SearXNG instance. When configured, enables live web search and page fetching
+						tools for the AI assistant.
 					</p>
 
 					<label>

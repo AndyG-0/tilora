@@ -244,6 +244,7 @@ class HDHomeRunPlugin(Plugin):
             elif not p_url and r.get("recording_id") and dvr_h:
                 r["play_url"] = hdhomerun_client.resolve_recording_url(settings, f"/recorded/{r['recording_id']}")
 
+        completed_recordings: list[dict[str, Any]] = []
         for r in all_recordings:
             rec_end = r.get("record_end")
             rec_start = r.get("start")
@@ -252,6 +253,8 @@ class HDHomeRunPlugin(Plugin):
                     recordings_in_progress.append(r)
                     if r.get("title"):
                         seen_titles.add(r["title"].lower())
+            else:
+                completed_recordings.append(r)
 
         for rule in active_rules:
             dt = rule.get("DateTimeOnly")
@@ -334,7 +337,7 @@ class HDHomeRunPlugin(Plugin):
             "tuners": tuners,
             "dvr_info": dvr_info,
             "recordings_in_progress": recordings_in_progress,
-            "all_recordings": all_recordings,
+            "all_recordings": completed_recordings,
             "recording_rules": active_rules,
             "upcoming_recording_rules_count": len(active_rules),
             **self._settings_view(),

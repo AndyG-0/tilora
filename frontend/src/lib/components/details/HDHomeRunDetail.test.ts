@@ -174,14 +174,16 @@ describe('HDHomeRunDetail', () => {
 		expect(await screen.findByRole('button', { name: 'Remove from favorites' })).toBeInTheDocument();
 	});
 
-	it('shows the DVR section with recordings in progress', async () => {
-		render(HDHomeRunDetail, {
+	it('shows the DVR section with recordings in progress and offers Watch Live', async () => {
+		const { container } = render(HDHomeRunDetail, {
 			props: {
 				data: {
 					...connected,
 					dvr_connected: true,
 					dvr_info: { friendly_name: 'DVR', version: '1.0', free_space_bytes: 500_000_000_000 },
-					recordings_in_progress: [{ title: 'Big Game', channel_name: 'KDFW', start: null, record_end: null }],
+					recordings_in_progress: [
+						{ title: 'Big Game', channel_name: 'KDFW', channel_number: '4.1', start: null, record_end: null },
+					],
 					upcoming_recording_rules_count: 3,
 				},
 			},
@@ -192,6 +194,17 @@ describe('HDHomeRunDetail', () => {
 		expect(screen.getByText('● Recording')).toBeInTheDocument();
 		expect(screen.getByText('Big Game')).toBeInTheDocument();
 		expect(screen.getByText('Free space: 500.0 GB')).toBeInTheDocument();
+		expect(screen.getByText('Recording in progress — available to watch once finished.')).toBeInTheDocument();
+
+		// Should not have a recorded file playback watch button in current recordings
+		expect(container.querySelector('button.watch')).toBeNull();
+
+		// Should have Watch Live button
+		const watchLiveBtn = screen.getByRole('button', { name: '▶ Watch Live' });
+		expect(watchLiveBtn).toBeInTheDocument();
+
+		await fireEvent.click(watchLiveBtn);
+		expect(screen.getByRole('dialog', { name: '4.1 KDFW' })).toBeInTheDocument();
 	});
 
 	it('auto-launches playback from a ?watch= query param and strips it', async () => {

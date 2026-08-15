@@ -121,3 +121,18 @@ def test_patch_settings_invalidates_clock_and_date_widget_cache(client, tmp_db):
     assert cache.get("detail:clock") is None
     assert cache.get("summary:date") is None
     assert cache.get("detail:date") is None
+
+
+def test_patch_settings_persists_agent_name_and_searxng_url(client, tmp_db):
+    response = client.patch(
+        "/api/settings",
+        json={
+            "ai_agent_name": "Friday",
+            "searxng_url": "http://searxng.local:8080",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ai_agent_name"] == "Friday"
+    assert body["searxng_url"] == "http://searxng.local:8080"

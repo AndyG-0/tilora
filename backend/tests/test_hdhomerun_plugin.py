@@ -226,6 +226,45 @@ async def test_recordings_in_progress_filters_by_future_record_end():
 
 
 @respx.mock
+async def test_get_detail_separates_in_progress_from_completed_recordings():
+    now = time.time()
+    respx.get("http://hdhr.local:80/lineup.json").mock(return_value=httpx.Response(200, json=LINEUP_RESPONSE))
+    respx.get("http://hdhr.local:80/discover.json").mock(return_value=httpx.Response(200, json=DISCOVER_RESPONSE))
+    respx.get("https://api.hdhomerun.com/api/guide.php").mock(return_value=httpx.Response(200, json=[]))
+    respx.get("http://hdhr.local:80/status.json").mock(return_value=httpx.Response(200, json=[]))
+    respx.get("http://dvr.local:59090/discover.json").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "FriendlyName": "HDHomeRun RECORD",
+                "Version": "1",
+                "FreeSpace": 100,
+                "StorageURL": "http://dvr.local:59090/recorded_files.json",
+            },
+        )
+    )
+    respx.get("http://dvr.local:59090/recorded_files.json").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"Title": "Active Show", "RecordEndTime": now + 500, "StartTime": now - 100},
+                {"Title": "Completed Show", "RecordEndTime": now - 200, "StartTime": now - 3800},
+            ],
+        )
+    )
+    respx.get("http://dvr.local:59090/recording_rules.json").mock(return_value=httpx.Response(200, json=[]))
+    plugin = make_plugin(tuner_host="hdhr.local", dvr_host="dvr.local")
+
+    detail = await plugin.get_detail()
+
+    assert len(detail["recordings_in_progress"]) == 1
+    assert detail["recordings_in_progress"][0]["title"] == "Active Show"
+
+    assert len(detail["all_recordings"]) == 1
+    assert detail["all_recordings"][0]["title"] == "Completed Show"
+
+
+@respx.mock
 async def test_get_summary_now_playing_filtered_by_favorites():
     now = time.time()
     respx.get("http://hdhr.local:80/lineup.json").mock(

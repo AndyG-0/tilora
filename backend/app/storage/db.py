@@ -813,7 +813,9 @@ def _migration_012_packages_user_id(conn: sqlite3.Connection) -> None:
     admin = conn.execute("SELECT id FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1").fetchone()
     if admin is not None:
         conn.execute("UPDATE packages SET user_id = ? WHERE user_id IS NULL", (admin["id"],))
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_packages_widget_user ON packages (widget_id, user_id, delivered, eta_date)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_packages_widget_user ON packages (widget_id, user_id, delivered, eta_date)"
+    )
 
 
 # iCloud Photos moved from one shared admin-configured login (`app_settings`'
