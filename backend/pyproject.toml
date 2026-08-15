@@ -1,6 +1,6 @@
 [project]
 name = "tilora-backend"
-version = "0.10.0"
+version = "0.11.0"
 description = "Tilora dashboard backend"
 readme = "README.md"
 license = "MIT"
