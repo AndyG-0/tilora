@@ -2157,25 +2157,63 @@
 		</section>
 
 		{#if insecureOriginInfo?.needsInsecureOriginFlag}
-			<section>
+			<section class="microphone-section">
 				<h3>{$_('settings.microphone.heading')}</h3>
-				<p class="hint">
-					{$_('settings.microphone.intro', { values: { origin: insecureOriginInfo.origin } })}
-				</p>
-				{#if insecureOriginInfo.isChrome}
+				{#if insecureOriginInfo.browser === 'chrome'}
+					<p class="hint">
+						{$_('settings.microphone.chrome_intro', { values: { origin: insecureOriginInfo.origin } })}
+					</p>
 					<p class="hint">
 						{$_('settings.microphone.open_prefix')}
 						<a href="chrome://flags/#unsafely-treat-insecure-origin-as-secure" target="_blank" rel="noreferrer"
 							>chrome://flags/#unsafely-treat-insecure-origin-as-secure</a
 						>{$_('settings.microphone.after_link')} <code>{insecureOriginInfo.origin}</code>
-						{$_('settings.microphone.list_suffix')}
+						{$_('settings.microphone.chrome_list_suffix')}
 					</p>
+				{:else if insecureOriginInfo.browser === 'edge'}
+					<p class="hint">
+						{$_('settings.microphone.edge_intro', { values: { origin: insecureOriginInfo.origin } })}
+					</p>
+					<p class="hint">
+						{$_('settings.microphone.open_prefix')}
+						<a href="edge://flags/#unsafely-treat-insecure-origin-as-secure" target="_blank" rel="noreferrer"
+							>edge://flags/#unsafely-treat-insecure-origin-as-secure</a
+						>{$_('settings.microphone.after_link')} <code>{insecureOriginInfo.origin}</code>
+						{$_('settings.microphone.edge_list_suffix')}
+					</p>
+				{:else if insecureOriginInfo.browser === 'brave'}
+					<p class="hint">
+						{$_('settings.microphone.brave_intro', { values: { origin: insecureOriginInfo.origin } })}
+					</p>
+					<p class="hint">
+						{$_('settings.microphone.open_prefix')}
+						<a href="brave://flags/#unsafely-treat-insecure-origin-as-secure" target="_blank" rel="noreferrer"
+							>brave://flags/#unsafely-treat-insecure-origin-as-secure</a
+						>{$_('settings.microphone.after_link')} <code>{insecureOriginInfo.origin}</code>
+						{$_('settings.microphone.brave_list_suffix')}
+					</p>
+				{:else if insecureOriginInfo.browser === 'safari'}
+					<p class="hint">
+						{$_('settings.microphone.safari_intro', { values: { origin: insecureOriginInfo.origin } })}
+					</p>
+					<p class="hint">
+						{$_('settings.microphone.safari_https_req')}
+					</p>
+					<div class="cert-tips">
+						<p class="hint cert-tip-heading">
+							<strong>{$_('settings.microphone.safari_cert_tip_title')}</strong>
+						</p>
+						<ul class="cert-tips-list">
+							<li>{$_('settings.microphone.safari_ios_cert_tip')}</li>
+							<li>{$_('settings.microphone.safari_mac_cert_tip')}</li>
+						</ul>
+					</div>
 				{:else}
 					<p class="hint">
-						{$_('settings.microphone.in_chrome_open')}
-						<code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>{$_('settings.microphone.after_link')}
-						<code>{insecureOriginInfo.origin}</code>
-						{$_('settings.microphone.list_suffix')}
+						{$_('settings.microphone.other_intro', { values: { origin: insecureOriginInfo.origin } })}
+					</p>
+					<p class="hint">
+						{$_('settings.microphone.other_https_req')}
 					</p>
 				{/if}
 			</section>
@@ -2530,5 +2568,31 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.4rem;
+	}
+
+	.cert-tips {
+		margin-top: 0.5rem;
+		padding: 0.6rem 0.8rem;
+		background: var(--color-surface-hover, rgba(255, 255, 255, 0.04));
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+	}
+
+	.cert-tip-heading {
+		color: var(--color-text);
+		font-size: 0.85rem;
+		margin: 0;
+	}
+
+	.cert-tips-list {
+		margin: 0.4rem 0 0;
+		padding-left: 1.2rem;
+		color: var(--color-text-muted);
+		font-size: 0.85rem;
+		line-height: 1.5;
+	}
+
+	.cert-tips-list li {
+		margin-bottom: 0.25rem;
 	}
 </style>

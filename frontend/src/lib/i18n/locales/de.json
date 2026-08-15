@@ -93,7 +93,20 @@
 			"open_prefix": "Öffne",
 			"in_chrome_open": "Öffne in Chrome",
 			"after_link": ", füge",
-			"list_suffix": "zur Liste hinzu, aktiviere es und starte Chrome neu."
+			"list_suffix": "zur Liste hinzu, aktiviere es und starte Chrome neu.",
+			"chrome_intro": "Dieses Gerät wird über einfaches HTTP unter einer internen IP-Adresse ({origin}) erreicht. Chrome blockiert den Mikrofonzugriff bei unsicheren Ursprüngen, daher funktioniert der Sprachassistent hier nicht, es sei denn, du erlaubst es manuell. Dies ist für über HTTPS bereitgestellte Seiten nicht erforderlich.",
+			"chrome_list_suffix": "zur Liste hinzu, setze es auf Aktiviert und starte Chrome neu.",
+			"edge_intro": "Dieses Gerät wird über einfaches HTTP unter einer internen IP-Adresse ({origin}) erreicht. Microsoft Edge blockiert den Mikrofonzugriff bei unsicheren Ursprüngen, daher funktioniert der Sprachassistent hier nicht, es sei denn, du erlaubst es manuell. Dies ist für über HTTPS bereitgestellte Seiten nicht erforderlich.",
+			"edge_list_suffix": "zur Liste hinzu, setze es auf Aktiviert und starte Edge neu.",
+			"brave_intro": "Dieses Gerät wird über einfaches HTTP unter einer internen IP-Adresse ({origin}) erreicht. Brave blockiert den Mikrofonzugriff bei unsicheren Ursprüngen, daher funktioniert der Sprachassistent hier nicht, es sei denn, du erlaubst es manuell. Dies ist für über HTTPS bereitgestellte Seiten nicht erforderlich.",
+			"brave_list_suffix": "zur Liste hinzu, setze es auf Aktiviert und starte Brave neu.",
+			"safari_intro": "Dieses Gerät wird über einfaches HTTP unter einer internen IP-Adresse ({origin}) erreicht. Safari blockiert den Mikrofonzugriff bei unsicheren Ursprüngen strikt und unterstützt keine Browser-Flags zur Umgehung dieser Einschränkung.",
+			"safari_https_req": "Um den Sprachassistenten in Safari zu nutzen, verbinde dich über HTTPS (oder localhost) mit Tilora.",
+			"safari_cert_tip_title": "Verwendest du ein selbstsigniertes oder privates SSL-Zertifikat?",
+			"safari_ios_cert_tip": "iOS / iPadOS: Installiere dein Zertifikatsprofil und gehe dann zu Einstellungen > Allgemein > Info > Zertifikatsvertrauenseinstellungen, um dem Stammzertifikat vollständig zu vertrauen.",
+			"safari_mac_cert_tip": "macOS: Öffne die Schlüsselbundverwaltung, doppelklicke auf das Zertifikat, klappe „Vertrauen“ auf und wähle „Immer vertrauen“.",
+			"other_intro": "Dieses Gerät wird über einfaches HTTP unter einer internen IP-Adresse ({origin}) erreicht. Die meisten Browser blockieren den Mikrofonzugriff bei unsicheren Verbindungen.",
+			"other_https_req": "Um Sprachbefehle zu verwenden, verbinde dich über eine sichere HTTPS-Verbindung mit Tilora oder richte einen Reverse-Proxy mit SSL ein."
 		},
 		"update": {
 			"heading": "Software-Update",

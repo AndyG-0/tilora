@@ -93,7 +93,20 @@
 			"open_prefix": "Open",
 			"in_chrome_open": "In Chrome, open",
 			"after_link": ", add",
-			"list_suffix": "to the list, enable it, and relaunch Chrome."
+			"list_suffix": "to the list, enable it, and relaunch Chrome.",
+			"chrome_intro": "This device is reached over plain HTTP at an internal IP address ({origin}). Chrome blocks microphone access on insecure origins, so the voice assistant won't work here unless you allow it manually. This isn't needed for sites served over HTTPS.",
+			"chrome_list_suffix": "to the list, set it to Enabled, and relaunch Chrome.",
+			"edge_intro": "This device is reached over plain HTTP at an internal IP address ({origin}). Microsoft Edge blocks microphone access on insecure origins, so the voice assistant won't work here unless you allow it manually. This isn't needed for sites served over HTTPS.",
+			"edge_list_suffix": "to the list, set it to Enabled, and relaunch Edge.",
+			"brave_intro": "This device is reached over plain HTTP at an internal IP address ({origin}). Brave blocks microphone access on insecure origins, so the voice assistant won't work here unless you allow it manually. This isn't needed for sites served over HTTPS.",
+			"brave_list_suffix": "to the list, set it to Enabled, and relaunch Brave.",
+			"safari_intro": "This device is reached over plain HTTP at an internal IP address ({origin}). Safari strictly blocks microphone access on insecure origins and does not provide browser flags to bypass this restriction.",
+			"safari_https_req": "To use the voice assistant in Safari, connect to Tilora over HTTPS (or localhost).",
+			"safari_cert_tip_title": "Using a self-signed or private SSL certificate?",
+			"safari_ios_cert_tip": "iOS / iPadOS: Install your root certificate profile, then go to Settings > General > About > Certificate Trust Settings and enable full trust for root certificates.",
+			"safari_mac_cert_tip": "macOS: In Keychain Access, double-click your certificate, expand Trust, and select \"Always Trust\".",
+			"other_intro": "This device is reached over plain HTTP at an internal IP address ({origin}). Most browsers block microphone access on insecure connections.",
+			"other_https_req": "To use voice commands, connect to Tilora over a secure HTTPS connection or configure a reverse proxy with SSL."
 		},
 		"update": {
 			"heading": "Software update",

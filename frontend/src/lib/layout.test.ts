@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeEmptyCells, isRectFree } from './layout';
+import { computeEmptyCells, isRectFree, reorderNarrow, sortForNarrow } from './layout';
 import type { WidgetSummaryMeta } from './api';
 
 function widget(id: string, col: number, row: number, colSpan = 1, rowSpan = 1): WidgetSummaryMeta {
@@ -70,5 +70,51 @@ describe('isRectFree', () => {
 	it('is false for col/row below 1', () => {
 		expect(isRectFree(widgets, 'a', { col: 0, row: 1, colSpan: 1, rowSpan: 1 }, 4)).toBe(false);
 		expect(isRectFree(widgets, 'a', { col: 1, row: 0, colSpan: 1, rowSpan: 1 }, 4)).toBe(false);
+	});
+});
+
+describe('sortForNarrow', () => {
+	it('orders by row', () => {
+		const widgets = [widget('a', 1, 3), widget('b', 1, 1), widget('c', 1, 2)];
+		expect(sortForNarrow(widgets).map((w) => w.id)).toEqual(['b', 'c', 'a']);
+	});
+
+	it('keeps existing relative order for tied rows', () => {
+		const widgets = [widget('a', 1, 1), widget('b', 2, 1), widget('c', 1, 2)];
+		expect(sortForNarrow(widgets).map((w) => w.id)).toEqual(['a', 'b', 'c']);
+	});
+});
+
+describe('reorderNarrow', () => {
+	it("moves the source widget to the target widget's position", () => {
+		const widgets = [widget('a', 1, 1), widget('b', 1, 2), widget('c', 1, 3)];
+
+		const updates = reorderNarrow(widgets, 'a', 'c');
+
+		expect(updates.map((u) => u.id)).toEqual(['b', 'c', 'a']);
+		expect(updates.map((u) => u.layout.row)).toEqual([1, 2, 3]);
+	});
+
+	it('moves a later widget earlier, shifting the ones in between down', () => {
+		const widgets = [widget('a', 1, 1), widget('b', 1, 2), widget('c', 1, 3)];
+
+		const updates = reorderNarrow(widgets, 'c', 'a');
+
+		expect(updates.map((u) => u.id)).toEqual(['c', 'a', 'b']);
+	});
+
+	it('preserves colSpan/rowSpan, only changing row', () => {
+		const widgets = [widget('a', 1, 1, 2, 3), widget('b', 1, 2)];
+
+		const updates = reorderNarrow(widgets, 'a', 'b');
+
+		const a = updates.find((u) => u.id === 'a')!;
+		expect(a.layout).toEqual({ col: 1, row: 2, colSpan: 2, rowSpan: 3 });
+	});
+
+	it('returns empty for an unknown id or a no-op move', () => {
+		const widgets = [widget('a', 1, 1), widget('b', 1, 2)];
+		expect(reorderNarrow(widgets, 'a', 'missing')).toEqual([]);
+		expect(reorderNarrow(widgets, 'a', 'a')).toEqual([]);
 	});
 });

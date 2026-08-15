@@ -93,7 +93,20 @@
 			"open_prefix": "Abre",
 			"in_chrome_open": "En Chrome, abre",
 			"after_link": ", agrega",
-			"list_suffix": "a la lista, actívalo y reinicia Chrome."
+			"list_suffix": "a la lista, actívalo y reinicia Chrome.",
+			"chrome_intro": "Este dispositivo se accede mediante HTTP simple en una dirección IP interna ({origin}). Chrome bloquea el acceso al micrófono en orígenes no seguros, por lo que el asistente de voz no funcionará aquí a menos que lo permitas manualmente. Esto no es necesario para sitios servidos por HTTPS.",
+			"chrome_list_suffix": "a la lista, establécelo en Habilitado y reinicia Chrome.",
+			"edge_intro": "Este dispositivo se accede mediante HTTP simple en una dirección IP interna ({origin}). Microsoft Edge bloquea el acceso al micrófono en orígenes no seguros, por lo que el asistente de voz no funcionará aquí a menos que lo permitas manualmente. Esto no es necesario para sitios servidos por HTTPS.",
+			"edge_list_suffix": "a la lista, establécelo en Habilitado y reinicia Edge.",
+			"brave_intro": "Este dispositivo se accede mediante HTTP simple en una dirección IP interna ({origin}). Brave bloquea el acceso al micrófono en orígenes no seguros, por lo que el asistente de voz no funcionará aquí a menos que lo permitas manualmente. Esto no es necesario para sitios servidos por HTTPS.",
+			"brave_list_suffix": "a la lista, establécelo en Habilitado y reinicia Brave.",
+			"safari_intro": "Este dispositivo se accede mediante HTTP simple en una dirección IP interna ({origin}). Safari bloquea estrictamente el acceso al micrófono en orígenes no seguros y no proporciona indicadores del navegador para omitir esta restricción.",
+			"safari_https_req": "Para usar el asistente de voz en Safari, conéctate a Tilora mediante HTTPS (o localhost).",
+			"safari_cert_tip_title": "¿Utilizas un certificado SSL autofirmado o privado?",
+			"safari_ios_cert_tip": "iOS / iPadOS: Instala el perfil de tu certificado raíz y luego ve a Configuración > General > Información > Configuración de confianza de certificados para otorgar confianza plena a los certificados raíz.",
+			"safari_mac_cert_tip": "macOS: En Acceso a Llaveros, haz doble clic en tu certificado, expande Confianza y selecciona «Confiar siempre».",
+			"other_intro": "Este dispositivo se accede mediante HTTP simple en una dirección IP interna ({origin}). La mayoría de los navegadores bloquean el acceso al micrófono en conexiones no seguras.",
+			"other_https_req": "Para usar comandos de voz, conéctate a Tilora a través de una conexión HTTPS segura o configura un proxy inverso con SSL."
 		},
 		"update": {
 			"heading": "Actualización de software",

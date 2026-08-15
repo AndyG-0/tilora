@@ -19,6 +19,7 @@ const {
 	listBrowserVoices,
 	speak,
 	listNetworkIntegrations,
+	getInsecureOriginInfo,
 } = vi.hoisted(() => ({
 	goto: vi.fn(),
 	settings: vi.fn(),
@@ -35,9 +36,11 @@ const {
 	listBrowserVoices: vi.fn(),
 	speak: vi.fn(),
 	listNetworkIntegrations: vi.fn().mockResolvedValue([]),
+	getInsecureOriginInfo: vi.fn().mockReturnValue(null),
 }));
 
 vi.mock('$app/navigation', () => ({ goto }));
+vi.mock('$lib/network', () => ({ getInsecureOriginInfo }));
 vi.mock('$lib/api', () => ({
 	api: {
 		settings,
@@ -320,5 +323,142 @@ describe('settings +page.svelte — screensaver test button', () => {
 		await fireEvent.click(button);
 
 		expect(get(forceScreensaverPreview)).toBe(true);
+	});
+});
+
+describe('settings +page.svelte — microphone guidance on insecure origins', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		user.set({ id: 'admin1', name: 'Admin', avatar: null, role: 'admin' });
+		settings.mockResolvedValue({ ...BASE_SETTINGS });
+		updateSettings.mockResolvedValue({ ...BASE_SETTINGS });
+		version.mockResolvedValue({
+			current_version: '0.1.0',
+			latest_version: null,
+			update_available: false,
+			release_url: null,
+		});
+		widgetTypes.mockResolvedValue([]);
+		listDevices.mockResolvedValue([]);
+		listUsers.mockResolvedValue([]);
+		listHouseholdUsers.mockResolvedValue([]);
+		getPreferences.mockResolvedValue({ ...DEFAULT_PREFERENCES });
+		updatePreferences.mockResolvedValue({ ...DEFAULT_PREFERENCES });
+		listWidgets.mockResolvedValue([]);
+		ttsVoices.mockResolvedValue([]);
+		listBrowserVoices.mockResolvedValue([]);
+		listNetworkIntegrations.mockResolvedValue([]);
+	});
+
+	it('shows Chrome-specific flag instructions when on HTTP private IP in Chrome', async () => {
+		getInsecureOriginInfo.mockReturnValue({
+			needsInsecureOriginFlag: true,
+			browser: 'chrome',
+			isChrome: true,
+			isChromium: true,
+			origin: 'http://192.168.1.50:8080',
+		});
+
+		render(Page);
+
+		expect(await screen.findByText('Microphone access')).toBeInTheDocument();
+		expect(screen.getByText(/Chrome blocks microphone access on insecure origins/)).toBeInTheDocument();
+		expect(
+			screen.getByRole('link', { name: 'chrome://flags/#unsafely-treat-insecure-origin-as-secure' }),
+		).toHaveAttribute('href', 'chrome://flags/#unsafely-treat-insecure-origin-as-secure');
+	});
+
+	it('shows Edge-specific flag instructions when on HTTP private IP in Edge', async () => {
+		getInsecureOriginInfo.mockReturnValue({
+			needsInsecureOriginFlag: true,
+			browser: 'edge',
+			isChrome: false,
+			isChromium: true,
+			origin: 'http://192.168.1.50:8080',
+		});
+
+		render(Page);
+
+		expect(await screen.findByText('Microphone access')).toBeInTheDocument();
+		expect(screen.getByText(/Microsoft Edge blocks microphone access on insecure origins/)).toBeInTheDocument();
+		expect(
+			screen.getByRole('link', { name: 'edge://flags/#unsafely-treat-insecure-origin-as-secure' }),
+		).toHaveAttribute('href', 'edge://flags/#unsafely-treat-insecure-origin-as-secure');
+	});
+
+	it('shows Brave-specific flag instructions when on HTTP private IP in Brave', async () => {
+		getInsecureOriginInfo.mockReturnValue({
+			needsInsecureOriginFlag: true,
+			browser: 'brave',
+			isChrome: false,
+			isChromium: true,
+			origin: 'http://192.168.1.50:8080',
+		});
+
+		render(Page);
+
+		expect(await screen.findByText('Microphone access')).toBeInTheDocument();
+		expect(screen.getByText(/Brave blocks microphone access on insecure origins/)).toBeInTheDocument();
+		expect(
+			screen.getByRole('link', { name: 'brave://flags/#unsafely-treat-insecure-origin-as-secure' }),
+		).toHaveAttribute('href', 'brave://flags/#unsafely-treat-insecure-origin-as-secure');
+	});
+
+	it('shows Safari-specific HTTPS and cert trust instructions when on HTTP private IP in Safari', async () => {
+		getInsecureOriginInfo.mockReturnValue({
+			needsInsecureOriginFlag: true,
+			browser: 'safari',
+			isChrome: false,
+			isChromium: false,
+			origin: 'http://192.168.1.50:8080',
+		});
+
+		render(Page);
+
+		expect(await screen.findByText('Microphone access')).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				/Safari strictly blocks microphone access on insecure origins and does not provide browser flags/,
+			),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText('To use the voice assistant in Safari, connect to Tilora over HTTPS (or localhost).'),
+		).toBeInTheDocument();
+		expect(screen.getByText('Using a self-signed or private SSL certificate?')).toBeInTheDocument();
+		expect(screen.getByText(/Certificate Trust Settings/)).toBeInTheDocument();
+		expect(screen.getByText(/In Keychain Access/)).toBeInTheDocument();
+	});
+
+	it('shows general HTTPS requirement for other browsers on HTTP private IP', async () => {
+		getInsecureOriginInfo.mockReturnValue({
+			needsInsecureOriginFlag: true,
+			browser: 'firefox',
+			isChrome: false,
+			isChromium: false,
+			origin: 'http://192.168.1.50:8080',
+		});
+
+		render(Page);
+
+		expect(await screen.findByText('Microphone access')).toBeInTheDocument();
+		expect(screen.getByText(/Most browsers block microphone access on insecure connections/)).toBeInTheDocument();
+		expect(
+			screen.getByText(/To use voice commands, connect to Tilora over a secure HTTPS connection/),
+		).toBeInTheDocument();
+	});
+
+	it('hides the microphone section when in a secure context', async () => {
+		getInsecureOriginInfo.mockReturnValue({
+			needsInsecureOriginFlag: false,
+			browser: 'chrome',
+			isChrome: true,
+			isChromium: true,
+			origin: 'https://192.168.1.50',
+		});
+
+		render(Page);
+
+		await waitFor(() => expect(settings).toHaveBeenCalled());
+		expect(screen.queryByText('Microphone access')).not.toBeInTheDocument();
 	});
 });
