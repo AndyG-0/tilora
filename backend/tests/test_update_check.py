@@ -30,6 +30,8 @@ def test_no_check_yet_reports_no_update(monkeypatch):
         "latest_version": None,
         "update_available": False,
         "release_url": None,
+        "install_method": update_check.INSTALL_METHOD,
+        "update_running": False,
     }
 
 
@@ -94,3 +96,26 @@ async def test_polls_the_configured_github_repo(monkeypatch):
     await check_for_update()
 
     assert route.called
+
+
+def test_get_update_status_includes_install_method(monkeypatch):
+    monkeypatch.setattr(update_check, "CURRENT_VERSION", "1.0.0")
+    monkeypatch.setattr(update_check, "INSTALL_METHOD", "native")
+
+    status = get_update_status()
+
+    assert status["install_method"] == "native"
+
+
+def test_get_update_status_includes_update_running_flag():
+    update_check._update_state["running"] = True
+    try:
+        status = get_update_status()
+        assert status["update_running"] is True
+    finally:
+        update_check._update_state["running"] = False
+
+
+def test_get_update_status_update_running_false_by_default():
+    status = get_update_status()
+    assert status["update_running"] is False

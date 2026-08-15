@@ -24,6 +24,59 @@ export interface WidgetSummaryMeta {
 	tab: string;
 }
 
+export interface TileReportStats {
+	chores_active: number;
+	chores_total: number;
+	shopping_active: number;
+	shopping_total: number;
+	alerts_active: number;
+	photos_count: number;
+	packages_count: number;
+	has_custom_settings: boolean;
+	has_user_settings: boolean;
+	has_device_settings: boolean;
+	has_layout_overrides: boolean;
+}
+
+export interface TileReportItem {
+	id: string;
+	type: string;
+	type_name: string;
+	name: string;
+	custom_name: string | null;
+	default_name: string;
+	has_custom_name: boolean;
+	source: 'builtin' | 'custom';
+	tab_id: string;
+	tab_name: string;
+	layout: WidgetLayout;
+	size_description: string;
+	owner_user_id: string | null;
+	owner_user_name: string;
+	owner_device_id: string | null;
+	owner_device_name: string;
+	settings_scope: 'network' | 'personal';
+	device_overridable: boolean;
+	refresh_interval_seconds: number;
+	network_integration: string | null;
+	is_hidden: boolean;
+	stats: TileReportStats;
+}
+
+export interface TileReportSummary {
+	total_tiles: number;
+	custom_tiles: number;
+	builtin_tiles: number;
+	custom_named_tiles: number;
+	hidden_tiles: number;
+	tabs_count: number;
+}
+
+export interface TileReportResponse {
+	summary: TileReportSummary;
+	tiles: TileReportItem[];
+}
+
 export interface TabMeta {
 	id: string;
 	name: string;
@@ -64,8 +117,6 @@ export interface AppSettings {
 	caldav_url: string;
 	caldav_username: string;
 	has_caldav_password: boolean;
-	icloud_username: string;
-	has_icloud_password: boolean;
 }
 
 export interface VersionInfo {
@@ -73,6 +124,8 @@ export interface VersionInfo {
 	latest_version: string | null;
 	update_available: boolean;
 	release_url: string | null;
+	install_method: string;
+	update_running: boolean;
 }
 
 export type AlertSeverity = 'info' | 'warning' | 'critical';
@@ -104,6 +157,11 @@ export interface IcloudStatus {
 export interface IcloudAuthStartResult {
 	connected: boolean;
 	requires_2fa: boolean;
+}
+
+export interface IcloudCredentials {
+	username: string;
+	has_password: boolean;
 }
 
 export interface JellyfinAudioStream {
@@ -1114,6 +1172,8 @@ export const api = {
 	settings: () => getJSON<AppSettings>('/api/settings'),
 	updateSettings: (partial: Record<string, string>) => patchJSON<AppSettings>('/api/settings', partial),
 	version: () => getJSON<VersionInfo>('/api/version'),
+	health: () => getJSON<{ status: string }>('/api/health'),
+	triggerUpdate: () => postJSON<{ status: string }>('/api/system/update', {}),
 	createAlert: (alert: { message: string; severity?: AlertSeverity; expires_in_minutes?: number }) =>
 		postJSON<Alert>('/api/alerts', alert),
 	dismissAlert: (id: number) => postJSON<{ status: string }>(`/api/alerts/${id}/dismiss`),
@@ -1143,6 +1203,10 @@ export const api = {
 	icloudStatus: () => getJSON<IcloudStatus>('/api/icloud/status'),
 	startIcloudAuth: () => postJSON<IcloudAuthStartResult>('/api/icloud/auth/start'),
 	verifyIcloudAuth: (code: string) => postJSON<IcloudStatus>('/api/icloud/auth/verify', { code }),
+	icloudCredentials: () => getJSON<IcloudCredentials>('/api/icloud/credentials'),
+	setIcloudCredentials: (username: string, password?: string) =>
+		putJSON<IcloudCredentials>('/api/icloud/credentials', { username, ...(password && { password }) }),
+	clearIcloudCredentials: () => deleteJSON<{ status: string }>('/api/icloud/credentials'),
 	askAssistant: (text: string) => postJSON<{ text: string }>('/api/assistant/ask', { text }),
 	assistantTopics: () => getJSON<{ id: string; name: string }[]>('/api/assistant/topics'),
 	widgetTypes: () =>
@@ -1152,6 +1216,7 @@ export const api = {
 	addWidget: (type: string, layout: WidgetLayout, tab?: string) =>
 		postJSON<WidgetSummaryMeta>('/api/widgets', { type, layout, ...(tab !== undefined && { tab }) }),
 	removeWidget: (id: string) => deleteJSON<{ status: string }>(`/api/widgets/${id}`),
+	tilesReport: () => getJSON<TileReportResponse>('/api/reports/tiles'),
 	jellyfinChildren: (id: string, parentId?: string) =>
 		getJSON<JellyfinItem[]>(
 			parentId

@@ -10,6 +10,7 @@
 		type TTSVoice,
 		type NetworkIntegration,
 		type NetworkTestConnectionResult,
+		type IcloudCredentials,
 	} from '$lib/api';
 	import ContainerHostRow from '$lib/components/settings/ContainerHostRow.svelte';
 	import { user, logout } from '$lib/stores/user';
@@ -38,6 +39,10 @@
 
 	let settings = $state<AppSettings | null>(null);
 	let version = $state<VersionInfo | null>(null);
+	let checkingUpdates = $state(false);
+	let updatingNow = $state(false);
+	let updateError = $state<string | null>(null);
+	let updateCheckedOnce = $state(false);
 	let insecureOriginInfo = $state<InsecureOriginInfo | null>(null);
 	let aiModelInput = $state('');
 	let aiReasoningEffortInput = $state('');
@@ -54,6 +59,7 @@
 	let caldavUrlInput = $state('');
 	let caldavUsernameInput = $state('');
 	let caldavPasswordInput = $state('');
+	let icloudCredentials = $state<IcloudCredentials>({ username: '', has_password: false });
 	let icloudUsernameInput = $state('');
 	let icloudPasswordInput = $state('');
 	let openaiTtsEnabledInput = $state(false);
@@ -65,9 +71,12 @@
 	let error = $state<string | null>(null);
 
 	// Each admin-settings section below (AI provider, voice output, Google/MS
-	// calendar, CalDAV, iCloud, timezone) saves independently — see save*()
-	// functions below — rather than sharing one big PATCH, so editing one
-	// doesn't silently resubmit unrelated fields (e.g. API keys) from another.
+	// calendar, CalDAV, timezone) saves independently — see save*() functions
+	// below — rather than sharing one big PATCH, so editing one doesn't
+	// silently resubmit unrelated fields (e.g. API keys) from another. iCloud
+	// Photos credentials are a personal (tier 2) setting, not admin-gated —
+	// see CONTRIBUTING.md's Settings tiers — so they save independently too,
+	// against /api/icloud/credentials rather than /api/settings.
 	let aiProviderSaving = $state(false);
 	let aiProviderSaved = $state(false);
 	let aiProviderError = $state<string | null>(null);
@@ -129,8 +138,29 @@
 		}
 	});
 
+	// iCloud Photos credentials are a personal (tier 2) setting — any
+	// logged-in user, not just admins, so this loads on $user the same way
+	// profileInitialized above does, independent of settingsInitialized below.
+	let icloudInitialized = false;
+
+	$effect(() => {
+		if ($user && !icloudInitialized) {
+			icloudInitialized = true;
+			loadIcloudCredentials();
+		}
+	});
+
+	async function loadIcloudCredentials() {
+		try {
+			icloudCredentials = await api.icloudCredentials();
+			icloudUsernameInput = icloudCredentials.username;
+		} catch {
+			icloudError = get(_)('settings.icloud.load_error');
+		}
+	}
+
 	// /api/settings is admin-only — load it lazily once $user is known to be
-	// an admin, mirroring profileInitialized below, so a member never fires a
+	// an admin, mirroring profileInitialized above, so a member never fires a
 	// request that's guaranteed to 403.
 	let settingsInitialized = false;
 
@@ -151,7 +181,6 @@
 			timezoneInput = settings.timezone;
 			caldavUrlInput = settings.caldav_url;
 			caldavUsernameInput = settings.caldav_username;
-			icloudUsernameInput = settings.icloud_username;
 			openaiTtsEnabledInput = settings.openai_tts_enabled === 'true';
 			openaiTtsModelInput = settings.openai_tts_model;
 			piperTtsEnabledInput = settings.piper_tts_enabled === 'true';
@@ -957,15 +986,24 @@
 		icloudSaved = false;
 		icloudError = null;
 		try {
-			const partial: Record<string, string> = { icloud_username: icloudUsernameInput };
-			if (icloudPasswordInput) partial.icloud_password = icloudPasswordInput;
-			settings = await api.updateSettings(partial);
+			icloudCredentials = await api.setIcloudCredentials(icloudUsernameInput, icloudPasswordInput || undefined);
 			icloudPasswordInput = '';
 			icloudSaved = true;
 		} catch {
-			icloudError = 'Could not save iCloud Photos settings.';
+			icloudError = get(_)('settings.icloud.save_error');
 		} finally {
 			icloudSaving = false;
+		}
+	}
+
+	async function clearIcloudCredentials() {
+		icloudError = null;
+		try {
+			await api.clearIcloudCredentials();
+			icloudCredentials = { username: '', has_password: false };
+			icloudUsernameInput = '';
+		} catch {
+			icloudError = get(_)('settings.icloud.clear_error');
 		}
 	}
 
@@ -992,8 +1030,7 @@
 			| 'google_calendar_client_secret'
 			| 'microsoft_calendar_client_id'
 			| 'microsoft_calendar_client_secret'
-			| 'caldav_password'
-			| 'icloud_password',
+			| 'caldav_password',
 		onError: (message: string) => void,
 	) {
 		onError('');
@@ -1103,6 +1140,49 @@
 			forgettingDeviceId = null;
 			confirmingForgetDeviceId = null;
 		}
+	}
+
+	async function checkForUpdates() {
+		checkingUpdates = true;
+		try {
+			version = await api.version();
+			updateCheckedOnce = true;
+		} catch {
+			// keep existing version data
+		} finally {
+			checkingUpdates = false;
+		}
+	}
+
+	async function pollUntilHealthy(maxAttempts = 30, intervalMs = 3000): Promise<void> {
+		for (let i = 0; i < maxAttempts; i++) {
+			await new Promise<void>((r) => setTimeout(r, intervalMs));
+			try {
+				await api.health();
+				return;
+			} catch {
+				// still restarting
+			}
+		}
+	}
+
+	async function triggerUpdate() {
+		updatingNow = true;
+		updateError = null;
+		try {
+			await api.triggerUpdate();
+		} catch {
+			// A network error here is expected — the backend restarts itself
+			// right after accepting the request, which drops the connection.
+		}
+		// Poll /api/health until the backend comes back (up to ~90 s).
+		await pollUntilHealthy();
+		try {
+			version = await api.version();
+		} catch {
+			// best effort — version panel will refresh on next manual check
+		}
+		updatingNow = false;
 	}
 </script>
 
@@ -1466,44 +1546,6 @@
 					{/if}
 					<button class="save" disabled={caldavSaving} onclick={saveCaldav}>
 						{caldavSaving ? 'Saving…' : 'Save CalDAV'}
-					</button>
-				</section>
-
-				<section>
-					<h3>iCloud Photos</h3>
-					<label>
-						Apple ID
-						<input type="text" bind:value={icloudUsernameInput} />
-					</label>
-
-					<label>
-						Password
-						<input
-							type="password"
-							bind:value={icloudPasswordInput}
-							placeholder={settings.has_icloud_password ? 'Set — enter a new value to replace it' : 'Not set'}
-						/>
-					</label>
-					{#if settings.has_icloud_password}
-						<button class="clear" onclick={() => clearKey('icloud_password', (m) => (icloudError = m))}
-							>Clear password</button
-						>
-					{/if}
-					<p class="hint">
-						Your real Apple ID and account password (Apple doesn't support app-specific passwords here), so this grants
-						full account access, not just Photos — only fill this in if you're comfortable with that. Save this section,
-						then switch a Photos widget to <strong>iCloud (Private Library)</strong> from that widget's detail view and connect
-						(including any 2FA prompt) there.
-					</p>
-
-					{#if icloudError}
-						<p class="hint error">{icloudError}</p>
-					{/if}
-					{#if icloudSaved}
-						<p class="hint">Saved.</p>
-					{/if}
-					<button class="save" disabled={icloudSaving} onclick={saveIcloud}>
-						{icloudSaving ? 'Saving…' : 'Save iCloud Photos'}
 					</button>
 				</section>
 
@@ -2020,6 +2062,41 @@
 		</section>
 
 		<section>
+			<h3>{$_('settings.icloud.heading')}</h3>
+			<label>
+				{$_('settings.icloud.apple_id_label')}
+				<input type="text" bind:value={icloudUsernameInput} />
+			</label>
+
+			<label>
+				{$_('settings.icloud.password_label')}
+				<input
+					type="password"
+					bind:value={icloudPasswordInput}
+					placeholder={icloudCredentials.has_password ? $_('common.password_set_hint') : $_('common.password_not_set')}
+				/>
+			</label>
+			{#if icloudCredentials.has_password}
+				<button class="clear" onclick={clearIcloudCredentials}>{$_('settings.icloud.clear')}</button>
+			{/if}
+			<p class="hint">
+				{$_('settings.icloud.hint_prefix')}<strong>{$_('photos.detail.provider_icloud_private')}</strong>{$_(
+					'settings.icloud.hint_suffix',
+				)}
+			</p>
+
+			{#if icloudError}
+				<p class="hint error">{icloudError}</p>
+			{/if}
+			{#if icloudSaved}
+				<p class="hint">{$_('common.saved')}</p>
+			{/if}
+			<button class="save" disabled={icloudSaving} onclick={saveIcloud}>
+				{icloudSaving ? $_('common.saving') : $_('settings.icloud.save')}
+			</button>
+		</section>
+
+		<section>
 			<h3>{$_('settings.screensaver.heading')}</h3>
 			<label class="checkbox-label">
 				<input type="checkbox" checked={ssEnabled} onchange={toggleScreensaverEnabled} />
@@ -2204,6 +2281,14 @@
 			</button>
 		</section>
 
+		<section>
+			<h3>{$_('reports.title')}</h3>
+			<p class="hint">{$_('reports.subtitle')}</p>
+			<button class="clear" onclick={() => goto('/reports')}>
+				📊 {$_('reports.nav_report_button')}
+			</button>
+		</section>
+
 		{#if insecureOriginInfo?.needsInsecureOriginFlag}
 			<section class="microphone-section">
 				<h3>{$_('settings.microphone.heading')}</h3>
@@ -2271,13 +2356,42 @@
 			<section>
 				<h3>{$_('settings.update.heading')}</h3>
 				<p class="hint">{$_('settings.update.running_version', { values: { version: version.current_version } })}</p>
-				{#if version.update_available}
+
+				<div class="update-check-row">
+					<button
+						id="check-for-updates-btn"
+						class="secondary"
+						onclick={checkForUpdates}
+						disabled={checkingUpdates || updatingNow}
+					>
+						{checkingUpdates ? $_('settings.update.checking') : $_('settings.update.check_now')}
+					</button>
+					{#if version.update_available}
+						<span class="update-badge-inline"
+							>{$_('settings.update.available', { values: { version: version.latest_version } })}</span
+						>
+					{:else if updateCheckedOnce && !checkingUpdates}
+						<span class="hint">{$_('settings.update.up_to_date')}</span>
+					{/if}
+				</div>
+
+				{#if version.update_available && version.release_url}
 					<p class="hint">
-						{$_('settings.update.available', { values: { version: version.latest_version } })}
-						{#if version.release_url}
-							— <a href={version.release_url} target="_blank" rel="noreferrer">{$_('settings.update.view_release')}</a>
-						{/if}
+						<a href={version.release_url} target="_blank" rel="noreferrer">{$_('settings.update.view_release')}</a>
 					</p>
+				{/if}
+
+				{#if version.install_method === 'native' && $user?.role === 'admin'}
+					{#if version.update_running || updatingNow}
+						<p class="hint">{$_('settings.update.update_in_progress')}</p>
+					{:else if version.update_available}
+						<button id="update-now-btn" onclick={triggerUpdate} disabled={updatingNow}>
+							{$_('settings.update.update_now')}
+						</button>
+						{#if updateError}
+							<p class="hint error">{updateError}</p>
+						{/if}
+					{/if}
 				{/if}
 			</section>
 		{/if}
@@ -2289,6 +2403,19 @@
 		padding: 2rem;
 		min-height: 100vh;
 		max-width: 30rem;
+	}
+
+	.update-check-row {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+	}
+
+	.update-badge-inline {
+		font-size: 0.85rem;
+		color: var(--color-accent);
+		font-weight: 500;
 	}
 
 	.back {

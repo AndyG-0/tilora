@@ -22,6 +22,11 @@ const {
 	speak,
 	listNetworkIntegrations,
 	getInsecureOriginInfo,
+	icloudCredentials,
+	setIcloudCredentials,
+	clearIcloudCredentials,
+	health,
+	triggerUpdate,
 } = vi.hoisted(() => ({
 	goto: vi.fn(),
 	settings: vi.fn(),
@@ -41,6 +46,11 @@ const {
 	speak: vi.fn(),
 	listNetworkIntegrations: vi.fn().mockResolvedValue([]),
 	getInsecureOriginInfo: vi.fn().mockReturnValue(null),
+	icloudCredentials: vi.fn(),
+	setIcloudCredentials: vi.fn(),
+	clearIcloudCredentials: vi.fn(),
+	health: vi.fn(),
+	triggerUpdate: vi.fn(),
 }));
 
 vi.mock('$app/navigation', () => ({ goto }));
@@ -61,6 +71,11 @@ vi.mock('$lib/api', () => ({
 		listWidgets,
 		ttsVoices,
 		listNetworkIntegrations,
+		icloudCredentials,
+		setIcloudCredentials,
+		clearIcloudCredentials,
+		health,
+		triggerUpdate,
 	},
 }));
 vi.mock('$lib/speech', () => ({ listBrowserVoices, speak }));
@@ -92,8 +107,6 @@ const BASE_SETTINGS = {
 	caldav_url: '',
 	caldav_username: '',
 	has_caldav_password: false,
-	icloud_username: '',
-	has_icloud_password: false,
 };
 
 const DEFAULT_PREFERENCES = { theme: 'dark', voice_provider: 'browser', voice_id: '', voice_name: '' };
@@ -109,6 +122,8 @@ describe('settings +page.svelte — voice sections', () => {
 			latest_version: null,
 			update_available: false,
 			release_url: null,
+			install_method: '',
+			update_running: false,
 		});
 		widgetTypes.mockResolvedValue([]);
 		listDevices.mockResolvedValue([]);
@@ -120,6 +135,7 @@ describe('settings +page.svelte — voice sections', () => {
 		ttsVoices.mockResolvedValue([]);
 		listBrowserVoices.mockResolvedValue([]);
 		listNetworkIntegrations.mockResolvedValue([]);
+		icloudCredentials.mockResolvedValue({ username: '', has_password: false });
 	});
 
 	it('lets an admin enable OpenAI and Piper TTS and saves the provider fields', async () => {
@@ -265,6 +281,7 @@ describe('settings +page.svelte — language section', () => {
 		ttsVoices.mockResolvedValue([]);
 		listBrowserVoices.mockResolvedValue([]);
 		listNetworkIntegrations.mockResolvedValue([]);
+		icloudCredentials.mockResolvedValue({ username: '', has_password: false });
 	});
 
 	it('persists a locale change and translates the page', async () => {
@@ -308,6 +325,7 @@ describe('settings +page.svelte — screensaver test button', () => {
 		ttsVoices.mockResolvedValue([]);
 		listBrowserVoices.mockResolvedValue([]);
 		listNetworkIntegrations.mockResolvedValue([]);
+		icloudCredentials.mockResolvedValue({ username: '', has_password: false });
 		screensaverSettings.set(null);
 		forceScreensaverPreview.set(false);
 	});
@@ -374,6 +392,7 @@ describe('settings +page.svelte — microphone guidance on insecure origins', ()
 		ttsVoices.mockResolvedValue([]);
 		listBrowserVoices.mockResolvedValue([]);
 		listNetworkIntegrations.mockResolvedValue([]);
+		icloudCredentials.mockResolvedValue({ username: '', has_password: false });
 	});
 
 	it('shows Chrome-specific flag instructions when on HTTP private IP in Chrome', async () => {
@@ -509,6 +528,7 @@ describe('settings +page.svelte — devices section', () => {
 		ttsVoices.mockResolvedValue([]);
 		listBrowserVoices.mockResolvedValue([]);
 		listNetworkIntegrations.mockResolvedValue([]);
+		icloudCredentials.mockResolvedValue({ username: '', has_password: false });
 	});
 
 	it('renders a unified list of devices with (this device) badge on current device', async () => {
@@ -595,5 +615,159 @@ describe('settings +page.svelte — devices section', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Forget' }));
 
 		await waitFor(() => expect(deleteDevice).toHaveBeenCalledWith('dev2'));
+	});
+});
+
+describe('settings +page.svelte — iCloud Photos section', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		user.set({ id: 'user1', name: 'User 1', avatar: null, role: 'member' });
+		device.set({ id: 'dev1', name: 'Kitchen Tablet' });
+		settings.mockResolvedValue({ ...BASE_SETTINGS });
+		version.mockResolvedValue({
+			current_version: '0.1.0',
+			latest_version: null,
+			update_available: false,
+			release_url: null,
+		});
+		widgetTypes.mockResolvedValue([]);
+		listDevices.mockResolvedValue([]);
+		listUsers.mockResolvedValue([]);
+		listHouseholdUsers.mockResolvedValue([]);
+		getPreferences.mockResolvedValue({ ...DEFAULT_PREFERENCES });
+		listWidgets.mockResolvedValue([]);
+		ttsVoices.mockResolvedValue([]);
+		listBrowserVoices.mockResolvedValue([]);
+		listNetworkIntegrations.mockResolvedValue([]);
+		icloudCredentials.mockResolvedValue({ username: '', has_password: false });
+	});
+
+	it('is visible to a non-admin household member, not just admins', async () => {
+		render(Page);
+
+		expect(await screen.findByText('iCloud Photos')).toBeInTheDocument();
+		expect(icloudCredentials).toHaveBeenCalled();
+		expect(settings).not.toHaveBeenCalled();
+	});
+
+	it('saves the Apple ID and password against the per-user credentials endpoint', async () => {
+		setIcloudCredentials.mockResolvedValue({ username: 'user@example.com', has_password: true });
+		render(Page);
+
+		await screen.findByText('iCloud Photos');
+		await fireEvent.input(screen.getByLabelText('Apple ID'), { target: { value: 'user@example.com' } });
+		await fireEvent.input(screen.getByLabelText('Password'), { target: { value: 'hunter2' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Save iCloud Photos' }));
+
+		await waitFor(() => expect(setIcloudCredentials).toHaveBeenCalledWith('user@example.com', 'hunter2'));
+		expect(updateSettings).not.toHaveBeenCalled();
+	});
+
+	it('disconnects via the dedicated clear endpoint once a password is set', async () => {
+		icloudCredentials.mockResolvedValue({ username: 'user@example.com', has_password: true });
+		clearIcloudCredentials.mockResolvedValue({ status: 'ok' });
+		render(Page);
+
+		const disconnect = await screen.findByRole('button', { name: 'Disconnect' });
+		await fireEvent.click(disconnect);
+
+		await waitFor(() => expect(clearIcloudCredentials).toHaveBeenCalled());
+	});
+});
+
+describe('settings +page.svelte — Software update section', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		user.set(null);
+		settings.mockResolvedValue({ ...BASE_SETTINGS });
+		updateSettings.mockResolvedValue({ ...BASE_SETTINGS });
+		version.mockResolvedValue({
+			current_version: '0.1.0',
+			latest_version: null,
+			update_available: false,
+			release_url: null,
+			install_method: '',
+			update_running: false,
+		});
+		widgetTypes.mockResolvedValue([]);
+		listDevices.mockResolvedValue([]);
+		listUsers.mockResolvedValue([]);
+		listHouseholdUsers.mockResolvedValue([]);
+		getPreferences.mockResolvedValue({ ...DEFAULT_PREFERENCES });
+		updatePreferences.mockResolvedValue({ ...DEFAULT_PREFERENCES });
+		listWidgets.mockResolvedValue([]);
+		ttsVoices.mockResolvedValue([]);
+		listBrowserVoices.mockResolvedValue([]);
+		listNetworkIntegrations.mockResolvedValue([]);
+		icloudCredentials.mockResolvedValue({ username: '', has_password: false });
+		health.mockResolvedValue({ status: 'ok' });
+		triggerUpdate.mockResolvedValue({ status: 'update_started' });
+	});
+
+	it('shows the Check for updates button when version info is available', async () => {
+		render(Page);
+
+		const btn = await screen.findByRole('button', { name: 'Check for updates' });
+		expect(btn).toBeInTheDocument();
+	});
+
+	it('re-fetches version info when Check for updates is clicked', async () => {
+		render(Page);
+
+		const btn = await screen.findByRole('button', { name: 'Check for updates' });
+		await fireEvent.click(btn);
+
+		// version() should have been called at least twice: once on mount, once on click
+		await waitFor(() => expect(version).toHaveBeenCalledTimes(2));
+	});
+
+	it('does not show Update now button when install_method is not native', async () => {
+		version.mockResolvedValue({
+			current_version: '0.1.0',
+			latest_version: '0.2.0',
+			update_available: true,
+			release_url: 'https://example.com',
+			install_method: '',
+			update_running: false,
+		});
+		user.set({ id: 'admin1', name: 'Admin', avatar: null, role: 'admin' });
+		render(Page);
+
+		await screen.findByRole('button', { name: 'Check for updates' });
+		expect(screen.queryByRole('button', { name: 'Update now' })).not.toBeInTheDocument();
+	});
+
+	it('shows Update now button for admin on native install with update available', async () => {
+		version.mockResolvedValue({
+			current_version: '0.1.0',
+			latest_version: '0.2.0',
+			update_available: true,
+			release_url: 'https://example.com',
+			install_method: 'native',
+			update_running: false,
+		});
+		user.set({ id: 'admin1', name: 'Admin', avatar: null, role: 'admin' });
+		settings.mockResolvedValue({ ...BASE_SETTINGS });
+		listHouseholdUsers.mockResolvedValue([]);
+		render(Page);
+
+		const btn = await screen.findByRole('button', { name: 'Update now' });
+		expect(btn).toBeInTheDocument();
+	});
+
+	it('does not show Update now button for non-admin on native install', async () => {
+		version.mockResolvedValue({
+			current_version: '0.1.0',
+			latest_version: '0.2.0',
+			update_available: true,
+			release_url: 'https://example.com',
+			install_method: 'native',
+			update_running: false,
+		});
+		user.set({ id: 'member1', name: 'Member', avatar: null, role: 'member' });
+		render(Page);
+
+		await screen.findByRole('button', { name: 'Check for updates' });
+		expect(screen.queryByRole('button', { name: 'Update now' })).not.toBeInTheDocument();
 	});
 });

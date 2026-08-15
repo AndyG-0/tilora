@@ -51,6 +51,9 @@ from app.api import (
     qbittorrent as qbittorrent_api,
 )
 from app.api import (
+    reports as reports_api,
+)
+from app.api import (
     rss as rss_api,
 )
 from app.api import (
@@ -64,6 +67,9 @@ from app.api import (
 )
 from app.api import (
     sports as sports_api,
+)
+from app.api import (
+    system as system_api,
 )
 from app.api import (
     tabs as tabs_api,
@@ -195,6 +201,8 @@ app.include_router(tts_api.router)
 app.include_router(users_api.router)
 app.include_router(setup_api.router)
 app.include_router(admin_api.router)
+app.include_router(system_api.router)
+app.include_router(reports_api.router)
 
 
 @app.get("/api/health")
