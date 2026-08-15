@@ -103,6 +103,17 @@
 			"save": "Stimme speichern",
 			"save_error": "Deine Stimmauswahl konnte nicht gespeichert werden."
 		},
+		"location": {
+			"heading": "Standort",
+			"current": "Aktueller Standort",
+			"search_placeholder": "Stadt suchen…",
+			"searching": "Suche läuft…",
+			"no_results": "Keine passenden Städte gefunden.",
+			"search_failed": "Standortsuche fehlgeschlagen.",
+			"clear": "Standort entfernen",
+			"save": "Standort speichern",
+			"save_error": "Standort konnte nicht gespeichert werden."
+		},
 		"microphone": {
 			"heading": "Mikrofonzugriff",
 			"intro": "Dieses Gerät wird über einfaches HTTP unter einer internen IP-Adresse ({origin}) erreicht. Chrome blockiert den Mikrofonzugriff bei unsicheren Ursprüngen, daher funktioniert der Sprachassistent hier nicht, es sei denn, du erlaubst es manuell. Dies ist für über HTTPS bereitgestellte Seiten nicht erforderlich.",

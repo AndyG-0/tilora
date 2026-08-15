@@ -2251,6 +2251,7 @@ _DEFAULT_PREFERENCES: dict[str, Any] = {
     "voice_id": "",
     "voice_name": "",
     "locale": "en",
+    "location": None,
 }
 
 

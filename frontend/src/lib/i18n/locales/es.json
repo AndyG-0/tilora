@@ -103,6 +103,17 @@
 			"save": "Guardar voz",
 			"save_error": "No se pudo guardar tu selección de voz."
 		},
+		"location": {
+			"heading": "Ubicación",
+			"current": "Ubicación actual",
+			"search_placeholder": "Buscar una ciudad…",
+			"searching": "Buscando…",
+			"no_results": "No se encontraron ciudades coincidentes.",
+			"search_failed": "No se pudo buscar ubicaciones.",
+			"clear": "Quitar ubicación",
+			"save": "Guardar ubicación",
+			"save_error": "No se pudo guardar tu ubicación."
+		},
 		"microphone": {
 			"heading": "Acceso al micrófono",
 			"intro": "Este dispositivo se accede mediante HTTP simple en una dirección IP interna ({origin}). Chrome bloquea el acceso al micrófono en orígenes no seguros, por lo que el asistente de voz no funcionará aquí a menos que lo permitas manualmente. Esto no es necesario para sitios servidos por HTTPS.",

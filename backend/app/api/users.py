@@ -58,12 +58,20 @@ class UpdateUserRequest(BaseModel):
     pin: str | None = Field(default=None, pattern=r"^$|^\d{4,8}$")
 
 
+class LocationPreference(BaseModel):
+    query: str
+    display_name: str
+    latitude: float
+    longitude: float
+
+
 class UpdatePreferencesRequest(BaseModel):
     theme: str | None = None
     voice_provider: str | None = None
     voice_id: str | None = None
     voice_name: str | None = None
     locale: str | None = None
+    location: LocationPreference | None = None
 
 
 def _profile_shape(user: dict[str, Any]) -> dict[str, Any]:

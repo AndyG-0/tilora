@@ -90,6 +90,13 @@ export interface CityResult {
 	longitude: number;
 }
 
+export interface LocationPreference {
+	query: string;
+	display_name: string;
+	latitude: number;
+	longitude: number;
+}
+
 export interface MovieProvider {
 	id: number;
 	name: string;
@@ -1001,6 +1008,7 @@ export interface UserPreferences {
 	voice_id: string;
 	voice_name: string;
 	locale: string;
+	location: LocationPreference | null;
 }
 
 export interface TTSVoice {

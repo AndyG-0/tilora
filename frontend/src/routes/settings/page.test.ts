@@ -16,6 +16,7 @@ const {
 	listHouseholdUsers,
 	getPreferences,
 	updatePreferences,
+	searchCities,
 	listWidgets,
 	ttsVoices,
 	listBrowserVoices,
@@ -40,6 +41,7 @@ const {
 	listHouseholdUsers: vi.fn(),
 	getPreferences: vi.fn(),
 	updatePreferences: vi.fn(),
+	searchCities: vi.fn(),
 	listWidgets: vi.fn().mockResolvedValue([]),
 	ttsVoices: vi.fn(),
 	listBrowserVoices: vi.fn(),
@@ -68,6 +70,7 @@ vi.mock('$lib/api', () => ({
 		listHouseholdUsers,
 		getPreferences,
 		updatePreferences,
+		searchCities,
 		listWidgets,
 		ttsVoices,
 		listNetworkIntegrations,
@@ -300,6 +303,99 @@ describe('settings +page.svelte — language section', () => {
 
 		locale.set('en');
 		await waitLocale();
+	});
+});
+
+describe('settings +page.svelte — location section', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		user.set(null);
+		settings.mockResolvedValue({ ...BASE_SETTINGS });
+		updateSettings.mockResolvedValue({ ...BASE_SETTINGS });
+		version.mockResolvedValue({
+			current_version: '0.1.0',
+			latest_version: null,
+			update_available: false,
+			release_url: null,
+		});
+		widgetTypes.mockResolvedValue([]);
+		listDevices.mockResolvedValue([]);
+		listUsers.mockResolvedValue([]);
+		listHouseholdUsers.mockResolvedValue([]);
+		getPreferences.mockResolvedValue({ ...DEFAULT_PREFERENCES, location: null });
+		updatePreferences.mockResolvedValue({ ...DEFAULT_PREFERENCES, location: null });
+		searchCities.mockResolvedValue([]);
+		listWidgets.mockResolvedValue([]);
+		ttsVoices.mockResolvedValue([]);
+		listBrowserVoices.mockResolvedValue([]);
+		listNetworkIntegrations.mockResolvedValue([]);
+		icloudCredentials.mockResolvedValue({ username: '', has_password: false });
+	});
+
+	it('searches, stages a selection, and saves it on click', async () => {
+		user.set({ id: 'u1', name: 'Member', avatar: null, role: 'member' });
+		searchCities.mockResolvedValue([
+			{ name: 'Fort Worth', admin1: 'Texas', country: 'United States', latitude: 32.7555, longitude: -97.3308 },
+		]);
+		const savedLocation = {
+			query: 'Fort Worth',
+			display_name: 'Fort Worth, Texas',
+			latitude: 32.7555,
+			longitude: -97.3308,
+		};
+		updatePreferences.mockResolvedValue({ ...DEFAULT_PREFERENCES, location: savedLocation });
+		render(Page);
+
+		const input = await screen.findByPlaceholderText('Search for a city…');
+		await fireEvent.input(input, { target: { value: 'Fort Worth' } });
+
+		const result = await screen.findByRole('button', { name: 'Fort Worth, Texas' });
+		await fireEvent.click(result);
+
+		// Selecting stages the choice but does not save yet.
+		expect(updatePreferences).not.toHaveBeenCalled();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Save location' }));
+
+		await waitFor(() => expect(updatePreferences).toHaveBeenCalledWith({ location: savedLocation }));
+		expect(await screen.findByText('Saved.')).toBeInTheDocument();
+	});
+
+	it('clears a saved location', async () => {
+		user.set({ id: 'u1', name: 'Member', avatar: null, role: 'member' });
+		const savedLocation = {
+			query: 'Fort Worth',
+			display_name: 'Fort Worth, Texas',
+			latitude: 32.7555,
+			longitude: -97.3308,
+		};
+		getPreferences.mockResolvedValue({ ...DEFAULT_PREFERENCES, location: savedLocation });
+		updatePreferences.mockResolvedValue({ ...DEFAULT_PREFERENCES, location: null });
+		render(Page);
+
+		await screen.findByText(/Fort Worth, Texas/);
+		await fireEvent.click(screen.getByRole('button', { name: 'Clear location' }));
+
+		await waitFor(() => expect(updatePreferences).toHaveBeenCalledWith({ location: null }));
+		expect(await screen.findByText('Saved.')).toBeInTheDocument();
+	});
+
+	it('shows an error if saving the location fails', async () => {
+		user.set({ id: 'u1', name: 'Member', avatar: null, role: 'member' });
+		searchCities.mockResolvedValue([
+			{ name: 'Fort Worth', admin1: 'Texas', country: 'United States', latitude: 32.7555, longitude: -97.3308 },
+		]);
+		updatePreferences.mockRejectedValue(new Error('network error'));
+		render(Page);
+
+		const input = await screen.findByPlaceholderText('Search for a city…');
+		await fireEvent.input(input, { target: { value: 'Fort Worth' } });
+		const result = await screen.findByRole('button', { name: 'Fort Worth, Texas' });
+		await fireEvent.click(result);
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Save location' }));
+
+		expect(await screen.findByText('Could not save your location.')).toBeInTheDocument();
 	});
 });
 

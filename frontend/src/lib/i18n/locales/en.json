@@ -103,6 +103,17 @@
 			"save": "Save voice",
 			"save_error": "Could not save your voice selection."
 		},
+		"location": {
+			"heading": "Location",
+			"current": "Current location",
+			"search_placeholder": "Search for a city…",
+			"searching": "Searching…",
+			"no_results": "No matching cities found.",
+			"search_failed": "Could not search for locations.",
+			"clear": "Clear location",
+			"save": "Save location",
+			"save_error": "Could not save your location."
+		},
 		"microphone": {
 			"heading": "Microphone access",
 			"intro": "This device is reached over plain HTTP at an internal IP address ({origin}). Chrome blocks microphone access on insecure origins, so the voice assistant won't work here unless you allow it manually. This isn't needed for sites served over HTTPS.",

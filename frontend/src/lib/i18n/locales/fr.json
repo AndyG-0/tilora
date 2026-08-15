@@ -103,6 +103,17 @@
 			"save": "Enregistrer la voix",
 			"save_error": "Impossible d'enregistrer votre sélection de voix."
 		},
+		"location": {
+			"heading": "Localisation",
+			"current": "Localisation actuelle",
+			"search_placeholder": "Rechercher une ville…",
+			"searching": "Recherche…",
+			"no_results": "Aucune ville correspondante trouvée.",
+			"search_failed": "Impossible de rechercher des lieux.",
+			"clear": "Supprimer la localisation",
+			"save": "Enregistrer la localisation",
+			"save_error": "Impossible d'enregistrer votre localisation."
+		},
 		"microphone": {
 			"heading": "Accès au microphone",
 			"intro": "Cet appareil est accessible via HTTP simple à une adresse IP interne ({origin}). Chrome bloque l'accès au microphone sur les origines non sécurisées, donc l'assistant vocal ne fonctionnera pas ici à moins de l'autoriser manuellement. Ce n'est pas nécessaire pour les sites servis en HTTPS.",

@@ -11,6 +11,8 @@
 		type NetworkIntegration,
 		type NetworkTestConnectionResult,
 		type IcloudCredentials,
+		type CityResult,
+		type LocationPreference,
 	} from '$lib/api';
 	import ContainerHostRow from '$lib/components/settings/ContainerHostRow.svelte';
 	import { user, logout } from '$lib/stores/user';
@@ -30,6 +32,7 @@
 		persistVoiceSelection,
 		type VoiceProvider,
 	} from '$lib/stores/voice';
+	import { userLocation, loadLocationFromServer, persistLocation } from '$lib/stores/location';
 	import { listBrowserVoices, speak } from '$lib/speech';
 	import { getInsecureOriginInfo, type InsecureOriginInfo } from '$lib/network';
 	import { _ } from 'svelte-i18n';
@@ -741,6 +744,19 @@
 	let localeSaved = $state(false);
 	let localeError = $state<string | null>(null);
 
+	// Optional location the AI assistant can use for location-aware answers.
+	// Search stages a pending selection; Save/Clear persist it, matching
+	// every other section on this page rather than auto-saving on click.
+	let locationQuery = $state('');
+	let locationResults = $state<CityResult[]>([]);
+	let locationSearching = $state(false);
+	let locationPending = $state<LocationPreference | null>(null);
+	let locationSaving = $state(false);
+	let locationSaved = $state(false);
+	let locationError = $state<string | null>(null);
+	let locationInitialized = false;
+	let locationSearchTimeout: ReturnType<typeof setTimeout>;
+
 	let themeSaving = $state(false);
 	let themeSaved = $state(false);
 	let themeError = $state<string | null>(null);
@@ -755,6 +771,71 @@
 			localeError = get(_)('settings.language.save_error');
 		} finally {
 			localeSaving = false;
+		}
+	}
+
+	function onLocationQueryInput() {
+		clearTimeout(locationSearchTimeout);
+		const trimmed = locationQuery.trim();
+		if (trimmed.length < 2) {
+			locationResults = [];
+			locationSearching = false;
+			return;
+		}
+		locationSearching = true;
+		locationSearchTimeout = setTimeout(async () => {
+			try {
+				locationResults = await api.searchCities(trimmed);
+				locationError = null;
+			} catch {
+				locationError = get(_)('settings.location.search_failed');
+			} finally {
+				locationSearching = false;
+			}
+		}, 300);
+	}
+
+	function locationCityLabel(city: CityResult): string {
+		const region = city.admin1 ?? city.country ?? '';
+		return region ? `${city.name}, ${region}` : city.name;
+	}
+
+	function selectLocation(city: CityResult) {
+		locationPending = {
+			query: locationQuery.trim(),
+			display_name: locationCityLabel(city),
+			latitude: city.latitude,
+			longitude: city.longitude,
+		};
+		locationSaved = false;
+		locationQuery = '';
+		locationResults = [];
+	}
+
+	async function saveLocation() {
+		locationSaving = true;
+		locationError = null;
+		try {
+			await persistLocation(locationPending);
+			locationSaved = true;
+		} catch {
+			locationError = get(_)('settings.location.save_error');
+		} finally {
+			locationSaving = false;
+		}
+	}
+
+	async function clearLocation() {
+		locationSaving = true;
+		locationError = null;
+		try {
+			await persistLocation(null);
+			locationPending = null;
+			locationSaved = true;
+		} catch {
+			locationError = get(_)('settings.location.save_error');
+		} finally {
+			locationSaving = false;
 		}
 	}
 
@@ -777,6 +858,15 @@
 			loadVoiceSelectionFromServer().then(() => {
 				voiceProviderInput = $voiceSelection.provider;
 				voiceIdInput = $voiceSelection.voiceId;
+			});
+		}
+	});
+
+	$effect(() => {
+		if ($user && !locationInitialized) {
+			locationInitialized = true;
+			loadLocationFromServer().then(() => {
+				locationPending = $userLocation;
 			});
 		}
 	});
@@ -2229,6 +2319,49 @@
 		</section>
 
 		<section>
+			<h3>{$_('settings.location.heading')}</h3>
+			{#if locationPending}
+				<p class="hint">{$_('settings.location.current')}: {locationPending.display_name}</p>
+			{/if}
+			<div class="city-search">
+				<input
+					type="text"
+					placeholder={$_('settings.location.search_placeholder')}
+					bind:value={locationQuery}
+					oninput={onLocationQueryInput}
+				/>
+				{#if locationSearching}
+					<p class="hint">{$_('settings.location.searching')}</p>
+				{:else if locationError}
+					<p class="hint error">{locationError}</p>
+				{:else if locationQuery.trim().length >= 2 && locationResults.length === 0}
+					<p class="hint">{$_('settings.location.no_results')}</p>
+				{/if}
+				{#if locationResults.length > 0}
+					<ul class="results">
+						{#each locationResults as city (city.latitude + ',' + city.longitude)}
+							<li>
+								<button disabled={locationSaving} onclick={() => selectLocation(city)}>
+									{locationCityLabel(city)}
+								</button>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
+
+			{#if locationSaved}
+				<p class="hint">{$_('common.saved')}</p>
+			{/if}
+			<button class="clear" disabled={locationSaving || !locationPending} onclick={clearLocation}>
+				{$_('settings.location.clear')}
+			</button>
+			<button class="save" disabled={locationSaving} onclick={saveLocation}>
+				{locationSaving ? $_('common.saving') : $_('settings.location.save')}
+			</button>
+		</section>
+
+		<section>
 			<h3>{$_('settings.language.title')}</h3>
 			<select
 				aria-label={$_('settings.language.title')}
@@ -2578,6 +2711,39 @@
 		cursor: pointer;
 		padding: 0;
 		font-size: 0.85rem;
+	}
+
+	.city-search {
+		margin: 0.5rem 0;
+	}
+
+	.city-search input {
+		width: 100%;
+		max-width: 20rem;
+	}
+
+	.results {
+		list-style: none;
+		margin: 0.5rem 0 0;
+		padding: 0;
+		max-width: 20rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.results button {
+		width: 100%;
+		text-align: left;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		padding: 0.5rem 0.75rem;
+		cursor: pointer;
+	}
+
+	.results button:active {
+		background: var(--color-surface-hover);
 	}
 
 	.button-row {
