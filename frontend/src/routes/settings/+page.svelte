@@ -567,16 +567,21 @@
 	let devicesError = $state<string | null>(null);
 	let deviceNameInput = $state('');
 	let savingDeviceName = $state(false);
+	let editingDeviceName = $state(false);
 	let confirmingForgetDeviceId = $state<string | null>(null);
 	let forgettingDeviceId = $state<string | null>(null);
-	let deviceNameInitialized = false;
 
-	$effect(() => {
-		if ($currentDevice && !deviceNameInitialized) {
-			deviceNameInitialized = true;
-			deviceNameInput = $currentDevice.name;
-		}
-	});
+	function startEditingDeviceName() {
+		deviceNameInput = $currentDevice?.name ?? '';
+		devicesError = null;
+		editingDeviceName = true;
+	}
+
+	function cancelEditingDeviceName() {
+		editingDeviceName = false;
+		deviceNameInput = $currentDevice?.name ?? '';
+		devicesError = null;
+	}
 
 	async function loadDevices() {
 		try {
@@ -1071,13 +1076,36 @@
 	}
 
 	async function saveDeviceName() {
+		const trimmed = deviceNameInput.trim();
+		if (!trimmed) {
+			devicesError = get(_)('settings.devices.empty_name_error');
+			return;
+		}
+		if (trimmed.length > 40) {
+			devicesError = get(_)('settings.devices.rename_error');
+			return;
+		}
+		if (trimmed === $currentDevice?.name) {
+			editingDeviceName = false;
+			return;
+		}
+		if (devices.some((d) => d.id !== $currentDevice?.id && d.name.trim().toLowerCase() === trimmed.toLowerCase())) {
+			devicesError = get(_)('settings.devices.duplicate_name_error');
+			return;
+		}
+
 		savingDeviceName = true;
 		devicesError = null;
 		try {
-			await renameCurrentDevice(deviceNameInput.trim());
+			await renameCurrentDevice(trimmed);
 			await loadDevices();
-		} catch {
-			devicesError = get(_)('settings.devices.rename_error');
+			editingDeviceName = false;
+		} catch (err: unknown) {
+			if (err instanceof Error && err.message) {
+				devicesError = err.message;
+			} else {
+				devicesError = get(_)('settings.devices.rename_error');
+			}
 		} finally {
 			savingDeviceName = false;
 		}
@@ -1928,42 +1956,82 @@
 
 		<section>
 			<h3>{$_('settings.devices.heading')}</h3>
-			{#if $currentDevice}
-				<label>
-					{$_('settings.devices.this_device_label')}
-					<input type="text" bind:value={deviceNameInput} maxlength="40" />
-				</label>
-				<button class="save" disabled={savingDeviceName || !deviceNameInput.trim()} onclick={saveDeviceName}>
-					{savingDeviceName ? $_('common.saving') : $_('settings.devices.rename')}
-				</button>
-			{/if}
 
 			{#if devicesError}
 				<p class="hint error">{devicesError}</p>
 			{/if}
 
-			{#if devices.filter((d) => d.id !== $currentDevice?.id).length > 0}
+			{#if devices.length > 0}
 				<ul class="device-list">
-					{#each devices.filter((d) => d.id !== $currentDevice?.id) as d (d.id)}
+					{#each devices as d (d.id)}
+						{@const isCurrent = d.id === $currentDevice?.id}
 						<li>
-							<span class="device-name">{d.name}</span>
-							{#if confirmingForgetDeviceId === d.id}
-								<span class="confirm-actions">
-									<button
-										class="cancel"
-										onclick={() => (confirmingForgetDeviceId = null)}
-										disabled={forgettingDeviceId === d.id}
-									>
-										{$_('common.cancel')}
-									</button>
-									<button class="danger" onclick={() => forgetDevice(d.id)} disabled={forgettingDeviceId === d.id}>
-										{forgettingDeviceId === d.id ? $_('settings.devices.forgetting') : $_('settings.devices.forget')}
-									</button>
-								</span>
-							{:else}
-								<button class="danger-link" onclick={() => (confirmingForgetDeviceId = d.id)}
-									>{$_('settings.devices.forget_device')}</button
+							{#if isCurrent && editingDeviceName}
+								<form
+									class="device-rename-form"
+									onsubmit={(e) => {
+										e.preventDefault();
+										saveDeviceName();
+									}}
 								>
+									<input
+										type="text"
+										bind:value={deviceNameInput}
+										maxlength="40"
+										aria-label={$_('settings.devices.rename')}
+										disabled={savingDeviceName}
+										onkeydown={(e) => {
+											if (e.key === 'Escape') cancelEditingDeviceName();
+										}}
+									/>
+									<span class="confirm-actions">
+										<button type="button" class="cancel" onclick={cancelEditingDeviceName} disabled={savingDeviceName}>
+											{$_('common.cancel')}
+										</button>
+										<button type="submit" class="save" disabled={savingDeviceName || !deviceNameInput.trim()}>
+											{savingDeviceName ? $_('common.saving') : $_('common.save')}
+										</button>
+									</span>
+								</form>
+							{:else}
+								<span class="device-info">
+									<span class="device-name">{d.name}</span>
+									{#if isCurrent}
+										<span class="device-badge">{$_('settings.devices.this_device_badge')}</span>
+									{/if}
+								</span>
+								<span class="device-actions">
+									{#if isCurrent}
+										<button type="button" class="action-link" onclick={startEditingDeviceName}>
+											{$_('settings.devices.rename_device')}
+										</button>
+									{:else if confirmingForgetDeviceId === d.id}
+										<span class="confirm-actions">
+											<button
+												type="button"
+												class="cancel"
+												onclick={() => (confirmingForgetDeviceId = null)}
+												disabled={forgettingDeviceId === d.id}
+											>
+												{$_('common.cancel')}
+											</button>
+											<button
+												type="button"
+												class="danger"
+												onclick={() => forgetDevice(d.id)}
+												disabled={forgettingDeviceId === d.id}
+											>
+												{forgettingDeviceId === d.id
+													? $_('settings.devices.forgetting')
+													: $_('settings.devices.forget')}
+											</button>
+										</span>
+									{:else}
+										<button type="button" class="danger-link" onclick={() => (confirmingForgetDeviceId = d.id)}>
+											{$_('settings.devices.forget_device')}
+										</button>
+									{/if}
+								</span>
 							{/if}
 						</li>
 					{/each}
@@ -2477,10 +2545,55 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+
+	.device-info {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
 	}
 
 	.device-name {
 		font-size: 0.9rem;
+	}
+
+	.device-badge {
+		font-size: 0.75rem;
+		color: var(--color-accent);
+		border: 1px solid var(--color-accent);
+		border-radius: 999px;
+		padding: 0.1rem 0.5rem;
+		white-space: nowrap;
+	}
+
+	.device-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.device-rename-form {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		width: 100%;
+		flex-wrap: wrap;
+	}
+
+	.device-rename-form input {
+		flex: 1;
+		min-width: 150px;
+	}
+
+	.action-link {
+		background: none;
+		border: none;
+		color: var(--color-accent);
+		text-decoration: underline;
+		cursor: pointer;
+		padding: 0;
+		font-size: 0.85rem;
 	}
 
 	.member-list {

@@ -1071,3 +1071,34 @@ def test_schema_indexes_never_reference_a_column_only_an_alter_migration_adds(tm
                 offenders.append((index_name, table_name, column))
 
     assert offenders == []
+
+
+def test_migration_015_deduplicates_duplicate_device_names(tmp_path):
+    db_path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(db._SCHEMA)
+    conn.executemany(
+        "INSERT INTO devices (id, name, created_at, last_seen_at) VALUES (?, ?, ?, ?)",
+        [
+            ("dev1", "New Device", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
+            ("dev2", "New Device", "2026-01-02T00:00:00Z", "2026-01-02T00:00:00Z"),
+            ("dev3", "New Device", "2026-01-03T00:00:00Z", "2026-01-03T00:00:00Z"),
+            ("dev4", "Tablet", "2026-01-04T00:00:00Z", "2026-01-04T00:00:00Z"),
+            ("dev5", "tablet", "2026-01-05T00:00:00Z", "2026-01-05T00:00:00Z"),
+        ],
+    )
+    conn.commit()
+
+    db._migration_015_deduplicate_device_names(conn)
+    conn.commit()
+
+    rows = conn.execute("SELECT id, name FROM devices ORDER BY created_at ASC").fetchall()
+    conn.close()
+
+    assert rows == [
+        ("dev1", "New Device"),
+        ("dev2", "New Device 2"),
+        ("dev3", "New Device 3"),
+        ("dev4", "Tablet"),
+        ("dev5", "tablet 2"),
+    ]

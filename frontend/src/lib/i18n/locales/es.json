@@ -44,8 +44,12 @@
 		"devices": {
 			"heading": "Dispositivos",
 			"this_device_label": "Este dispositivo",
+			"this_device_badge": "este dispositivo",
 			"rename": "Cambiar nombre de este dispositivo",
+			"rename_device": "Cambiar nombre",
 			"rename_error": "No se pudo cambiar el nombre del dispositivo.",
+			"duplicate_name_error": "Ya existe un dispositivo con ese nombre.",
+			"empty_name_error": "El nombre del dispositivo no puede estar vacío.",
 			"load_error": "No se pudieron cargar los dispositivos.",
 			"forgetting": "Olvidando…",
 			"forget": "Olvidar",

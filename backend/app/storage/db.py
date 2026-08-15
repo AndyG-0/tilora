@@ -898,6 +898,28 @@ ALTER TABLE photo_index_meta_new RENAME TO photo_index_meta;
 """
 
 
+def _migration_015_deduplicate_device_names(conn: sqlite3.Connection) -> None:
+    rows = conn.execute("SELECT id, name FROM devices ORDER BY created_at ASC, id ASC").fetchall()
+    seen_normalized: set[str] = set()
+    for row in rows:
+        device_id = row[0]
+        name = row[1]
+        base_name = name.strip() if name and name.strip() else "New Device"
+        normalized = base_name.casefold()
+        if normalized not in seen_normalized:
+            seen_normalized.add(normalized)
+            if base_name != name:
+                conn.execute("UPDATE devices SET name = ? WHERE id = ?", (base_name, device_id))
+        else:
+            counter = 2
+            candidate = f"{base_name} {counter}"
+            while candidate.casefold() in seen_normalized:
+                counter += 1
+                candidate = f"{base_name} {counter}"
+            seen_normalized.add(candidate.casefold())
+            conn.execute("UPDATE devices SET name = ? WHERE id = ?", (candidate, device_id))
+
+
 _MIGRATIONS: tuple[str | Callable[[sqlite3.Connection], None], ...] = (
     _MIGRATION_001_USERS_DEVICES,
     _migration_002_user_roles,
@@ -913,6 +935,7 @@ _MIGRATIONS: tuple[str | Callable[[sqlite3.Connection], None], ...] = (
     _migration_012_packages_user_id,
     _migration_013_seed_icloud_user_credentials,
     _MIGRATION_014_PHOTO_INDEX_USER_ID,
+    _migration_015_deduplicate_device_names,
 )
 
 

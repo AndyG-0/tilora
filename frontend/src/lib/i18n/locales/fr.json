@@ -44,8 +44,12 @@
 		"devices": {
 			"heading": "Appareils",
 			"this_device_label": "Cet appareil",
+			"this_device_badge": "cet appareil",
 			"rename": "Renommer cet appareil",
+			"rename_device": "Renommer",
 			"rename_error": "Impossible de renommer l'appareil.",
+			"duplicate_name_error": "Un appareil portant ce nom existe déjà.",
+			"empty_name_error": "Le nom de l'appareil ne peut pas être vide.",
 			"load_error": "Impossible de charger les appareils.",
 			"forgetting": "Suppression…",
 			"forget": "Oublier",

@@ -10,6 +10,8 @@ const {
 	version,
 	widgetTypes,
 	listDevices,
+	renameDevice,
+	deleteDevice,
 	listUsers,
 	listHouseholdUsers,
 	getPreferences,
@@ -27,6 +29,8 @@ const {
 	version: vi.fn(),
 	widgetTypes: vi.fn(),
 	listDevices: vi.fn(),
+	renameDevice: vi.fn(),
+	deleteDevice: vi.fn(),
 	listUsers: vi.fn(),
 	listHouseholdUsers: vi.fn(),
 	getPreferences: vi.fn(),
@@ -48,6 +52,8 @@ vi.mock('$lib/api', () => ({
 		version,
 		widgetTypes,
 		listDevices,
+		renameDevice,
+		deleteDevice,
 		listUsers,
 		listHouseholdUsers,
 		getPreferences,
@@ -61,6 +67,7 @@ vi.mock('$lib/speech', () => ({ listBrowserVoices, speak }));
 
 import Page from './+page.svelte';
 import { user } from '$lib/stores/user';
+import { device } from '$lib/stores/device';
 import { widgets } from '$lib/stores/widgets';
 import { screensaverSettings, forceScreensaverPreview } from '$lib/stores/screensaver';
 
@@ -460,5 +467,114 @@ describe('settings +page.svelte — microphone guidance on insecure origins', ()
 
 		await waitFor(() => expect(settings).toHaveBeenCalled());
 		expect(screen.queryByText('Microphone access')).not.toBeInTheDocument();
+	});
+});
+
+describe('settings +page.svelte — devices section', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		user.set({ id: 'user1', name: 'User 1', avatar: null, role: 'member' });
+		device.set({ id: 'dev1', name: 'Kitchen Tablet' });
+		settings.mockResolvedValue({ ...BASE_SETTINGS });
+		version.mockResolvedValue({
+			current_version: '0.1.0',
+			latest_version: null,
+			update_available: false,
+			release_url: null,
+		});
+		widgetTypes.mockResolvedValue([]);
+		listUsers.mockResolvedValue([]);
+		listHouseholdUsers.mockResolvedValue([]);
+		getPreferences.mockResolvedValue({ ...DEFAULT_PREFERENCES });
+		listWidgets.mockResolvedValue([]);
+		ttsVoices.mockResolvedValue([]);
+		listBrowserVoices.mockResolvedValue([]);
+		listNetworkIntegrations.mockResolvedValue([]);
+	});
+
+	it('renders a unified list of devices with (this device) badge on current device', async () => {
+		listDevices.mockResolvedValue([
+			{ id: 'dev1', name: 'Kitchen Tablet', last_seen_at: '2026-01-01T00:00:00Z' },
+			{ id: 'dev2', name: 'Living Room TV', last_seen_at: '2026-01-01T00:00:00Z' },
+		]);
+
+		render(Page);
+
+		expect(await screen.findByText('Kitchen Tablet')).toBeInTheDocument();
+		expect(screen.getByText('Living Room TV')).toBeInTheDocument();
+		expect(screen.getByText('this device')).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Forget device' })).toBeInTheDocument();
+		expect(screen.queryByPlaceholderText('This device')).not.toBeInTheDocument();
+	});
+
+	it('opens rename form when Rename is clicked and allows saving new name', async () => {
+		listDevices.mockResolvedValue([{ id: 'dev1', name: 'Kitchen Tablet', last_seen_at: '2026-01-01T00:00:00Z' }]);
+		renameDevice.mockResolvedValue({ id: 'dev1', name: 'Countertop Tablet' });
+
+		render(Page);
+
+		expect(await screen.findByText('Kitchen Tablet')).toBeInTheDocument();
+		await fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+
+		const input = screen.getByDisplayValue('Kitchen Tablet');
+		expect(input).toBeInTheDocument();
+
+		await fireEvent.input(input, { target: { value: 'Countertop Tablet' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+		await waitFor(() => expect(renameDevice).toHaveBeenCalledWith('Countertop Tablet'));
+	});
+
+	it('cancels rename form and restores previous view', async () => {
+		listDevices.mockResolvedValue([{ id: 'dev1', name: 'Kitchen Tablet', last_seen_at: '2026-01-01T00:00:00Z' }]);
+
+		render(Page);
+
+		expect(await screen.findByText('Kitchen Tablet')).toBeInTheDocument();
+		await fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+
+		expect(screen.getByDisplayValue('Kitchen Tablet')).toBeInTheDocument();
+		await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+		expect(screen.queryByDisplayValue('Kitchen Tablet')).not.toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument();
+	});
+
+	it('prevents renaming to a duplicate device name and shows error', async () => {
+		listDevices.mockResolvedValue([
+			{ id: 'dev1', name: 'Kitchen Tablet', last_seen_at: '2026-01-01T00:00:00Z' },
+			{ id: 'dev2', name: 'Living Room TV', last_seen_at: '2026-01-01T00:00:00Z' },
+		]);
+
+		render(Page);
+
+		expect(await screen.findByText('Kitchen Tablet')).toBeInTheDocument();
+		await fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+
+		const input = screen.getByDisplayValue('Kitchen Tablet');
+		await fireEvent.input(input, { target: { value: 'Living Room TV' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+		expect(renameDevice).not.toHaveBeenCalled();
+		expect(await screen.findByText('A device with that name already exists.')).toBeInTheDocument();
+	});
+
+	it('allows forgetting other devices with confirmation', async () => {
+		listDevices.mockResolvedValue([
+			{ id: 'dev1', name: 'Kitchen Tablet', last_seen_at: '2026-01-01T00:00:00Z' },
+			{ id: 'dev2', name: 'Living Room TV', last_seen_at: '2026-01-01T00:00:00Z' },
+		]);
+		deleteDevice.mockResolvedValue({ status: 'ok' });
+
+		render(Page);
+
+		expect(await screen.findByText('Living Room TV')).toBeInTheDocument();
+		await fireEvent.click(screen.getByRole('button', { name: 'Forget device' }));
+
+		expect(screen.getByRole('button', { name: 'Forget' })).toBeInTheDocument();
+		await fireEvent.click(screen.getByRole('button', { name: 'Forget' }));
+
+		await waitFor(() => expect(deleteDevice).toHaveBeenCalledWith('dev2'));
 	});
 });

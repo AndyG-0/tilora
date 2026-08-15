@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -21,6 +22,16 @@ def _shape(device: dict[str, Any]) -> dict[str, Any]:
     return {"id": device["id"], "name": device["name"]}
 
 
+def _generate_unique_device_name(existing_names: Iterable[str], base: str = "New Device") -> str:
+    normalized = {n.strip().casefold() for n in existing_names if n and n.strip()}
+    if base.casefold() not in normalized:
+        return base
+    counter = 2
+    while f"{base} {counter}".casefold() in normalized:
+        counter += 1
+    return f"{base} {counter}"
+
+
 @router.post("/register")
 async def register_device(request: Request, response: Response):
     # Idempotent: a browser that already has a valid device cookie gets its
@@ -34,9 +45,11 @@ async def register_device(request: Request, response: Response):
 
     device_id = new_token()
     now = datetime.now(UTC).isoformat()
-    await asyncio.to_thread(create_device, device_id, "New Device", now, now)
+    all_devices = await asyncio.to_thread(list_devices)
+    device_name = _generate_unique_device_name(d["name"] for d in all_devices)
+    await asyncio.to_thread(create_device, device_id, device_name, now, now)
     set_device_cookie(response, device_id)
-    return {"id": device_id, "name": "New Device", "is_new": True}
+    return {"id": device_id, "name": device_name, "is_new": True}
 
 
 @router.get("/me")
@@ -46,8 +59,19 @@ async def current_device(device: dict[str, Any] = Depends(get_current_device)):
 
 @router.patch("/me")
 async def rename_current_device(payload: RenameDeviceRequest, device: dict[str, Any] = Depends(get_current_device)):
-    await asyncio.to_thread(update_device, device["id"], name=payload.name)
-    return {"id": device["id"], "name": payload.name}
+    new_name = payload.name.strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="Device name cannot be empty")
+    if len(new_name) > 40:
+        raise HTTPException(status_code=400, detail="Device name must be 40 characters or fewer")
+
+    all_devices = await asyncio.to_thread(list_devices)
+    for other in all_devices:
+        if other["id"] != device["id"] and other["name"].strip().casefold() == new_name.casefold():
+            raise HTTPException(status_code=400, detail=f"A device named '{new_name}' already exists")
+
+    await asyncio.to_thread(update_device, device["id"], name=new_name)
+    return {"id": device["id"], "name": new_name}
 
 
 @router.get("")
