@@ -75,9 +75,21 @@ async def status(user: dict[str, Any] = Depends(get_current_user)):
     return {"connected": icloud_photos.is_connected_cached(user["id"])}
 
 
+@router.get("/credentials")
+async def get_credentials(user: dict[str, Any] = Depends(get_current_user)):
+    creds = await asyncio.to_thread(db.get_user_credentials, user["id"], "icloud") or {}
+    return {"username": creds.get("username") or "", "has_password": bool(creds.get("password"))}
+
+
 @router.put("/credentials")
 async def set_credentials(payload: dict[str, str], user: dict[str, Any] = Depends(get_current_user)):
-    username, password = payload.get("username"), payload.get("password")
+    # A blank password means "keep the current one" — the client never has
+    # the plaintext to resend (it's write-only), so an update that only
+    # touches the username would otherwise 400 against an already-connected
+    # account.
+    existing = await asyncio.to_thread(db.get_user_credentials, user["id"], "icloud") or {}
+    username = payload.get("username") or existing.get("username")
+    password = payload.get("password") or existing.get("password")
     if not icloud_photos.is_configured(username, password):
         raise HTTPException(status_code=400, detail="username and password are required")
     credentials = {"username": username, "password": password}
@@ -85,7 +97,7 @@ async def set_credentials(payload: dict[str, str], user: dict[str, Any] = Depend
     icloud_photos.invalidate_service_cache(user["id"])
     cache.delete("summary:photos")
     cache.delete("detail:photos")
-    return {"status": "ok"}
+    return {"username": username, "has_password": bool(password)}
 
 
 @router.delete("/credentials")

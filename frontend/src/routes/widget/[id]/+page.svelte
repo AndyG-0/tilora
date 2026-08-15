@@ -99,7 +99,15 @@
 	{#if Detail}
 		<!-- Shape is only known at runtime via `data.type`; each Detail
 		     component declares & validates its own expected shape. -->
-		<Detail data={data.detail as never} />
+		<!-- Keyed on widgetId: SvelteKit reuses this component instance across
+		     navigations between two widget detail pages (only `load()`
+		     re-runs), so a Detail component whose state is seeded once from
+		     its initial `data` prop (see e.g. PhotoDetail.svelte's
+		     `state_referenced_locally` seed) would otherwise keep showing the
+		     previous widget's data until its own refetch resolves. -->
+		{#key data.widgetId}
+			<Detail data={data.detail as never} />
+		{/key}
 	{:else}
 		<p>{$_('widget_detail.unknown_widget')}</p>
 	{/if}

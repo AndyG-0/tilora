@@ -2267,3 +2267,68 @@ def save_user_preferences(user_id: str, overrides: dict[str, Any]) -> dict[str, 
     with _connect() as conn:
         _upsert(conn, "user_preferences", {"user_id": user_id, "preferences": json.dumps(merged)}, ("user_id",))
     return merged
+
+
+def get_tile_report_stats() -> dict[str, dict[str, Any]]:
+    """Aggregate per-widget database metrics for the tile reporting page."""
+    with _connect() as conn:
+        chores_rows = conn.execute(
+            "SELECT widget_id, COUNT(*) as total, SUM(CASE WHEN completed = 0 THEN 1 ELSE 0 END) as active "
+            "FROM chores GROUP BY widget_id"
+        ).fetchall()
+        shopping_rows = conn.execute(
+            "SELECT widget_id, COUNT(*) as total, SUM(CASE WHEN checked = 0 THEN 1 ELSE 0 END) as active "
+            "FROM shopping_items GROUP BY widget_id"
+        ).fetchall()
+        alerts_rows = conn.execute(
+            "SELECT widget_id, COUNT(*) as active FROM alerts WHERE dismissed = 0 GROUP BY widget_id"
+        ).fetchall()
+        photo_rows = conn.execute("SELECT widget_id, COUNT(*) as total FROM photo_index GROUP BY widget_id").fetchall()
+        packages_rows = conn.execute("SELECT widget_id, COUNT(*) as total FROM packages GROUP BY widget_id").fetchall()
+        custom_settings = {row["widget_id"] for row in conn.execute("SELECT widget_id FROM widget_settings").fetchall()}
+        user_settings = {
+            row["widget_id"] for row in conn.execute("SELECT DISTINCT widget_id FROM widget_user_settings").fetchall()
+        }
+        device_settings = {
+            row["widget_id"] for row in conn.execute("SELECT DISTINCT widget_id FROM widget_device_settings").fetchall()
+        }
+        layout_overrides = {
+            row["widget_id"] for row in conn.execute("SELECT DISTINCT widget_id FROM widget_layout").fetchall()
+        }
+
+    all_ids: set[str] = (
+        {r["widget_id"] for r in chores_rows}
+        | {r["widget_id"] for r in shopping_rows}
+        | {r["widget_id"] for r in alerts_rows}
+        | {r["widget_id"] for r in photo_rows}
+        | {r["widget_id"] for r in packages_rows}
+        | custom_settings
+        | user_settings
+        | device_settings
+        | layout_overrides
+    )
+
+    chores_map = {r["widget_id"]: {"total": r["total"], "active": r["active"]} for r in chores_rows}
+    shopping_map = {r["widget_id"]: {"total": r["total"], "active": r["active"]} for r in shopping_rows}
+    alerts_map = {r["widget_id"]: r["active"] for r in alerts_rows}
+    photo_map = {r["widget_id"]: r["total"] for r in photo_rows}
+    packages_map = {r["widget_id"]: r["total"] for r in packages_rows}
+
+    result: dict[str, dict[str, Any]] = {}
+    for wid in all_ids:
+        chores_info = chores_map.get(wid, {"total": 0, "active": 0})
+        shopping_info = shopping_map.get(wid, {"total": 0, "active": 0})
+        result[wid] = {
+            "chores_active": chores_info["active"],
+            "chores_total": chores_info["total"],
+            "shopping_active": shopping_info["active"],
+            "shopping_total": shopping_info["total"],
+            "alerts_active": alerts_map.get(wid, 0),
+            "photos_count": photo_map.get(wid, 0),
+            "packages_count": packages_map.get(wid, 0),
+            "has_custom_settings": wid in custom_settings,
+            "has_user_settings": wid in user_settings,
+            "has_device_settings": wid in device_settings,
+            "has_layout_overrides": wid in layout_overrides,
+        }
+    return result

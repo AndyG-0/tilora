@@ -7,9 +7,13 @@ const { renameWidget, goto } = vi.hoisted(() => ({
 }));
 vi.mock('$lib/api', () => ({ api: { renameWidget } }));
 vi.mock('$app/navigation', () => ({ goto }));
-vi.mock('$lib/widgetComponents', () => ({ DETAIL_COMPONENTS: {} }));
 
 import Page from './+page.svelte';
+
+vi.mock('$lib/widgetComponents', async () => {
+	const { default: StubDetail } = await import('./widget-detail.test-stub.svelte');
+	return { DETAIL_COMPONENTS: { stub: StubDetail } };
+});
 
 const baseData = {
 	widgetId: 'weather-b',
@@ -81,5 +85,28 @@ describe('widget detail page — rename control', () => {
 
 		expect(await screen.findByText('Name must be 60 characters or fewer.')).toBeInTheDocument();
 		expect(screen.getByLabelText('Tile name')).toBeInTheDocument();
+	});
+});
+
+describe('widget detail page — remounting the Detail component on navigation', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('shows the new widget’s data instead of the previous widget’s stale state', async () => {
+		// Regression test: SvelteKit reuses this route's component instance
+		// across navigations between two widget detail pages (only `load()`
+		// re-runs) — a Detail component that seeds local state once,
+		// non-reactively, from its initial `data` prop (like PhotoDetail.svelte)
+		// would otherwise keep showing the previously-viewed widget's data.
+		const tileA = { widgetId: 'photos-a', type: 'stub', name: 'Tile A', detail: { label: 'Tile A photos' } };
+		const tileB = { widgetId: 'photos-b', type: 'stub', name: 'Tile B', detail: { label: 'Tile B photos' } };
+
+		const { rerender } = render(Page, { props: { data: tileA } });
+		expect(screen.getByTestId('detail-label')).toHaveTextContent('Tile A photos');
+
+		await rerender({ data: tileB });
+
+		expect(screen.getByTestId('detail-label')).toHaveTextContent('Tile B photos');
 	});
 });

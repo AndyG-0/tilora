@@ -326,7 +326,28 @@ async def update_widget_settings(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    if plugin.settings_scope == "personal":
+    # settings_scope may depend on the plugin's own settings (PhotosPlugin's
+    # does — see its docstring), so it's read off a throwaway instance
+    # carrying the settings this payload would produce, not the plugin's
+    # current (pre-patch) settings. Otherwise a payload that changes scope
+    # (e.g. Photos switching provider between "local"/"icloud_private")
+    # would be access-gated by the tier its *old* settings belonged to
+    # instead of its new ones — see app.api.widgets.add_widget, which has
+    # the same need.
+    prospective = plugin.with_settings({**plugin.config["settings"], **payload})
+    # PhotosPlugin's `provider` (and everything else the background indexer
+    # keys off, see _PHOTO_INDEX_RELEVANT_SETTINGS) has to stay a single
+    # shared value no matter who changes it — both the indexer
+    # (app.plugins.photos.indexer.index_photos) and every other viewer's
+    # reads (app.plugins.scoping.scoped_plugin) key off the registry
+    # singleton's live settings, not a per-user override, so a value stored
+    # only in widget_user_settings would silently never take effect. So
+    # unlike every other personal-scope plugin, Photos never takes the
+    # per-user storage branch below — "personal" here (switching *to*
+    # icloud_private, a viewer connecting their own account) only means the
+    # admin gate a couple lines down is skipped, not that the value is
+    # scoped per-user.
+    if prospective.settings_scope == "personal" and not isinstance(plugin, PhotosPlugin):
         current = await asyncio.to_thread(get_widget_user_settings, user["id"], widget_id) or {}
         merged = {**plugin.config["settings"], **current, **payload}
         await asyncio.to_thread(save_widget_user_settings, user["id"], widget_id, merged)
@@ -338,7 +359,10 @@ async def update_widget_settings(
             cache.delete_prefix(_cache_key_prefix("detail", plugin, user, device))
         return merged
 
-    require_write_access(plugin, user)
+    if prospective.settings_scope == "network":
+        require_write_access(prospective, user)
+    # else: PhotosPlugin settling into (or staying in) "personal" scope —
+    # no admin gate, but still falls through to the shared-tier write below.
     plugin_cls = type(plugin)
     if plugin_cls.network_integration_type:
         # Connection fields (host, password, ...) live in a network

@@ -467,6 +467,7 @@
 			<span class="update-badge" aria-label={$_('dashboard.update_available')}></span>
 		{/if}
 	</button>
+	<button class="icon-button" onclick={() => goto('/reports')} aria-label={$_('reports.title')}> 📊 </button>
 	<button class="icon-button" onclick={cycleTheme} aria-label={$_('dashboard.change_theme')}>
 		{THEME_ICONS[$theme] ?? '🎨'}
 	</button>

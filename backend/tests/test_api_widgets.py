@@ -519,6 +519,57 @@ def test_update_settings_skips_reindex_for_unrelated_keys(client, dashboard_yaml
     assert calls == []
 
 
+def test_update_settings_switches_photos_provider_to_personal_scope_without_admin(
+    member_client, dashboard_yaml, tmp_db, monkeypatch
+):
+    # Regression test: settings_scope used to be read off the plugin's
+    # *pre-patch* settings, so a member switching a "local" (network-scope)
+    # Photos widget to "icloud_private" (personal-scope, connecting their
+    # own Apple ID) was incorrectly rejected as a network-scope change.
+    plugin = PhotosPlugin({"id": "photos", "settings": {"provider": "local", "directory": "/a"}})
+    registry.register(plugin)
+    monkeypatch.setattr(widgets, "schedule_photo_index", lambda p: None)
+
+    response = member_client.patch("/api/widgets/photos/settings", json={"provider": "icloud_private"})
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == "icloud_private"
+
+
+def test_update_settings_keeps_photos_provider_in_the_shared_tier(client, dashboard_yaml, tmp_db, monkeypatch):
+    # Photos' `provider` (and everything else the background indexer and
+    # app.plugins.scoping.scoped_plugin key off) has to stay a single value
+    # the whole registry singleton agrees on — unlike weather/sports/etc,
+    # it must never be split into a per-user widget_user_settings override,
+    # or indexing and every other viewer's reads would silently keep using
+    # the old provider forever.
+    plugin = PhotosPlugin({"id": "photos", "settings": {"provider": "local", "directory": "/a"}})
+    registry.register(plugin)
+    monkeypatch.setattr(widgets, "schedule_photo_index", lambda p: None)
+
+    client.patch("/api/widgets/photos/settings", json={"provider": "icloud_private"})
+
+    assert plugin.config["settings"]["provider"] == "icloud_private"
+    assert db.get_widget_settings("photos")["provider"] == "icloud_private"
+    assert db.get_widget_user_settings(TEST_USER_ID, "photos") is None
+
+
+def test_update_settings_rejects_member_switching_photos_provider_back_to_local(
+    member_client, dashboard_yaml, tmp_db, monkeypatch
+):
+    # The reverse direction (icloud_private -> local) becomes a
+    # network-scope, household-wide change again, so it needs admin just
+    # like any other network-scope write.
+    plugin = PhotosPlugin({"id": "photos", "settings": {"provider": "icloud_private"}})
+    registry.register(plugin)
+    monkeypatch.setattr(widgets, "schedule_photo_index", lambda p: None)
+
+    response = member_client.patch("/api/widgets/photos/settings", json={"provider": "local"})
+
+    assert response.status_code == 403
+    assert plugin.config["settings"]["provider"] == "icloud_private"
+
+
 def test_update_settings_reschedules_speedtest_when_interval_changes(client, dashboard_yaml, tmp_db, monkeypatch):
     plugin = SpeedtestPlugin({"id": "speedtest", "settings": dict(SpeedtestPlugin.default_settings)})
     registry.register(plugin)
