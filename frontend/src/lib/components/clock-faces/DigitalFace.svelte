@@ -17,9 +17,12 @@
 
 <style>
 	.digital {
-		font-size: clamp(1.4rem, 32cqh, 3rem);
+		font-size: clamp(1.3rem, min(36cqh, 15cqw), 4.5rem);
 		font-weight: 600;
 		font-variant-numeric: tabular-nums;
+		text-align: center;
+		line-height: 1;
+		white-space: nowrap;
 	}
 
 	.digital.large {

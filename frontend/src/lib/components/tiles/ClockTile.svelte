@@ -34,5 +34,18 @@
 </script>
 
 <TileCard {widgetId}>
-	<ClockFace {style} {now} {timezone} size="tile" />
+	<div class="clock-tile">
+		<ClockFace {style} {now} {timezone} size="tile" />
+	</div>
 </TileCard>
+
+<style>
+	.clock-tile {
+		width: 100%;
+		height: 100%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		overflow: hidden;
+	}
+</style>
