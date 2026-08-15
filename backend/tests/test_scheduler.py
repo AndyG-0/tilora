@@ -303,7 +303,7 @@ def test_schedule_package_refresh_uses_90_minute_interval():
 async def test_run_package_refresh_noop_without_api_key(tmp_db, monkeypatch):
     monkeypatch.setattr(scheduler_module.settings, "track17_api_key", None)
     plugin = make_packages_plugin()
-    package = db.add_package(plugin.id, "1Z999AA1")
+    package = db.add_package(plugin.id, "alice", "1Z999AA1")
 
     await scheduler_module.run_package_refresh(plugin)
 
@@ -325,7 +325,7 @@ async def test_run_package_refresh_noop_when_no_pending_packages(tmp_db, monkeyp
 async def test_run_package_refresh_updates_pending_packages(tmp_db, monkeypatch):
     monkeypatch.setattr(scheduler_module.settings, "track17_api_key", "test-key")
     plugin = make_packages_plugin()
-    package = db.add_package(plugin.id, "1Z999AA1")
+    package = db.add_package(plugin.id, "alice", "1Z999AA1")
 
     async def fake_get_track_info(api_key, tracking_numbers):
         assert api_key == "test-key"
@@ -353,7 +353,7 @@ async def test_run_package_refresh_updates_pending_packages(tmp_db, monkeypatch)
 async def test_run_package_refresh_skips_packages_17track_returns_nothing_for(tmp_db, monkeypatch):
     monkeypatch.setattr(scheduler_module.settings, "track17_api_key", "test-key")
     plugin = make_packages_plugin()
-    package = db.add_package(plugin.id, "1Z999AA1")
+    package = db.add_package(plugin.id, "alice", "1Z999AA1")
 
     async def fake_get_track_info(api_key, tracking_numbers):
         return {}
@@ -368,7 +368,7 @@ async def test_run_package_refresh_skips_packages_17track_returns_nothing_for(tm
 async def test_run_package_refresh_swallows_track17_errors(tmp_db, monkeypatch):
     monkeypatch.setattr(scheduler_module.settings, "track17_api_key", "test-key")
     plugin = make_packages_plugin()
-    db.add_package(plugin.id, "1Z999AA1")
+    db.add_package(plugin.id, "alice", "1Z999AA1")
 
     async def failing_get_track_info(api_key, tracking_numbers):
         raise scheduler_module.track17_client.Track17Error("boom")

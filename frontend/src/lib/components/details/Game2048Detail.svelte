@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
+	import { api } from '$lib/api';
 	import {
 		addRandomTile,
 		hasMoves,
@@ -13,10 +15,15 @@
 
 	interface Game2048DetailData {
 		title: string;
+		best_score: number;
 	}
 
 	let { data }: { data: Game2048DetailData } = $props();
 
+	// Legacy client-side-only storage, kept only as a one-time migration
+	// source (see onMount) — the backend is now the source of truth, since a
+	// best score should follow the user to any device, not stay stuck on the
+	// one it was set on.
 	const BEST_SCORE_KEY = 'game2048-best-score';
 	const SWIPE_THRESHOLD_PX = 24;
 	const KEY_TO_DIRECTION: Record<string, Direction> = {
@@ -28,17 +35,19 @@
 
 	let board = $state<Board>(newGame());
 	let score = $state(0);
-	let best = $state(0);
+	// svelte-ignore state_referenced_locally -- seed local state from the
+	// initial load once; subsequent updates go through saveBestIfNeeded.
+	let best = $state(data.best_score);
 	let gameOver = $state(false);
 	let won = $state(false);
 
-	function saveBestIfNeeded() {
+	async function saveBestIfNeeded() {
 		if (score <= best) return;
 		best = score;
 		try {
-			localStorage.setItem(BEST_SCORE_KEY, String(best));
+			await api.updateWidgetSettings(page.params.id!, { best_score: best });
 		} catch {
-			// best score just won't persist across reloads (e.g. private browsing)
+			// best score just won't persist across reloads (e.g. network hiccup)
 		}
 	}
 
@@ -90,10 +99,18 @@
 	}
 
 	onMount(() => {
+		// One-time migration: if the backend has no stored best yet but this
+		// browser has a pre-existing localStorage one, push it up once so an
+		// existing best score isn't lost, then stop touching localStorage.
+		if (best > 0) return;
 		try {
-			best = Number(localStorage.getItem(BEST_SCORE_KEY) ?? 0);
+			const local = Number(localStorage.getItem(BEST_SCORE_KEY) ?? 0);
+			if (local > 0) {
+				best = local;
+				api.updateWidgetSettings(page.params.id!, { best_score: best }).catch(() => {});
+			}
 		} catch {
-			// keep best at 0 (e.g. private browsing blocks localStorage)
+			// no localStorage to migrate from (e.g. private browsing)
 		}
 	});
 </script>

@@ -104,6 +104,14 @@ class AsusRouterPlugin(Plugin):
         async def get_asus_router_status() -> dict[str, Any]:
             return await self.get_summary()
 
+        async def get_asus_router_clients() -> list[dict[str, Any]]:
+            if not self._is_connected():
+                return []
+            return await asus_router_client.get_clients(self.config["settings"], self.id)
+
+        async def send_wake_on_lan(mac: str) -> dict[str, Any]:
+            return await asus_router_client.send_wake_on_lan(self.config["settings"], mac)
+
         return [
             ToolDef(
                 name="get_asus_router_status",
@@ -111,5 +119,27 @@ class AsusRouterPlugin(Plugin):
                 "clients, and whether the router is currently reachable.",
                 parameters={"type": "object", "properties": {}},
                 handler=get_asus_router_status,
-            )
+            ),
+            ToolDef(
+                name="get_asus_router_clients",
+                description="Get the list of connected clients on the Asus router, including IP, "
+                "MAC address, wired/wireless connection type, and signal information.",
+                parameters={"type": "object", "properties": {}},
+                handler=get_asus_router_clients,
+            ),
+            ToolDef(
+                name="asus_router_wake_on_lan",
+                description="Send a Wake-on-LAN (WOL) magic packet to a device's MAC address via the router.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "mac": {
+                            "type": "string",
+                            "description": "The MAC address of the target device to wake (e.g. '00:11:22:33:44:55')",
+                        }
+                    },
+                    "required": ["mac"],
+                },
+                handler=send_wake_on_lan,
+            ),
         ]

@@ -9,6 +9,7 @@ import httpx
 
 from app.i18n import t
 from app.plugins.base import Plugin, ToolDef
+from app.plugins.flights.aircraft import lookup_aircraft
 from app.plugins.flights.airlines import lookup
 from app.storage.cache import cache
 
@@ -76,6 +77,7 @@ def _aircraft_kind(category: str | None) -> str:
 def _normalize(ac: dict[str, Any]) -> dict[str, Any]:
     callsign = (ac.get("flight") or "").strip()
     airline = lookup(callsign)
+    aircraft = lookup_aircraft(ac.get("t"))
     category = ac.get("category")
     return {
         "callsign": callsign,
@@ -83,6 +85,7 @@ def _normalize(ac: dict[str, Any]) -> dict[str, Any]:
         "airline_name": airline["airline_name"],
         "airline_iata": airline["airline_iata"],
         "aircraft_type": ac.get("t"),
+        "aircraft_name": aircraft["name"],
         "aircraft_kind": _aircraft_kind(category),
         "category": category,
         "registration": ac.get("r"),
@@ -192,6 +195,7 @@ class FlightsPlugin(Plugin):
         "longitude": -97.3308,
         "location_name": "Fort Worth, TX",
         "radius_nm": 15,
+        "speed_unit": "mph",
     }
 
     async def _fetch(self, client: httpx.AsyncClient) -> list[dict[str, Any]]:
@@ -238,6 +242,7 @@ class FlightsPlugin(Plugin):
             "latitude": settings["latitude"],
             "longitude": settings["longitude"],
             "radius_nm": settings.get("radius_nm", 15),
+            "speed_unit": settings.get("speed_unit", "mph"),
             "count": len(flights),
             "flights": flights[:_DETAIL_CAP],
         }

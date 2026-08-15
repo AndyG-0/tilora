@@ -4,11 +4,12 @@
 	import { widgets } from '$lib/stores/widgets';
 	import { isScreensaverAllowedType } from '$lib/screensaverTypes';
 	import ScreensaverContent from '$lib/components/screensaver/ScreensaverContent.svelte';
+	import { getRotationIndex, setRotationIndex } from '$lib/stores/screensaverProgress';
 	import { _ } from 'svelte-i18n';
 
 	let { settings, ondismiss }: { settings: ScreensaverSettings; ondismiss: () => void } = $props();
 
-	let index = $state(0);
+	let index = $state(getRotationIndex());
 	let detail = $state<Record<string, unknown> | null>(null);
 	let currentId = $state<string | null>(null);
 	let rotationTimer: ReturnType<typeof setInterval> | undefined;
@@ -44,6 +45,7 @@
 				return;
 			}
 			index = (index + 1) % ids.length;
+			setRotationIndex(index);
 		}
 		currentId = null;
 		detail = null;
@@ -52,6 +54,7 @@
 	function advance() {
 		if (settings.widget_ids.length === 0) return;
 		index = (index + 1) % settings.widget_ids.length;
+		setRotationIndex(index);
 		showCurrent();
 	}
 
@@ -70,6 +73,7 @@
 			<div class="content" transition:fade={{ duration: 400 }}>
 				<!-- Shape is only known at runtime via each widget's own type, same as widget/[id]/+page.svelte. -->
 				<ScreensaverContent
+					id={currentId!}
 					type={currentWidget.type}
 					data={detail}
 					textAnimationStyle={settings.text_animation_style}

@@ -108,20 +108,28 @@ def test_forget_device_removes_it(client, tmp_db):
     assert db.get_device("other") is None
 
 
-def test_forget_device_does_not_delete_the_users_widget_layout(client, tmp_db):
-    # Layout is keyed by breakpoint, not device, so forgetting a device must
-    # leave the user's saved tile positions untouched.
+def test_forget_device_deletes_that_devices_widget_layout_only(client, tmp_db):
+    # Layout is keyed by (user, device, breakpoint) — forgetting a device
+    # drops that screen's saved tile positions but must leave the same
+    # user's layout on the device they're forgetting it from untouched.
     db.create_user("alice", "Alice", None, None, None, None, "2026-01-01T00:00:00Z")
     db.create_session("sess1", "alice", "default", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
     client.cookies.set("tilora_session", "sess1")
     db.create_device("other", "Other Device", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")
-    db.save_widget_layout("alice", "wide", "clock", {"col": 2, "row": 1, "colSpan": 1, "rowSpan": 1})
-    client.post("/api/devices/register")
+    db.save_widget_layout("alice", "other", "wide", "clock", {"col": 2, "row": 1, "colSpan": 1, "rowSpan": 1})
+    this_device = client.post("/api/devices/register").json()["id"]
+    db.save_widget_layout("alice", this_device, "wide", "clock", {"col": 3, "row": 1, "colSpan": 1, "rowSpan": 1})
 
     response = client.delete("/api/devices/other")
 
     assert response.status_code == 200
-    assert db.get_widget_layout("alice", "wide", "clock") == {"col": 2, "row": 1, "colSpan": 1, "rowSpan": 1}
+    assert db.get_widget_layout("alice", "other", "wide", "clock") is None
+    assert db.get_widget_layout("alice", this_device, "wide", "clock") == {
+        "col": 3,
+        "row": 1,
+        "colSpan": 1,
+        "rowSpan": 1,
+    }
 
 
 def test_forget_device_refuses_to_delete_the_current_device(client, tmp_db):

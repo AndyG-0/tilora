@@ -215,6 +215,63 @@
 
 	const widgetId = $derived(page.params.id!);
 
+	interface PendingRule {
+		rule: HDHomeRunRecordingRule;
+		createdAt: number;
+	}
+
+	// SiliconDust's cloud recording_rules API is eventually consistent: a
+	// rule created via one request sometimes isn't reflected yet in the very
+	// next widgetDetail fetch. Track rules we know were just created (from
+	// the mutation's own response) that a fresh fetch hasn't confirmed yet,
+	// so they stay visible (flagged as pending) instead of appearing to
+	// silently fail or vanish. Persisted per-widget so the pending flag
+	// survives a page reload, since the vendor can take longer to catch up
+	// than the user takes to navigate away and back.
+	const PENDING_RULES_STORAGE_KEY = `hdhomerun-pending-rules:${page.params.id}`;
+	const PENDING_RULE_MAX_AGE_MS = 30 * 60 * 1000;
+
+	function loadPendingRules(): PendingRule[] {
+		if (typeof localStorage === 'undefined') return [];
+		try {
+			const raw = localStorage.getItem(PENDING_RULES_STORAGE_KEY);
+			if (!raw) return [];
+			const parsed = JSON.parse(raw) as PendingRule[];
+			const cutoff = Date.now() - PENDING_RULE_MAX_AGE_MS;
+			return parsed.filter((p) => p.createdAt >= cutoff);
+		} catch {
+			return [];
+		}
+	}
+
+	// svelte-ignore state_referenced_locally -- seeds initial pending state
+	// from storage once; every subsequent change is written back out below.
+	let pendingRules = $state<PendingRule[]>(loadPendingRules());
+
+	const pendingRuleIds = $derived(new Set(pendingRules.map((p) => p.rule.RecordingRuleID)));
+
+	const displayedRecordingRules = $derived.by(() => {
+		const real = hdhomerun.recording_rules ?? [];
+		const realIds = new Set(real.map((r) => r.RecordingRuleID));
+		return [...real, ...pendingRules.filter((p) => !realIds.has(p.rule.RecordingRuleID)).map((p) => p.rule)];
+	});
+
+	$effect(() => {
+		const realIds = new Set((hdhomerun.recording_rules ?? []).map((r) => r.RecordingRuleID));
+		if (pendingRules.some((p) => realIds.has(p.rule.RecordingRuleID))) {
+			pendingRules = pendingRules.filter((p) => !realIds.has(p.rule.RecordingRuleID));
+		}
+	});
+
+	$effect(() => {
+		if (typeof localStorage === 'undefined') return;
+		if (pendingRules.length > 0) {
+			localStorage.setItem(PENDING_RULES_STORAGE_KEY, JSON.stringify(pendingRules));
+		} else {
+			localStorage.removeItem(PENDING_RULES_STORAGE_KEY);
+		}
+	});
+
 	function watchChannel(channel: HDHomeRunChannel) {
 		if (channel.playback_url) {
 			playingMedia = {
@@ -299,21 +356,63 @@
 		};
 	}
 
+	function watchLiveForRecording(recording: HDHomeRunRecording) {
+		if (!recording.channel_number) return;
+		const channel = hdhomerun.channels.find((c) => c.channel_number === recording.channel_number);
+		if (channel) {
+			watchChannel(channel);
+		} else {
+			const fallbackChannel: HDHomeRunChannel = {
+				channel_number: recording.channel_number,
+				name: recording.channel_name || recording.channel_number,
+				is_hd: true,
+				is_drm: false,
+				stream_url: '',
+				playback_url: `/api/hdhomerun/${widgetId}/watch/${recording.channel_number}`,
+				now: null,
+				next: null,
+			};
+			watchChannel(fallbackChannel);
+		}
+	}
+
+	async function applyRuleMutation(mutate: () => Promise<HDHomeRunRecordingRule[]>) {
+		// Diff against what we already knew about *before* this mutation, so
+		// only genuinely new rules from this action get flagged pending —
+		// not older rules that simply happen to be missing from this
+		// particular fetch for unrelated reasons.
+		const previousIds = new Set((hdhomerun.recording_rules ?? []).map((r) => r.RecordingRuleID));
+		const knownRules = await mutate();
+		if (!Array.isArray(knownRules)) {
+			return;
+		}
+		hdhomerun.recording_rules = knownRules;
+		const newlyCreated = knownRules.filter((r) => !previousIds.has(r.RecordingRuleID));
+
+		hdhomerun = await api.widgetDetail<HDHomeRunDetailData>(widgetId);
+
+		const confirmedIds = new Set((hdhomerun.recording_rules ?? []).map((r) => r.RecordingRuleID));
+		const stillUnconfirmed = newlyCreated.filter((r) => !confirmedIds.has(r.RecordingRuleID));
+		const createdAt = Date.now();
+		pendingRules = [
+			...pendingRules.filter((p) => !confirmedIds.has(p.rule.RecordingRuleID)),
+			...stillUnconfirmed.map((rule) => ({ rule, createdAt })),
+		];
+	}
+
 	async function recordShowEpisode(seriesId?: string | null, channelNumber?: string, startTime?: number | null) {
 		const targetId = seriesId || channelNumber || 'now';
 		recordingLoading = targetId;
 		try {
-			const updatedRules = await api.addHDHomeRunRecordingRule(widgetId, {
-				series_id: seriesId || 'auto',
-				channel: channelNumber,
-				date_time: startTime ?? undefined,
-			});
-			if (Array.isArray(updatedRules)) {
-				hdhomerun.recording_rules = updatedRules;
-			}
-			hdhomerun = await api.widgetDetail<HDHomeRunDetailData>(widgetId);
-		} catch {
-			error = get(_)('common.connection_save_error');
+			await applyRuleMutation(() =>
+				api.addHDHomeRunRecordingRule(widgetId, {
+					series_id: seriesId || 'auto',
+					channel: channelNumber,
+					date_time: startTime ?? undefined,
+				}),
+			);
+		} catch (err) {
+			error = err instanceof Error && err.message ? err.message : get(_)('common.connection_save_error');
 		} finally {
 			recordingLoading = null;
 		}
@@ -322,16 +421,11 @@
 	async function recordShowSeries(seriesId: string, channelNumber?: string) {
 		recordingLoading = seriesId;
 		try {
-			const updatedRules = await api.addHDHomeRunRecordingRule(widgetId, {
-				series_id: seriesId,
-				channel: channelNumber,
-			});
-			if (Array.isArray(updatedRules)) {
-				hdhomerun.recording_rules = updatedRules;
-			}
-			hdhomerun = await api.widgetDetail<HDHomeRunDetailData>(widgetId);
-		} catch {
-			error = get(_)('common.connection_save_error');
+			await applyRuleMutation(() =>
+				api.addHDHomeRunRecordingRule(widgetId, { series_id: seriesId, channel: channelNumber }),
+			);
+		} catch (err) {
+			error = err instanceof Error && err.message ? err.message : get(_)('common.connection_save_error');
 		} finally {
 			recordingLoading = null;
 		}
@@ -340,13 +434,10 @@
 	async function cancelRecordingRule(ruleId: string) {
 		recordingLoading = ruleId;
 		try {
-			const updatedRules = await api.deleteHDHomeRunRecordingRule(widgetId, ruleId);
-			if (Array.isArray(updatedRules)) {
-				hdhomerun.recording_rules = updatedRules;
-			}
-			hdhomerun = await api.widgetDetail<HDHomeRunDetailData>(widgetId);
-		} catch {
-			error = get(_)('common.connection_save_error');
+			pendingRules = pendingRules.filter((p) => p.rule.RecordingRuleID !== ruleId);
+			await applyRuleMutation(() => api.deleteHDHomeRunRecordingRule(widgetId, ruleId));
+		} catch (err) {
+			error = err instanceof Error && err.message ? err.message : get(_)('common.connection_save_error');
 		} finally {
 			recordingLoading = null;
 		}
@@ -642,13 +733,65 @@
 		<p class="hint">{$_('hdhomerun.detail.not_connected_hint')}</p>
 	{:else}
 		{#if hdhomerun.tuner_connected && hdhomerun.tuner_info}
-			<p class="tuner-info">
-				{hdhomerun.tuner_info.friendly_name}
-				{#if hdhomerun.tuner_info.model_number}· {hdhomerun.tuner_info.model_number}{/if}
+			<div class="tuner-info">
+				<span>{hdhomerun.tuner_info.friendly_name}</span>
+				{#if hdhomerun.tuner_info.model_number}<span>· {hdhomerun.tuner_info.model_number}</span>{/if}
 				{#if hdhomerun.tuner_info.tuner_count}
-					· {$_('hdhomerun.detail.tuner_count', { values: { count: hdhomerun.tuner_info.tuner_count } })}
+					<span>·</span>
+					<div
+						class="tuner-count-container"
+						tabindex="0"
+						role="button"
+						aria-haspopup="true"
+						aria-label={$_('hdhomerun.detail.tuner_count', { values: { count: hdhomerun.tuner_info.tuner_count } })}
+					>
+						<span class="tuner-count-pill">
+							{$_('hdhomerun.detail.tuner_count', { values: { count: hdhomerun.tuner_info.tuner_count } })}
+							{#if hdhomerun.tuners && hdhomerun.tuners.some((t) => t.in_use)}
+								<span class="tuner-active-dot" aria-hidden="true"></span>
+							{/if}
+						</span>
+						<div class="tuner-status-popover" role="tooltip">
+							<div class="tuner-status-header">{$_('hdhomerun.detail.tuner_status_heading')}</div>
+							{#if hdhomerun.tuners && hdhomerun.tuners.length > 0}
+								<ul class="tuner-status-list">
+									{#each hdhomerun.tuners as tuner (tuner.index)}
+										<li class="tuner-status-row" class:in-use={tuner.in_use}>
+											<div class="tuner-status-label-group">
+												<span class="tuner-status-indicator" class:active={tuner.in_use}></span>
+												<span class="tuner-status-name">
+													{$_('hdhomerun.detail.tuner_label', { values: { index: tuner.index } })}
+												</span>
+											</div>
+											<div class="tuner-status-details">
+												{#if tuner.in_use}
+													<span class="tuner-channel">
+														{#if tuner.channel_number}<span class="tuner-ch-num">{tuner.channel_number}</span>{/if}
+														{#if tuner.channel_name}<span class="tuner-ch-name">{tuner.channel_name}</span>{:else}<span
+																class="tuner-in-use-tag">{$_('hdhomerun.detail.tuner_in_use')}</span
+															>{/if}
+													</span>
+													{#if tuner.signal_strength_percent != null}
+														<span class="tuner-signal">
+															{$_('hdhomerun.detail.tuner_signal', {
+																values: { percent: tuner.signal_strength_percent },
+															})}
+														</span>
+													{/if}
+												{:else}
+													<span class="tuner-idle">{$_('hdhomerun.detail.tuner_idle')}</span>
+												{/if}
+											</div>
+										</li>
+									{/each}
+								</ul>
+							{:else}
+								<p class="tuner-status-empty">{$_('hdhomerun.detail.tuner_status_unavailable')}</p>
+							{/if}
+						</div>
+					</div>
 				{/if}
-			</p>
+			</div>
 		{/if}
 
 		{#if activeTab === 'guide'}
@@ -665,7 +808,8 @@
 					<HDHomeRunGuideGrid
 						channels={hdhomerun.channels}
 						{fullGuide}
-						recordingRules={hdhomerun.recording_rules ?? []}
+						recordingRules={displayedRecordingRules}
+						{pendingRuleIds}
 						{favoriteChannels}
 						{savingFavorite}
 						{recordingLoading}
@@ -689,23 +833,13 @@
 			{#if hdhomerun.recordings_in_progress.length > 0}
 				<div class="recordings">
 					{#each hdhomerun.recordings_in_progress as recording, i (i)}
-						<div
-							class="recording clickable"
-							role="button"
-							tabindex="0"
-							onclick={() => playRecording(recording)}
-							onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && playRecording(recording)}
-						>
+						<div class="recording in-progress-card">
 							{#if recording.image_url}
 								<img class="rec-thumb" src={recording.image_url} alt="" />
 							{/if}
 							<div class="rec-info">
-								<span class="rec-badge">{$_('hdhomerun.tile.recording_badge')}</span>
-								<span class="rec-title">{recording.title}</span>
-								{#if recording.episode_title}<span class="rec-sub">{recording.episode_title}</span>{/if}
-								{#if recording.synopsis}<p class="rec-synopsis">{recording.synopsis}</p>{/if}
-								<div class="rec-meta">
-									{#if recording.channel_name}<span class="rec-channel">{recording.channel_name}</span>{/if}
+								<div class="rec-status-line">
+									<span class="rec-badge">{$_('hdhomerun.tile.recording_badge')}</span>
 									{#if recording.record_end}
 										<span class="rec-end"
 											>{$_('hdhomerun.detail.recording_until', {
@@ -714,17 +848,25 @@
 										>
 									{/if}
 								</div>
+								<span class="rec-title">{recording.title}</span>
+								{#if recording.episode_title}<span class="rec-sub">{recording.episode_title}</span>{/if}
+								{#if recording.synopsis}<p class="rec-synopsis">{recording.synopsis}</p>{/if}
+								<div class="rec-meta">
+									{#if recording.channel_name || recording.channel_number}
+										<span class="rec-channel"
+											>{recording.channel_number ? `${recording.channel_number} ` : ''}{recording.channel_name ||
+												''}</span
+										>
+									{/if}
+									<span class="rec-progress-notice">
+										{$_('hdhomerun.detail.recording_in_progress_hint')}
+									</span>
+								</div>
 							</div>
 							<div class="rec-actions">
-								{#if recording.play_url}
-									<button
-										class="watch small"
-										onclick={(e) => {
-											e.stopPropagation();
-											playRecording(recording);
-										}}
-									>
-										▶ {$_('hdhomerun.detail.watch_button')}
+								{#if recording.channel_number}
+									<button type="button" class="watch-live-btn small" onclick={() => watchLiveForRecording(recording)}>
+										{$_('hdhomerun.detail.watch_live_button')}
 									</button>
 								{/if}
 							</div>
@@ -786,9 +928,9 @@
 			{/if}
 
 			<h3>{$_('hdhomerun.detail.scheduled_recordings')}</h3>
-			{#if hdhomerun.recording_rules && hdhomerun.recording_rules.length > 0}
+			{#if displayedRecordingRules.length > 0}
 				<div class="recording-rules">
-					{#each hdhomerun.recording_rules as rule (rule.RecordingRuleID)}
+					{#each displayedRecordingRules as rule (rule.RecordingRuleID)}
 						<div class="rule-card">
 							<div class="rule-title">{rule.Title}</div>
 							<div class="rule-details">
@@ -797,6 +939,9 @@
 								</span>
 								{#if rule.ChannelOnly}<span class="rule-channel">Ch: {rule.ChannelOnly}</span>{/if}
 								{#if rule.DateTimeOnly}<span class="rule-time">{formatDate(rule.DateTimeOnly)}</span>{/if}
+								{#if pendingRuleIds.has(rule.RecordingRuleID)}
+									<span class="rule-badge rule-pending">{$_('hdhomerun.detail.pending_confirmation')}</span>
+								{/if}
 							</div>
 							<button
 								class="cancel-rule-btn"
@@ -1062,6 +1207,164 @@
 	.tuner-info {
 		color: var(--color-text-muted);
 		margin: 1rem 0 0.5rem;
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+		font-size: 0.9rem;
+	}
+
+	.tuner-count-container {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		outline: none;
+	}
+
+	.tuner-count-pill {
+		cursor: pointer;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		border-bottom: 1px dashed var(--color-text-muted);
+		transition:
+			color 0.15s ease,
+			border-color 0.15s ease;
+	}
+
+	.tuner-count-container:hover .tuner-count-pill,
+	.tuner-count-container:focus .tuner-count-pill,
+	.tuner-count-container:focus-within .tuner-count-pill {
+		color: var(--color-text);
+		border-color: var(--color-accent);
+	}
+
+	.tuner-active-dot {
+		width: 0.45rem;
+		height: 0.45rem;
+		border-radius: 50%;
+		background: var(--color-success, #4caf50);
+		box-shadow: 0 0 4px var(--color-success, #4caf50);
+	}
+
+	.tuner-status-popover {
+		position: absolute;
+		top: calc(100% + 0.4rem);
+		left: 0;
+		z-index: 10;
+		min-width: 16rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		padding: 0.6rem 0.75rem;
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+		opacity: 0;
+		visibility: hidden;
+		transform: translateY(4px);
+		pointer-events: none;
+		transition:
+			opacity 0.15s ease,
+			transform 0.15s ease,
+			visibility 0.15s;
+	}
+
+	.tuner-count-container:hover .tuner-status-popover,
+	.tuner-count-container:focus .tuner-status-popover,
+	.tuner-count-container:focus-within .tuner-status-popover {
+		opacity: 1;
+		visibility: visible;
+		transform: translateY(0);
+		pointer-events: auto;
+	}
+
+	.tuner-status-header {
+		font-weight: 600;
+		font-size: 0.75rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--color-text-muted);
+		margin-bottom: 0.4rem;
+		border-bottom: 1px solid var(--color-border);
+		padding-bottom: 0.25rem;
+	}
+
+	.tuner-status-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+	}
+
+	.tuner-status-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		font-size: 0.82rem;
+		padding: 0.2rem 0;
+	}
+
+	.tuner-status-label-group {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+
+	.tuner-status-indicator {
+		width: 0.45rem;
+		height: 0.45rem;
+		border-radius: 50%;
+		background: var(--color-text-muted);
+		opacity: 0.4;
+	}
+
+	.tuner-status-indicator.active {
+		background: var(--color-success, #4caf50);
+		opacity: 1;
+		box-shadow: 0 0 5px var(--color-success, #4caf50);
+	}
+
+	.tuner-status-name {
+		font-weight: 500;
+		color: var(--color-text);
+	}
+
+	.tuner-status-details {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+
+	.tuner-channel {
+		color: var(--color-text);
+		font-weight: 500;
+	}
+
+	.tuner-ch-num {
+		color: var(--color-accent);
+		margin-right: 0.2rem;
+	}
+
+	.tuner-in-use-tag {
+		color: var(--color-accent);
+	}
+
+	.tuner-signal {
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+	}
+
+	.tuner-idle {
+		color: var(--color-text-muted);
+		font-style: italic;
+	}
+
+	.tuner-status-empty {
+		margin: 0;
+		font-size: 0.8rem;
+		color: var(--color-text-muted);
 	}
 
 	.watch {
@@ -1102,6 +1405,10 @@
 		padding: 0.6rem 0.85rem;
 	}
 
+	.recording.in-progress-card {
+		border-left: 3px solid var(--color-error);
+	}
+
 	.recording.clickable {
 		cursor: pointer;
 		transition:
@@ -1114,6 +1421,39 @@
 		background: var(--color-surface-hover, rgba(255, 255, 255, 0.08));
 		border-color: var(--color-accent, #3b82f6);
 		transform: translateY(-1px);
+	}
+
+	.rec-status-line {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.rec-progress-notice {
+		color: var(--color-text-muted);
+		font-style: italic;
+		font-size: 0.78rem;
+	}
+
+	.watch-live-btn {
+		background: var(--color-accent);
+		color: var(--color-surface);
+		border: none;
+		border-radius: 0.5rem;
+		padding: 0.35rem 0.75rem;
+		font-size: 0.85rem;
+		cursor: pointer;
+		font-weight: 500;
+		transition: opacity 0.15s ease;
+	}
+
+	.watch-live-btn:hover {
+		opacity: 0.9;
+	}
+
+	.watch-live-btn.small {
+		padding: 0.2rem 0.55rem;
+		font-size: 0.75rem;
 	}
 
 	.rec-thumb {
@@ -1188,7 +1528,6 @@
 	.rule-card {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
 		gap: 1rem;
 		background: var(--color-surface);
 		border: 1px solid var(--color-border);
@@ -1197,11 +1536,17 @@
 	}
 
 	.rule-title {
+		flex: 0 0 20rem;
+		width: 20rem;
 		font-weight: 600;
+		white-space: normal;
+		overflow-wrap: break-word;
 	}
 
 	.rule-details {
 		display: flex;
+		flex: 1 1 auto;
+		flex-wrap: wrap;
 		align-items: center;
 		gap: 0.5rem;
 		font-size: 0.85rem;
@@ -1215,7 +1560,13 @@
 		font-size: 0.75rem;
 	}
 
+	.rule-pending {
+		border-color: var(--color-warning, #d9a441);
+		color: var(--color-warning, #d9a441);
+	}
+
 	.cancel-rule-btn {
+		flex-shrink: 0;
 		background: none;
 		border: 1px solid var(--color-border);
 		color: var(--color-error, #e05a5a);

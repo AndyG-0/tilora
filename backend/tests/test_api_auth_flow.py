@@ -77,10 +77,11 @@ def test_full_register_login_layout_switch_profile_flow(client, dashboard_yaml, 
     assert alice_widgets_again[0]["layout"] == {"col": 3, "row": 3, "colSpan": 1, "rowSpan": 1}
 
 
-def test_layout_is_shared_across_devices_for_the_same_user_and_breakpoint(client, dashboard_yaml, tmp_db):
-    # Layout is keyed by (user, breakpoint), not by physical device, so a
-    # user's drag on one device is immediately visible from another device —
-    # no per-device re-arranging or "copy layout" step needed.
+def test_layout_is_scoped_per_user_and_device_pair(client, dashboard_yaml, tmp_db):
+    # Layout is keyed by (user, device, breakpoint) — a drag on one screen
+    # must not silently show up (or be overwritten) on another screen the
+    # same user is logged into elsewhere, since two screens may want
+    # independent arrangements.
     client.post("/api/devices/register")
     alice = client.post("/api/users", json={"name": "Alice"}).json()
 
@@ -98,7 +99,7 @@ def test_layout_is_shared_across_devices_for_the_same_user_and_breakpoint(client
     other_client.post(f"/api/users/{alice['id']}/login", json={})
 
     other_widgets = other_client.get("/api/widgets?breakpoint=wide").json()
-    assert other_widgets[0]["layout"] == {"col": 3, "row": 3, "colSpan": 1, "rowSpan": 1}
+    assert other_widgets[0]["layout"] == {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1}
 
 
 def test_widgets_endpoints_require_both_device_and_user_auth(client, dashboard_yaml, tmp_db):

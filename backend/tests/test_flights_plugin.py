@@ -5,6 +5,7 @@ import json
 import httpx
 import respx
 
+from app.plugins.flights.aircraft import lookup_aircraft
 from app.plugins.flights.airlines import lookup
 from app.plugins.flights.plugin import FlightsPlugin, _aircraft_kind, _route_cache_key
 from app.storage.cache import cache
@@ -109,6 +110,31 @@ def test_lookup_returns_code_only_for_unmapped_prefix():
 def test_lookup_returns_none_for_tail_number_callsign():
     result = lookup("N583CA")
     assert result == {"airline_code": None, "airline_name": None, "airline_iata": None}
+
+
+def test_lookup_matches_expanded_airlines():
+    assert lookup("RYR123") == {"airline_code": "RYR", "airline_name": "Ryanair", "airline_iata": "FR"}
+    assert lookup("UAE456") == {"airline_code": "UAE", "airline_name": "Emirates", "airline_iata": "EK"}
+    assert lookup("GTI789") == {"airline_code": "GTI", "airline_name": "Atlas Air", "airline_iata": "5Y"}
+    assert lookup("ENY100") == {"airline_code": "ENY", "airline_name": "Envoy Air", "airline_iata": "MQ"}
+
+
+def test_lookup_aircraft_matches_known_types():
+    assert lookup_aircraft("B738") == {"name": "Boeing 737-800", "manufacturer": "Boeing", "model": "737-800"}
+    assert lookup_aircraft("B38M") == {"name": "Boeing 737 MAX 8", "manufacturer": "Boeing", "model": "737 MAX 8"}
+    assert lookup_aircraft("C172") == {"name": "Cessna 172 Skyhawk", "manufacturer": "Cessna", "model": "172 Skyhawk"}
+    assert lookup_aircraft("A321") == {"name": "Airbus A321", "manufacturer": "Airbus", "model": "A321"}
+    assert lookup_aircraft("EC35") == {
+        "name": "Airbus Helicopters H135 / EC135",
+        "manufacturer": "Airbus Helicopters",
+        "model": "H135",
+    }
+
+
+def test_lookup_aircraft_returns_none_for_unmapped_or_empty():
+    assert lookup_aircraft("ZZZZ") == {"name": None, "manufacturer": None, "model": None}
+    assert lookup_aircraft(None) == {"name": None, "manufacturer": None, "model": None}
+    assert lookup_aircraft("") == {"name": None, "manufacturer": None, "model": None}
 
 
 def test_aircraft_kind_classifies_rotorcraft_as_helicopter():
@@ -236,6 +262,22 @@ async def test_get_detail_includes_configured_coordinates():
 
     assert detail["latitude"] == 32.7555
     assert detail["longitude"] == -97.3308
+    assert detail["speed_unit"] == "mph"
+
+
+@respx.mock
+async def test_get_summary_maps_aircraft_name():
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        return_value=httpx.Response(200, json=FAKE_RESPONSE)
+    )
+    mock_routeset()
+    plugin = make_plugin()
+
+    summary = await plugin.get_summary()
+
+    by_callsign = {f["callsign"]: f for f in summary["flights"]}
+    assert by_callsign["UAL1698"]["aircraft_name"] == "Boeing 737 MAX 8"
+    assert by_callsign["XYZ123"]["aircraft_name"] == "Airbus A320"
 
 
 @respx.mock

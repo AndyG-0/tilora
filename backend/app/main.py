@@ -27,6 +27,9 @@ from app.api import (
     assistant as assistant_api,
 )
 from app.api import (
+    asus_router as asus_router_api,
+)
+from app.api import (
     devices as devices_api,
 )
 from app.api import (
@@ -181,6 +184,7 @@ app.include_router(assistant_api.router)
 app.include_router(jellyfin_api.router)
 app.include_router(hdhomerun_api.router)
 app.include_router(pihole_api.router)
+app.include_router(asus_router_api.router)
 app.include_router(qbittorrent_api.router)
 app.include_router(rss_api.router)
 app.include_router(network_settings_api.router)

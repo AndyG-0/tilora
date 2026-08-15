@@ -8,7 +8,6 @@ from pydantic import BaseModel, ConfigDict
 
 from app.auth import get_current_admin
 from app.config import APP_SETTINGS_KEYS, SECRET_APP_SETTINGS_KEYS, effective_settings
-from app.integrations.icloud_photos import invalidate_service_cache
 from app.storage.cache import cache
 from app.storage.db import save_app_settings
 
@@ -20,9 +19,10 @@ _SECRET_KEYS = SECRET_APP_SETTINGS_KEYS
 # so the user can see/edit them without retyping.
 _PLAIN_KEYS = (
     "ai_reasoning_effort",
+    "ai_agent_name",
+    "searxng_url",
     "caldav_url",
     "caldav_username",
-    "icloud_username",
     "openai_tts_enabled",
     "openai_tts_model",
     "piper_tts_enabled",
@@ -34,11 +34,6 @@ _PLAIN_KEYS = (
 # whenever those settings change, or they'd keep serving a stale value for
 # up to `refresh_interval_seconds`.
 _GLOBAL_SETTINGS_WIDGET_IDS = ("clock", "date")
-# Changing either of these means a different Apple ID — the private iCloud
-# Photos provider's cached authenticated session (and photo list) belongs to
-# the *previous* account and must not keep serving requests under the new
-# one. See app.integrations.icloud_photos.invalidate_service_cache.
-_ICLOUD_ACCOUNT_KEYS = frozenset({"icloud_username", "icloud_password"})
 
 
 class UpdateSettingsRequest(BaseModel):
@@ -48,6 +43,8 @@ class UpdateSettingsRequest(BaseModel):
 
     ai_model: str | None = None
     ai_reasoning_effort: str | None = None
+    ai_agent_name: str | None = None
+    searxng_url: str | None = None
     timezone: str | None = None
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
@@ -64,8 +61,6 @@ class UpdateSettingsRequest(BaseModel):
     caldav_url: str | None = None
     caldav_username: str | None = None
     caldav_password: str | None = None
-    icloud_username: str | None = None
-    icloud_password: str | None = None
 
 
 assert set(UpdateSettingsRequest.model_fields) == set(APP_SETTINGS_KEYS), (
@@ -100,6 +95,4 @@ async def update_settings(payload: UpdateSettingsRequest):
     for widget_id in _GLOBAL_SETTINGS_WIDGET_IDS:
         cache.delete(f"summary:{widget_id}")
         cache.delete(f"detail:{widget_id}")
-    if _ICLOUD_ACCOUNT_KEYS & payload.model_fields_set:
-        invalidate_service_cache()
     return _public_shape(effective_settings())

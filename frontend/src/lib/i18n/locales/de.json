@@ -8,10 +8,14 @@
 	},
 	"settings": {
 		"language": {
-			"title": "Sprache"
+			"title": "Sprache",
+			"save_error": "Sprache konnte nicht gespeichert werden.",
+			"save": "Sprache speichern"
 		},
 		"appearance": {
-			"title": "Erscheinungsbild"
+			"title": "Erscheinungsbild",
+			"save_error": "Erscheinungsbild konnte nicht gespeichert werden.",
+			"save": "Erscheinungsbild speichern"
 		},
 		"page": {
 			"title": "Einstellungen"
@@ -202,6 +206,8 @@
 			"no_cities_found": "Keine Städte gefunden.",
 			"update_failed": "Standort konnte nicht aktualisiert werden.",
 			"radius_label": "Suchradius (nm)",
+			"speed_unit_label": "Geschwindigkeitseinheit",
+			"tail_label": "Kennung",
 			"map_label": "Flugkarte",
 			"empty": "Keine Flugzeuge in der Nähe.",
 			"column_flight": "Flug",
@@ -446,7 +452,51 @@
 			"upload_label": "Upload",
 			"connected": "Verbunden",
 			"down": "Getrennt",
-			"no_clients": "Keine verbundenen Clients gefunden."
+			"no_clients": "Keine verbundenen Clients gefunden.",
+			"search_placeholder": "Suche nach Name, IP, MAC oder Hersteller...",
+			"filter_all": "Alle ({count})",
+			"filter_wired": "Kabelgebunden ({count})",
+			"filter_wireless": "WLAN ({count})",
+			"filter_online": "Online ({count})",
+			"wired": "Kabelgebunden",
+			"wireless": "WLAN",
+			"unknown_type": "Unbekannt",
+			"ip_address": "IP-Adresse",
+			"mac_address": "MAC-Adresse",
+			"vendor": "Hersteller",
+			"connection": "Verbindung",
+			"signal_strength": "Signalstärke",
+			"link_rate": "Verbindungsrate",
+			"ip_assignment": "IP-Zuweisung",
+			"static_reservation": "Statische IP",
+			"dynamic_dhcp": "Dynamisches DHCP",
+			"make_static": "Als statische IP reservieren",
+			"remove_static": "Statische IP aufheben",
+			"internet_access": "Internetzugang",
+			"internet_allowed": "Erlaubt",
+			"internet_blocked": "Gesperrt",
+			"block_internet": "Internet sperren",
+			"unblock_internet": "Internet erlauben",
+			"port_scan": "Port-Scan",
+			"scanning_ports": "Wird gescannt...",
+			"scan_ports_btn": "Ports scannen",
+			"open_ports": "Offene Ports & Dienste",
+			"no_open_ports": "Keine offenen Ports bei gängigen Diensten gefunden.",
+			"launch_website": "Web-UI öffnen",
+			"open_web_link": "Öffnen",
+			"wake_on_lan": "Wake on LAN",
+			"wol_sent": "WOL-Paket gesendet!",
+			"ping": "Ping",
+			"pinging": "Pingt...",
+			"ping_result": "{ms} ms",
+			"device_offline": "Keine Antwort (Gerät ist möglicherweise offline oder Ping in Firewall deaktiviert)",
+			"device_unresponsive": "Keine Antwort auf Ping. Das Gerät ist möglicherweise offline, im Ruhezustand oder ICMP/Ping ist in der Firewall deaktiviert.",
+			"custom_alias": "Eigener Gerätename",
+			"edit_name": "Name bearbeiten",
+			"save_name": "Speichern",
+			"copied": "Kopiert!",
+			"copy": "Kopieren",
+			"close": "Schließen"
 		}
 	},
 	"goodreads": {
@@ -697,6 +747,7 @@
 			"verify": "Bestätigen",
 			"verifying": "Wird überprüft…",
 			"connect_hint": "Verbinde dein iCloud-Konto, um hier deine private Fotomediathek zu sehen.",
+			"not_configured_icloud_hint": "Apple-ID und Passwort sind noch nicht konfiguriert — richte sie auf der Einstellungsseite ein, um iCloud-Fotos zu verbinden.",
 			"connect_icloud": "iCloud verbinden",
 			"connecting": "Verbindung wird hergestellt…",
 			"settings_hint_prefix": "Apple-ID und Passwort werden auf der ",
@@ -705,6 +756,9 @@
 			"connect_error": "Verbindung fehlgeschlagen — überprüfe Apple-ID und Passwort in den Einstellungen.",
 			"incorrect_code_error": "Falscher Code — versuche es erneut.",
 			"verify_code_error": "Der Code konnte nicht überprüft werden.",
+			"no_album_link_hint": "Noch kein Link zum geteilten iCloud-Album konfiguriert.",
+			"no_folder_hint": "Noch kein Fotoordner konfiguriert.",
+			"not_configured_immich_hint": "Immich ist noch nicht konfiguriert.",
 			"caption": "{index} / {count}",
 			"no_photos": "Keine Fotos gefunden.",
 			"previous_photo": "Vorheriges Foto",
@@ -814,7 +868,18 @@
 			"no_recordings": "Keine laufenden Aufnahmen.",
 			"upcoming_rules": "{count} bevorstehende Aufnahmeregeln.",
 			"playback_failed_hint": "Wiedergabe fehlgeschlagen — dieser Tuner unterstützt diesen Wiedergabemodus möglicherweise nicht. Versuche stattdessen „{action}“.",
-			"edit_playback_settings": "Wiedergabeeinstellungen bearbeiten"
+			"edit_playback_settings": "Wiedergabeeinstellungen bearbeiten",
+			"search_placeholder": "Sendungen durchsuchen…",
+			"search_results_count": "{count} Sendungen gefunden",
+			"search_no_results": "Keine Sendungen für „{query}“ gefunden",
+			"search_clear": "Suche löschen",
+			"search_show_in_grid": "Im Guide anzeigen",
+			"search_live_badge": "Live",
+			"tuner_status_heading": "Tuner-Status",
+			"tuner_in_use": "In Verwendung",
+			"tuner_status_unavailable": "Status nicht verfügbar",
+			"watch_live_button": "▶ Live ansehen",
+			"recording_in_progress_hint": "Aufnahme läuft — nach Abschluss verfügbar."
 		}
 	},
 	"screensaver": {

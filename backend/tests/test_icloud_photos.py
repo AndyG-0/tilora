@@ -5,6 +5,9 @@ from icloudpy.exceptions import ICloudPyFailedLoginException
 from app.integrations import icloud_photos
 from app.storage.cache import cache
 
+USER_ID = "alice"
+OTHER_USER_ID = "bob"
+
 
 class FakeResponse:
     def __init__(self, content: bytes, content_type: str = "image/jpeg"):
@@ -72,105 +75,119 @@ def test_is_configured():
 
 async def test_start_auth_connects_immediately_when_no_2fa_needed(monkeypatch):
     service = FakeService(requires_2fa=False)
-    monkeypatch.setattr(icloud_photos, "_build_service", lambda u, p: service)
+    monkeypatch.setattr(icloud_photos, "_build_service", lambda user_id, u, p: service)
 
-    result = await icloud_photos.start_auth("user@example.com", "hunter2")
+    result = await icloud_photos.start_auth(USER_ID, "user@example.com", "hunter2")
 
     assert result == {"connected": True, "requires_2fa": False}
-    assert cache.get(icloud_photos._SERVICE_CACHE_KEY) is service
+    assert cache.get(icloud_photos._service_cache_key(USER_ID)) is service
 
 
 async def test_start_auth_reports_2fa_required(monkeypatch):
     service = FakeService(requires_2fa=True)
-    monkeypatch.setattr(icloud_photos, "_build_service", lambda u, p: service)
+    monkeypatch.setattr(icloud_photos, "_build_service", lambda user_id, u, p: service)
 
-    result = await icloud_photos.start_auth("user@example.com", "hunter2")
+    result = await icloud_photos.start_auth(USER_ID, "user@example.com", "hunter2")
 
     assert result == {"connected": False, "requires_2fa": True}
-    assert cache.get(icloud_photos._SERVICE_CACHE_KEY) is None
-    assert cache.get(icloud_photos._PENDING_SERVICE_CACHE_KEY) is service
+    assert cache.get(icloud_photos._service_cache_key(USER_ID)) is None
+    assert cache.get(icloud_photos._pending_service_cache_key(USER_ID)) is service
     assert service.trigger_2fa_push_notification_called is True
 
 
 async def test_start_auth_still_reports_2fa_required_when_push_trigger_fails(monkeypatch):
     service = FakeService(requires_2fa=True, push_notification_succeeds=False)
-    monkeypatch.setattr(icloud_photos, "_build_service", lambda u, p: service)
+    monkeypatch.setattr(icloud_photos, "_build_service", lambda user_id, u, p: service)
 
-    result = await icloud_photos.start_auth("user@example.com", "hunter2")
+    result = await icloud_photos.start_auth(USER_ID, "user@example.com", "hunter2")
 
     assert result == {"connected": False, "requires_2fa": True}
     assert service.trigger_2fa_push_notification_called is True
-    assert cache.get(icloud_photos._PENDING_SERVICE_CACHE_KEY) is service
+    assert cache.get(icloud_photos._pending_service_cache_key(USER_ID)) is service
 
 
 async def test_start_auth_handles_failed_login(monkeypatch):
-    def _fail(u, p):
+    def _fail(user_id, u, p):
         raise ICloudPyFailedLoginException("bad credentials")
 
     monkeypatch.setattr(icloud_photos, "_build_service", _fail)
 
-    result = await icloud_photos.start_auth("user@example.com", "wrong")
+    result = await icloud_photos.start_auth(USER_ID, "user@example.com", "wrong")
 
     assert result == {"connected": False, "requires_2fa": False}
 
 
 async def test_verify_2fa_with_no_pending_service_fails():
-    assert await icloud_photos.verify_2fa("123456") is False
+    assert await icloud_photos.verify_2fa(USER_ID, "123456") is False
 
 
 async def test_verify_2fa_rejects_wrong_code(monkeypatch):
     service = FakeService(requires_2fa=True)
-    monkeypatch.setattr(icloud_photos, "_build_service", lambda u, p: service)
-    await icloud_photos.start_auth("user@example.com", "hunter2")
+    monkeypatch.setattr(icloud_photos, "_build_service", lambda user_id, u, p: service)
+    await icloud_photos.start_auth(USER_ID, "user@example.com", "hunter2")
 
-    assert await icloud_photos.verify_2fa("000000") is False
-    assert cache.get(icloud_photos._SERVICE_CACHE_KEY) is None
+    assert await icloud_photos.verify_2fa(USER_ID, "000000") is False
+    assert cache.get(icloud_photos._service_cache_key(USER_ID)) is None
 
 
 async def test_verify_2fa_trusts_session_and_caches_service(monkeypatch):
     service = FakeService(requires_2fa=True)
-    monkeypatch.setattr(icloud_photos, "_build_service", lambda u, p: service)
-    await icloud_photos.start_auth("user@example.com", "hunter2")
+    monkeypatch.setattr(icloud_photos, "_build_service", lambda user_id, u, p: service)
+    await icloud_photos.start_auth(USER_ID, "user@example.com", "hunter2")
 
-    assert await icloud_photos.verify_2fa("123456") is True
+    assert await icloud_photos.verify_2fa(USER_ID, "123456") is True
     assert service.trust_session_called is True
-    assert cache.get(icloud_photos._PENDING_SERVICE_CACHE_KEY) is None
-    assert cache.get(icloud_photos._SERVICE_CACHE_KEY) is service
+    assert cache.get(icloud_photos._pending_service_cache_key(USER_ID)) is None
+    assert cache.get(icloud_photos._service_cache_key(USER_ID)) is service
 
 
 def test_is_connected_cached():
-    assert icloud_photos.is_connected_cached() is False
-    cache.set(icloud_photos._SERVICE_CACHE_KEY, object(), 60)
-    assert icloud_photos.is_connected_cached() is True
+    assert icloud_photos.is_connected_cached(USER_ID) is False
+    cache.set(icloud_photos._service_cache_key(USER_ID), object(), 60)
+    assert icloud_photos.is_connected_cached(USER_ID) is True
+
+
+def test_is_connected_cached_is_independent_per_user():
+    cache.set(icloud_photos._service_cache_key(USER_ID), object(), 60)
+
+    assert icloud_photos.is_connected_cached(OTHER_USER_ID) is False
 
 
 def test_invalidate_service_cache_drops_service_pending_and_photo_list():
-    cache.set(icloud_photos._SERVICE_CACHE_KEY, object(), 60)
-    cache.set(icloud_photos._PENDING_SERVICE_CACHE_KEY, object(), 60)
-    cache.set(icloud_photos._PHOTO_LIST_CACHE_KEY, [object()], 60)
+    cache.set(icloud_photos._service_cache_key(USER_ID), object(), 60)
+    cache.set(icloud_photos._pending_service_cache_key(USER_ID), object(), 60)
+    cache.set(icloud_photos._photo_list_cache_key(USER_ID), [object()], 60)
 
-    icloud_photos.invalidate_service_cache()
+    icloud_photos.invalidate_service_cache(USER_ID)
 
-    assert cache.get(icloud_photos._SERVICE_CACHE_KEY) is None
-    assert cache.get(icloud_photos._PENDING_SERVICE_CACHE_KEY) is None
-    assert cache.get(icloud_photos._PHOTO_LIST_CACHE_KEY) is None
+    assert cache.get(icloud_photos._service_cache_key(USER_ID)) is None
+    assert cache.get(icloud_photos._pending_service_cache_key(USER_ID)) is None
+    assert cache.get(icloud_photos._photo_list_cache_key(USER_ID)) is None
+
+
+def test_invalidate_service_cache_leaves_other_users_cache_intact():
+    cache.set(icloud_photos._service_cache_key(OTHER_USER_ID), object(), 60)
+
+    icloud_photos.invalidate_service_cache(USER_ID)
+
+    assert cache.get(icloud_photos._service_cache_key(OTHER_USER_ID)) is not None
 
 
 async def test_list_photos_returns_assets_from_named_album(monkeypatch):
     asset = FakeAsset("id-1", "photo.jpg")
     service = FakeService(albums={"All Photos": FakeAlbum([asset])})
-    monkeypatch.setattr(icloud_photos, "_build_service", lambda u, p: service)
+    monkeypatch.setattr(icloud_photos, "_build_service", lambda user_id, u, p: service)
 
-    photos = await icloud_photos.list_photos("user@example.com", "hunter2")
+    photos = await icloud_photos.list_photos(USER_ID, "user@example.com", "hunter2")
 
     assert photos == [{"id": "id-1", "filename": "photo.jpg"}]
 
 
 async def test_list_photos_returns_empty_for_missing_album(monkeypatch):
     service = FakeService(albums={})
-    monkeypatch.setattr(icloud_photos, "_build_service", lambda u, p: service)
+    monkeypatch.setattr(icloud_photos, "_build_service", lambda user_id, u, p: service)
 
-    photos = await icloud_photos.list_photos("user@example.com", "hunter2")
+    photos = await icloud_photos.list_photos(USER_ID, "user@example.com", "hunter2")
 
     assert photos == []
 
@@ -180,34 +197,52 @@ async def test_list_photos_is_cached_across_calls(monkeypatch):
     service = FakeService(albums={"All Photos": FakeAlbum([asset])})
     calls = 0
 
-    def _build(u, p):
+    def _build(user_id, u, p):
         nonlocal calls
         calls += 1
         return service
 
     monkeypatch.setattr(icloud_photos, "_build_service", _build)
 
-    await icloud_photos.list_photos("user@example.com", "hunter2")
-    await icloud_photos.list_photos("user@example.com", "hunter2")
+    await icloud_photos.list_photos(USER_ID, "user@example.com", "hunter2")
+    await icloud_photos.list_photos(USER_ID, "user@example.com", "hunter2")
 
     assert calls == 1
+
+
+async def test_list_photos_cache_is_independent_per_user(monkeypatch):
+    asset = FakeAsset("id-1", "photo.jpg")
+    service = FakeService(albums={"All Photos": FakeAlbum([asset])})
+    calls = 0
+
+    def _build(user_id, u, p):
+        nonlocal calls
+        calls += 1
+        return service
+
+    monkeypatch.setattr(icloud_photos, "_build_service", _build)
+
+    await icloud_photos.list_photos(USER_ID, "user@example.com", "hunter2")
+    await icloud_photos.list_photos(OTHER_USER_ID, "other@example.com", "hunter3")
+
+    assert calls == 2
 
 
 async def test_fetch_photo_bytes_returns_content_and_type(monkeypatch):
     asset = FakeAsset("id-1", "photo.jpg", content=b"jpeg-bytes")
     service = FakeService(albums={"All Photos": FakeAlbum([asset])})
-    monkeypatch.setattr(icloud_photos, "_build_service", lambda u, p: service)
+    monkeypatch.setattr(icloud_photos, "_build_service", lambda user_id, u, p: service)
 
-    result = await icloud_photos.fetch_photo_bytes("user@example.com", "hunter2", "id-1")
+    result = await icloud_photos.fetch_photo_bytes(USER_ID, "user@example.com", "hunter2", "id-1")
 
     assert result == (b"jpeg-bytes", "image/jpeg")
 
 
 async def test_fetch_photo_bytes_returns_none_for_unknown_id(monkeypatch):
     service = FakeService(albums={"All Photos": FakeAlbum([])})
-    monkeypatch.setattr(icloud_photos, "_build_service", lambda u, p: service)
+    monkeypatch.setattr(icloud_photos, "_build_service", lambda user_id, u, p: service)
 
-    result = await icloud_photos.fetch_photo_bytes("user@example.com", "hunter2", "missing")
+    result = await icloud_photos.fetch_photo_bytes(USER_ID, "user@example.com", "hunter2", "missing")
 
     assert result is None
 
@@ -218,9 +253,9 @@ async def test_iter_photo_chunks_yields_batches_from_the_named_album(monkeypatch
         [FakeAsset("id-3", "c.jpg")],
     ]
     service = FakeService(albums={"All Photos": FakeAlbum([], chunks=chunks)})
-    monkeypatch.setattr(icloud_photos, "_build_service", lambda u, p: service)
+    monkeypatch.setattr(icloud_photos, "_build_service", lambda user_id, u, p: service)
 
-    seen = [chunk async for chunk in icloud_photos.iter_photo_chunks("user@example.com", "hunter2")]
+    seen = [chunk async for chunk in icloud_photos.iter_photo_chunks(USER_ID, "user@example.com", "hunter2")]
 
     assert seen == [
         [{"id": "id-1", "filename": "a.jpg"}, {"id": "id-2", "filename": "b.jpg"}],
@@ -230,17 +265,17 @@ async def test_iter_photo_chunks_yields_batches_from_the_named_album(monkeypatch
 
 async def test_iter_photo_chunks_yields_nothing_when_2fa_required(monkeypatch):
     service = FakeService(requires_2fa=True, albums={"All Photos": FakeAlbum([FakeAsset("id-1", "a.jpg")])})
-    monkeypatch.setattr(icloud_photos, "_build_service", lambda u, p: service)
+    monkeypatch.setattr(icloud_photos, "_build_service", lambda user_id, u, p: service)
 
-    seen = [chunk async for chunk in icloud_photos.iter_photo_chunks("user@example.com", "hunter2")]
+    seen = [chunk async for chunk in icloud_photos.iter_photo_chunks(USER_ID, "user@example.com", "hunter2")]
 
     assert seen == []
 
 
 async def test_iter_photo_chunks_yields_nothing_for_missing_album(monkeypatch):
     service = FakeService(albums={})
-    monkeypatch.setattr(icloud_photos, "_build_service", lambda u, p: service)
+    monkeypatch.setattr(icloud_photos, "_build_service", lambda user_id, u, p: service)
 
-    seen = [chunk async for chunk in icloud_photos.iter_photo_chunks("user@example.com", "hunter2")]
+    seen = [chunk async for chunk in icloud_photos.iter_photo_chunks(USER_ID, "user@example.com", "hunter2")]
 
     assert seen == []

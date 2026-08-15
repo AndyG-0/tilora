@@ -12,6 +12,7 @@
 		channels: HDHomeRunChannel[];
 		fullGuide: HDHomeRunFullGuideChannel[] | null;
 		recordingRules: HDHomeRunRecordingRule[];
+		pendingRuleIds: Set<string>;
 		favoriteChannels: Set<string>;
 		savingFavorite: boolean;
 		recordingLoading: string | null;
@@ -26,6 +27,7 @@
 		channels,
 		fullGuide,
 		recordingRules,
+		pendingRuleIds,
 		favoriteChannels,
 		savingFavorite,
 		recordingLoading,
@@ -181,6 +183,99 @@
 		return recordingLoading === targetId;
 	}
 
+	let searchQuery = $state('');
+	let highlightedCellKey = $state<string | null>(null);
+
+	interface SearchResultItem {
+		channel: HDHomeRunChannel;
+		airing: HDHomeRunGuideEntry;
+		isLive: boolean;
+		isRecording: boolean;
+		isPending: boolean;
+	}
+
+	function isAiringMatch(airing: HDHomeRunGuideEntry, channel: HDHomeRunChannel, q: string): boolean {
+		if (!q) return false;
+		if (airing.title?.toLowerCase().includes(q)) return true;
+		if (airing.episode_title?.toLowerCase().includes(q)) return true;
+		if (airing.synopsis?.toLowerCase().includes(q)) return true;
+		if (channel.name?.toLowerCase().includes(q)) return true;
+		if (channel.channel_number?.toLowerCase().includes(q)) return true;
+		return false;
+	}
+
+	const searchResults = $derived.by(() => {
+		const q = searchQuery.trim().toLowerCase();
+		if (!q) return [];
+		const results: SearchResultItem[] = [];
+		const seenKeys = new Set<string>();
+
+		for (const channel of channels) {
+			const guideEntry = guideByChannel.get(channel.channel_number);
+			const airings =
+				guideEntry?.airings ?? (channel.now ? [channel.now, ...(channel.next ? [channel.next] : [])] : []);
+			for (const airing of airings) {
+				if (!isAiringMatch(airing, channel, q)) continue;
+				const key = `${channel.channel_number}:${airing.start ?? airing.title}`;
+				if (seenKeys.has(key)) continue;
+				seenKeys.add(key);
+
+				const rule = findExistingRule(airing, channel);
+				results.push({
+					channel,
+					airing,
+					isLive: isLive(airing),
+					isRecording: rule !== null,
+					isPending: rule !== null && pendingRuleIds.has(rule.RecordingRuleID),
+				});
+			}
+		}
+
+		return results.sort((a, b) => {
+			if (a.isLive && !b.isLive) return -1;
+			if (!a.isLive && b.isLive) return 1;
+			const aStart = a.airing.start ?? Number.MAX_SAFE_INTEGER;
+			const bStart = b.airing.start ?? Number.MAX_SAFE_INTEGER;
+			return aStart - bStart;
+		});
+	});
+
+	const matchingChannelNumbers = $derived.by(() => {
+		const q = searchQuery.trim();
+		if (!q) return null;
+		return new Set(searchResults.map((r) => r.channel.channel_number));
+	});
+
+	const visibleChannels = $derived.by(() => {
+		if (matchingChannelNumbers === null) return orderedChannels;
+		return orderedChannels.filter((c) => matchingChannelNumbers.has(c.channel_number));
+	});
+
+	function scrollToAiring(airing: HDHomeRunGuideEntry, channel: HDHomeRunChannel) {
+		if (!scrollEl || airing.start == null) return;
+		const leftPx = (airing.start - windowBounds.start) * PX_PER_SEC;
+		scrollEl.scrollTo({ left: Math.max(leftPx - 140, 0), behavior: 'smooth' });
+		const key = `${channel.channel_number}:${airing.start ?? airing.title}`;
+		highlightedCellKey = key;
+		setTimeout(() => {
+			if (highlightedCellKey === key) highlightedCellKey = null;
+		}, 2500);
+	}
+
+	function formatSearchResultTime(start: number | null, end: number | null): string {
+		if (start === null) return '';
+		const startDate = new Date(start * 1000);
+		const startOfToday = new Date();
+		startOfToday.setHours(0, 0, 0, 0);
+		const diffDays = Math.round((startDate.getTime() - startOfToday.getTime()) / (DAY_SECONDS * 1000));
+
+		const timeSpan = formatCellTime(start) + (end !== null ? ` – ${formatCellTime(end)}` : '');
+		if (diffDays === 0) return `${$_('hdhomerun.detail.guide_today')} · ${timeSpan}`;
+		if (diffDays === 1) return `${$_('hdhomerun.detail.guide_tomorrow')} · ${timeSpan}`;
+		const dayName = startDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+		return `${dayName} · ${timeSpan}`;
+	}
+
 	// Auto-scroll the timeline so "now" starts a little after the left edge,
 	// once, the first time real guide data is available.
 	$effect(() => {
@@ -261,6 +356,104 @@
 	}
 </script>
 
+<div class="guide-toolbar">
+	<div class="guide-search-wrapper">
+		<span class="search-icon" aria-hidden="true">🔍</span>
+		<input
+			type="search"
+			class="guide-search-input"
+			placeholder={$_('hdhomerun.detail.search_placeholder')}
+			bind:value={searchQuery}
+			onkeydown={(e) => e.key === 'Escape' && (searchQuery = '')}
+		/>
+		{#if searchQuery}
+			<button
+				type="button"
+				class="search-clear-btn"
+				onclick={() => (searchQuery = '')}
+				aria-label={$_('hdhomerun.detail.search_clear')}
+			>
+				✕
+			</button>
+		{/if}
+	</div>
+</div>
+
+{#if searchQuery.trim()}
+	<div class="search-results-panel">
+		<div class="search-results-header">
+			<span class="search-results-title">
+				{$_('hdhomerun.detail.search_results_count', { values: { count: searchResults.length } })}
+			</span>
+			<button type="button" class="clear-search-link" onclick={() => (searchQuery = '')}>
+				{$_('hdhomerun.detail.search_clear')}
+			</button>
+		</div>
+
+		{#if searchResults.length > 0}
+			<div class="search-results-list">
+				{#each searchResults as item (item.channel.channel_number + ':' + (item.airing.start ?? item.airing.title))}
+					<div class="search-result-card" class:live={item.isLive}>
+						<div class="result-main">
+							<div class="result-meta">
+								{#if item.isLive}
+									<span class="result-live-badge">{$_('hdhomerun.detail.search_live_badge')}</span>
+								{/if}
+								<span class="result-channel-badge">{item.channel.channel_number} {item.channel.name}</span>
+								{#if item.airing.start != null}
+									<span class="result-time">{formatSearchResultTime(item.airing.start, item.airing.end)}</span>
+								{/if}
+								{#if item.isPending}
+									<span class="result-rec-badge result-rec-pending"
+										>{$_('hdhomerun.detail.pending_recording_badge')}</span
+									>
+								{:else if item.isRecording}
+									<span class="result-rec-badge">{$_('hdhomerun.tile.recording_badge')}</span>
+								{/if}
+							</div>
+							<div class="result-title">{item.airing.title}</div>
+							{#if item.airing.episode_title}
+								<div class="result-subtitle">{item.airing.episode_title}</div>
+							{/if}
+							{#if item.airing.synopsis}
+								<p class="result-synopsis">{item.airing.synopsis}</p>
+							{/if}
+						</div>
+						<div class="result-actions">
+							{#if item.isLive}
+								<button type="button" class="result-btn watch-btn" onclick={() => onWatch(item.channel)}>
+									{$_('hdhomerun.detail.watch_button')}
+								</button>
+							{/if}
+							{#if item.airing.start != null}
+								<button
+									type="button"
+									class="result-btn jump-btn"
+									onclick={() => scrollToAiring(item.airing, item.channel)}
+								>
+									{$_('hdhomerun.detail.search_show_in_grid')}
+								</button>
+							{/if}
+							<button
+								type="button"
+								class="result-btn more-btn"
+								aria-label="Options"
+								onclick={(e) => openContextMenu(item.airing, item.channel, e.clientX, e.clientY)}
+							>
+								⋯
+							</button>
+						</div>
+					</div>
+				{/each}
+			</div>
+		{:else}
+			<p class="search-empty">
+				{$_('hdhomerun.detail.search_no_results', { values: { query: searchQuery } })}
+			</p>
+		{/if}
+	</div>
+{/if}
+
 <div class="guide-grid" bind:this={scrollEl} onscroll={cancelPress}>
 	<div class="grid-inner" style={`width: ${totalWidth + 160}px;`}>
 		<div class="day-corner"></div>
@@ -281,7 +474,7 @@
 			<div class="now-line" style={`left: ${nowLeft}px;`}></div>
 		</div>
 
-		{#each orderedChannels as channel (channel.channel_number)}
+		{#each visibleChannels as channel (channel.channel_number)}
 			{@const guideEntry = guideByChannel.get(channel.channel_number)}
 			{@const cells = computeCellLayout(guideEntry?.airings ?? [], windowBounds.start, windowBounds.end)}
 			<div class="channel-col">
@@ -303,9 +496,17 @@
 			<div class="channel-track" style={`width: ${totalWidth}px;`}>
 				<div class="now-line"></div>
 				{#each cells as cell (cell.airing.start ?? cell.airing.title)}
+					{@const existingRule = findExistingRule(cell.airing, channel)}
+					{@const isMatch = searchQuery.trim()
+						? isAiringMatch(cell.airing, channel, searchQuery.trim().toLowerCase())
+						: false}
+					{@const cellKey = `${channel.channel_number}:${cell.airing.start ?? cell.airing.title}`}
 					<div
 						class="airing-cell"
 						class:live={isLive(cell.airing)}
+						class:search-match={isMatch}
+						class:search-dimmed={searchQuery.trim() && !isMatch}
+						class:cell-flash={highlightedCellKey === cellKey}
 						style={`left: ${cell.left}px; width: ${cell.width}px;`}
 						role="button"
 						tabindex="0"
@@ -320,9 +521,11 @@
 					>
 						<span class="cell-time">{formatCellTime(cell.airing.start)}</span>
 						<span class="cell-title">{cell.airing.title}</span>
-						{#if findExistingRule(cell.airing, channel)}<span class="cell-live-badge"
-								>{$_('hdhomerun.tile.recording_badge')}</span
-							>{/if}
+						{#if existingRule && pendingRuleIds.has(existingRule.RecordingRuleID)}
+							<span class="cell-live-badge cell-pending-badge">{$_('hdhomerun.detail.pending_recording_badge')}</span>
+						{:else if existingRule}
+							<span class="cell-live-badge">{$_('hdhomerun.tile.recording_badge')}</span>
+						{/if}
 					</div>
 				{/each}
 			</div>
@@ -338,6 +541,7 @@
 		y={menuState.y}
 		existingRule={findExistingRule(menuState.airing, menuState.channel)}
 		loading={isLoadingFor(menuState.airing, menuState.channel, findExistingRule(menuState.airing, menuState.channel))}
+		pending={pendingRuleIds.has(findExistingRule(menuState.airing, menuState.channel)?.RecordingRuleID ?? '')}
 		onRecordEpisode={() => {
 			if (!menuState) return;
 			onRecordEpisode(menuState.airing.series_id, menuState.channel.channel_number, menuState.airing.start);
@@ -357,6 +561,229 @@
 {/if}
 
 <style>
+	.guide-toolbar {
+		display: flex;
+		align-items: center;
+		margin: 0.75rem 0 0.5rem;
+	}
+
+	.guide-search-wrapper {
+		position: relative;
+		display: flex;
+		align-items: center;
+		max-width: 22rem;
+		width: 100%;
+	}
+
+	.search-icon {
+		position: absolute;
+		left: 0.75rem;
+		font-size: 0.85rem;
+		color: var(--color-text-muted);
+		pointer-events: none;
+	}
+
+	.guide-search-input {
+		width: 100%;
+		padding: 0.45rem 2rem 0.45rem 2.2rem;
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		background: var(--color-surface);
+		color: var(--color-text);
+		font: inherit;
+		font-size: 0.88rem;
+		transition: border-color 0.15s ease;
+	}
+
+	.guide-search-input:focus {
+		outline: none;
+		border-color: var(--color-accent);
+	}
+
+	.search-clear-btn {
+		position: absolute;
+		right: 0.5rem;
+		background: none;
+		border: none;
+		color: var(--color-text-muted);
+		padding: 0.2rem 0.4rem;
+		font-size: 0.8rem;
+		cursor: pointer;
+		border-radius: 0.25rem;
+	}
+
+	.search-clear-btn:hover {
+		color: var(--color-text);
+	}
+
+	.search-results-panel {
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		padding: 0.75rem;
+		margin-bottom: 0.75rem;
+	}
+
+	.search-results-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 0.5rem;
+		padding-bottom: 0.4rem;
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.search-results-title {
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: var(--color-text-muted);
+	}
+
+	.clear-search-link {
+		background: none;
+		border: none;
+		font-size: 0.8rem;
+		color: var(--color-accent);
+		cursor: pointer;
+		padding: 0;
+	}
+
+	.search-results-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		max-height: 22rem;
+		overflow-y: auto;
+	}
+
+	.search-result-card {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		padding: 0.6rem 0.75rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 0.45rem;
+		transition:
+			background 0.15s ease,
+			border-color 0.15s ease;
+	}
+
+	.search-result-card:hover {
+		border-color: var(--color-accent);
+		background: var(--color-surface-hover, rgba(255, 255, 255, 0.04));
+	}
+
+	.search-result-card.live {
+		border-color: var(--color-accent);
+	}
+
+	.result-main {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.result-meta {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		flex-wrap: wrap;
+		font-size: 0.78rem;
+	}
+
+	.result-live-badge {
+		background: var(--color-error, #e05a5a);
+		color: #fff;
+		font-weight: 600;
+		font-size: 0.68rem;
+		padding: 0.1rem 0.35rem;
+		border-radius: 0.25rem;
+		text-transform: uppercase;
+	}
+
+	.result-channel-badge {
+		font-weight: 600;
+		color: var(--color-accent);
+	}
+
+	.result-time {
+		color: var(--color-text-muted);
+	}
+
+	.result-rec-badge {
+		color: var(--color-error, #e05a5a);
+		font-weight: 600;
+		font-size: 0.75rem;
+	}
+
+	.result-rec-pending {
+		color: var(--color-warning, #d9a441);
+	}
+
+	.result-title {
+		font-size: 0.92rem;
+		font-weight: 600;
+		color: var(--color-text);
+	}
+
+	.result-subtitle {
+		font-size: 0.8rem;
+		color: var(--color-text-muted);
+	}
+
+	.result-synopsis {
+		font-size: 0.78rem;
+		color: var(--color-text-muted);
+		margin: 0.1rem 0 0;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	.result-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		flex-shrink: 0;
+	}
+
+	.result-btn {
+		background: none;
+		border: 1px solid var(--color-border);
+		border-radius: 0.35rem;
+		padding: 0.3rem 0.6rem;
+		font-size: 0.78rem;
+		color: var(--color-text);
+		cursor: pointer;
+		transition:
+			background 0.15s ease,
+			border-color 0.15s ease;
+	}
+
+	.result-btn:hover {
+		border-color: var(--color-accent);
+	}
+
+	.result-btn.watch-btn {
+		background: var(--color-accent);
+		color: var(--color-surface);
+		border-color: var(--color-accent);
+		font-weight: 600;
+	}
+
+	.search-empty {
+		color: var(--color-text-muted);
+		font-size: 0.85rem;
+		margin: 0.5rem 0;
+		text-align: center;
+	}
+
 	.guide-grid {
 		overflow: auto;
 		overscroll-behavior-x: contain;
@@ -403,27 +830,12 @@
 	}
 
 	.day-segment {
-		/* No overflow here — CSS treats any non-visible overflow as a scroll
-		   container, which would become .day-label's nearest scrolling
-		   ancestor instead of .guide-grid and break its stickiness. The
-		   sticky clamp to this box's edges (its containing block) still
-		   keeps the label from drifting into neighboring days without it. */
 		position: absolute;
 		top: 0;
 		bottom: 0;
 		border-left: 1px solid var(--color-border);
 	}
 
-	/* Sticks to the left edge of the scrollport (just past the channel-name
-	   column) while its day segment is in view, then scrolls out with it —
-	   so the visible label always reflects whichever day is on screen.
-	   display:flex defaults to width:auto, which stretches a block-level
-	   flex container to fill its containing block (.day-segment, which is
-	   as wide as an entire day — thousands of px). A sticky element can
-	   only slide within its containing block's bounds, so a label already
-	   that wide has nowhere left to slide and never visually moves.
-	   inline-flex + max-width keeps it shrink-to-fit instead, leaving room
-	   for the sticky offset to actually take effect. */
 	.day-label {
 		position: sticky;
 		left: 10rem;
@@ -553,11 +965,41 @@
 		cursor: pointer;
 		user-select: none;
 		touch-action: pan-y;
+		transition:
+			opacity 0.15s ease,
+			box-shadow 0.15s ease;
 	}
 
 	.airing-cell.live {
 		border-color: var(--color-accent);
 		background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));
+	}
+
+	.airing-cell.search-match {
+		border-color: var(--color-accent);
+		box-shadow: 0 0 0 1px var(--color-accent);
+		z-index: 2;
+	}
+
+	.airing-cell.search-dimmed {
+		opacity: 0.35;
+	}
+
+	.airing-cell.cell-flash {
+		animation: cellFlashPulse 1.2s ease infinite;
+		z-index: 3;
+	}
+
+	@keyframes cellFlashPulse {
+		0%,
+		100% {
+			transform: scale(1);
+			box-shadow: 0 0 0 2px var(--color-accent);
+		}
+		50% {
+			transform: scale(1.04);
+			box-shadow: 0 0 12px var(--color-accent);
+		}
 	}
 
 	.cell-time {
@@ -577,5 +1019,9 @@
 		font-size: 0.65rem;
 		color: var(--color-error, #e05a5a);
 		font-weight: 600;
+	}
+
+	.cell-pending-badge {
+		color: var(--color-warning, #d9a441);
 	}
 </style>

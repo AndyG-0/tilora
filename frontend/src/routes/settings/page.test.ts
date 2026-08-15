@@ -64,6 +64,8 @@ import { screensaverSettings, forceScreensaverPreview } from '$lib/stores/screen
 const BASE_SETTINGS = {
 	ai_model: 'anthropic/claude-sonnet-5',
 	ai_reasoning_effort: 'medium',
+	ai_agent_name: 'Tilora',
+	searxng_url: '',
 	timezone: 'UTC',
 	has_anthropic_api_key: false,
 	has_openai_api_key: false,
@@ -127,18 +129,40 @@ describe('settings +page.svelte — voice sections', () => {
 			target: { value: 'en_US-amy-medium|Amy' },
 		});
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Save app settings' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Save voice output' }));
 
 		await waitFor(() => expect(updateSettings).toHaveBeenCalled());
-		expect(updateSettings).toHaveBeenCalledWith(
-			expect.objectContaining({
-				openai_tts_enabled: 'true',
-				openai_tts_model: 'gpt-4o-mini-tts',
-				piper_tts_enabled: 'true',
-				piper_server_url: 'http://piper.local:5000',
-				piper_voices: 'en_US-amy-medium|Amy',
-			}),
-		);
+		expect(updateSettings).toHaveBeenCalledWith({
+			openai_tts_enabled: 'true',
+			openai_tts_model: 'gpt-4o-mini-tts',
+			piper_tts_enabled: 'true',
+			piper_server_url: 'http://piper.local:5000',
+			piper_voices: 'en_US-amy-medium|Amy',
+		});
+	});
+
+	it('lets an admin update AI provider settings including agent name and SearXNG URL', async () => {
+		user.set({ id: 'admin1', name: 'Admin', avatar: null, role: 'admin' });
+		render(Page);
+
+		await screen.findByText('AI provider');
+
+		await fireEvent.input(screen.getByPlaceholderText('Tilora'), {
+			target: { value: 'Jarvis' },
+		});
+		await fireEvent.input(screen.getByPlaceholderText('http://searxng:8080'), {
+			target: { value: 'http://searxng.internal:8080' },
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Save AI provider' }));
+
+		await waitFor(() => expect(updateSettings).toHaveBeenCalled());
+		expect(updateSettings).toHaveBeenCalledWith({
+			ai_model: 'anthropic/claude-sonnet-5',
+			ai_reasoning_effort: 'medium',
+			ai_agent_name: 'Jarvis',
+			searxng_url: 'http://searxng.internal:8080',
+		});
 	});
 
 	it('does not show the Voice output section to a non-admin member', async () => {
@@ -240,8 +264,12 @@ describe('settings +page.svelte — language section', () => {
 		const select = await screen.findByLabelText('Language');
 		await fireEvent.change(select, { target: { value: 'es' } });
 
-		await waitFor(() => expect(updatePreferences).toHaveBeenCalledWith({ locale: 'es' }));
 		expect(await screen.findByText('Idioma')).toBeInTheDocument();
+
+		// The locale (and this button's own label) switches live as soon as the
+		// select changes — the network write is what waits for Save.
+		await fireEvent.click(screen.getByRole('button', { name: 'Guardar idioma' }));
+		await waitFor(() => expect(updatePreferences).toHaveBeenCalledWith({ locale: 'es' }));
 
 		locale.set('en');
 		await waitLocale();

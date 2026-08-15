@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { segmentsToChars, type FormattedSegment } from '$lib/discordMarkdown';
+	import { getCursor, setCursor } from '$lib/stores/screensaverProgress';
 
 	// Conservative estimate of one flap row's rendered height (the .flap
 	// rule's clamp(1.6rem, 3.2vw, 2.6rem) height plus its 0.1rem top+bottom
@@ -20,12 +21,18 @@
 	const FLAP_DURATION_MS = 400;
 
 	let {
+		id,
 		lines,
 		pauseSeconds = 8,
 		pattern = 'top_to_bottom',
-	}: { lines: FormattedSegment[][]; pauseSeconds?: number; pattern?: 'top_to_bottom' | 'random' } = $props();
+	}: {
+		id: string;
+		lines: FormattedSegment[][];
+		pauseSeconds?: number;
+		pattern?: 'top_to_bottom' | 'random';
+	} = $props();
 
-	let index = $state(0);
+	let index = $state(getCursor(id));
 	let boardHeight = $state(0);
 
 	const rowsToShow = $derived(Math.max(1, Math.floor(boardHeight / ROW_HEIGHT_PX)));
@@ -68,6 +75,10 @@
 		if (lines.length <= 1) return;
 		const timeout = setTimeout(advanceIndex, revealDurationMs + pauseSeconds * 1000);
 		return () => clearTimeout(timeout);
+	});
+
+	$effect(() => {
+		setCursor(id, index);
 	});
 </script>
 

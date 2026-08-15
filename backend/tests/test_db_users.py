@@ -66,11 +66,11 @@ def test_delete_user_cascades_sessions_widget_layout_and_preferences(tmp_db):
     _create()
     db.create_device("dev1", "Kitchen", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")
     db.create_session("sess1", "alice", "dev1", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
-    db.save_widget_layout("alice", "dev1", "clock", {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1})
+    db.save_widget_layout("alice", "dev1", "wide", "clock", {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1})
     db.save_user_preferences("alice", {"theme": "light"})
 
     db.delete_user("alice")
 
     assert db.get_session("sess1") is None
-    assert db.list_widget_layouts("alice", "dev1") == {}
+    assert db.list_widget_layouts("alice", "dev1", "wide") == {}
     assert db.get_user_preferences("alice") == db._DEFAULT_PREFERENCES

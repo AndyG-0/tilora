@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
+	import { api } from '$lib/api';
 	import {
 		MAX_ATTEMPTS,
 		WORD_LENGTH,
@@ -12,12 +14,24 @@
 	} from '$lib/wordle';
 	import { _ } from 'svelte-i18n';
 
+	interface WordleStats {
+		played: number;
+		won: number;
+		currentStreak: number;
+		maxStreak: number;
+	}
+
 	interface WordleDetailData {
 		title: string;
+		stats: WordleStats;
 	}
 
 	let { data }: { data: WordleDetailData } = $props();
 
+	// Legacy client-side-only storage, kept only as a one-time migration
+	// source (see onMount) — the backend is now the source of truth, since
+	// stats should follow the user to any device, not stay stuck on the one
+	// they were set on.
 	const STATS_KEY = 'wordle-stats';
 	const SHAKE_DURATION_MS = 400;
 	const KEYBOARD_ROWS: string[][] = [
@@ -32,15 +46,17 @@
 	let gameOver = $state(false);
 	let won = $state(false);
 	let invalidShake = $state(false);
-	let stats = $state({ played: 0, won: 0, currentStreak: 0, maxStreak: 0 });
+	// svelte-ignore state_referenced_locally -- seed local state from the
+	// initial load once; subsequent updates go through saveStats.
+	let stats = $state({ ...data.stats });
 
 	let keyboardState = $derived(keyboardStatuses(guesses));
 
-	function saveStats() {
+	async function saveStats() {
 		try {
-			localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+			await api.updateWidgetSettings(page.params.id!, { stats });
 		} catch {
-			// stats just won't persist across reloads (e.g. private browsing)
+			// stats just won't persist across reloads (e.g. network hiccup)
 		}
 	}
 
@@ -130,11 +146,20 @@
 	}
 
 	onMount(() => {
+		// One-time migration: if the backend has no stored stats yet but this
+		// browser has pre-existing localStorage ones, push them up once so
+		// existing stats aren't lost, then stop touching localStorage.
+		if (stats.played > 0) return;
 		try {
 			const raw = localStorage.getItem(STATS_KEY);
-			if (raw) stats = JSON.parse(raw);
+			if (!raw) return;
+			const local = JSON.parse(raw) as WordleStats;
+			if (local.played > 0) {
+				stats = local;
+				api.updateWidgetSettings(page.params.id!, { stats }).catch(() => {});
+			}
 		} catch {
-			// keep defaults (e.g. private browsing blocks localStorage)
+			// no localStorage to migrate from (e.g. private browsing)
 		}
 	});
 </script>

@@ -104,7 +104,7 @@
 		position: relative;
 		font-family: 'Courier New', monospace;
 		font-weight: 700;
-		font-size: clamp(1.1rem, 22cqh, 2.2rem);
+		font-size: clamp(1.1rem, min(24cqh, 14cqw), 2.8rem);
 		font-variant-numeric: tabular-nums;
 		color: #4dff8f;
 		text-shadow:

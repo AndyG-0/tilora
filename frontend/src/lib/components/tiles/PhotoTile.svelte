@@ -6,8 +6,11 @@
 	import { _ } from 'svelte-i18n';
 
 	interface PhotoSummary {
+		provider?: 'local' | 'icloud_shared' | 'icloud_private' | 'immich';
 		count: number;
 		current: { filename: string; url: string } | null;
+		configured?: boolean;
+		connected?: boolean;
 		indexing?: boolean;
 		index_error?: string;
 	}
@@ -40,6 +43,10 @@
 		<div class="empty">{$_('photos.tile.indexing')}</div>
 	{:else if summary?.index_error}
 		<div class="empty error">{summary.index_error}</div>
+	{:else if summary && summary.configured === false}
+		<div class="empty">{$_('common.not_configured')}</div>
+	{:else if summary && summary.provider === 'icloud_private' && !summary.connected}
+		<div class="empty">{$_('common.not_connected')}</div>
 	{:else}
 		<div class="empty">{$_('photos.tile.no_photos')}</div>
 	{/if}

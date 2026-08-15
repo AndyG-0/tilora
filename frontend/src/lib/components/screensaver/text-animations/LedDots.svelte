@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { segmentsToHtml, type FormattedSegment } from '$lib/discordMarkdown';
+	import { getCursor, setCursor } from '$lib/stores/screensaverProgress';
 
 	// Conservative estimate of one row's rendered height (the .text rule's
 	// clamp(1.5rem, 4vw, 3rem) font-size at ~1.2 line-height, plus the .rows
@@ -9,12 +10,13 @@
 	const ROW_HEIGHT_PX = 64;
 
 	let {
+		id,
 		lines,
 		pauseSeconds = 8,
 		color = '#ff8a00',
-	}: { lines: FormattedSegment[][]; pauseSeconds?: number; color?: string } = $props();
+	}: { id: string; lines: FormattedSegment[][]; pauseSeconds?: number; color?: string } = $props();
 
-	let index = $state(0);
+	let index = $state(getCursor(id));
 	let signHeight = $state(0);
 	let rowsWrapperHeight = $state(0);
 	let rowsToShow = $state(1);
@@ -46,6 +48,10 @@
 		if (lines.length <= 1) return;
 		const interval = setInterval(() => (index = (index + rowsToShow) % lines.length), pauseSeconds * 1000);
 		return () => clearInterval(interval);
+	});
+
+	$effect(() => {
+		setCursor(id, index);
 	});
 
 	const visibleLines = $derived(

@@ -2,8 +2,10 @@
 	import { SCREENSAVER_COMPONENTS } from '$lib/widgetComponents';
 	import { isScreensaverWordyType, type TextAnimationStyle, type FlipboardPattern } from '$lib/screensaverTypes';
 	import WordyScreensaver from './WordyScreensaver.svelte';
+	import PhotoScreensaver from './PhotoScreensaver.svelte';
 
 	let {
+		id,
 		type,
 		data,
 		textAnimationStyle,
@@ -11,6 +13,7 @@
 		textPauseSeconds,
 		flipboardPattern,
 	}: {
+		id: string;
 		type: string;
 		data: unknown;
 		textAnimationStyle: TextAnimationStyle;
@@ -24,6 +27,7 @@
 
 {#if isScreensaverWordyType(type)}
 	<WordyScreensaver
+		{id}
 		{type}
 		{data}
 		animationStyle={textAnimationStyle}
@@ -31,6 +35,8 @@
 		{textPauseSeconds}
 		{flipboardPattern}
 	/>
+{:else if type === 'photos'}
+	<PhotoScreensaver data={data as never} {id} />
 {:else if Visual}
 	<Visual data={data as never} {ledColor} />
 {/if}

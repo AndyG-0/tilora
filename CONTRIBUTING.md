@@ -57,40 +57,97 @@ entries: `cache.delete(f"summary:{widget_id}")` /
 `cache.delete(f"detail:{widget_id}")` (or `_cache_key(...)` for a
 `"personal"`-scope widget — see below).
 
-### Settings tiers: network vs. personal
+### Settings tiers
 
-A widget's settings (`Plugin.config["settings"]`) land in one of two places,
-controlled by `Plugin.settings_scope: ClassVar[Literal["network", "personal"]]`
-(`backend/app/plugins/base.py`), which defaults to `"network"`:
+Tilora is a shared household dashboard with multiple physical screens
+("devices") and multiple household members ("users"), so "a setting" isn't
+one thing — it lands in one of four tiers depending on *who* it belongs to
+and *where* it should follow them. Getting the tier wrong is what causes bugs
+like a tile one person added on the kitchen tablet showing up (or being
+uneditable) on the living-room display.
 
-- **`"network"`** (default) — one shared value for the whole household,
-  stored in the global `widget_settings` table. Use this when the setting is
-  a property of the network/device the widget talks to, so it's the same
-  for everyone regardless of who's logged in: NAS/router/media-server host
-  and credentials, Docker/Podman socket, HDHomeRun tuner address, timezone.
-  Any logged-in user can read it (`GET .../summary|detail`); only an admin
-  can write it (`PATCH .../settings` 403s for a non-admin — enforced in
-  `backend/app/api/widgets.py`'s `_require_write_access`). On the frontend,
-  gate the corresponding `<Name>Detail.svelte`'s edit controls behind
-  `$user?.role === 'admin'` (see `SynologyDetail.svelte` for the pattern) —
-  this is a UX nicety only, the backend enforces the real check.
-- **`"personal"`** — each household member has their own value and sees
-  their own content on the tile, stored per-user in `widget_user_settings`.
-  Use this when the setting reflects individual preference rather than
-  network topology: which RSS feeds to follow, which calendars to show.
-  Any logged-in user can read and write their own settings; there's nothing
-  to gate in the UI, since `GET .../summary|detail` already returns the
-  requesting user's own data via the session cookie.
+1. **Admin** — one value for the whole household, controlled only by an
+   admin. Examples: user management (`backend/app/api/admin.py`), app-wide
+   config in `Settings`/`app_settings` (`PATCH /api/settings`, gated
+   household-wide by `Depends(get_current_admin)` on the whole router —
+   *nobody* non-admin can even read it), and shared service credentials in
+   the `network_integrations` table (NAS/router/media-server host+creds,
+   Docker/Podman socket, HDHomeRun tuner address — see
+   `app.plugins.network_settings`). This tier is unrelated to
+   `Plugin.settings_scope` below; it's admin-only end to end, with no
+   per-user or per-device read path at all.
+2. **User-level** — belongs to one household member and follows them to
+   *any* device they log into. This is `Plugin.settings_scope = "personal"`
+   (`backend/app/plugins/base.py`), stored per-user in
+   `widget_user_settings` (or a dedicated table for data that isn't simple
+   key/value settings, e.g. `user_credentials` for iCloud Apple ID/password,
+   `packages.user_id` for tracked deliveries). Examples: which RSS feeds to
+   follow, Steam/Goodreads account linkage, iCloud Photos login, package
+   tracking numbers, 2048/Wordle high scores, AI voice selection. Any
+   logged-in user can read and write their own settings; there's nothing to
+   gate in the UI, since `GET .../summary|detail` already returns the
+   requesting user's own data via the session cookie.
+3. **Widget settings** — belongs to one widget *instance*, sourced from its
+   `dashboard.yaml` entry or `custom_widgets.settings` row and keyed by
+   widget id: it's the base layer every widget reads from, e.g. *which*
+   subset of your user-level RSS feed catalog this particular tile displays
+   is an ordinary settings key on that widget instance, not a new mechanism.
+   Whether household members share this widget's value or each get their
+   own is `Plugin.settings_scope: ClassVar[Literal["network", "personal"]]`
+   (`backend/app/plugins/base.py`), which defaults to `"network"` (one
+   shared value, e.g. a NAS/router/media-server host+credentials, stored in
+   `widget_settings` or a `network_integrations` row) — this is tier 1's
+   admin-only-write rule, but enforced per widget: any logged-in user can
+   `GET .../summary|detail`, only an admin can `PATCH .../settings`
+   (`backend/app/auth.py`'s `require_write_access` 403s a non-admin). On the
+   frontend, gate the corresponding `<Name>Detail.svelte`'s edit controls
+   behind `$user?.role === 'admin'` (see `SynologyDetail.svelte`) — a UX
+   nicety only, since the backend enforces the real check. Setting
+   `settings_scope = "personal"` instead makes this tier 2 (see above) —
+   just that one class attribute; no other code changes are needed as long
+   as `__init__` stays cheap and side-effect-free (true for every plugin
+   today), since personalization works by constructing a fresh instance per
+   request via `Plugin.with_settings()`/`scoped_plugin()` rather than
+   mutating the shared registry singleton.
+4. **Device** — belongs to one (user, device) *pair*, not a device alone.
+   Two people sharing a screen must not see each other's layout, and one
+   person's phone and tablet may reasonably differ — so this tier is keyed
+   `(user_id, device_id)` throughout: `widget_layout` (position/size, keyed
+   further by breakpoint), `hidden_widget_ids` (a tile hidden from just this
+   pair's view), and `custom_widgets.owner_user_id`/`owner_device_id` (which
+   pair created a UI-added tile — see "Tile visibility" below). A narrower
+   per-device-only knob also exists for settings that depend on *this
+   screen's hardware/browser* rather than who's logged in — e.g. Jellyfin's
+   `playback_mode` — via `Plugin.device_overridable_settings` layered on top
+   of tier 2/3, stored in `widget_device_settings` keyed by `device_id`
+   alone (any user on that device shares the override, since it's a
+   property of the screen, not the viewer).
 
-Opting a plugin into `"personal"` scope is just `settings_scope = "personal"`
-on the class — no other code changes are needed as long as `__init__` stays
-cheap and side-effect-free (true for every plugin today), since
-personalization works by constructing a fresh instance per request via
-`Plugin.with_settings()` rather than mutating the shared registry singleton.
+**Tile visibility** (which of the above governs whether a tile even
+*appears*): `dashboard.yaml` widgets are visible to everyone by default —
+opt-out, via `hidden_widget_ids` — so a brand-new (user, device) pair starts
+from the admin's curated dashboard rather than blank. Widgets added through
+the UI are private by default — opt-in — to the (user, device) pair that
+created them, via `custom_widgets.owner_user_id`/`owner_device_id`. Legacy
+custom widgets predating this scheme have `NULL` owner columns and stay
+visible to everyone, since there's no historical owner to attribute them to.
+Deleting a widget you own fully removes it (registry, layout, settings,
+photo index); deleting one you don't own just hides it for your own (user,
+device) pair — see `remove_widget` in `backend/app/api/widgets.py`.
 
-When in doubt about which bucket a new integration belongs in, ask: would
-two people on the same household network expect to see the same value here,
-or their own? Same value → `"network"`. Their own → `"personal"`.
+`settings_scope` is normally a fixed `ClassVar`, but it can be a `@property`
+instead when a plugin's own settings determine which household members
+should share a value — `PhotosPlugin` is the one example today:
+`"personal"` only when `provider == "icloud_private"` (a connected Apple
+ID), `"network"` for every other photo source (local folder,
+`icloud_shared`, Immich), since those have nothing user-specific to
+protect.
+
+When in doubt about which tier a new setting belongs in, ask two questions:
+would every household member expect the *same* answer, or their *own*
+(tier 1/3 vs. tier 2)? And would someone expect the same answer on *every
+screen* they use, or does it belong to *this* screen/pairing (tier 2/3 vs.
+tier 4)?
 
 ## Theming
 

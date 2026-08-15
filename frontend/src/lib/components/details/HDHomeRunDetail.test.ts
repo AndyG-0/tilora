@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, within } from '@testing-library/svelte';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const {
@@ -11,6 +11,8 @@ const {
 	hdhomerunHwaccelDiagnostics,
 	hdhomerunRecordingStreamUrl,
 	getHDHomeRunGuide,
+	addHDHomeRunRecordingRule,
+	deleteHDHomeRunRecordingRule,
 } = vi.hoisted(() => ({
 	goto: vi.fn(),
 	widgetDetail: vi.fn(),
@@ -23,8 +25,26 @@ const {
 		(widgetId: string, playUrl: string) => `https://example.com/${widgetId}/recording-stream?url=${playUrl}`,
 	),
 	getHDHomeRunGuide: vi.fn(),
+	addHDHomeRunRecordingRule: vi.fn(),
+	deleteHDHomeRunRecordingRule: vi.fn(),
 }));
 vi.mock('$app/navigation', () => ({ goto }));
+vi.mock('mpegts.js', () => ({
+	default: {
+		createPlayer: vi.fn(() => ({
+			on: vi.fn(),
+			attachMediaElement: vi.fn(),
+			load: vi.fn(),
+			play: vi.fn(),
+			pause: vi.fn(),
+			unload: vi.fn(),
+			detachMediaElement: vi.fn(),
+			destroy: vi.fn(),
+		})),
+		Events: { ERROR: 'error' },
+		ErrorTypes: { NETWORK_ERROR: 'NetworkError', MEDIA_ERROR: 'MediaError' },
+	},
+}));
 vi.mock('$lib/api', () => ({
 	api: {
 		widgetDetail,
@@ -35,6 +55,8 @@ vi.mock('$lib/api', () => ({
 		hdhomerunHwaccelDiagnostics,
 		hdhomerunRecordingStreamUrl,
 		getHDHomeRunGuide,
+		addHDHomeRunRecordingRule,
+		deleteHDHomeRunRecordingRule,
 	},
 }));
 
@@ -118,6 +140,7 @@ const connected = {
 describe('HDHomeRunDetail', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		localStorage.clear();
 		getHDHomeRunGuide.mockResolvedValue([]);
 		pageUrl = new URL('http://localhost/widget/hdhomerun');
 		user.set({ id: 'admin-user', name: 'Admin', avatar: null, role: 'admin' });
@@ -151,14 +174,16 @@ describe('HDHomeRunDetail', () => {
 		expect(await screen.findByRole('button', { name: 'Remove from favorites' })).toBeInTheDocument();
 	});
 
-	it('shows the DVR section with recordings in progress', async () => {
-		render(HDHomeRunDetail, {
+	it('shows the DVR section with recordings in progress and offers Watch Live', async () => {
+		const { container } = render(HDHomeRunDetail, {
 			props: {
 				data: {
 					...connected,
 					dvr_connected: true,
 					dvr_info: { friendly_name: 'DVR', version: '1.0', free_space_bytes: 500_000_000_000 },
-					recordings_in_progress: [{ title: 'Big Game', channel_name: 'KDFW', start: null, record_end: null }],
+					recordings_in_progress: [
+						{ title: 'Big Game', channel_name: 'KDFW', channel_number: '4.1', start: null, record_end: null },
+					],
 					upcoming_recording_rules_count: 3,
 				},
 			},
@@ -169,6 +194,17 @@ describe('HDHomeRunDetail', () => {
 		expect(screen.getByText('● Recording')).toBeInTheDocument();
 		expect(screen.getByText('Big Game')).toBeInTheDocument();
 		expect(screen.getByText('Free space: 500.0 GB')).toBeInTheDocument();
+		expect(screen.getByText('Recording in progress — available to watch once finished.')).toBeInTheDocument();
+
+		// Should not have a recorded file playback watch button in current recordings
+		expect(container.querySelector('button.watch')).toBeNull();
+
+		// Should have Watch Live button
+		const watchLiveBtn = screen.getByRole('button', { name: '▶ Watch Live' });
+		expect(watchLiveBtn).toBeInTheDocument();
+
+		await fireEvent.click(watchLiveBtn);
+		expect(screen.getByRole('dialog', { name: '4.1 KDFW' })).toBeInTheDocument();
 	});
 
 	it('auto-launches playback from a ?watch= query param and strips it', async () => {
@@ -196,6 +232,117 @@ describe('HDHomeRunDetail', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Close player' }));
 
 		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+	});
+
+	it('surfaces the server-provided reason when a series recording rule is rejected', async () => {
+		vi.useFakeTimers({ shouldAdvanceTime: true });
+		getHDHomeRunGuide.mockResolvedValue(guideWithLiveAiring());
+		// Mirrors the backend: a rejected recording_rules request (e.g. no active
+		// HDHomeRun DVR subscription) surfaces as an Error carrying the server's
+		// detail message, not a silent "success" with zero rules.
+		addHDHomeRunRecordingRule.mockRejectedValue(new Error('no active DVR subscription'));
+
+		render(HDHomeRunDetail, { props: { data: connected } });
+
+		const liveCell = (await screen.findByText('Evening News')).closest('.airing-cell');
+		if (!liveCell) throw new Error('live airing cell not found');
+
+		await fireEvent.pointerDown(liveCell);
+		await vi.advanceTimersByTimeAsync(500);
+
+		await fireEvent.click(screen.getByRole('menuitem', { name: 'Record Series' }));
+
+		expect(await screen.findByText('no active DVR subscription')).toBeInTheDocument();
+		vi.useRealTimers();
+	});
+
+	it('shows a pending confirmation badge for a newly created rule until a later fetch confirms it', async () => {
+		vi.useFakeTimers({ shouldAdvanceTime: true });
+		getHDHomeRunGuide.mockResolvedValue(guideWithLiveAiring());
+		const newRule = {
+			RecordingRuleID: 'new-1',
+			SeriesID: 'SH123',
+			Title: 'Evening News',
+		};
+		addHDHomeRunRecordingRule.mockResolvedValue([newRule]);
+		// Simulates SiliconDust's cloud API being eventually consistent: the
+		// very next fetch right after creating the rule doesn't include it yet.
+		widgetDetail.mockResolvedValue({ ...connected, recording_rules: [] });
+
+		render(HDHomeRunDetail, { props: { data: connected } });
+
+		const liveCell = (await screen.findByText('Evening News')).closest('.airing-cell');
+		if (!liveCell) throw new Error('live airing cell not found');
+
+		await fireEvent.pointerDown(liveCell);
+		await vi.advanceTimersByTimeAsync(500);
+		await fireEvent.click(screen.getByRole('menuitem', { name: 'Record Series' }));
+
+		await vi.waitFor(() => expect(addHDHomeRunRecordingRule).toHaveBeenCalled());
+		await fireEvent.click(screen.getByRole('button', { name: 'DVR' }));
+
+		expect(await screen.findByText('Pending confirmation')).toBeInTheDocument();
+
+		// A later fetch that does include the rule should clear the pending badge.
+		widgetDetail.mockResolvedValue({ ...connected, recording_rules: [newRule] });
+		hdhomerunTranscodePresets.mockResolvedValue([
+			{ id: 'software', label: 'Software', description: 'CPU only', input_args: [], output_args: ['-c:v', 'libx264'] },
+		]);
+		updateWidgetSettings.mockResolvedValue({ status: 'ok' });
+		await fireEvent.click(screen.getByText('Edit playback settings'));
+		await fireEvent.click(screen.getByText('Save'));
+
+		await vi.waitFor(() => expect(screen.queryByText('Pending confirmation')).not.toBeInTheDocument());
+		vi.useRealTimers();
+	});
+
+	it('does not mark a pre-existing rule as pending just because it is missing from an unrelated fetch', async () => {
+		vi.useFakeTimers({ shouldAdvanceTime: true });
+		getHDHomeRunGuide.mockResolvedValue(guideWithLiveAiring());
+		const oldRule = { RecordingRuleID: 'old-1', SeriesID: 'SH999', Title: 'Old Show' };
+		const newRule = { RecordingRuleID: 'new-1', SeriesID: 'SH123', Title: 'Evening News' };
+		const withOldRule = { ...connected, recording_rules: [oldRule] };
+		addHDHomeRunRecordingRule.mockResolvedValue([oldRule, newRule]);
+		// The old rule is still present in the fresh fetch — only the brand
+		// new one hasn't propagated yet — so only the new one should ever be
+		// flagged pending.
+		widgetDetail.mockResolvedValue({ ...withOldRule, recording_rules: [oldRule] });
+
+		render(HDHomeRunDetail, { props: { data: withOldRule } });
+
+		const liveCell = (await screen.findByText('Evening News')).closest('.airing-cell');
+		if (!liveCell) throw new Error('live airing cell not found');
+
+		await fireEvent.pointerDown(liveCell);
+		await vi.advanceTimersByTimeAsync(500);
+		await fireEvent.click(screen.getByRole('menuitem', { name: 'Record Series' }));
+
+		await vi.waitFor(() => expect(addHDHomeRunRecordingRule).toHaveBeenCalled());
+		await fireEvent.click(screen.getByRole('button', { name: 'DVR' }));
+
+		const oldCard = (await screen.findByText('Old Show')).closest('.rule-card');
+		if (!oldCard) throw new Error('old rule card not found');
+		expect(within(oldCard as HTMLElement).queryByText('Pending confirmation')).not.toBeInTheDocument();
+
+		const newCard = screen.getByText('Evening News').closest('.rule-card');
+		if (!newCard) throw new Error('new rule card not found');
+		expect(within(newCard as HTMLElement).getByText('Pending confirmation')).toBeInTheDocument();
+		vi.useRealTimers();
+	});
+
+	it('keeps showing a pending rule as pending after a reload, until a fresh fetch confirms it', async () => {
+		getHDHomeRunGuide.mockResolvedValue([]);
+		const newRule = { RecordingRuleID: 'new-1', SeriesID: 'SH123', Title: 'Evening News' };
+		localStorage.setItem(
+			'hdhomerun-pending-rules:hdhomerun',
+			JSON.stringify([{ rule: newRule, createdAt: Date.now() }]),
+		);
+		// The initial server-rendered data (as if freshly reloaded) still
+		// doesn't include the rule — the pending flag must survive the reload.
+		render(HDHomeRunDetail, { props: { data: connected } });
+
+		await fireEvent.click(screen.getByRole('button', { name: 'DVR' }));
+		expect(await screen.findByText('Pending confirmation')).toBeInTheDocument();
 	});
 
 	it('loads transcode presets when opening the playback settings editor', async () => {
@@ -412,5 +559,92 @@ describe('HDHomeRunDetail', () => {
 		render(HDHomeRunDetail, { props: { data: connected } });
 
 		expect(screen.queryByText('Edit playback settings')).not.toBeInTheDocument();
+	});
+
+	it('displays tuner status popover with active channel and idle tuners', () => {
+		const dataWithTuners = {
+			...connected,
+			tuners: [
+				{
+					index: 0,
+					in_use: true,
+					channel_number: '4.1',
+					channel_name: 'KDFW',
+					signal_strength_percent: 95,
+					signal_quality_percent: 100,
+					symbol_quality_percent: 100,
+					network_rate_bps: 12000000,
+				},
+				{
+					index: 1,
+					in_use: false,
+					channel_number: null,
+					channel_name: null,
+					signal_strength_percent: null,
+					signal_quality_percent: null,
+					symbol_quality_percent: null,
+					network_rate_bps: null,
+				},
+			],
+		};
+
+		const { container } = render(HDHomeRunDetail, { props: { data: dataWithTuners } });
+
+		expect(screen.getByText('2 tuners')).toBeInTheDocument();
+		const popover = container.querySelector('.tuner-status-popover') as HTMLElement;
+		expect(popover).toBeInTheDocument();
+		expect(within(popover).getByText('Tuner Status')).toBeInTheDocument();
+		expect(within(popover).getByText('Tuner 0')).toBeInTheDocument();
+		expect(within(popover).getByText('4.1')).toBeInTheDocument();
+		expect(within(popover).getByText('KDFW')).toBeInTheDocument();
+		expect(within(popover).getByText('Signal 95%')).toBeInTheDocument();
+		expect(within(popover).getByText('Tuner 1')).toBeInTheDocument();
+		expect(within(popover).getByText('Idle')).toBeInTheDocument();
+	});
+
+	it('allows searching through programs in the guide and shows results panel', async () => {
+		getHDHomeRunGuide.mockResolvedValue([
+			{
+				channel_number: '4.1',
+				channel_name: 'KDFW',
+				airings: [
+					{
+						series_id: 'SH101',
+						title: 'Morning News',
+						episode_title: 'Early Edition',
+						synopsis: 'Local breaking news and weather.',
+						start: nowSeconds() - 100,
+						end: nowSeconds() + 1800,
+					},
+					{
+						series_id: 'SH102',
+						title: 'Evening Comedy',
+						episode_title: null,
+						synopsis: 'Funny sitcom series.',
+						start: nowSeconds() + 7200,
+						end: nowSeconds() + 9000,
+					},
+				],
+			},
+		]);
+
+		const { container } = render(HDHomeRunDetail, { props: { data: connected } });
+
+		const searchInput = await screen.findByPlaceholderText('Search programs…');
+		expect(searchInput).toBeInTheDocument();
+
+		// Search for "comedy"
+		await fireEvent.input(searchInput, { target: { value: 'Comedy' } });
+
+		expect(await screen.findByText('1 programs found')).toBeInTheDocument();
+		const resultsPanel = container.querySelector('.search-results-panel') as HTMLElement;
+		expect(resultsPanel).toBeInTheDocument();
+		expect(within(resultsPanel).getByText('Evening Comedy')).toBeInTheDocument();
+		expect(within(resultsPanel).getByText('Funny sitcom series.')).toBeInTheDocument();
+		expect(within(resultsPanel).getByText('Show in guide')).toBeInTheDocument();
+
+		// Clear search
+		await fireEvent.click(screen.getAllByRole('button', { name: 'Clear search' })[0]);
+		expect(screen.queryByText('1 programs found')).not.toBeInTheDocument();
 	});
 });

@@ -20,10 +20,12 @@
 		count: number;
 		interval_seconds: number;
 		photos: Photo[];
+		configured?: boolean;
 		directory?: string | null;
 		recursive?: boolean;
 		album_token?: string | null;
 		connected?: boolean;
+		has_credentials?: boolean;
 		immich_base_url?: string | null;
 		has_immich_api_key?: boolean;
 		immich_album_id?: string | null;
@@ -422,6 +424,13 @@
 					{connecting ? $_('photos.detail.verifying') : $_('photos.detail.verify')}
 				</button>
 			</div>
+		{:else if photoData.has_credentials === false}
+			<p class="hint">{$_('photos.detail.not_configured_icloud_hint')}</p>
+			<p class="hint">
+				{$_('photos.detail.settings_hint_prefix')}<a href="/settings">{$_('photos.detail.settings_hint_link')}</a>{$_(
+					'photos.detail.settings_hint_suffix',
+				)}
+			</p>
 		{:else}
 			<p class="hint">{$_('photos.detail.connect_hint')}</p>
 			<button class="connect-button" disabled={connecting} onclick={startConnect}>
@@ -452,6 +461,12 @@
 	<p class="hint">{$_('photos.tile.indexing')}</p>
 {:else if photoData.index_error}
 	<p class="hint error">{photoData.index_error}</p>
+{:else if photoData.provider === 'icloud_shared' && !photoData.album_token}
+	<p class="hint">{$_('photos.detail.no_album_link_hint')}</p>
+{:else if photoData.provider === 'local' && !photoData.directory}
+	<p class="hint">{$_('photos.detail.no_folder_hint')}</p>
+{:else if photoData.provider === 'immich' && !photoData.immich_base_url}
+	<p class="hint">{$_('photos.detail.not_configured_immich_hint')}</p>
 {:else}
 	<p class="hint">{$_('photos.detail.no_photos')}</p>
 {/if}

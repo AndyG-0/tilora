@@ -58,6 +58,66 @@ async def test_delete_recording_rule_success():
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_add_recording_rule_rejected_raises_instead_of_silently_succeeding():
+    # SiliconDust returns HTTP 200 but a non-list body (e.g. no active HDHomeRun
+    # DVR subscription) when a rule is rejected — this must surface as an error,
+    # not be swallowed into an empty "success" list (see hdhomerun_client._rules_or_raise).
+    respx.get("http://hdhr.local:80/discover.json").mock(
+        return_value=httpx.Response(200, json={"DeviceAuth": "test_auth_token"})
+    )
+    respx.post("https://api.hdhomerun.com/api/recording_rules").mock(
+        return_value=httpx.Response(200, json={"error": "no active DVR subscription"})
+    )
+
+    rule_data = {"series_id": "S1001", "channel": "4.1"}
+    with pytest.raises(hdhomerun_client.HDHomeRunError, match="no active DVR subscription"):
+        await hdhomerun_client.add_recording_rule(TUNER_SETTINGS, rule_data)
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_delete_recording_rule_rejected_raises_instead_of_silently_succeeding():
+    respx.get("http://hdhr.local:80/discover.json").mock(
+        return_value=httpx.Response(200, json={"DeviceAuth": "test_auth_token"})
+    )
+    respx.post("https://api.hdhomerun.com/api/recording_rules").mock(
+        return_value=httpx.Response(200, json={"error": "unauthorized"})
+    )
+
+    with pytest.raises(hdhomerun_client.HDHomeRunError, match="unauthorized"):
+        await hdhomerun_client.delete_recording_rule(TUNER_SETTINGS, "123")
+
+
+@respx.mock
+def test_api_create_recording_rule_returns_400_on_rejection(client):
+    from app.plugins.base import registry
+    from app.plugins.hdhomerun.plugin import HDHomeRunPlugin
+
+    plugin = HDHomeRunPlugin(
+        {
+            "id": "hdhomerun-rejected",
+            "settings": {"tuner_host": "hdhr.local", "tuner_port": 80, "dvr_host": "", "dvr_port": 50000},
+        }
+    )
+    registry.register(plugin)
+
+    respx.get("http://hdhr.local:80/discover.json").mock(
+        return_value=httpx.Response(200, json={"DeviceAuth": "test_auth_token"})
+    )
+    respx.post("https://api.hdhomerun.com/api/recording_rules").mock(
+        return_value=httpx.Response(200, json={"error": "no active DVR subscription"})
+    )
+
+    res = client.post(
+        "/api/hdhomerun/hdhomerun-rejected/recording-rules",
+        json={"series_id": "S999"},
+    )
+    assert res.status_code == 400
+    assert "no active DVR subscription" in res.json()["detail"]
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_fetch_full_guide():
     cache.delete("hdhomerun_full_guide:hdhomerun")
     respx.get("http://hdhr.local:80/discover.json").mock(

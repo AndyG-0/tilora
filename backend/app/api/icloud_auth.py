@@ -2,65 +2,96 @@
 via `icloud_photos.py`), as opposed to the icloud_shared provider, which
 needs no connect step at all.
 
-Apple ID + password come from the global app settings (Settings page or
-`.env`), not a per-widget setting — one Apple ID, same as CalDAV/Google
-Calendar are a single connected account rather than per-widget credentials.
+Apple ID + password are a personal credential (see `CONTRIBUTING.md`'s
+settings tiers) stored per-user in `app.storage.db.user_credentials`, not a
+household-wide app setting — each family member connects their own Apple ID
+and gets their own 2FA session.
 """
 
 from __future__ import annotations
 
+import asyncio
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.auth import get_current_admin
-from app.config import effective_settings
+from app.auth import get_current_user
 from app.integrations import icloud_photos
 from app.plugins.base import registry
 from app.plugins.photos.plugin import PhotosPlugin
-from app.scheduler import schedule_photo_index
+from app.scheduler import schedule_immediate_user_photo_index
+from app.storage import db
 from app.storage.cache import cache
 
-router = APIRouter(prefix="/api/icloud", tags=["icloud"], dependencies=[Depends(get_current_admin)])
+router = APIRouter(prefix="/api/icloud", tags=["icloud"], dependencies=[Depends(get_current_user)])
 
 
-def _credentials() -> tuple[str, str]:
-    creds = effective_settings()
-    username, password = creds.get("icloud_username"), creds.get("icloud_password")
+async def _credentials(user_id: str) -> tuple[str, str]:
+    creds = await asyncio.to_thread(db.get_user_credentials, user_id, "icloud") or {}
+    username, password = creds.get("username"), creds.get("password")
     if not icloud_photos.is_configured(username, password):
         raise HTTPException(status_code=400, detail="iCloud username/password are not configured")
     return username, password
 
 
-def _reindex_private_photo_widgets() -> None:
+def _reindex_private_photo_widgets(user_id: str) -> None:
+    """Schedules an immediate scan of user_id's own private library for every
+    icloud_private widget, right after they connect/verify — each household
+    member's library is indexed independently (see PhotosPlugin), so this
+    only ever touches user_id's own photo_index rows.
+    """
     for plugin in registry.all():
         if isinstance(plugin, PhotosPlugin) and plugin.provider == "icloud_private":
-            schedule_photo_index(plugin)
+            schedule_immediate_user_photo_index(plugin, user_id)
 
 
 @router.post("/auth/start")
-async def start_auth():
-    username, password = _credentials()
-    result = await icloud_photos.start_auth(username, password)
+async def start_auth(user: dict[str, Any] = Depends(get_current_user)):
+    username, password = await _credentials(user["id"])
+    result = await icloud_photos.start_auth(user["id"], username, password)
     if result["connected"]:
         cache.delete("summary:photos")
         cache.delete("detail:photos")
-        _reindex_private_photo_widgets()
+        _reindex_private_photo_widgets(user["id"])
     return result
 
 
 @router.post("/auth/verify")
-async def verify_auth(payload: dict[str, str]):
+async def verify_auth(payload: dict[str, str], user: dict[str, Any] = Depends(get_current_user)):
     code = payload.get("code")
     if not code:
         raise HTTPException(status_code=400, detail="code is required")
 
-    verified = await icloud_photos.verify_2fa(code)
+    verified = await icloud_photos.verify_2fa(user["id"], code)
     if verified:
         cache.delete("summary:photos")
         cache.delete("detail:photos")
-        _reindex_private_photo_widgets()
+        _reindex_private_photo_widgets(user["id"])
     return {"connected": verified}
 
 
 @router.get("/status")
-async def status():
-    return {"connected": icloud_photos.is_connected_cached()}
+async def status(user: dict[str, Any] = Depends(get_current_user)):
+    return {"connected": icloud_photos.is_connected_cached(user["id"])}
+
+
+@router.put("/credentials")
+async def set_credentials(payload: dict[str, str], user: dict[str, Any] = Depends(get_current_user)):
+    username, password = payload.get("username"), payload.get("password")
+    if not icloud_photos.is_configured(username, password):
+        raise HTTPException(status_code=400, detail="username and password are required")
+    credentials = {"username": username, "password": password}
+    await asyncio.to_thread(db.save_user_credentials, user["id"], "icloud", credentials)
+    icloud_photos.invalidate_service_cache(user["id"])
+    cache.delete("summary:photos")
+    cache.delete("detail:photos")
+    return {"status": "ok"}
+
+
+@router.delete("/credentials")
+async def clear_credentials(user: dict[str, Any] = Depends(get_current_user)):
+    await asyncio.to_thread(db.delete_user_credentials, user["id"], "icloud")
+    icloud_photos.invalidate_service_cache(user["id"])
+    cache.delete("summary:photos")
+    cache.delete("detail:photos")
+    return {"status": "ok"}

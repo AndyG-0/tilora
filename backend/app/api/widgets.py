@@ -29,6 +29,7 @@ from app.scheduler import (
 from app.storage.cache import cache
 from app.storage.db import (
     delete_custom_widget,
+    delete_hidden_widget_ids_for_widget,
     delete_photo_index,
     delete_widget_device_settings,
     delete_widget_device_settings_for_widget,
@@ -37,9 +38,10 @@ from app.storage.db import (
     get_user_preferences,
     get_widget_device_settings,
     get_widget_user_settings,
+    hidden_widget_ids,
+    hide_widget,
     list_custom_widgets,
     list_widget_layouts,
-    mark_widget_removed,
     save_custom_widget,
     save_widget_device_settings,
     save_widget_layout,
@@ -95,33 +97,50 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/widgets", tags=["widgets"])
 
 
-def _list_widgets_sync(user_id: str, breakpoint: Breakpoint) -> list[dict[str, Any]]:
+def _widget_is_visible(widget: dict[str, Any], user_id: str, device_id: str, hidden: set[str]) -> bool:
+    owner_user_id = widget.get("owner_user_id")
+    owner_device_id = widget.get("owner_device_id")
+    if owner_user_id is not None or owner_device_id is not None:
+        # A UI-added widget created after ownership tracking existed:
+        # private to the (user, device) pair that created it.
+        return owner_user_id == user_id and owner_device_id == device_id
+    # A dashboard.yaml widget, or a legacy pre-ownership custom widget:
+    # visible to everyone by default, opt-out per (user, device).
+    return widget["id"] not in hidden
+
+
+def _list_widgets_sync(user_id: str, device_id: str, breakpoint: Breakpoint) -> list[dict[str, Any]]:
     config = load_dashboard_config()
     default_tab = resolve_tabs(config)[0]["id"]
-    layouts = list_widget_layouts(user_id, breakpoint)
+    layouts = list_widget_layouts(user_id, device_id, breakpoint)
+    hidden = hidden_widget_ids(user_id, device_id)
     return [
         {
             "id": w["id"],
             "type": w["type"],
             # A drag-to-rearrange edit persisted at runtime overrides the
-            # dashboard.yaml position, scoped to this (user, breakpoint)
-            # pair — the same layering pattern widget settings overrides
-            # use, just with an extra dimension.
+            # dashboard.yaml position, scoped to this (user, device,
+            # breakpoint) triple — the same layering pattern widget settings
+            # overrides use, just with two extra dimensions.
             "layout": {**w["layout"], **layouts.get(w["id"], {})},
             "tab": w.get("tab", default_tab),
         }
         for w in list_widget_configs(config)
-        if w.get("enabled", True)
+        if w.get("enabled", True) and _widget_is_visible(w, user_id, device_id, hidden)
     ]
 
 
 @router.get("")
-async def list_widgets(breakpoint: Breakpoint, user: dict[str, Any] = Depends(get_current_user)):
+async def list_widgets(
+    breakpoint: Breakpoint,
+    user: dict[str, Any] = Depends(get_current_user),
+    device: dict[str, Any] = Depends(get_current_device),
+):
     # One thread hop for the whole list (config-file read + one bulk layout
     # query) rather than one per widget — cheaper than to_thread-per-call
     # and this whole read is what needs to move off the event loop, not each
     # individual piece of it.
-    return await asyncio.to_thread(_list_widgets_sync, user["id"], breakpoint)
+    return await asyncio.to_thread(_list_widgets_sync, user["id"], device["id"], breakpoint)
 
 
 @router.get("/types")
@@ -136,21 +155,31 @@ async def widget_types():
 async def update_widgets_layout(
     payload: UpdateWidgetsLayoutRequest,
     user: dict[str, Any] = Depends(get_current_user),
+    device: dict[str, Any] = Depends(get_current_device),
 ):
     for entry in payload.widgets:
-        await asyncio.to_thread(save_widget_layout, user["id"], payload.breakpoint, entry.id, entry.layout.model_dump())
+        await asyncio.to_thread(
+            save_widget_layout, user["id"], device["id"], payload.breakpoint, entry.id, entry.layout.model_dump()
+        )
     return {"status": "ok"}
 
 
 @router.post("")
-async def add_widget(payload: AddWidgetRequest, user: dict[str, Any] = Depends(get_current_user)):
+async def add_widget(
+    payload: AddWidgetRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+    device: dict[str, Any] = Depends(get_current_device),
+):
     plugin_cls = PLUGIN_CLASSES_BY_TYPE.get(payload.type)
     if plugin_cls is None:
         raise HTTPException(status_code=400, detail=f"Unknown widget type '{payload.type}'")
-    # No plugin instance exists yet to check via require_write_access, but
-    # settings_scope is a ClassVar, so the class attribute is enough to
-    # decide whether adding this widget type is an admin-only action.
-    if plugin_cls.settings_scope == "network" and user.get("role") != "admin":
+    # No real plugin instance exists yet, and settings_scope isn't always a
+    # plain ClassVar (PhotosPlugin's depends on its own settings — see its
+    # docstring), so a throwaway instance seeded with this type's starter
+    # settings is built just to read it correctly, rather than reading the
+    # class attribute directly.
+    throwaway = plugin_cls({"id": "", "settings": dict(plugin_cls.default_settings)})
+    if throwaway.settings_scope == "network" and user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
     widget_id = f"{payload.type}-{uuid4().hex[:8]}"
@@ -161,7 +190,7 @@ async def add_widget(payload: AddWidgetRequest, user: dict[str, Any] = Depends(g
     tab = payload.tab
     settings = dict(plugin_cls.default_settings)
 
-    await asyncio.to_thread(save_custom_widget, widget_id, payload.type, layout, tab)
+    await asyncio.to_thread(save_custom_widget, widget_id, payload.type, layout, tab, user["id"], device["id"])
     # A UI-added widget has no dashboard.yaml entry to source settings from —
     # persist the plugin's starter settings the same way a runtime settings
     # edit would, so they survive a backend restart.
@@ -405,21 +434,31 @@ async def run_widget_now(widget_id: str, user: dict[str, Any] = Depends(get_curr
 
 
 @router.delete("/{widget_id}")
-async def remove_widget(widget_id: str, user: dict[str, Any] = Depends(get_current_user)):
+async def remove_widget(
+    widget_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+    device: dict[str, Any] = Depends(get_current_device),
+):
     plugin = _get_plugin(widget_id)
-    require_write_access(plugin, user)
 
-    custom_widgets = await asyncio.to_thread(list_custom_widgets)
-    custom_ids = {w["id"] for w in custom_widgets}
-    if widget_id in custom_ids:
-        await asyncio.to_thread(delete_custom_widget, widget_id)
-    else:
-        # A dashboard.yaml-defined widget can't be deleted from the file —
-        # only hidden, the same layering pattern as settings/layout overrides.
-        await asyncio.to_thread(mark_widget_removed, widget_id)
+    custom_widgets = {w["id"]: w for w in await asyncio.to_thread(list_custom_widgets)}
+    custom = custom_widgets.get(widget_id)
+    owned = custom is not None and custom["owner_user_id"] == user["id"] and custom["owner_device_id"] == device["id"]
+
+    if not owned:
+        # A shared default (dashboard.yaml or legacy-global custom widget),
+        # or a widget owned by a different (user, device) pair — can't be
+        # deleted outright. Just hide it from this (user, device)'s own
+        # list; any household member may declutter their own screen.
+        await asyncio.to_thread(hide_widget, user["id"], device["id"], widget_id)
+        return {"status": "hidden"}
+
+    require_write_access(plugin, user)
+    await asyncio.to_thread(delete_custom_widget, widget_id)
     await asyncio.to_thread(delete_widget_layout_for_widget, widget_id)
     await asyncio.to_thread(delete_widget_user_settings_for_widget, widget_id)
     await asyncio.to_thread(delete_widget_device_settings_for_widget, widget_id)
+    await asyncio.to_thread(delete_hidden_widget_ids_for_widget, widget_id)
 
     registry.unregister(widget_id)
     unschedule_widget(widget_id)

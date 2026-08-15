@@ -31,7 +31,6 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-from app.config import effective_settings
 from app.integrations import icloud_photos, icloud_shared_album, immich_client
 from app.plugins.base import Plugin
 from app.storage import db
@@ -55,6 +54,16 @@ class PhotosPlugin(Plugin):
     name = "Photos"
     refresh_interval_seconds = 60
     default_settings = {"provider": "local"}
+
+    @property
+    def settings_scope(self) -> str:
+        # icloud_private reads a personal Apple ID (see app.api.icloud_auth);
+        # every other provider (local/icloud_shared/immich) is a
+        # household-wide source, so it stays "network" like a fixed
+        # ClassVar would say. First plugin whose scope depends on its own
+        # settings rather than being static — see app.api.widgets.add_widget,
+        # which has to build a throwaway instance to read this correctly.
+        return "personal" if self.provider == "icloud_private" else "network"
 
     @property
     def provider(self) -> str:
@@ -115,20 +124,37 @@ class PhotosPlugin(Plugin):
         photos = await icloud_shared_album.fetch_photos(self.album_token)
         return [photo["guid"] for photo in photos]
 
+    @property
+    def _photo_index_user_id(self) -> str:
+        """The user_id dimension of the photo_index row this instance should
+        read/write (see that table's comment). '' (the shared-index
+        sentinel) for every provider except icloud_private, where each
+        connected household member has their own private library and thus
+        their own index — keyed by `requesting_user_id`, which a per-viewer
+        request already carries (personal scope, see `settings_scope`
+        above) and which the background indexer sets explicitly per user via
+        `Plugin.with_settings` (see app.plugins.photos.indexer).
+        """
+        if self.provider == "icloud_private" and self.requesting_user_id:
+            return self.requesting_user_id
+        return ""
+
     async def _photo_ids(self) -> list[str]:
         """Cheap read from the persisted index — never re-enumerates the
         live source. The index is populated out-of-band by the background
         job (app.plugins.photos.indexer.index_photos, scheduled from
         app.scheduler) via `_enumerate_photo_ids_chunks` below.
         """
-        return await asyncio.to_thread(db.photo_index_photo_ids, self.id)
+        return await asyncio.to_thread(db.photo_index_photo_ids, self.id, self._photo_index_user_id)
 
     async def _enumerate_photo_ids_chunks(self) -> AsyncIterator[list[str]]:
         """The slow, full-source enumeration — local FS walk, one iCloud
         Shared Album webstream call, paginated iCloud private-library fetch,
         or paginated Immich album search. Only ever called by the background
         index job, never by get_summary/get_detail (which read the
-        persisted index instead).
+        persisted index instead). For icloud_private, only ever called on an
+        instance scoped (via `requesting_user_id`) to one specific connected
+        user — see app.plugins.photos.indexer.index_photos.
         """
         if self.provider == "icloud_shared":
             ids = await self._shared_photo_ids()
@@ -136,11 +162,14 @@ class PhotosPlugin(Plugin):
                 yield ids
             return
         if self.provider == "icloud_private":
-            creds = effective_settings()
-            username, password = creds.get("icloud_username"), creds.get("icloud_password")
+            user_id = self.requesting_user_id
+            if user_id is None:
+                return
+            creds = await asyncio.to_thread(db.get_user_credentials, user_id, "icloud") or {}
+            username, password = creds.get("username"), creds.get("password")
             if not icloud_photos.is_configured(username, password):
                 return
-            async for chunk in icloud_photos.iter_photo_chunks(username, password, self.album_name):
+            async for chunk in icloud_photos.iter_photo_chunks(user_id, username, password, self.album_name):
                 yield [photo["id"] for photo in chunk]
             return
         if self.provider == "immich":
@@ -159,6 +188,21 @@ class PhotosPlugin(Plugin):
     def _photo(self, photo_id: str) -> dict[str, str]:
         return {"filename": photo_id, "url": f"/api/photos/{self.id}/{photo_id}"}
 
+    async def _is_configured(self) -> bool:
+        if self.provider == "local":
+            return self.directory is not None
+        if self.provider == "icloud_shared":
+            return self.album_token is not None
+        if self.provider == "icloud_private":
+            if not self.requesting_user_id:
+                return False
+            creds = await asyncio.to_thread(db.get_user_credentials, self.requesting_user_id, "icloud") or {}
+            username, password = creds.get("username"), creds.get("password")
+            return icloud_photos.is_configured(username, password)
+        if self.provider == "immich":
+            return immich_client.is_configured(self.config["settings"])
+        return False
+
     async def _index_status_fields(self, photo_ids: list[str]) -> dict[str, Any]:
         """Surfaces the background indexer's state (`db.photo_index_status`)
         when it explains why `photo_ids` is empty — either the first scan
@@ -167,7 +211,14 @@ class PhotosPlugin(Plugin):
         """
         if photo_ids:
             return {}
-        status = await asyncio.to_thread(db.photo_index_status, self.id)
+        if not await self._is_configured():
+            return {}
+        if self.provider == "icloud_private" and not (
+            self.requesting_user_id and icloud_photos.is_connected_cached(self.requesting_user_id)
+        ):
+            # A disconnected iCloud private widget cannot index photos until the user connects.
+            return {}
+        status = await asyncio.to_thread(db.photo_index_status, self.id, self._photo_index_user_id)
         if status is None:
             return {"indexing": True}
         if status["status"] == "error":
@@ -176,21 +227,32 @@ class PhotosPlugin(Plugin):
 
     async def get_summary(self) -> dict[str, Any]:
         photo_ids = await self._photo_ids()
-        result: dict[str, Any] = {"count": 0, "current": None}
+        configured = await self._is_configured()
+        result: dict[str, Any] = {
+            "provider": self.provider,
+            "configured": configured,
+            "count": 0,
+            "current": None,
+        }
         if photo_ids:
             # Time-bucketed index so every client polling the summary sees
             # the same "current" photo without a shared server-side cursor.
             index = int(time.time() // self.interval_seconds) % len(photo_ids)
-            result = {"count": len(photo_ids), "current": self._photo(photo_ids[index])}
+            result["count"] = len(photo_ids)
+            result["current"] = self._photo(photo_ids[index])
         result.update(await self._index_status_fields(photo_ids))
         if self.provider == "icloud_private":
-            result["connected"] = icloud_photos.is_connected_cached()
+            result["connected"] = bool(self.requesting_user_id) and icloud_photos.is_connected_cached(
+                self.requesting_user_id
+            )
         return result
 
     async def get_detail(self) -> dict[str, Any]:
         photo_ids = await self._photo_ids()
+        configured = await self._is_configured()
         result: dict[str, Any] = {
             "provider": self.provider,
+            "configured": configured,
             "count": len(photo_ids),
             "interval_seconds": self.interval_seconds,
             "photos": [self._photo(photo_id) for photo_id in photo_ids],
@@ -202,7 +264,11 @@ class PhotosPlugin(Plugin):
         if self.provider == "icloud_shared":
             result["album_token"] = self.config["settings"].get("album_token") or None
         if self.provider == "icloud_private":
-            result["connected"] = icloud_photos.is_connected_cached()
+            user_id = self.requesting_user_id
+            creds = (await asyncio.to_thread(db.get_user_credentials, user_id, "icloud") or {}) if user_id else {}
+            username, password = creds.get("username"), creds.get("password")
+            result["has_credentials"] = icloud_photos.is_configured(username, password)
+            result["connected"] = bool(user_id) and icloud_photos.is_connected_cached(user_id)
         if self.provider == "immich":
             # api_key is write-only: only whether one is set is exposed, never
             # the raw value (same masking convention as SteamPlugin._safe_settings).

@@ -74,7 +74,6 @@ import FlightsDetail from '$lib/components/details/FlightsDetail.svelte';
 import ClockScreensaver from '$lib/components/screensaver/ClockScreensaver.svelte';
 import DateScreensaver from '$lib/components/screensaver/DateScreensaver.svelte';
 import CalendarScreensaver from '$lib/components/screensaver/CalendarScreensaver.svelte';
-import PhotoScreensaver from '$lib/components/screensaver/PhotoScreensaver.svelte';
 import WeatherScreensaver from '$lib/components/screensaver/WeatherScreensaver.svelte';
 import FlightsScreensaver from '$lib/components/screensaver/FlightsScreensaver.svelte';
 
@@ -224,17 +223,18 @@ type ScreensaverComponent =
 	| typeof ClockScreensaver
 	| typeof DateScreensaver
 	| typeof CalendarScreensaver
-	| typeof PhotoScreensaver
 	| typeof WeatherScreensaver
 	| typeof FlightsScreensaver;
 
+// 'photos' is deliberately absent here: PhotoScreensaver needs a widget `id`
+// to persist/restore its cursor, so ScreensaverContent.svelte renders it
+// directly instead of through this generic (id-less) map.
 export const SCREENSAVER_COMPONENTS: Record<string, ScreensaverComponent> = {
 	clock: ClockScreensaver,
 	date: DateScreensaver,
 	calendar: CalendarScreensaver,
 	calendar_caldav: CalendarScreensaver,
 	calendar_microsoft: CalendarScreensaver,
-	photos: PhotoScreensaver,
 	weather: WeatherScreensaver,
 	flights: FlightsScreensaver,
 };

@@ -1,15 +1,20 @@
 <script lang="ts">
+	import WeatherIcon from '$lib/components/WeatherIcon.svelte';
+
 	interface DailyForecast {
 		date: string;
 		high: number;
 		low: number;
 		condition: string;
+		weather_code: number;
 	}
 
 	interface WeatherScreensaverData {
 		location_name: string;
 		temperature: number;
 		condition: string;
+		weather_code: number;
+		is_day: boolean;
 		daily_forecast: DailyForecast[];
 	}
 
@@ -18,6 +23,9 @@
 
 <div class="stage">
 	<h1>{data.location_name}</h1>
+	<div class="current-icon">
+		<WeatherIcon code={data.weather_code} isDay={data.is_day} label={data.condition} />
+	</div>
 	<p class="current">{Math.round(data.temperature)}°</p>
 	<p class="condition">{data.condition}</p>
 
@@ -25,6 +33,9 @@
 		{#each data.daily_forecast as day (day.date)}
 			<div class="day">
 				<div class="date">{day.date}</div>
+				<div class="day-icon">
+					<WeatherIcon code={day.weather_code} isDay={true} label={day.condition} />
+				</div>
 				<div class="cond">{day.condition}</div>
 				<div class="range">{Math.round(day.high)}° / {Math.round(day.low)}°</div>
 			</div>
@@ -46,6 +57,11 @@
 	h1 {
 		font-size: clamp(1.75rem, 5vw, 3rem);
 		margin: 0;
+	}
+
+	.current-icon {
+		width: clamp(4rem, 10vw, 7rem);
+		height: clamp(4rem, 10vw, 7rem);
 	}
 
 	.current {
@@ -79,6 +95,12 @@
 
 	.date {
 		font-weight: 600;
+	}
+
+	.day-icon {
+		width: 2.5rem;
+		height: 2.5rem;
+		margin: 0.4rem auto;
 	}
 
 	.cond {

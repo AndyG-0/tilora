@@ -1,12 +1,14 @@
-"""Packages plugin: a shared household delivery tracker backed by 17Track.
+"""Packages plugin: a per-user delivery tracker backed by 17Track.
 
-Like Shopping, this is a plain `"network"`-scope list — one shared set of
-tracking numbers for the whole household, not per-user. Adding/removing a
-tracking number goes through `app.api.packages` (register with 17Track,
-then insert a row); status/ETA refreshes happen out-of-band via
-`app.scheduler`'s periodic job, not on every dashboard poll — 17Track's
-free tier is rate-limited, so get_summary/get_detail only ever read the
-last-refreshed row from the database.
+`"personal"`-scope: each household member tracks their own deliveries, not
+one shared household list — see the `packages` table comment in
+`app.storage.db`. Adding/removing a tracking number goes through
+`app.api.packages` (register with 17Track, then insert a row scoped to the
+requesting user); status/ETA refreshes happen out-of-band via
+`app.scheduler`'s periodic job (which refreshes every user's packages for
+the widget, not just the current viewer's), not on every dashboard poll —
+17Track's free tier is rate-limited, so get_summary/get_detail only ever
+read the last-refreshed row from the database.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from app.storage import db
 class PackagesPlugin(Plugin):
     id = "packages"
     name = "Packages"
+    settings_scope = "personal"
     default_settings: ClassVar[dict[str, Any]] = {"title": "Packages"}
     # A single grid row is too short for a list of tracked packages — same
     # reasoning as Shopping/Chores/Bookmarks/RSS.
@@ -37,7 +40,9 @@ class PackagesPlugin(Plugin):
         return datetime.now(tz).date().isoformat()
 
     async def _packages(self) -> list[dict[str, Any]]:
-        return await asyncio.to_thread(db.list_packages, self.id)
+        if self.requesting_user_id is None:
+            return []
+        return await asyncio.to_thread(db.list_packages, self.id, self.requesting_user_id)
 
     async def get_summary(self) -> dict[str, Any]:
         packages = await self._packages()

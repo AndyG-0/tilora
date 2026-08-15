@@ -25,6 +25,7 @@ function mockClientHeights({ sign, rows }: { sign: number; rows: number }) {
 describe('LedDots', () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
+		localStorage.clear();
 	});
 
 	afterEach(() => {
@@ -33,19 +34,21 @@ describe('LedDots', () => {
 	});
 
 	it('defaults to the amber color when none is given', () => {
-		const { container } = render(LedDots, { props: { lines: [line('Hello')] } });
+		const { container } = render(LedDots, { props: { id: 'test', lines: [line('Hello')] } });
 		const sign = container.querySelector('.sign');
 		expect(sign).toHaveStyle('--dotmatrix-color: #ff8a00');
 	});
 
 	it('applies a custom color via the color prop', () => {
-		const { container } = render(LedDots, { props: { lines: [line('Hello')], color: '#00ff00' } });
+		const { container } = render(LedDots, { props: { id: 'test', lines: [line('Hello')], color: '#00ff00' } });
 		const sign = container.querySelector('.sign');
 		expect(sign).toHaveStyle('--dotmatrix-color: #00ff00');
 	});
 
 	it('shows the first line initially and advances to the next on a tick', async () => {
-		const { container } = render(LedDots, { props: { lines: [line('One'), line('Two')], pauseSeconds: 5 } });
+		const { container } = render(LedDots, {
+			props: { id: 'test', lines: [line('One'), line('Two')], pauseSeconds: 5 },
+		});
 		expect(container.querySelector('.dots')?.textContent).toBe('One');
 
 		await vi.advanceTimersByTimeAsync(5000);
@@ -56,7 +59,7 @@ describe('LedDots', () => {
 	it('shows a single row when the container is too short for more', () => {
 		mockClientHeight(40);
 
-		const { container } = render(LedDots, { props: { lines: [line('One'), line('Two'), line('Three')] } });
+		const { container } = render(LedDots, { props: { id: 'test', lines: [line('One'), line('Two'), line('Three')] } });
 
 		expect(container.querySelectorAll('.stack')).toHaveLength(1);
 	});
@@ -65,7 +68,7 @@ describe('LedDots', () => {
 		mockClientHeight(4 * ROW_HEIGHT_PX);
 
 		const { container } = render(LedDots, {
-			props: { lines: [line('One'), line('Two'), line('Three'), line('Four'), line('Five')] },
+			props: { id: 'test', lines: [line('One'), line('Two'), line('Three'), line('Four'), line('Five')] },
 		});
 
 		expect(container.querySelectorAll('.stack')).toHaveLength(4);
@@ -76,6 +79,7 @@ describe('LedDots', () => {
 
 		const { container } = render(LedDots, {
 			props: {
+				id: 'test',
 				lines: ['Row A', 'Row B', 'Row C', 'Row D', 'Row E', 'Row F'].map(line),
 				pauseSeconds: 6,
 			},
@@ -94,7 +98,7 @@ describe('LedDots', () => {
 		mockClientHeights({ sign: 3 * ROW_HEIGHT_PX, rows: 3 * ROW_HEIGHT_PX });
 
 		const { container } = render(LedDots, {
-			props: { lines: ['One', 'Two', 'Three', 'Four'].map(line) },
+			props: { id: 'test', lines: ['One', 'Two', 'Three', 'Four'].map(line) },
 		});
 
 		expect(container.querySelectorAll('.stack')).toHaveLength(3);
@@ -105,7 +109,7 @@ describe('LedDots', () => {
 
 		const longLine = 'This message is much longer than a single row of dots can hold without wrapping onto extra lines';
 		const { container } = render(LedDots, {
-			props: { lines: [line(longLine), line('Two'), line('Three'), line('Four')] },
+			props: { id: 'test', lines: [line(longLine), line('Two'), line('Three'), line('Four')] },
 		});
 
 		expect(container.querySelectorAll('.stack').length).toBeLessThan(3);
@@ -115,14 +119,14 @@ describe('LedDots', () => {
 		mockClientHeight(ROW_HEIGHT_PX);
 
 		const longLine = 'This message is much longer than a single row of dots can hold without wrapping';
-		const { container } = render(LedDots, { props: { lines: [line(longLine)] } });
+		const { container } = render(LedDots, { props: { id: 'test', lines: [line(longLine)] } });
 
 		expect(container.querySelector('.dots')?.textContent).toBe(longLine);
 	});
 
 	it('renders formatted segments as their corresponding inline elements', () => {
 		const { container } = render(LedDots, {
-			props: { lines: [[{ text: 'bold', bold: true }, { text: ' plain' }]] },
+			props: { id: 'test', lines: [[{ text: 'bold', bold: true }, { text: ' plain' }]] },
 		});
 
 		expect(container.querySelector('.dots strong')?.textContent).toBe('bold');

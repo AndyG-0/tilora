@@ -203,8 +203,12 @@ def test_list_widgets_rejects_an_unknown_breakpoint(client, dashboard_yaml, tmp_
 
 
 def test_list_widgets_narrow_and_wide_layouts_are_independent(client, dashboard_yaml, tmp_db):
-    db.save_widget_layout(TEST_USER_ID, "wide", "stub", {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1})
-    db.save_widget_layout(TEST_USER_ID, "narrow", "stub", {"col": 3, "row": 3, "colSpan": 2, "rowSpan": 2})
+    db.save_widget_layout(
+        TEST_USER_ID, TEST_DEVICE_ID, "wide", "stub", {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1}
+    )
+    db.save_widget_layout(
+        TEST_USER_ID, TEST_DEVICE_ID, "narrow", "stub", {"col": 3, "row": 3, "colSpan": 2, "rowSpan": 2}
+    )
 
     wide = client.get("/api/widgets?breakpoint=wide").json()
     narrow = client.get("/api/widgets?breakpoint=narrow").json()
@@ -246,7 +250,9 @@ widgets:
 
 
 def test_list_widgets_reflects_persisted_layout_override(client, dashboard_yaml, tmp_db):
-    db.save_widget_layout(TEST_USER_ID, "wide", "stub", {"col": 3, "row": 2, "colSpan": 1, "rowSpan": 1})
+    db.save_widget_layout(
+        TEST_USER_ID, TEST_DEVICE_ID, "wide", "stub", {"col": 3, "row": 2, "colSpan": 1, "rowSpan": 1}
+    )
 
     response = client.get("/api/widgets?breakpoint=wide")
 
@@ -267,13 +273,13 @@ def test_update_widgets_layout_persists_and_swaps(client, dashboard_yaml, tmp_db
     )
 
     assert response.status_code == 200
-    assert db.get_widget_layout(TEST_USER_ID, "wide", "stub") == {
+    assert db.get_widget_layout(TEST_USER_ID, TEST_DEVICE_ID, "wide", "stub") == {
         "col": 2,
         "row": 1,
         "colSpan": 1,
         "rowSpan": 1,
     }
-    assert db.get_widget_layout(TEST_USER_ID, "wide", "hidden") == {
+    assert db.get_widget_layout(TEST_USER_ID, TEST_DEVICE_ID, "wide", "hidden") == {
         "col": 1,
         "row": 1,
         "colSpan": 1,
@@ -823,10 +829,39 @@ def test_remove_widget_requires_login(unauthenticated_client, dashboard_yaml, tm
     assert response.status_code == 401
 
 
-def test_remove_widget_rejects_member_for_network_scope_widget(member_client, dashboard_yaml, tmp_db):
+def test_remove_widget_hides_network_scope_widget_for_member(member_client, dashboard_yaml, tmp_db):
+    # "stub" is a dashboard.yaml widget with no custom_widgets row, so it's
+    # never "owned" by any (user, device) pair — deleting it always hides it
+    # from just the requester's own list rather than deleting it outright.
+    # The admin-only gate only applies to the full-delete path (an owned
+    # widget's creator lacking write access), which a shared default never
+    # reaches — any household member may declutter their own screen.
     registry.register(StubPlugin({}))
+
     response = member_client.delete("/api/widgets/stub")
-    assert response.status_code == 403
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "hidden"}
+    assert registry.get("stub") is not None
+
+
+def test_remove_widget_owned_by_a_different_device_is_hidden_not_deleted(client, dashboard_yaml, tmp_db):
+    db.save_custom_widget(
+        "personal-stub",
+        "personal-stub",
+        {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1},
+        None,
+        "other-user",
+        "other-device",
+    )
+    registry.register(StubPersonalPlugin({"id": "personal-stub", "settings": {}}))
+
+    response = client.delete("/api/widgets/personal-stub")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "hidden"}
+    assert registry.get("personal-stub") is not None
+    assert db.hidden_widget_ids(TEST_USER_ID, TEST_DEVICE_ID) == {"personal-stub"}
 
 
 def test_remove_widget_allows_member_for_personal_scope_widget(member_client, dashboard_yaml, tmp_db):
@@ -835,15 +870,37 @@ def test_remove_widget_allows_member_for_personal_scope_widget(member_client, da
     assert response.status_code == 200
 
 
-def test_remove_widget_unregisters_yaml_widget_via_soft_delete(client, dashboard_yaml, tmp_db):
+def test_remove_widget_rejects_the_owner_when_they_lack_write_access(client, dashboard_yaml, tmp_db):
+    # Not reachable through the normal add-widget flow today (a member can
+    # never create a network-scope custom widget in the first place), but
+    # remove_widget still runs require_write_access on the owned-delete path
+    # — exercise it directly.
+    db.save_custom_widget(
+        "stub", "stub", {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1}, None, "member-user", TEST_DEVICE_ID
+    )
+    registry.register(StubPlugin({}))
+    app = FastAPI()
+    app.include_router(widgets.router)
+    app.dependency_overrides[get_current_user] = lambda: {"id": "member-user", "role": "member"}
+    app.dependency_overrides[get_current_device] = lambda: {"id": TEST_DEVICE_ID}
+    member_owner_client = TestClient(app)
+
+    response = member_owner_client.delete("/api/widgets/stub")
+
+    assert response.status_code == 403
+    assert registry.get("stub") is not None
+
+
+def test_remove_widget_hides_yaml_widget_and_leaves_it_registered(client, dashboard_yaml, tmp_db):
     plugin = StubPlugin({})
     registry.register(plugin)
 
     response = client.delete("/api/widgets/stub")
 
     assert response.status_code == 200
-    assert registry.get("stub") is None
-    assert "stub" in db.removed_widget_ids()
+    assert response.json() == {"status": "hidden"}
+    assert registry.get("stub") is plugin
+    assert db.hidden_widget_ids(TEST_USER_ID, TEST_DEVICE_ID) == {"stub"}
 
 
 def test_remove_widget_hides_yaml_widget_from_list(client, dashboard_yaml, tmp_db):
@@ -867,25 +924,42 @@ def test_remove_widget_deletes_custom_widget_entirely(client, dashboard_yaml, tm
     assert response.status_code == 200
     assert registry.get(widget_id) is None
     assert db.list_custom_widgets() == []
-    assert widget_id not in db.removed_widget_ids()
+    assert db.hidden_widget_ids(TEST_USER_ID, TEST_DEVICE_ID) == set()
 
 
 def test_remove_widget_deletes_photo_index_rows(client, dashboard_yaml, tmp_db):
-    plugin = PhotosPlugin({"id": "photos", "settings": {"provider": "local", "directory": "/a"}})
-    registry.register(plugin)
-    generation = db.begin_photo_index_scan(plugin.id)
-    db.upsert_photo_index_chunk(plugin.id, generation, ["a.jpg"], 0)
-    db.finish_photo_index_scan(plugin.id, generation)
-    assert db.photo_index_photo_ids(plugin.id) == ["a.jpg"]
+    try:
+        add_response = client.post(
+            "/api/widgets",
+            json={"type": "photos", "layout": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1}},
+        )
+        widget_id = add_response.json()["id"]
+        generation = db.begin_photo_index_scan(widget_id)
+        db.upsert_photo_index_chunk(widget_id, generation, ["a.jpg"], 0)
+        db.finish_photo_index_scan(widget_id, generation)
+        assert db.photo_index_photo_ids(widget_id) == ["a.jpg"]
 
-    response = client.delete("/api/widgets/photos")
+        response = client.delete(f"/api/widgets/{widget_id}")
 
-    assert response.status_code == 200
-    assert db.photo_index_photo_ids(plugin.id) == []
-    assert db.photo_index_status(plugin.id) is None
+        assert response.status_code == 200
+        assert db.photo_index_photo_ids(widget_id) == []
+        assert db.photo_index_status(widget_id) is None
+    finally:
+        scheduler_module.scheduler.remove_all_jobs()
 
 
 def test_remove_widget_deletes_per_user_settings(client, dashboard_yaml, tmp_db):
+    # Registered as an owned custom widget (matching how a real UI-added
+    # personal widget is created) so DELETE takes the full-delete path
+    # rather than just hiding it — see app.api.widgets.remove_widget.
+    db.save_custom_widget(
+        "personal-stub",
+        "personal-stub",
+        {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1},
+        None,
+        TEST_USER_ID,
+        TEST_DEVICE_ID,
+    )
     registry.register(StubPersonalPlugin({"id": "personal-stub", "settings": {}}))
     db.save_widget_user_settings(TEST_USER_ID, "personal-stub", {"value": "mine"})
 
@@ -1033,6 +1107,14 @@ def test_clear_device_settings_falls_back_to_household_default(client, dashboard
 
 
 def test_remove_widget_deletes_device_settings(client, dashboard_yaml, tmp_db):
+    db.save_custom_widget(
+        "device-stub",
+        "device-stub",
+        {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1},
+        None,
+        TEST_USER_ID,
+        TEST_DEVICE_ID,
+    )
     registry.register(StubDeviceOverridablePlugin({"settings": {"value": "default"}}))
     db.save_widget_device_settings(TEST_DEVICE_ID, "device-stub", {"value": "mine"})
 
