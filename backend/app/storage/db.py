@@ -74,6 +74,18 @@ CREATE TABLE IF NOT EXISTS widget_settings (
     settings TEXT NOT NULL
 );
 
+-- User-set override of a widget instance's display name, used to tell
+-- apart multiple instances of the same tile type (e.g. two Weather tiles)
+-- in places like the AI insights topic list. Keyed by widget_id rather than
+-- living on custom_widgets so it also covers dashboard.yaml-defined widgets
+-- that never get a custom_widgets row (e.g. the Docker/Podman pair, both
+-- type "container"). Row absent means no override — see
+-- app.plugins.naming.display_names for the auto-generated fallback.
+CREATE TABLE IF NOT EXISTS widget_custom_names (
+    widget_id TEXT PRIMARY KEY,
+    custom_name TEXT NOT NULL
+);
+
 -- One row per physical LAN device (Pi-hole, Jellyfin, Synology, Asus
 -- Router, HDHomeRun, and each named Docker/Podman host) shared across every
 -- widget instance of that type/host, instead of duplicating connection
@@ -2007,6 +2019,22 @@ def list_custom_widgets() -> list[dict[str, Any]]:
         }
         for row in rows
     ]
+
+
+def save_widget_custom_name(widget_id: str, name: str) -> None:
+    with _connect() as conn:
+        _upsert(conn, "widget_custom_names", {"widget_id": widget_id, "custom_name": name}, ("widget_id",))
+
+
+def clear_widget_custom_name(widget_id: str) -> None:
+    with _connect() as conn:
+        conn.execute("DELETE FROM widget_custom_names WHERE widget_id = ?", (widget_id,))
+
+
+def list_widget_custom_names() -> dict[str, str]:
+    with _connect() as conn:
+        rows = conn.execute("SELECT widget_id, custom_name FROM widget_custom_names").fetchall()
+    return {row["widget_id"]: row["custom_name"] for row in rows}
 
 
 def mark_widget_removed(widget_id: str) -> None:

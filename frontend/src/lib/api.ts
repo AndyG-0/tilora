@@ -19,6 +19,7 @@ export type Breakpoint = 'wide' | 'narrow';
 export interface WidgetSummaryMeta {
 	id: string;
 	type: string;
+	name: string;
 	layout: WidgetLayout;
 	tab: string;
 }
@@ -1095,6 +1096,8 @@ export const api = {
 	widgetDetail: <T = Record<string, unknown>>(id: string) => getJSON<T>(`/api/widgets/${id}/detail`),
 	updateWidgetSettings: <T = Record<string, unknown>>(id: string, settings: Record<string, unknown>) =>
 		patchJSON<T>(`/api/widgets/${id}/settings`, settings),
+	renameWidget: (id: string, name: string) =>
+		patchJSON<{ id: string; name: string }>(`/api/widgets/${id}/name`, { name }),
 	getWidgetDeviceSettings: <T = Record<string, unknown>>(id: string) =>
 		getJSON<T>(`/api/widgets/${id}/device-settings`),
 	updateWidgetDeviceSettings: <T = Record<string, unknown>>(id: string, settings: Record<string, unknown>) =>

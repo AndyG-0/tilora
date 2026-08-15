@@ -5,7 +5,7 @@ import type { TabMeta, WidgetSummaryMeta } from './api';
 const layout = { col: 1, row: 1, colSpan: 1, rowSpan: 1 };
 
 function widget(id: string, tab: string): WidgetSummaryMeta {
-	return { id, type: 'stub', layout, tab };
+	return { id, type: 'stub', name: 'Stub', layout, tab };
 }
 
 describe('groupWidgetsByTab', () => {

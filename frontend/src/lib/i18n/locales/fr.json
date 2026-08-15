@@ -949,7 +949,10 @@
 		"assistant_error": "Impossible d'obtenir une réponse."
 	},
 	"widget_detail": {
-		"unknown_widget": "Widget inconnu"
+		"unknown_widget": "Widget inconnu",
+		"rename": "Renommer",
+		"name_input_label": "Nom de la tuile",
+		"rename_error": "Le nom doit comporter au maximum 60 caractères."
 	},
 	"setup": {
 		"title": "Bienvenue sur Tilora",

@@ -7,7 +7,6 @@
 		type VersionInfo,
 		type DeviceListEntry,
 		type HouseholdUser,
-		type WidgetSummaryMeta,
 		type TTSVoice,
 		type NetworkIntegration,
 		type NetworkTestConnectionResult,
@@ -629,11 +628,6 @@
 		}
 	});
 
-	// Friendly type -> label lookup (e.g. "clock" -> "Clock"), same source
-	// the dashboard's "+ Add widget" picker uses — falls back to the raw
-	// type string per-widget below if this never loads.
-	let widgetTypeNames = $state<Record<string, string>>({});
-
 	// Fallback matches the backend's default set; refreshed from /api/theme
 	// on mount so new themes show up without a frontend redeploy.
 	let themeIds = $state(['light', 'dark', 'sepia', 'contrast', 'forest', 'ocean']);
@@ -656,13 +650,6 @@
 		top_to_bottom: $_('settings.screensaver.pattern_top_to_bottom'),
 		random: $_('settings.screensaver.pattern_random'),
 	});
-
-	function widgetLabel(widget: WidgetSummaryMeta, list: WidgetSummaryMeta[]) {
-		const base = widgetTypeNames[widget.type] ?? widget.type;
-		const sameType = list.filter((w) => w.type === widget.type);
-		if (sameType.length <= 1) return base;
-		return `${base} (${sameType.indexOf(widget) + 1})`;
-	}
 
 	function toggleScreensaverEnabled() {
 		ssEnabled = !ssEnabled;
@@ -835,13 +822,6 @@
 		}
 
 		insecureOriginInfo = getInsecureOriginInfo();
-
-		try {
-			const types = await api.widgetTypes();
-			widgetTypeNames = Object.fromEntries(types.map((t) => [t.type, t.name]));
-		} catch {
-			// fall back to showing raw type strings below
-		}
 
 		try {
 			const { themes } = await api.themes();
@@ -2101,7 +2081,7 @@
 										checked={ssSelectedIds.has(w.id)}
 										onchange={() => toggleScreensaverWidget(w.id)}
 									/>
-									{widgetLabel(w, screensaverEligibleWidgets)}
+									{w.name}
 								</label>
 							</li>
 						{/each}

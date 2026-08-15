@@ -3,7 +3,7 @@ import { computeEmptyCells, isRectFree, reorderNarrow, sortForNarrow } from './l
 import type { WidgetSummaryMeta } from './api';
 
 function widget(id: string, col: number, row: number, colSpan = 1, rowSpan = 1): WidgetSummaryMeta {
-	return { id, type: 'clock', tab: 'main', layout: { col, row, colSpan, rowSpan } };
+	return { id, type: 'clock', name: 'Clock', tab: 'main', layout: { col, row, colSpan, rowSpan } };
 }
 
 describe('computeEmptyCells', () => {

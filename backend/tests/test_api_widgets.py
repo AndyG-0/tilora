@@ -188,7 +188,16 @@ def test_list_widgets_excludes_disabled(client, dashboard_yaml, tmp_db):
     response = client.get("/api/widgets?breakpoint=wide")
     assert response.status_code == 200
     assert response.json() == [
-        {"id": "stub", "type": "stub", "layout": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1}, "tab": "default"}
+        {
+            "id": "stub",
+            "type": "stub",
+            # No plugin of this id is registered in this test, so the name
+            # falls back to the bare type string (no distinguishing data to
+            # compute a display name from).
+            "name": "stub",
+            "layout": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1},
+            "tab": "default",
+        }
     ]
 
 
@@ -1174,3 +1183,105 @@ def test_update_settings_container_re_resolves_on_reference_change(client, tmp_d
     # Only the display-only key is persisted to widget_settings — connection
     # fields stay live-only, re-resolved from the integration row on read.
     assert db.get_widget_settings("container-a") == {"network_integration_id": "container-podman"}
+
+
+def test_rename_widget_saves_custom_name(client, tmp_db):
+    registry.register(WeatherPlugin({"id": "weather", "settings": {"location_name": "Chicago, IL"}}))
+
+    response = client.patch("/api/widgets/weather/name", json={"name": "Home"})
+
+    assert response.status_code == 200
+    assert response.json() == {"id": "weather", "name": "Home"}
+    assert db.list_widget_custom_names() == {"weather": "Home"}
+
+
+def test_rename_widget_strips_whitespace(client, tmp_db):
+    registry.register(WeatherPlugin({"id": "weather", "settings": {"location_name": "Chicago, IL"}}))
+
+    response = client.patch("/api/widgets/weather/name", json={"name": "  Home  "})
+
+    assert response.status_code == 200
+    assert response.json() == {"id": "weather", "name": "Home"}
+
+
+def test_rename_widget_empty_name_clears_override_and_reverts_to_auto_name(client, tmp_db):
+    registry.register(WeatherPlugin({"id": "weather", "settings": {"location_name": "Chicago, IL"}}))
+    db.save_widget_custom_name("weather", "Home")
+
+    response = client.patch("/api/widgets/weather/name", json={"name": "   "})
+
+    assert response.status_code == 200
+    assert response.json() == {"id": "weather", "name": "Weather (Chicago, IL)"}
+    assert db.list_widget_custom_names() == {}
+
+
+def test_rename_widget_rejects_name_over_60_chars(client, tmp_db):
+    registry.register(WeatherPlugin({"id": "weather", "settings": {"location_name": "Chicago, IL"}}))
+
+    response = client.patch("/api/widgets/weather/name", json={"name": "x" * 61})
+
+    assert response.status_code == 400
+    assert db.list_widget_custom_names() == {}
+
+
+def test_rename_widget_returns_404_for_unregistered_widget(client, tmp_db):
+    response = client.patch("/api/widgets/nonexistent/name", json={"name": "Home"})
+
+    assert response.status_code == 404
+
+
+def test_rename_widget_allowed_for_member_no_admin_gate(member_client, tmp_db):
+    registry.register(WeatherPlugin({"id": "weather", "settings": {"location_name": "Chicago, IL"}}))
+
+    response = member_client.patch("/api/widgets/weather/name", json={"name": "Home"})
+
+    assert response.status_code == 200
+
+
+def test_list_widgets_disambiguates_yaml_defined_collision(client, tmp_path, monkeypatch, tmp_db):
+    # Mirrors the real-world Docker/Podman case: two YAML-defined widgets of
+    # the same type, distinguished only by which network integration each
+    # references, never a `custom_widgets` row.
+    db.save_network_integration("nas-docker", "container", "Docker Host", {})
+    db.save_network_integration("nas-podman", "container", "Podman Host", {})
+    registry.register(ContainerPlugin({"id": "docker", "settings": {"network_integration_id": "nas-docker"}}))
+    registry.register(ContainerPlugin({"id": "podman", "settings": {"network_integration_id": "nas-podman"}}))
+
+    path = tmp_path / "dashboard.yaml"
+    path.write_text(
+        """
+widgets:
+  - id: docker
+    type: container
+    enabled: true
+    layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 }
+    settings: {}
+  - id: podman
+    type: container
+    enabled: true
+    layout: { col: 2, row: 1, colSpan: 1, rowSpan: 1 }
+    settings: {}
+"""
+    )
+    monkeypatch.setattr("app.api.widgets.load_dashboard_config", lambda: yaml.safe_load(path.read_text()))
+
+    response = client.get("/api/widgets?breakpoint=wide")
+
+    assert response.status_code == 200
+    names = {w["id"]: w["name"] for w in response.json()}
+    assert names == {"docker": "Container (Docker Host)", "podman": "Container (Podman Host)"}
+
+
+def test_list_widgets_includes_name_for_custom_widget(client, tmp_db):
+    add_response = client.post(
+        "/api/widgets",
+        json={"type": "clock", "layout": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1}},
+    )
+    widget_id = add_response.json()["id"]
+    assert add_response.json()["name"] == "Clock"
+
+    response = client.get("/api/widgets?breakpoint=wide")
+
+    assert response.status_code == 200
+    names = {w["id"]: w["name"] for w in response.json()}
+    assert names[widget_id] == "Clock"

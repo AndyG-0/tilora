@@ -970,7 +970,10 @@
 		"assistant_error": "Couldn't get an answer."
 	},
 	"widget_detail": {
-		"unknown_widget": "Unknown widget"
+		"unknown_widget": "Unknown widget",
+		"rename": "Rename",
+		"name_input_label": "Tile name",
+		"rename_error": "Name must be 60 characters or fewer."
 	},
 	"setup": {
 		"title": "Welcome to Tilora",

@@ -119,3 +119,56 @@ def test_topics_excludes_hidden_widgets(client, tmp_db, monkeypatch):
     assert topics == [
         {"id": "weather-custom", "name": "Weather (London, UK)"},
     ]
+
+
+def test_topics_disambiguates_same_location_with_stable_suffix(client, tmp_db, monkeypatch):
+    from app.plugins.base import registry
+    from app.plugins.weather.plugin import WeatherPlugin
+
+    registry._plugins.clear()
+    registry.register(WeatherPlugin({"id": "weather-b", "settings": {"location_name": "Chicago, IL"}}))
+    registry.register(WeatherPlugin({"id": "weather-a", "settings": {"location_name": "Chicago, IL"}}))
+
+    monkeypatch.setattr(
+        assistant_api,
+        "load_dashboard_config",
+        lambda: {
+            "widgets": [
+                {"id": "weather-b", "type": "weather", "layout": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1}},
+                {"id": "weather-a", "type": "weather", "layout": {"col": 2, "row": 1, "colSpan": 1, "rowSpan": 1}},
+            ]
+        },
+    )
+
+    response = client.get("/api/assistant/topics")
+    assert response.status_code == 200
+    topics = {t["id"]: t["name"] for t in response.json()}
+    # Suffix ordering is id-sorted (stable across requests), not config/list order.
+    assert topics == {
+        "weather-a": "Weather (Chicago, IL)",
+        "weather-b": "Weather (Chicago, IL) (2)",
+    }
+
+
+def test_topics_uses_custom_name_override(client, tmp_db, monkeypatch):
+    from app.plugins.base import registry
+    from app.plugins.weather.plugin import WeatherPlugin
+    from app.storage import db
+
+    registry._plugins.clear()
+    registry.register(WeatherPlugin({"id": "weather", "settings": {"location_name": "Chicago, IL"}}))
+    db.save_widget_custom_name("weather", "Home")
+
+    monkeypatch.setattr(
+        assistant_api,
+        "load_dashboard_config",
+        lambda: {
+            "widgets": [
+                {"id": "weather", "type": "weather", "layout": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1}},
+            ]
+        },
+    )
+
+    response = client.get("/api/assistant/topics")
+    assert response.status_code == 200
+    assert response.json() == [{"id": "weather", "name": "Home"}]

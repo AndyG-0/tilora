@@ -949,7 +949,10 @@
 		"assistant_error": "No se pudo obtener una respuesta."
 	},
 	"widget_detail": {
-		"unknown_widget": "Widget desconocido"
+		"unknown_widget": "Widget desconocido",
+		"rename": "Cambiar nombre",
+		"name_input_label": "Nombre del widget",
+		"rename_error": "El nombre debe tener 60 caracteres o menos."
 	},
 	"setup": {
 		"title": "Bienvenido a Tilora",

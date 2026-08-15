@@ -46,6 +46,7 @@ function settings(overrides: Partial<ScreensaverSettings> = {}): ScreensaverSett
 const dateWidget = (id: string) => ({
 	id,
 	type: 'date',
+	name: 'Date',
 	layout: { col: 0, row: 0, colSpan: 1, rowSpan: 1 },
 	tab: 'main',
 });
@@ -53,6 +54,7 @@ const dateWidget = (id: string) => ({
 const jellyfinWidget = (id: string) => ({
 	id,
 	type: 'jellyfin',
+	name: 'Jellyfin',
 	layout: { col: 0, row: 0, colSpan: 1, rowSpan: 1 },
 	tab: 'main',
 });

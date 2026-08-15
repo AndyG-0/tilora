@@ -13,6 +13,7 @@ from app.auth import get_current_device, get_current_user, require_write_access
 from app.config import list_widget_configs, load_dashboard_config, resolve_tabs
 from app.plugins.ai_insights.plugin import AIInsightsPlugin
 from app.plugins.base import Plugin, registry
+from app.plugins.naming import display_names
 from app.plugins.network_settings import resolve_network_settings
 from app.plugins.photos.plugin import PhotosPlugin
 from app.plugins.registry_types import PLUGIN_CLASSES_BY_TYPE
@@ -28,6 +29,7 @@ from app.scheduler import (
 )
 from app.storage.cache import cache
 from app.storage.db import (
+    clear_widget_custom_name,
     delete_custom_widget,
     delete_hidden_widget_ids_for_widget,
     delete_photo_index,
@@ -43,6 +45,7 @@ from app.storage.db import (
     list_custom_widgets,
     list_widget_layouts,
     save_custom_widget,
+    save_widget_custom_name,
     save_widget_device_settings,
     save_widget_layout,
     save_widget_settings,
@@ -114,10 +117,22 @@ def _list_widgets_sync(user_id: str, device_id: str, breakpoint: Breakpoint) -> 
     default_tab = resolve_tabs(config)[0]["id"]
     layouts = list_widget_layouts(user_id, device_id, breakpoint)
     hidden = hidden_widget_ids(user_id, device_id)
+    visible = [
+        w
+        for w in list_widget_configs(config)
+        if w.get("enabled", True) and _widget_is_visible(w, user_id, device_id, hidden)
+    ]
+    # Not every visible config entry has a live registry plugin yet (e.g. a
+    # config referencing a type that failed to load) — display_names only
+    # needs the ones that do, and a widget with no plugin falls back to its
+    # bare type string below.
+    plugins = [registry.get(w["id"]) for w in visible]
+    names = display_names([p for p in plugins if p is not None])
     return [
         {
             "id": w["id"],
             "type": w["type"],
+            "name": names.get(w["id"], w["type"]),
             # A drag-to-rearrange edit persisted at runtime overrides the
             # dashboard.yaml position, scoped to this (user, device,
             # breakpoint) triple — the same layering pattern widget settings
@@ -125,8 +140,7 @@ def _list_widgets_sync(user_id: str, device_id: str, breakpoint: Breakpoint) -> 
             "layout": {**w["layout"], **layouts.get(w["id"], {})},
             "tab": w.get("tab", default_tab),
         }
-        for w in list_widget_configs(config)
-        if w.get("enabled", True) and _widget_is_visible(w, user_id, device_id, hidden)
+        for w in visible
     ]
 
 
@@ -210,7 +224,9 @@ async def add_widget(
         schedule_speedtest_widget(plugin)
 
     default_tab = resolve_tabs(load_dashboard_config())[0]["id"]
-    return {"id": widget_id, "type": payload.type, "layout": layout, "tab": tab or default_tab}
+    siblings = [p for p in registry.all() if type(p) is plugin_cls]
+    name = display_names(siblings)[widget_id]
+    return {"id": widget_id, "type": payload.type, "name": name, "layout": layout, "tab": tab or default_tab}
 
 
 def _get_plugin(widget_id: str):
@@ -363,6 +379,33 @@ async def update_widget_settings(
     return plugin.config["settings"]
 
 
+class RenameWidgetRequest(BaseModel):
+    name: str
+
+
+@router.patch("/{widget_id}/name")
+async def rename_widget(
+    widget_id: str,
+    payload: RenameWidgetRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+    device: dict[str, Any] = Depends(get_current_device),
+):
+    # Display metadata, not plugin connection config, so unlike
+    # update_widget_settings this isn't gated behind require_write_access —
+    # any household member may relabel a shared tile for their own clarity.
+    plugin = _get_plugin(widget_id)
+    trimmed = payload.name.strip()
+    if len(trimmed) > 60:
+        raise HTTPException(status_code=400, detail="Name must be 60 characters or fewer")
+
+    if trimmed:
+        await asyncio.to_thread(save_widget_custom_name, widget_id, trimmed)
+    else:
+        await asyncio.to_thread(clear_widget_custom_name, widget_id)
+    siblings = [p for p in registry.all() if type(p) is type(plugin)]
+    return {"id": widget_id, "name": trimmed or display_names(siblings)[widget_id]}
+
+
 @router.get("/{widget_id}/device-settings")
 async def get_widget_device_settings_route(
     widget_id: str,
@@ -459,6 +502,7 @@ async def remove_widget(
     await asyncio.to_thread(delete_widget_user_settings_for_widget, widget_id)
     await asyncio.to_thread(delete_widget_device_settings_for_widget, widget_id)
     await asyncio.to_thread(delete_hidden_widget_ids_for_widget, widget_id)
+    await asyncio.to_thread(clear_widget_custom_name, widget_id)
 
     registry.unregister(widget_id)
     unschedule_widget(widget_id)

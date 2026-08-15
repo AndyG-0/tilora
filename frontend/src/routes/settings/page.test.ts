@@ -321,7 +321,9 @@ describe('settings +page.svelte — screensaver test button', () => {
 	});
 
 	it('flips forceScreensaverPreview when clicked with an eligible widget present', async () => {
-		widgets.set([{ id: 'w1', type: 'rss', layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 }, tab: 'default' }]);
+		widgets.set([
+			{ id: 'w1', type: 'rss', name: 'RSS', layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 }, tab: 'default' },
+		]);
 		render(Page);
 
 		const button = await screen.findByRole('button', { name: 'Test screensaver' });
@@ -330,6 +332,23 @@ describe('settings +page.svelte — screensaver test button', () => {
 		await fireEvent.click(button);
 
 		expect(get(forceScreensaverPreview)).toBe(true);
+	});
+
+	it('renders each eligible widget’s backend-provided name directly in the picker, unmodified', async () => {
+		widgets.set([
+			{
+				id: 'weather-b',
+				type: 'weather',
+				name: 'Weather (Chicago, IL) (2)',
+				layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 },
+				tab: 'default',
+			},
+		]);
+		render(Page);
+
+		await fireEvent.click(await screen.findByLabelText('Enable on this device'));
+
+		expect(await screen.findByLabelText('Weather (Chicago, IL) (2)')).toBeInTheDocument();
 	});
 });
 

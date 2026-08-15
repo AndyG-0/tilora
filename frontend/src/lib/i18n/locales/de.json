@@ -949,7 +949,10 @@
 		"assistant_error": "Es konnte keine Antwort abgerufen werden."
 	},
 	"widget_detail": {
-		"unknown_widget": "Unbekanntes Widget"
+		"unknown_widget": "Unbekanntes Widget",
+		"rename": "Umbenennen",
+		"name_input_label": "Kachelname",
+		"rename_error": "Der Name darf höchstens 60 Zeichen lang sein."
 	},
 	"setup": {
 		"title": "Willkommen bei Tilora",
