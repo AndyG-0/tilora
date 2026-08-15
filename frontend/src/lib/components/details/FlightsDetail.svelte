@@ -6,7 +6,6 @@
 	import LedText from '$lib/components/LedText.svelte';
 	import AircraftIcon from '$lib/components/AircraftIcon.svelte';
 	import FlightsMap from '$lib/components/FlightsMap.svelte';
-	import { user } from '$lib/stores/user';
 	import { _ } from 'svelte-i18n';
 	import { get } from 'svelte/store';
 
@@ -154,22 +153,18 @@
 			savingSpeedUnit = false;
 		}
 	}
-
-	const isAdmin = $derived($user?.role === 'admin');
 </script>
 
 <div class="header">
 	<h1>{flightsData.location_name}</h1>
-	{#if isAdmin}
-		<button class="change-location" onclick={() => (editingLocation = !editingLocation)}>
-			{editingLocation ? $_('flights.detail.cancel') : $_('flights.detail.change_location')}
-		</button>
-	{/if}
+	<button class="change-location" onclick={() => (editingLocation = !editingLocation)}>
+		{editingLocation ? $_('flights.detail.cancel') : $_('flights.detail.change_location')}
+	</button>
 </div>
 
 <FlightsMap data={flightsData} />
 
-{#if isAdmin && editingLocation}
+{#if editingLocation}
 	<div class="location-search">
 		<input
 			type="text"
@@ -198,37 +193,35 @@
 	</div>
 {/if}
 
-{#if isAdmin}
-	<div class="controls">
-		<label class="setting-item radius">
-			{$_('flights.detail.radius_label')}
-			<input type="number" min="1" max="250" bind:value={radiusInput} disabled={savingRadius} onchange={saveRadius} />
-		</label>
-		<div class="setting-item speed-unit-control">
-			<span>{$_('flights.detail.speed_unit_label')}</span>
-			<div class="unit-toggle" role="group" aria-label={$_('flights.detail.speed_unit_label')}>
-				<button
-					type="button"
-					class="unit-btn"
-					class:active={speedUnit === 'mph'}
-					disabled={savingSpeedUnit}
-					onclick={() => selectSpeedUnit('mph')}
-				>
-					MPH
-				</button>
-				<button
-					type="button"
-					class="unit-btn"
-					class:active={speedUnit === 'kmh'}
-					disabled={savingSpeedUnit}
-					onclick={() => selectSpeedUnit('kmh')}
-				>
-					KM/H
-				</button>
-			</div>
+<div class="controls">
+	<label class="setting-item radius">
+		{$_('flights.detail.radius_label')}
+		<input type="number" min="1" max="250" bind:value={radiusInput} disabled={savingRadius} onchange={saveRadius} />
+	</label>
+	<div class="setting-item speed-unit-control">
+		<span>{$_('flights.detail.speed_unit_label')}</span>
+		<div class="unit-toggle" role="group" aria-label={$_('flights.detail.speed_unit_label')}>
+			<button
+				type="button"
+				class="unit-btn"
+				class:active={speedUnit === 'mph'}
+				disabled={savingSpeedUnit}
+				onclick={() => selectSpeedUnit('mph')}
+			>
+				MPH
+			</button>
+			<button
+				type="button"
+				class="unit-btn"
+				class:active={speedUnit === 'kmh'}
+				disabled={savingSpeedUnit}
+				onclick={() => selectSpeedUnit('kmh')}
+			>
+				KM/H
+			</button>
 		</div>
 	</div>
-{/if}
+</div>
 
 {#if flightsData.flights.length === 0}
 	<p class="empty">{$_('flights.detail.empty')}</p>

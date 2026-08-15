@@ -155,11 +155,11 @@ describe('WeatherDetail', () => {
 		await vi.waitFor(() => expect(checkbox.checked).toBe(true));
 	});
 
-	it('hides edit controls for non-admin members', () => {
+	it('allows non-admin members to change city but hides severe weather alerts toggle', () => {
 		user.set({ id: 'member-user', name: 'Member', avatar: null, role: 'member' });
 		render(WeatherDetail, { props: { data: baseData } });
 
-		expect(screen.queryByText('Change city')).not.toBeInTheDocument();
+		expect(screen.getByText('Change city')).toBeInTheDocument();
 		expect(screen.queryByLabelText('Severe weather alerts')).not.toBeInTheDocument();
 	});
 });

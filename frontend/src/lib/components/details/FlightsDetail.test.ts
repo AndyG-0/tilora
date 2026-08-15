@@ -159,11 +159,11 @@ describe('FlightsDetail', () => {
 		expect(speedCell?.querySelector('.cell-popover')).toBeNull();
 	});
 
-	it('hides edit controls for non-admin members', () => {
+	it('shows edit controls for non-admin members', () => {
 		user.set({ id: 'member-user', name: 'Member', avatar: null, role: 'member' });
 		render(FlightsDetail, { props: { data: SAMPLE_DATA } });
 
-		expect(screen.queryByText('Change location')).not.toBeInTheDocument();
-		expect(screen.queryByLabelText('Radius (nm)')).not.toBeInTheDocument();
+		expect(screen.getByText('Change location')).toBeInTheDocument();
+		expect(screen.getByLabelText('Search radius (nm)')).toBeInTheDocument();
 	});
 });

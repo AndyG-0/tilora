@@ -92,9 +92,9 @@ def make_plugin() -> FlightsPlugin:
     )
 
 
-def test_settings_scope_is_network():
-    # Flights location is a shared household setting across the dashboard.
-    assert FlightsPlugin.settings_scope == "network"
+def test_settings_scope_is_personal():
+    # Each household member cares about aircraft near their own location.
+    assert FlightsPlugin.settings_scope == "personal"
 
 
 def test_lookup_matches_known_airline():

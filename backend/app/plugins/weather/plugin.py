@@ -133,6 +133,9 @@ class WeatherPlugin(Plugin):
     id = "weather"
     name = "Weather"
     refresh_interval_seconds = 600
+    # Each household member cares about their own location, not a shared
+    # one — see Plugin.settings_scope.
+    settings_scope = "personal"
     # A widget added via the UI has no dashboard.yaml entry to source
     # settings from, so it starts here — same Fort Worth, TX default as
     # dashboard.example.yaml — and the user swaps in their own city via the

@@ -139,14 +139,12 @@
 
 <div class="header">
 	<h1>{weather.location_name}</h1>
-	{#if isAdmin}
-		<button class="change-city" onclick={() => (editingCity = !editingCity)}>
-			{editingCity ? $_('weather.detail.cancel') : $_('weather.detail.change_city')}
-		</button>
-	{/if}
+	<button class="change-city" onclick={() => (editingCity = !editingCity)}>
+		{editingCity ? $_('weather.detail.cancel') : $_('weather.detail.change_city')}
+	</button>
 </div>
 
-{#if isAdmin && editingCity}
+{#if editingCity}
 	<div class="city-search">
 		<input
 			type="text"

@@ -1157,3 +1157,53 @@ def test_migration_016_migrates_weather_flights_to_network_settings(tmp_path):
     remaining_user_settings = conn.execute("SELECT widget_id FROM widget_user_settings").fetchall()
     assert [r[0] for r in remaining_user_settings] == ["sports"]
     conn.close()
+
+
+def test_migration_017_migrates_weather_flights_to_personal_settings(tmp_path):
+    import json
+
+    db_path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(db._SCHEMA)
+    conn.executemany(
+        "INSERT INTO users (id, name, created_at, role) VALUES (?, ?, ?, ?)",
+        [
+            ("alice", "Alice", "2026-01-01T00:00:00Z", "admin"),
+            ("bob", "Bob", "2026-01-02T00:00:00Z", "member"),
+        ],
+    )
+    conn.execute(
+        "INSERT INTO custom_widgets (id, type, layout, tab) VALUES ('flights-custom', 'flights', '{}', 'home')"
+    )
+    conn.executemany(
+        "INSERT INTO widget_settings (widget_id, settings) VALUES (?, ?)",
+        [
+            ("weather", json.dumps({"location_name": "Chicago, IL", "latitude": 41.8781, "longitude": -87.6298})),
+            ("flights-custom", json.dumps({"location_name": "London, UK", "latitude": 51.5, "longitude": -0.12})),
+        ],
+    )
+    conn.commit()
+
+    db._migration_017_weather_flights_personal_scope(conn)
+    conn.commit()
+
+    alice_weather = conn.execute(
+        "SELECT settings FROM widget_user_settings WHERE user_id = 'alice' AND widget_id = 'weather'"
+    ).fetchone()
+    assert json.loads(alice_weather[0])["location_name"] == "Chicago, IL"
+
+    bob_weather = conn.execute(
+        "SELECT settings FROM widget_user_settings WHERE user_id = 'bob' AND widget_id = 'weather'"
+    ).fetchone()
+    assert json.loads(bob_weather[0])["location_name"] == "Chicago, IL"
+
+    alice_flights = conn.execute(
+        "SELECT settings FROM widget_user_settings WHERE user_id = 'alice' AND widget_id = 'flights-custom'"
+    ).fetchone()
+    assert json.loads(alice_flights[0])["location_name"] == "London, UK"
+
+    bob_flights = conn.execute(
+        "SELECT settings FROM widget_user_settings WHERE user_id = 'bob' AND widget_id = 'flights-custom'"
+    ).fetchone()
+    assert json.loads(bob_flights[0])["location_name"] == "London, UK"
+    conn.close()

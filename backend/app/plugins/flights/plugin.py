@@ -183,6 +183,9 @@ class FlightsPlugin(Plugin):
     # Aircraft move fast (a jet covers ~7nm/minute) so this needs to refresh
     # much more often than weather's 600s to feel "live".
     refresh_interval_seconds = 90
+    # Each household member cares about aircraft near their own location,
+    # not a shared one — see Plugin.settings_scope.
+    settings_scope = "personal"
     # A flight list needs more room than a single grid cell to be readable.
     default_layout: ClassVar[dict[str, int]] = {"colSpan": 2, "rowSpan": 1}
     # Same Fort Worth, TX default as the weather plugin, swapped out by the

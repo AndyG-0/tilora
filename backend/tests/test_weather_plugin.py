@@ -52,9 +52,10 @@ def make_plugin() -> WeatherPlugin:
     )
 
 
-def test_settings_scope_is_network():
-    # Weather is a shared household location setting across the dashboard.
-    assert WeatherPlugin.settings_scope == "network"
+def test_settings_scope_is_personal():
+    # Each household member's location is their own, not shared — see
+    # Plugin.settings_scope.
+    assert WeatherPlugin.settings_scope == "personal"
 
 
 def test_condition_for_known_code():

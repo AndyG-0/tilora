@@ -590,16 +590,17 @@ def test_update_settings_allows_member_for_sports_widget(member_client, dashboar
     assert db.get_widget_user_settings("member-user", "sports")["teams"] == [{"league": "nfl", "team": "PHI"}]
 
 
-def test_update_settings_requires_admin_for_weather_widget(client, member_client, dashboard_yaml, tmp_db):
+def test_weather_widget_settings_are_personal_per_user(client, member_client, dashboard_yaml, tmp_db):
     registry.register(WeatherPlugin({"id": "weather", "settings": dict(WeatherPlugin.default_settings)}))
 
-    forbidden = member_client.patch("/api/widgets/weather/settings", json={"location_name": "Austin, TX"})
-    assert forbidden.status_code == 403
-
-    response = client.patch("/api/widgets/weather/settings", json={"location_name": "Austin, TX"})
+    response = member_client.patch("/api/widgets/weather/settings", json={"location_name": "Austin, TX"})
     assert response.status_code == 200
-    assert db.get_widget_settings("weather")["location_name"] == "Austin, TX"
-    assert registry.get("weather").config["settings"]["location_name"] == "Austin, TX"
+    assert db.get_widget_user_settings("member-user", "weather")["location_name"] == "Austin, TX"
+
+    admin_response = client.patch("/api/widgets/weather/settings", json={"location_name": "Chicago, IL"})
+    assert admin_response.status_code == 200
+    assert db.get_widget_user_settings(TEST_USER_ID, "weather")["location_name"] == "Chicago, IL"
+    assert db.get_widget_user_settings("member-user", "weather")["location_name"] == "Austin, TX"
 
 
 def test_multiple_weather_widgets_have_independent_settings(client, dashboard_yaml, tmp_db):
@@ -609,10 +610,8 @@ def test_multiple_weather_widgets_have_independent_settings(client, dashboard_ya
     client.patch("/api/widgets/weather/settings", json={"location_name": "Austin, TX"})
     client.patch("/api/widgets/weather-2/settings", json={"location_name": "London, UK"})
 
-    assert db.get_widget_settings("weather")["location_name"] == "Austin, TX"
-    assert db.get_widget_settings("weather-2")["location_name"] == "London, UK"
-    assert registry.get("weather").config["settings"]["location_name"] == "Austin, TX"
-    assert registry.get("weather-2").config["settings"]["location_name"] == "London, UK"
+    assert db.get_widget_user_settings(TEST_USER_ID, "weather")["location_name"] == "Austin, TX"
+    assert db.get_widget_user_settings(TEST_USER_ID, "weather-2")["location_name"] == "London, UK"
 
 
 def test_personal_scope_settings_and_summary_are_isolated_per_user(dashboard_yaml, tmp_db):

@@ -959,6 +959,29 @@ def _migration_016_weather_flights_network_scope(conn: sqlite3.Connection) -> No
             )
 
 
+def _migration_017_weather_flights_personal_scope(conn: sqlite3.Connection) -> None:
+    """Migrates weather and flights widget settings to personal user scope.
+
+    Copies existing widget_settings for weather and flights widgets into
+    widget_user_settings for all existing users (if not already present), so
+    every user retains the configured location on upgrade.
+    """
+    custom_types = {row[0]: row[1] for row in conn.execute("SELECT id, type FROM custom_widgets")}
+    users = [row[0] for row in conn.execute("SELECT id FROM users")]
+
+    settings_rows = conn.execute("SELECT widget_id, settings FROM widget_settings").fetchall()
+    for row in settings_rows:
+        widget_id, settings = row[0], row[1]
+        widget_type = custom_types.get(widget_id, widget_id)
+        if widget_type in ("weather", "flights"):
+            for user_id in users:
+                conn.execute(
+                    "INSERT INTO widget_user_settings (user_id, widget_id, settings) VALUES (?, ?, ?) "
+                    "ON CONFLICT (user_id, widget_id) DO NOTHING",
+                    (user_id, widget_id, settings),
+                )
+
+
 _MIGRATIONS: tuple[str | Callable[[sqlite3.Connection], None], ...] = (
     _MIGRATION_001_USERS_DEVICES,
     _migration_002_user_roles,
@@ -976,6 +999,7 @@ _MIGRATIONS: tuple[str | Callable[[sqlite3.Connection], None], ...] = (
     _MIGRATION_014_PHOTO_INDEX_USER_ID,
     _migration_015_deduplicate_device_names,
     _migration_016_weather_flights_network_scope,
+    _migration_017_weather_flights_personal_scope,
 )
 
 
