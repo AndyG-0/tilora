@@ -97,6 +97,23 @@ def schedule_photo_index_widgets() -> None:
             schedule_photo_index(plugin)
 
 
+def schedule_immediate_user_photo_index(plugin: PhotosPlugin, user_id: str) -> None:
+    """One-off, right-now scan of a single user's icloud_private library —
+    called right after that user connects/verifies their Apple ID (see
+    app.api.icloud_auth), so their photos show up without waiting for the
+    widget's shared recurring job (which fans out to every connected user,
+    see index_photos) to next tick. No trigger means APScheduler runs it
+    exactly once, immediately, then drops the job — nothing to unschedule
+    later.
+    """
+    scheduler.add_job(
+        index_photos,
+        args=[plugin.with_settings(user_id=user_id)],
+        id=f"photo-index:{plugin.id}:{user_id}",
+        replace_existing=True,
+    )
+
+
 async def run_speedtest_widget(plugin: SpeedtestPlugin) -> None:
     try:
         result = await asyncio.to_thread(speedtest_runner.run_speedtest)
@@ -177,7 +194,9 @@ async def run_package_refresh(plugin: PackagesPlugin) -> None:
     if not api_key:
         return
 
-    packages = await asyncio.to_thread(db.list_packages, plugin.id)
+    # Refreshes every user's packages for this widget, not just whoever's
+    # currently viewing it — see list_all_packages_for_widget's docstring.
+    packages = await asyncio.to_thread(db.list_all_packages_for_widget, plugin.id)
     pending = [p for p in packages if not p["delivered"]]
     if not pending:
         return

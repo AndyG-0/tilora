@@ -45,6 +45,8 @@ export interface MovieProvider {
 export interface AppSettings {
 	ai_model: string;
 	ai_reasoning_effort: string;
+	ai_agent_name: string;
+	searxng_url: string;
 	timezone: string;
 	has_anthropic_api_key: boolean;
 	has_openai_api_key: boolean;
@@ -377,8 +379,41 @@ export interface SynologyDetail extends Omit<SynologySummary, 'volumes'> {
 
 export interface AsusRouterClient {
 	name: string;
+	hostname?: string;
+	alias?: string | null;
 	ip: string;
+	mac: string;
 	online: boolean;
+	connection_type: 'wired' | 'wireless' | 'unknown';
+	wireless_band?: string | null;
+	rssi?: number | null;
+	tx_rate?: number | null;
+	rx_rate?: number | null;
+	vendor?: string | null;
+	ip_type?: 'dhcp' | 'static' | 'unknown';
+	internet_blocked?: boolean;
+}
+
+export interface AsusRouterPortInfo {
+	port: number;
+	service: string;
+	protocol: 'tcp' | 'udp';
+	is_web: boolean;
+	web_url?: string | null;
+	title?: string | null;
+}
+
+export interface AsusRouterPortScanResult {
+	ip: string;
+	open_ports: AsusRouterPortInfo[];
+	web_url?: string | null;
+	scanned_at: string;
+}
+
+export interface AsusRouterPingResult {
+	ip: string;
+	alive: boolean;
+	latency_ms?: number | null;
 }
 
 export interface AsusRouterSummary {
@@ -976,6 +1011,23 @@ async function patchJSON<T>(path: string, body: Record<string, unknown>): Promis
 	return response.json();
 }
 
+// Reads a failed response's `{detail: string}` body (FastAPI's HTTPException
+// shape), if present, so callers can surface the server's actual reason
+// (e.g. why an HDHomeRun DVR recording rule was rejected) instead of just a
+// bare status code. Falls back to the status-only message when the body
+// isn't JSON or has no `detail`.
+async function _errorMessage(path: string, response: Response): Promise<string> {
+	try {
+		const body = await response.json();
+		if (body && typeof body.detail === 'string' && body.detail) {
+			return body.detail;
+		}
+	} catch {
+		// Not JSON, or already consumed — fall through to the generic message.
+	}
+	return `Request to ${path} failed: ${response.status}`;
+}
+
 async function postJSON<T>(path: string, body?: Record<string, unknown>): Promise<T> {
 	const response = await fetch(`${env.PUBLIC_API_BASE_URL}${path}`, {
 		method: 'POST',
@@ -986,8 +1038,9 @@ async function postJSON<T>(path: string, body?: Record<string, unknown>): Promis
 		}),
 	});
 	if (!response.ok) {
+		const message = await _errorMessage(path, response);
 		logger.warn(`Request to ${path} failed: ${response.status}`);
-		throw new Error(`Request to ${path} failed: ${response.status}`);
+		throw new Error(message);
 	}
 	return response.json();
 }
@@ -1015,8 +1068,9 @@ async function deleteJSON<T>(path: string): Promise<T> {
 		credentials: 'include',
 	});
 	if (!response.ok) {
+		const message = await _errorMessage(path, response);
 		logger.warn(`Request to ${path} failed: ${response.status}`);
-		throw new Error(`Request to ${path} failed: ${response.status}`);
+		throw new Error(message);
 	}
 	return response.json();
 }
@@ -1214,6 +1268,29 @@ export const api = {
 		postJSON<NetworkTestConnectionResult>(`/api/network-settings/container/${id}/test-connection`, settings),
 	qbittorrentTestConnection: (id: string, settings: Record<string, unknown>) =>
 		postJSON<QBittorrentTestConnectionResult>(`/api/qbittorrent/${id}/test-connection`, settings),
+	asusRouterScanPorts: (widgetId: string, ip: string, ports?: number[]) =>
+		postJSON<AsusRouterPortScanResult>(`/api/asus-router/${widgetId}/scan-ports`, { ip, ports }),
+	asusRouterWakeOnLan: (widgetId: string, mac: string) =>
+		postJSON<{ ok: boolean; mac: string; message: string }>(`/api/asus-router/${widgetId}/wake-on-lan`, { mac }),
+	asusRouterSetClientBlock: (widgetId: string, mac: string, blocked: boolean) =>
+		postJSON<{ ok: boolean; mac: string; blocked: boolean }>(`/api/asus-router/${widgetId}/client-block`, {
+			mac,
+			blocked,
+		}),
+	asusRouterSetClientAlias: (widgetId: string, mac: string, alias: string) =>
+		postJSON<{ ok: boolean; mac: string; alias: string }>(`/api/asus-router/${widgetId}/client-alias`, {
+			mac,
+			alias,
+		}),
+	asusRouterSetStaticLease: (widgetId: string, mac: string, ip: string, name: string, enabled: boolean) =>
+		postJSON<{ ok: boolean; mac: string; static: boolean }>(`/api/asus-router/${widgetId}/dhcp-static-lease`, {
+			mac,
+			ip,
+			name,
+			enabled,
+		}),
+	asusRouterPing: (widgetId: string, ip: string) =>
+		postJSON<AsusRouterPingResult>(`/api/asus-router/${widgetId}/ping`, { ip }),
 	registerDevice: () => postJSON<DeviceRegisterResult>('/api/devices/register'),
 	currentDevice: () => getJSON<DeviceInfo>('/api/devices/me'),
 	renameDevice: (name: string) => patchJSON<DeviceInfo>('/api/devices/me', { name }),

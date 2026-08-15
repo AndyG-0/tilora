@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { pollWidget } from '$lib/polling';
 	import { api } from '$lib/api';
+	import { formatAircraftTooltip, formatAirlineTooltip } from '$lib/aircraftTypes';
 	import TileCard from '$lib/components/TileCard.svelte';
 	import LedText from '$lib/components/LedText.svelte';
 	import AircraftIcon from '$lib/components/AircraftIcon.svelte';
@@ -17,7 +18,9 @@
 		airline_code: string | null;
 		airline_name: string | null;
 		aircraft_type: string | null;
+		aircraft_name?: string | null;
 		aircraft_kind: string | null;
+		registration?: string | null;
 		altitude_ft: number | null;
 		distance_nm: number | null;
 		origin: AirportRef | null;
@@ -65,8 +68,13 @@
 			</div>
 			<ul class="rows">
 				{#each summary.flights.slice(0, 3) as flight (flight.callsign)}
+					{@const airlineTitle = formatAirlineTooltip(flight)}
+					{@const aircraftTitle = formatAircraftTooltip(
+						flight,
+						flight.aircraft_kind ? $_(`flights.aircraft_kind.${flight.aircraft_kind}`) : undefined,
+					)}
 					<li class="row">
-						<span class="icon">
+						<span class="icon" title={aircraftTitle || undefined}>
 							<AircraftIcon
 								kind={flight.aircraft_kind}
 								label={$_(`flights.aircraft_kind.${flight.aircraft_kind ?? 'unknown'}`)}
@@ -74,7 +82,7 @@
 							/>
 						</span>
 						<div class="lines">
-							<div class="line callsign">
+							<div class="line callsign" title={airlineTitle || undefined}>
 								<LedText text={flight.callsign} color={LED_COLOR} weight={700} />
 								{#if flight.altitude_ft !== null}
 									<span class="altitude-text">

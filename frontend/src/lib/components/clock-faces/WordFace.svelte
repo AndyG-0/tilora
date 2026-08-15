@@ -11,9 +11,10 @@
 
 <style>
 	.word {
-		font-size: clamp(1.1rem, 20cqh, 1.8rem);
+		font-size: clamp(1.15rem, min(24cqh, 13cqw), 2.75rem);
 		font-weight: 600;
-		line-height: 1.2;
+		line-height: 1.25;
+		text-align: center;
 	}
 
 	.word.large {

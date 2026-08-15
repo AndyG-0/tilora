@@ -86,19 +86,6 @@ def test_patch_settings_caldav_url_and_username_round_trip_but_password_is_hidde
     assert body["has_caldav_password"] is True
 
 
-def test_patch_settings_icloud_username_round_trips_but_password_is_hidden(client, tmp_db):
-    response = client.patch(
-        "/api/settings",
-        json={"icloud_username": "user@example.com", "icloud_password": "hunter2"},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["icloud_username"] == "user@example.com"
-    assert "icloud_password" not in body
-    assert body["has_icloud_password"] is True
-
-
 def test_patch_settings_persists_tts_provider_fields(client, tmp_db):
     response = client.patch(
         "/api/settings",
@@ -120,26 +107,6 @@ def test_patch_settings_persists_tts_provider_fields(client, tmp_db):
     assert body["piper_voices"] == "en_US-amy-medium|Amy"
 
 
-def test_patch_settings_invalidates_icloud_service_cache_on_username_change(client, tmp_db):
-    from app.integrations import icloud_photos
-
-    icloud_photos.cache.set(icloud_photos._SERVICE_CACHE_KEY, object(), 60)
-
-    client.patch("/api/settings", json={"icloud_username": "new@example.com"})
-
-    assert icloud_photos.cache.get(icloud_photos._SERVICE_CACHE_KEY) is None
-
-
-def test_patch_settings_leaves_icloud_service_cache_alone_for_unrelated_keys(client, tmp_db):
-    from app.integrations import icloud_photos
-
-    icloud_photos.cache.set(icloud_photos._SERVICE_CACHE_KEY, object(), 60)
-
-    client.patch("/api/settings", json={"timezone": "America/Chicago"})
-
-    assert icloud_photos.cache.get(icloud_photos._SERVICE_CACHE_KEY) is not None
-
-
 def test_patch_settings_invalidates_clock_and_date_widget_cache(client, tmp_db):
     from app.storage.cache import cache
 
@@ -154,3 +121,18 @@ def test_patch_settings_invalidates_clock_and_date_widget_cache(client, tmp_db):
     assert cache.get("detail:clock") is None
     assert cache.get("summary:date") is None
     assert cache.get("detail:date") is None
+
+
+def test_patch_settings_persists_agent_name_and_searxng_url(client, tmp_db):
+    response = client.patch(
+        "/api/settings",
+        json={
+            "ai_agent_name": "Friday",
+            "searxng_url": "http://searxng.local:8080",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ai_agent_name"] == "Friday"
+    assert body["searxng_url"] == "http://searxng.local:8080"

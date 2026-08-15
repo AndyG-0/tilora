@@ -6,6 +6,7 @@ import WordyScreensaver from './WordyScreensaver.svelte';
 describe('WordyScreensaver — discord', () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
+		localStorage.clear();
 	});
 
 	afterEach(() => {
@@ -14,7 +15,9 @@ describe('WordyScreensaver — discord', () => {
 
 	it("splits a multi-line message into separate lines, prefixing only the first with the message's author", async () => {
 		const data = { messages: [{ author: 'Andy', content: 'Line one\nLine two\nLine three' }] };
-		const { container } = render(WordyScreensaver, { props: { type: 'discord', data, animationStyle: 'led_dots' } });
+		const { container } = render(WordyScreensaver, {
+			props: { id: 'test', type: 'discord', data, animationStyle: 'led_dots' },
+		});
 
 		expect(container.querySelector('.dots')?.textContent).toBe('Andy: Line one');
 
@@ -29,7 +32,9 @@ describe('WordyScreensaver — discord', () => {
 		const data = {
 			messages: [{ author: 'Andy', content: '**bold** and _italic_ and `code` and ~~strike~~ and ||spoiler||' }],
 		};
-		const { container } = render(WordyScreensaver, { props: { type: 'discord', data, animationStyle: 'led_dots' } });
+		const { container } = render(WordyScreensaver, {
+			props: { id: 'test', type: 'discord', data, animationStyle: 'led_dots' },
+		});
 
 		const dots = container.querySelector('.dots');
 		expect(dots?.querySelector('strong')?.textContent).toBe('bold');
@@ -44,14 +49,18 @@ describe('WordyScreensaver — discord', () => {
 		const data = {
 			messages: [{ author: 'Andy', content: 'Hello <@123456789> see <#987654321> :tada: <a:wave:555>' }],
 		};
-		const { container } = render(WordyScreensaver, { props: { type: 'discord', data, animationStyle: 'led_dots' } });
+		const { container } = render(WordyScreensaver, {
+			props: { id: 'test', type: 'discord', data, animationStyle: 'led_dots' },
+		});
 
 		expect(container.querySelector('.dots')?.textContent).toBe('Andy: Hello @user see #channel :tada: :wave:');
 	});
 
 	it('drops blank lines produced by consecutive newlines', async () => {
 		const data = { messages: [{ author: 'Andy', content: 'First\n\n\nSecond' }] };
-		const { container } = render(WordyScreensaver, { props: { type: 'discord', data, animationStyle: 'led_dots' } });
+		const { container } = render(WordyScreensaver, {
+			props: { id: 'test', type: 'discord', data, animationStyle: 'led_dots' },
+		});
 
 		expect(container.querySelector('.dots')?.textContent).toBe('Andy: First');
 		await vi.advanceTimersByTimeAsync(8000);
@@ -62,6 +71,7 @@ describe('WordyScreensaver — discord', () => {
 describe('WordyScreensaver — rss', () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
+		localStorage.clear();
 	});
 
 	afterEach(() => {
@@ -75,14 +85,18 @@ describe('WordyScreensaver — rss', () => {
 				{ feed_id: 2, name: 'Feed Two', items: [{ title: 'Headline B', source: 'Feed Two' }] },
 			],
 		};
-		const { container } = render(WordyScreensaver, { props: { type: 'rss', data, animationStyle: 'led_dots' } });
+		const { container } = render(WordyScreensaver, {
+			props: { id: 'test', type: 'rss', data, animationStyle: 'led_dots' },
+		});
 
 		expect(container.querySelector('.dots')?.textContent).toBe('Headline A — Feed One');
 	});
 
 	it('shows a placeholder when there are no headlines yet', () => {
 		const data = { feed_groups: [] };
-		const { container } = render(WordyScreensaver, { props: { type: 'rss', data, animationStyle: 'led_dots' } });
+		const { container } = render(WordyScreensaver, {
+			props: { id: 'test', type: 'rss', data, animationStyle: 'led_dots' },
+		});
 
 		expect(container.querySelector('.dots')?.textContent).toBe('No headlines yet.');
 	});

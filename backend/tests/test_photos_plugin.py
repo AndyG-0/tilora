@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-from app.config import settings
 from app.integrations import icloud_photos, icloud_shared_album, immich_client
 from app.plugins.photos.indexer import index_photos
 from app.plugins.photos.plugin import PhotosPlugin
@@ -46,7 +45,7 @@ async def test_get_summary_with_empty_directory_reports_no_photos(tmp_db, tmp_pa
 
     summary = await plugin.get_summary()
 
-    assert summary == {"count": 0, "current": None}
+    assert summary == {"provider": "local", "configured": True, "count": 0, "current": None}
 
 
 async def test_get_summary_reports_indexing_before_first_scan_completes(tmp_db, tmp_path):
@@ -54,7 +53,7 @@ async def test_get_summary_reports_indexing_before_first_scan_completes(tmp_db, 
 
     summary = await plugin.get_summary()
 
-    assert summary == {"count": 0, "current": None, "indexing": True}
+    assert summary == {"provider": "local", "configured": True, "count": 0, "current": None, "indexing": True}
 
 
 async def test_get_detail_reports_indexing_before_first_scan_completes(tmp_db, tmp_path):
@@ -62,7 +61,27 @@ async def test_get_detail_reports_indexing_before_first_scan_completes(tmp_db, t
 
     detail = await plugin.get_detail()
 
+    assert detail["configured"] is True
     assert detail["indexing"] is True
+    assert detail["photos"] == []
+
+
+async def test_get_summary_reports_not_configured_when_directory_unset(tmp_db):
+    plugin = PhotosPlugin({"id": "photos", "settings": {"provider": "local"}})
+
+    summary = await plugin.get_summary()
+
+    assert summary == {"provider": "local", "configured": False, "count": 0, "current": None}
+    assert "indexing" not in summary
+
+
+async def test_get_detail_reports_not_configured_when_directory_unset(tmp_db):
+    plugin = PhotosPlugin({"id": "photos", "settings": {"provider": "local"}})
+
+    detail = await plugin.get_detail()
+
+    assert detail["configured"] is False
+    assert "indexing" not in detail
     assert detail["photos"] == []
 
 
@@ -73,6 +92,8 @@ async def test_get_summary_reports_index_error_after_a_failed_scan(tmp_db, tmp_p
     summary = await plugin.get_summary()
 
     assert summary == {
+        "provider": "local",
+        "configured": True,
         "count": 0,
         "current": None,
         "index_error": "could not reach the source",
@@ -96,7 +117,7 @@ async def test_get_summary_ignores_missing_directory(tmp_db, tmp_path):
 
     summary = await plugin.get_summary()
 
-    assert summary == {"count": 0, "current": None}
+    assert summary == {"provider": "local", "configured": True, "count": 0, "current": None}
 
 
 async def test_get_summary_only_counts_image_files(tmp_db, tmp_path):
@@ -265,13 +286,14 @@ async def test_icloud_provider_parses_token_from_full_share_url(tmp_db, monkeypa
     assert seen_tokens == ["tok"]
 
 
-async def test_icloud_provider_with_no_album_token_reports_no_photos(tmp_db):
+async def test_icloud_provider_with_no_album_token_reports_not_configured(tmp_db):
     plugin = PhotosPlugin({"id": "photos", "settings": {"provider": "icloud_shared"}})
     await _index(plugin)
 
     summary = await plugin.get_summary()
 
-    assert summary == {"count": 0, "current": None}
+    assert summary == {"provider": "icloud_shared", "configured": False, "count": 0, "current": None}
+    assert "indexing" not in summary
 
 
 async def test_icloud_provider_get_detail_lists_all_photos(tmp_db, monkeypatch):
@@ -304,28 +326,72 @@ async def test_enumerate_photo_ids_chunks_icloud_shared_yields_one_chunk(monkeyp
     assert chunks == [["guid-1", "guid-2"]]
 
 
-async def test_private_provider_with_no_credentials_reports_no_photos_and_disconnected(tmp_db):
+async def test_private_provider_with_no_credentials_reports_not_configured_and_disconnected(tmp_db):
     plugin = make_private_plugin()
     await _index(plugin)
 
     summary = await plugin.get_summary()
 
-    assert summary == {"count": 0, "current": None, "connected": False}
+    assert summary == {
+        "provider": "icloud_private",
+        "configured": False,
+        "count": 0,
+        "current": None,
+        "connected": False,
+    }
+    assert "indexing" not in summary
+
+
+async def test_private_provider_with_credentials_but_disconnected_reports_not_indexing(tmp_db):
+    user_id = _make_admin_with_icloud_credentials()
+    plugin = make_private_plugin().with_settings(user_id=user_id)
+
+    summary = await plugin.get_summary()
+
+    assert summary["configured"] is True
+    assert summary["connected"] is False
+    assert "indexing" not in summary
+
+
+async def test_private_provider_connected_before_first_scan_reports_indexing(tmp_db, monkeypatch):
+    user_id = _make_admin_with_icloud_credentials()
+    monkeypatch.setattr(icloud_photos, "is_connected_cached", lambda uid: True)
+    plugin = make_private_plugin().with_settings(user_id=user_id)
+
+    summary = await plugin.get_summary()
+
+    assert summary["configured"] is True
+    assert summary["connected"] is True
+    assert summary["indexing"] is True
+
+
+def _make_admin_with_icloud_credentials(username="user@example.com", password="hunter2") -> str:
+    # index_photos on an unscoped plugin (no requesting_user_id — how the
+    # background scheduler always calls it) fans out into one scan per user
+    # with saved iCloud credentials (see app.plugins.photos.indexer), so
+    # exercising the icloud_private path means seeding a real user +
+    # credentials rather than monkeypatching the old global
+    # settings.icloud_username/password fields (removed in favor of per-user
+    # `user_credentials`). get_summary/get_detail must then be read from a
+    # clone scoped to that same user (`plugin.with_settings(user_id=...)`),
+    # matching how a real request is scoped via app.plugins.scoping.
+    db.create_user("admin", "Admin", None, None, None, None, "2020-01-01T00:00:00Z", role="admin")
+    db.save_user_credentials("admin", "icloud", {"username": username, "password": password})
+    return "admin"
 
 
 async def test_private_provider_get_summary_uses_configured_album(tmp_db, monkeypatch):
-    monkeypatch.setattr(settings, "icloud_username", "user@example.com")
-    monkeypatch.setattr(settings, "icloud_password", "hunter2")
+    user_id = _make_admin_with_icloud_credentials()
 
-    async def fake_iter_photo_chunks(username, password, album_name):
-        assert (username, password, album_name) == ("user@example.com", "hunter2", "All Photos")
+    async def fake_iter_photo_chunks(user_id, username, password, album_name):
+        assert (user_id, username, password, album_name) == ("admin", "user@example.com", "hunter2", "All Photos")
         yield [{"id": "id-1", "filename": "photo.jpg"}]
 
     monkeypatch.setattr(icloud_photos, "iter_photo_chunks", fake_iter_photo_chunks)
     plugin = make_private_plugin()
     await _index(plugin)
 
-    summary = await plugin.get_summary()
+    summary = await plugin.with_settings(user_id=user_id).get_summary()
 
     assert summary["count"] == 1
     assert summary["current"] == {"filename": "id-1", "url": "/api/photos/photos/id-1"}
@@ -333,29 +399,27 @@ async def test_private_provider_get_summary_uses_configured_album(tmp_db, monkey
 
 
 async def test_private_provider_reflects_connected_status(tmp_db, monkeypatch):
-    monkeypatch.setattr(settings, "icloud_username", "user@example.com")
-    monkeypatch.setattr(settings, "icloud_password", "hunter2")
+    user_id = _make_admin_with_icloud_credentials()
 
     async def fake_iter_photo_chunks(*a, **k):
         return
         yield  # pragma: no cover - makes this an async generator
 
     monkeypatch.setattr(icloud_photos, "iter_photo_chunks", fake_iter_photo_chunks)
-    monkeypatch.setattr(icloud_photos, "is_connected_cached", lambda: True)
+    monkeypatch.setattr(icloud_photos, "is_connected_cached", lambda user_id: True)
     plugin = make_private_plugin()
     await _index(plugin)
 
-    summary = await plugin.get_summary()
+    summary = await plugin.with_settings(user_id=user_id).get_summary()
 
     assert summary["connected"] is True
 
 
 async def test_private_provider_uses_custom_album_name(tmp_db, monkeypatch):
-    monkeypatch.setattr(settings, "icloud_username", "user@example.com")
-    monkeypatch.setattr(settings, "icloud_password", "hunter2")
+    _make_admin_with_icloud_credentials()
     seen_albums = []
 
-    async def fake_iter_photo_chunks(username, password, album_name):
+    async def fake_iter_photo_chunks(user_id, username, password, album_name):
         seen_albums.append(album_name)
         return
         yield  # pragma: no cover - makes this an async generator
@@ -368,17 +432,16 @@ async def test_private_provider_uses_custom_album_name(tmp_db, monkeypatch):
 
 
 async def test_private_provider_get_detail_lists_all_photos(tmp_db, monkeypatch):
-    monkeypatch.setattr(settings, "icloud_username", "user@example.com")
-    monkeypatch.setattr(settings, "icloud_password", "hunter2")
+    user_id = _make_admin_with_icloud_credentials()
 
-    async def fake_iter_photo_chunks(username, password, album_name):
+    async def fake_iter_photo_chunks(user_id, username, password, album_name):
         yield [{"id": "id-1", "filename": "a.jpg"}, {"id": "id-2", "filename": "b.jpg"}]
 
     monkeypatch.setattr(icloud_photos, "iter_photo_chunks", fake_iter_photo_chunks)
     plugin = make_private_plugin(interval_seconds=15)
     await _index(plugin)
 
-    detail = await plugin.get_detail()
+    detail = await plugin.with_settings(user_id=user_id).get_detail()
 
     assert detail["count"] == 2
     assert detail["interval_seconds"] == 15
@@ -387,15 +450,17 @@ async def test_private_provider_get_detail_lists_all_photos(tmp_db, monkeypatch)
 
 
 async def test_enumerate_photo_ids_chunks_icloud_private_yields_multiple_chunks(tmp_db, monkeypatch):
-    monkeypatch.setattr(settings, "icloud_username", "user@example.com")
-    monkeypatch.setattr(settings, "icloud_password", "hunter2")
+    user_id = _make_admin_with_icloud_credentials()
 
-    async def fake_iter_photo_chunks(username, password, album_name):
+    async def fake_iter_photo_chunks(user_id, username, password, album_name):
         yield [{"id": "id-1", "filename": "a.jpg"}]
         yield [{"id": "id-2", "filename": "b.jpg"}, {"id": "id-3", "filename": "c.jpg"}]
 
     monkeypatch.setattr(icloud_photos, "iter_photo_chunks", fake_iter_photo_chunks)
-    plugin = make_private_plugin()
+    # _enumerate_photo_ids_chunks only enumerates on an instance scoped to a
+    # specific connected user (see PhotosPlugin), matching how a live
+    # per-viewer request is scoped via app.plugins.scoping.scoped_plugin.
+    plugin = make_private_plugin().with_settings(user_id=user_id)
 
     chunks = [chunk async for chunk in plugin._enumerate_photo_ids_chunks()]
 
@@ -445,13 +510,14 @@ async def test_immich_provider_normalizes_base_url_trailing_slash(tmp_db, monkey
     assert seen_base_urls == ["http://192.168.1.50:2283/api"]
 
 
-async def test_immich_provider_with_incomplete_settings_reports_no_photos(tmp_db):
+async def test_immich_provider_with_incomplete_settings_reports_not_configured(tmp_db):
     plugin = PhotosPlugin({"id": "photos", "settings": {"provider": "immich", "base_url": "http://host/api"}})
     await _index(plugin)
 
     summary = await plugin.get_summary()
 
-    assert summary == {"count": 0, "current": None}
+    assert summary == {"provider": "immich", "configured": False, "count": 0, "current": None}
+    assert "indexing" not in summary
 
 
 async def test_immich_provider_get_detail_lists_all_photos_and_masks_api_key(tmp_db, monkeypatch):

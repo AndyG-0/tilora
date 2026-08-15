@@ -79,6 +79,13 @@ class Settings(BaseSettings):
     # see AIProvider.run_prompt.
     ai_reasoning_effort: str | None = None
 
+    # Name the AI assistant uses to identify itself when answering questions.
+    ai_agent_name: str = "Tilora"
+
+    # URL of a self-hosted SearXNG instance (e.g. "http://searxng:8080"). When
+    # configured, enables web search and fetch tools for the AI assistant.
+    searxng_url: str | None = None
+
     # IANA timezone (e.g. "America/Chicago"), used by any widget that
     # renders the current date/time (clock, date, ...).
     timezone: str = "UTC"
@@ -119,14 +126,6 @@ class Settings(BaseSettings):
     caldav_username: str | None = None
     caldav_password: str | None = None
 
-    # Apple ID used by the private iCloud Photos provider (full library
-    # access via icloudpy), as opposed to the icloud_shared provider, which
-    # needs no credentials. Unlike caldav_password, this must be the real
-    # account password — Apple doesn't support app-specific passwords for
-    # this API — so treat it as more sensitive than the CalDAV credentials.
-    icloud_username: str | None = None
-    icloud_password: str | None = None
-
     # Comma-separated list of allowed browser origins for the frontend, e.g.
     # "http://localhost:5173,http://192.168.1.50:3000" — lets a kiosk and a
     # phone/desktop browser reach the same backend from different origins at
@@ -165,6 +164,8 @@ settings = Settings()
 APP_SETTINGS_KEYS = (
     "ai_model",
     "ai_reasoning_effort",
+    "ai_agent_name",
+    "searxng_url",
     "timezone",
     "anthropic_api_key",
     "openai_api_key",
@@ -181,8 +182,6 @@ APP_SETTINGS_KEYS = (
     "caldav_url",
     "caldav_username",
     "caldav_password",
-    "icloud_username",
-    "icloud_password",
 )
 
 # The subset of APP_SETTINGS_KEYS that hold credentials/tokens rather than
@@ -199,7 +198,6 @@ SECRET_APP_SETTINGS_KEYS = (
     "microsoft_calendar_client_id",
     "microsoft_calendar_client_secret",
     "caldav_password",
-    "icloud_password",
 )
 
 
@@ -307,26 +305,37 @@ def widget_config(widget_id: str) -> dict[str, Any]:
 
 
 def list_widget_configs(config: dict[str, Any]) -> list[dict[str, Any]]:
-    """dashboard.yaml's `widgets:` merged with UI-added/removed widgets.
+    """dashboard.yaml's `widgets:` merged with every UI-added widget.
 
     Mirrors how `get_widget_settings`/`get_widget_layout` layer DB overrides
     onto individual YAML-defined widgets, but for the widget *list* itself —
-    lets an add/remove from the UI take effect without a backend restart, in
-    both `main.py:load_plugins` and `app/api/widgets.py:list_widgets`.
-    """
-    from app.storage.db import list_custom_widgets, removed_widget_ids
+    lets an add from the UI take effect without a backend restart, in both
+    `main.py:load_plugins` (which needs a `Plugin` instance for every widget
+    that exists, regardless of who can currently see it) and
+    `app/api/widgets.py` (which additionally filters this list down to what
+    the requesting (user, device) should see — see
+    `app.api.widgets._visible_widget_configs`). Deliberately does *not*
+    filter by hidden/removed state itself, since "does this widget exist" and
+    "should this viewer see it" are different questions — see
+    CONTRIBUTING.md's settings-tiers section.
 
-    removed = removed_widget_ids()
-    widgets = [w for w in config.get("widgets", []) if w["id"] not in removed]
+    A UI-added widget's `owner_user_id`/`owner_device_id` are `None` for one
+    added before ownership tracking existed (grandfathered as visible to
+    everyone) or set to the (user, device) that created it — see the
+    `custom_widgets` table comment in app.storage.db.
+    """
+    from app.storage.db import list_custom_widgets
+
+    widgets = list(config.get("widgets", []))
     for custom in list_custom_widgets():
-        if custom["id"] in removed:
-            continue
         entry = {
             "id": custom["id"],
             "type": custom["type"],
             "enabled": True,
             "layout": custom["layout"],
             "settings": {},
+            "owner_user_id": custom["owner_user_id"],
+            "owner_device_id": custom["owner_device_id"],
         }
         if custom["tab"] is not None:
             entry["tab"] = custom["tab"]

@@ -151,7 +151,11 @@ async def test_get_detail_when_connected_reports_clients_and_traffic(monkeypatch
 
     assert detail["connected"] is True
     assert detail["wan_ip"] == "203.0.113.5"
-    assert detail["clients"] == [{"name": "Laptop", "ip": "192.168.1.10", "online": True}]
+    assert len(detail["clients"]) == 1
+    assert detail["clients"][0]["name"] == "Laptop"
+    assert detail["clients"][0]["ip"] == "192.168.1.10"
+    assert detail["clients"][0]["online"] is True
+    assert "connection_type" in detail["clients"][0]
     assert detail["rx_bytes"] == 1024
     assert detail["tx_bytes"] == 512
     # get_detail's wan+clients+traffic reads all land within the same
@@ -171,12 +175,15 @@ async def test_get_detail_surfaces_wan_error_without_raising(monkeypatch):
     assert detail["wan_ip"] is None
 
 
-async def test_get_ai_tools_returns_status_tool():
+async def test_get_ai_tools_returns_status_and_client_tools():
     plugin = make_plugin(host="")
 
     tools = plugin.get_ai_tools()
 
-    assert len(tools) == 1
-    assert tools[0].name == "get_asus_router_status"
+    assert len(tools) == 3
+    tool_names = [t.name for t in tools]
+    assert "get_asus_router_status" in tool_names
+    assert "get_asus_router_clients" in tool_names
+    assert "asus_router_wake_on_lan" in tool_names
     result = await tools[0].handler()
     assert result["connected"] is False

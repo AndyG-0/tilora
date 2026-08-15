@@ -9,6 +9,7 @@
 		y: number;
 		existingRule: HDHomeRunRecordingRule | null;
 		loading: boolean;
+		pending: boolean;
 		onRecordEpisode: () => void;
 		onRecordSeries: () => void;
 		onCancelRule: (ruleId: string) => void;
@@ -22,6 +23,7 @@
 		y,
 		existingRule,
 		loading,
+		pending,
 		onRecordEpisode,
 		onRecordSeries,
 		onCancelRule,
@@ -65,6 +67,9 @@
 		<span class="menu-channel">{channelName}</span>
 	</div>
 	{#if existingRule}
+		{#if pending}
+			<div class="menu-pending-hint">{$_('hdhomerun.detail.pending_confirmation')}</div>
+		{/if}
 		<button
 			class="menu-item danger"
 			disabled={loading}
@@ -153,5 +158,11 @@
 
 	.menu-item.danger {
 		color: var(--color-error, #e05a5a);
+	}
+
+	.menu-pending-hint {
+		font-size: 0.75rem;
+		color: var(--color-warning, #d9a441);
+		padding: 0.1rem 0.6rem 0.35rem;
 	}
 </style>

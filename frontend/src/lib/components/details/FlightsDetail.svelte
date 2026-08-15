@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { api, type CityResult } from '$lib/api';
 	import { airlineLogoSrc } from '$lib/airlineLogos';
+	import { formatAircraftTooltip, formatAirlineTooltip, formatSpeedTooltip } from '$lib/aircraftTypes';
 	import LedText from '$lib/components/LedText.svelte';
 	import AircraftIcon from '$lib/components/AircraftIcon.svelte';
 	import FlightsMap from '$lib/components/FlightsMap.svelte';
@@ -19,7 +20,9 @@
 		airline_code: string | null;
 		airline_name: string | null;
 		aircraft_type: string | null;
+		aircraft_name: string | null;
 		aircraft_kind: string | null;
+		registration: string | null;
 		altitude_ft: number | null;
 		speed_kts: number | null;
 		distance_nm: number | null;
@@ -47,6 +50,7 @@
 		latitude: number;
 		longitude: number;
 		radius_nm: number;
+		speed_unit?: 'mph' | 'kmh';
 		count: number;
 		flights: FlightItem[];
 	}
@@ -54,7 +58,7 @@
 	let { data: initialData }: { data: FlightsDetailData } = $props();
 
 	// svelte-ignore state_referenced_locally -- seed local state from the
-	// initial load once; subsequent updates come from selectCity/saveRadius.
+	// initial load once; subsequent updates come from selectCity/saveRadius/selectSpeedUnit.
 	let flightsData = $state(initialData);
 
 	let editingLocation = $state(false);
@@ -68,6 +72,11 @@
 	// initial load once.
 	let radiusInput = $state(initialData.radius_nm);
 	let savingRadius = $state(false);
+
+	// svelte-ignore state_referenced_locally -- seed local state from the
+	// initial load once.
+	let speedUnit = $state<'mph' | 'kmh'>(initialData.speed_unit ?? 'mph');
+	let savingSpeedUnit = $state(false);
 
 	let searchTimeout: ReturnType<typeof setTimeout>;
 
@@ -129,6 +138,21 @@
 			savingRadius = false;
 		}
 	}
+
+	async function selectSpeedUnit(unit: 'mph' | 'kmh') {
+		if (speedUnit === unit || savingSpeedUnit) return;
+		speedUnit = unit;
+		savingSpeedUnit = true;
+		error = null;
+		try {
+			await api.updateWidgetSettings(page.params.id!, { speed_unit: unit });
+			flightsData = { ...flightsData, speed_unit: unit };
+		} catch {
+			error = get(_)('flights.detail.update_failed');
+		} finally {
+			savingSpeedUnit = false;
+		}
+	}
 </script>
 
 <div class="header">
@@ -169,10 +193,35 @@
 	</div>
 {/if}
 
-<label class="radius">
-	{$_('flights.detail.radius_label')}
-	<input type="number" min="1" max="250" bind:value={radiusInput} disabled={savingRadius} onchange={saveRadius} />
-</label>
+<div class="controls">
+	<label class="setting-item radius">
+		{$_('flights.detail.radius_label')}
+		<input type="number" min="1" max="250" bind:value={radiusInput} disabled={savingRadius} onchange={saveRadius} />
+	</label>
+	<div class="setting-item speed-unit-control">
+		<span>{$_('flights.detail.speed_unit_label')}</span>
+		<div class="unit-toggle" role="group" aria-label={$_('flights.detail.speed_unit_label')}>
+			<button
+				type="button"
+				class="unit-btn"
+				class:active={speedUnit === 'mph'}
+				disabled={savingSpeedUnit}
+				onclick={() => selectSpeedUnit('mph')}
+			>
+				MPH
+			</button>
+			<button
+				type="button"
+				class="unit-btn"
+				class:active={speedUnit === 'kmh'}
+				disabled={savingSpeedUnit}
+				onclick={() => selectSpeedUnit('kmh')}
+			>
+				KM/H
+			</button>
+		</div>
+	</div>
+</div>
 
 {#if flightsData.flights.length === 0}
 	<p class="empty">{$_('flights.detail.empty')}</p>
@@ -188,31 +237,85 @@
 		</div>
 		{#each flightsData.flights as flight (flight.callsign)}
 			{@const logo = airlineLogoSrc(flight.airline_code)}
+			{@const airlineTitle = formatAirlineTooltip(flight)}
+			{@const aircraftTitle = formatAircraftTooltip(
+				flight,
+				flight.aircraft_kind ? $_(`flights.aircraft_kind.${flight.aircraft_kind}`) : undefined,
+				$_('flights.detail.tail_label'),
+			)}
+			{@const speedTitle = formatSpeedTooltip(flight.speed_kts, speedUnit)}
 			<div class="table-row">
-				<span class="flight-cell">
-					{#if logo}
-						<img class="logo" src={logo} alt={flight.airline_name ?? flight.airline_code} />
-					{:else if flight.airline_code}
-						<span class="badge">{flight.airline_code}</span>
-					{/if}
-					<LedText text={flight.callsign} color={LED_COLOR} weight={700} />
-				</span>
-				<span class="type-cell">
-					<span class="icon">
-						<AircraftIcon
-							kind={flight.aircraft_kind}
-							label={$_(`flights.aircraft_kind.${flight.aircraft_kind ?? 'unknown'}`)}
-							color={LED_COLOR}
-						/>
+				{#if airlineTitle}
+					<span
+						class="flight-cell hover-cell"
+						tabindex="0"
+						role="button"
+						aria-haspopup="true"
+						aria-label={airlineTitle}
+					>
+						<span class="hover-underline">
+							{#if logo}
+								<img class="logo" src={logo} alt={flight.airline_name ?? flight.airline_code} />
+							{:else if flight.airline_code}
+								<span class="badge">{flight.airline_code}</span>
+							{/if}
+							<LedText text={flight.callsign} color={LED_COLOR} weight={700} />
+						</span>
+						<div class="cell-popover" role="tooltip">{airlineTitle}</div>
 					</span>
-					<LedText text={flight.aircraft_type ?? '—'} color={LED_COLOR} />
-				</span>
+				{:else}
+					<span class="flight-cell">
+						{#if logo}
+							<img class="logo" src={logo} alt={flight.airline_name ?? flight.airline_code} />
+						{:else if flight.airline_code}
+							<span class="badge">{flight.airline_code}</span>
+						{/if}
+						<LedText text={flight.callsign} color={LED_COLOR} weight={700} />
+					</span>
+				{/if}
+				{#if aircraftTitle}
+					<span class="type-cell hover-cell" tabindex="0" role="button" aria-haspopup="true" aria-label={aircraftTitle}>
+						<span class="hover-underline">
+							<span class="icon">
+								<AircraftIcon
+									kind={flight.aircraft_kind}
+									label={$_(`flights.aircraft_kind.${flight.aircraft_kind ?? 'unknown'}`)}
+									color={LED_COLOR}
+								/>
+							</span>
+							<LedText text={flight.aircraft_type ?? '—'} color={LED_COLOR} />
+						</span>
+						<div class="cell-popover" role="tooltip">{aircraftTitle}</div>
+					</span>
+				{:else}
+					<span class="type-cell">
+						<span class="icon">
+							<AircraftIcon
+								kind={flight.aircraft_kind}
+								label={$_(`flights.aircraft_kind.${flight.aircraft_kind ?? 'unknown'}`)}
+								color={LED_COLOR}
+							/>
+						</span>
+						<LedText text={flight.aircraft_type ?? '—'} color={LED_COLOR} />
+					</span>
+				{/if}
 				<LedText text={routeText(flight)} color={LED_COLOR} />
 				<LedText
 					text={flight.altitude_ft !== null ? `${Math.round(flight.altitude_ft).toLocaleString()} FT` : '—'}
 					color={LED_COLOR}
 				/>
-				<LedText text={flight.speed_kts !== null ? `${Math.round(flight.speed_kts)} KTS` : '—'} color={LED_COLOR} />
+				{#if speedTitle}
+					<span class="speed-cell hover-cell" tabindex="0" role="button" aria-haspopup="true" aria-label={speedTitle}>
+						<span class="hover-underline">
+							<LedText text={`${Math.round(flight.speed_kts ?? 0)} KTS`} color={LED_COLOR} />
+						</span>
+						<div class="cell-popover" role="tooltip">{speedTitle}</div>
+					</span>
+				{:else}
+					<span class="speed-cell">
+						<LedText text={flight.speed_kts !== null ? `${Math.round(flight.speed_kts)} KTS` : '—'} color={LED_COLOR} />
+					</span>
+				{/if}
 				<LedText text={flight.distance_nm !== null ? `${flight.distance_nm.toFixed(1)} NM` : '—'} color={LED_COLOR} />
 			</div>
 		{/each}
@@ -288,11 +391,18 @@
 		background: var(--color-surface-hover);
 	}
 
-	.radius {
+	.controls {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 1.5rem;
+		margin-top: 1rem;
+	}
+
+	.setting-item {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		margin-top: 1rem;
 		font-size: 0.9rem;
 		color: var(--color-text-muted);
 	}
@@ -305,6 +415,43 @@
 		border: 1px solid var(--color-border);
 		background: var(--color-surface);
 		color: var(--color-text);
+	}
+
+	.unit-toggle {
+		display: inline-flex;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		padding: 0.15rem;
+		gap: 0.15rem;
+	}
+
+	.unit-btn {
+		background: none;
+		border: none;
+		border-radius: 0.35rem;
+		padding: 0.2rem 0.55rem;
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: var(--color-text-muted);
+		cursor: pointer;
+		transition:
+			background-color 0.15s ease,
+			color 0.15s ease;
+	}
+
+	.unit-btn:hover:not(:disabled) {
+		color: var(--color-text);
+	}
+
+	.unit-btn.active {
+		background: var(--color-accent);
+		color: #fff;
+	}
+
+	.unit-btn:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
 	}
 
 	.empty {
@@ -359,6 +506,76 @@
 		width: 1.5rem;
 		height: 1.5rem;
 		flex-shrink: 0;
+	}
+
+	.speed-cell {
+		display: inline-flex;
+		align-items: center;
+		min-width: 0;
+	}
+
+	.hover-cell {
+		position: relative;
+		outline: none;
+	}
+
+	.hover-cell[role='button'] {
+		cursor: pointer;
+	}
+
+	.hover-underline {
+		display: inline-flex;
+		align-items: center;
+		gap: inherit;
+		min-width: 0;
+	}
+
+	.hover-cell[role='button'] .hover-underline {
+		border-bottom: 1px dashed var(--color-text-muted);
+		transition: border-color 0.15s ease;
+	}
+
+	.hover-cell[role='button']:hover .hover-underline,
+	.hover-cell[role='button']:focus .hover-underline,
+	.hover-cell[role='button']:focus-within .hover-underline {
+		border-color: var(--color-accent);
+	}
+
+	.cell-popover {
+		position: absolute;
+		top: calc(100% + 0.4rem);
+		left: 0;
+		z-index: 10;
+		max-width: 16rem;
+		width: max-content;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		padding: 0.45rem 0.65rem;
+		font-size: 0.8rem;
+		font-weight: 400;
+		line-height: 1.3;
+		color: var(--color-text);
+		text-transform: none;
+		letter-spacing: normal;
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+		opacity: 0;
+		visibility: hidden;
+		transform: translateY(4px);
+		pointer-events: none;
+		transition:
+			opacity 0.15s ease,
+			transform 0.15s ease,
+			visibility 0.15s;
+	}
+
+	.hover-cell:hover .cell-popover,
+	.hover-cell:focus .cell-popover,
+	.hover-cell:focus-within .cell-popover {
+		opacity: 1;
+		visibility: visible;
+		transform: translateY(0);
+		pointer-events: auto;
 	}
 
 	.logo {

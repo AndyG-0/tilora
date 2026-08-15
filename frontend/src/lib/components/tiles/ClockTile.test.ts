@@ -45,9 +45,30 @@ describe('ClockTile', () => {
 	it('renders the fetched style once the summary resolves', async () => {
 		widgetSummary.mockResolvedValue({ timezone: 'UTC', style: 'analog' });
 
-		render(ClockTile, { props: { widgetId: 'clock' } });
+		const { container } = render(ClockTile, { props: { widgetId: 'clock' } });
 		await vi.advanceTimersByTimeAsync(0);
 
 		expect(screen.getByRole('img', { name: 'Analog clock face' })).toBeInTheDocument();
+		expect(container.querySelector('.clock-tile')).toBeInTheDocument();
+	});
+
+	it('renders binary, word, and matrix styles in the clock tile container', async () => {
+		widgetSummary.mockResolvedValue({ timezone: 'UTC', style: 'binary' });
+		const r1 = render(ClockTile, { props: { widgetId: 'clock' } });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(screen.getByRole('img', { name: 'Binary clock face' })).toBeInTheDocument();
+		r1.unmount();
+
+		widgetSummary.mockResolvedValue({ timezone: 'UTC', style: 'word' });
+		const r2 = render(ClockTile, { props: { widgetId: 'clock' } });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(screen.getByText(/o'clock|half|past|to/i)).toBeInTheDocument();
+		r2.unmount();
+
+		widgetSummary.mockResolvedValue({ timezone: 'UTC', style: 'matrix' });
+		const r3 = render(ClockTile, { props: { widgetId: 'clock' } });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(screen.getByText('10:30:15')).toBeInTheDocument();
+		r3.unmount();
 	});
 });

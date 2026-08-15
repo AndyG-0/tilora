@@ -29,6 +29,9 @@ class GoodreadsPlugin(Plugin):
     id = "goodreads"
     name = "Goodreads"
     refresh_interval_seconds = 3600
+    # Which shelf/user this reads is a personal choice, not a household-wide
+    # one — see CONTRIBUTING.md's settings tiers.
+    settings_scope = "personal"
     default_settings: ClassVar[dict[str, Any]] = {
         "user_id": "",
         "shelf": "currently-reading",

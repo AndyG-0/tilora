@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from app.config import settings
 from app.integrations import icloud_photos
 from app.plugins.photos.indexer import index_photos
 from app.plugins.photos.plugin import PhotosPlugin
@@ -65,13 +64,17 @@ async def test_failed_scan_preserves_previous_index_and_marks_status_error(tmp_d
 
 
 async def test_chunked_indexing_accumulates_positions_across_many_chunks(monkeypatch, tmp_db):
-    monkeypatch.setattr(settings, "icloud_username", "user@example.com")
-    monkeypatch.setattr(settings, "icloud_password", "hunter2")
+    # Background indexing (no per-request viewer, requesting_user_id=None)
+    # fans out into one scan per connected user — see index_photos — so the
+    # resulting index rows are keyed by that user's id, not the shared ""
+    # bucket.
+    db.create_user("admin", "Admin", None, None, None, None, "2020-01-01T00:00:00Z", role="admin")
+    db.save_user_credentials("admin", "icloud", {"username": "user@example.com", "password": "hunter2"})
 
     chunk_count = 25
     chunk_size = 4
 
-    async def fake_iter_photo_chunks(username, password, album_name):
+    async def fake_iter_photo_chunks(user_id, username, password, album_name):
         for chunk_index in range(chunk_count):
             yield [{"id": f"id-{chunk_index}-{i}", "filename": f"{chunk_index}-{i}.jpg"} for i in range(chunk_size)]
 
@@ -80,7 +83,7 @@ async def test_chunked_indexing_accumulates_positions_across_many_chunks(monkeyp
 
     await index_photos(plugin)
 
-    photo_ids = db.photo_index_photo_ids(plugin.id)
+    photo_ids = db.photo_index_photo_ids(plugin.id, "admin")
     assert len(photo_ids) == chunk_count * chunk_size
     expected = [f"id-{chunk_index}-{i}" for chunk_index in range(chunk_count) for i in range(chunk_size)]
     assert photo_ids == expected

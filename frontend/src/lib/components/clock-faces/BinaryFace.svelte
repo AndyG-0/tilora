@@ -37,22 +37,30 @@
 <style>
 	.binary {
 		display: flex;
-		gap: 0.4rem;
+		align-items: center;
+		justify-content: center;
+		gap: clamp(0.35rem, min(3.5cqw, 3.5cqh), 1.25rem);
 	}
 
 	.column {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 0.25rem;
+		gap: clamp(0.2rem, min(2.5cqw, 2.5cqh), 0.8rem);
+	}
+
+	.binary:not(.large) .column:nth-child(2),
+	.binary:not(.large) .column:nth-child(4) {
+		margin-right: clamp(0.25rem, min(2.5cqw, 2.5cqh), 0.9rem);
 	}
 
 	.dot {
-		width: clamp(0.4rem, 8cqh, 0.7rem);
-		height: clamp(0.4rem, 8cqh, 0.7rem);
+		width: clamp(0.55rem, min(10cqw, 14cqh), 2.25rem);
+		height: clamp(0.55rem, min(10cqw, 14cqh), 2.25rem);
 		border-radius: 50%;
-		border: 1.5px solid var(--color-border);
+		border: clamp(1.5px, 0.4cqmin, 3px) solid var(--color-border);
 		background: transparent;
+		box-sizing: border-box;
 	}
 
 	.dot.lit {
@@ -61,15 +69,11 @@
 	}
 
 	.label {
-		font-size: 0.6rem;
+		font-size: clamp(0.6rem, min(5cqw, 6cqh), 1.1rem);
+		font-weight: 600;
 		color: var(--color-text-muted);
-		margin-top: 0.1rem;
-	}
-
-	.binary.large .dot {
-		width: 1.1rem;
-		height: 1.1rem;
-		border-width: 2px;
+		margin-top: clamp(0.1rem, 1cqmin, 0.35rem);
+		line-height: 1;
 	}
 
 	.binary.large {
@@ -80,7 +84,19 @@
 		gap: 0.5rem;
 	}
 
+	.binary.large .column:nth-child(2),
+	.binary.large .column:nth-child(4) {
+		margin-right: 0.6rem;
+	}
+
+	.binary.large .dot {
+		width: 1.1rem;
+		height: 1.1rem;
+		border-width: 2px;
+	}
+
 	.binary.large .label {
 		font-size: 0.9rem;
+		margin-top: 0.1rem;
 	}
 </style>

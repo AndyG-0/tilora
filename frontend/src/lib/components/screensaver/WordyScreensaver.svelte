@@ -36,6 +36,7 @@
 	}
 
 	let {
+		id,
 		type,
 		data,
 		animationStyle,
@@ -43,6 +44,7 @@
 		textPauseSeconds,
 		flipboardPattern,
 	}: {
+		id: string;
 		type: string;
 		data: unknown;
 		animationStyle: TextAnimationStyle;
@@ -104,11 +106,11 @@
 </script>
 
 {#if animationStyle === 'matrix'}
-	<Matrix {lines} pauseSeconds={textPauseSeconds} />
+	<Matrix {id} {lines} pauseSeconds={textPauseSeconds} />
 {:else if animationStyle === 'flipboard'}
-	<Flipboard {lines} pauseSeconds={textPauseSeconds} pattern={flipboardPattern} />
+	<Flipboard {id} {lines} pauseSeconds={textPauseSeconds} pattern={flipboardPattern} />
 {:else if animationStyle === 'led_dots'}
-	<LedDots {lines} color={ledColor} pauseSeconds={textPauseSeconds} />
+	<LedDots {id} {lines} color={ledColor} pauseSeconds={textPauseSeconds} />
 {:else}
 	<Marquee {lines} />
 {/if}

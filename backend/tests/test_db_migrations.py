@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sqlite3
 
 import pytest
@@ -781,3 +782,292 @@ INSERT INTO this_table_does_not_exist (name) VALUES ('y');
 
     assert version == 0
     assert "test_marker" not in tables
+
+
+# Frozen copy of `_SCHEMA` as it shipped in the v0.10.0 release (git tag
+# a55a956, the last real release before migrations 009-014 were designed) —
+# i.e. what any out-of-date deployment's on-disk database actually looks
+# like: every table migrations 001-008 touch is already in its final shape,
+# but `photo_index`/`packages` (untouched by any migration until 012/014)
+# are still in their pre-user_id shape, old indexes and all. Deliberately
+# not re-derived from the current `_SCHEMA` on each run — the whole point is
+# to pin what a real released version looked like, so this test keeps
+# proving the real upgrade path stays safe regardless of what `_SCHEMA`
+# grows into next.
+_V0_10_0_SCHEMA = """
+CREATE TABLE IF NOT EXISTS ai_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    widget_id TEXT NOT NULL,
+    ran_at TEXT NOT NULL,
+    result TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_runs_widget_id ON ai_runs (widget_id, ran_at DESC);
+
+CREATE TABLE IF NOT EXISTS speedtest_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    widget_id TEXT NOT NULL,
+    ran_at TEXT NOT NULL,
+    download_mbps REAL NOT NULL,
+    upload_mbps REAL NOT NULL,
+    ping_ms REAL NOT NULL,
+    server_name TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_speedtest_runs_widget_id ON speedtest_runs (widget_id, ran_at DESC);
+
+CREATE TABLE IF NOT EXISTS nasa_apod_fetches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    widget_id TEXT NOT NULL,
+    fetched_at TEXT NOT NULL,
+    result TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_nasa_apod_fetches_widget_id ON nasa_apod_fetches (widget_id, fetched_at DESC);
+
+CREATE TABLE IF NOT EXISTS chores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    widget_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    text TEXT NOT NULL,
+    completed INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_chores_widget_user ON chores (widget_id, user_id, completed, created_at);
+
+CREATE TABLE IF NOT EXISTS shopping_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    widget_id TEXT NOT NULL,
+    text TEXT NOT NULL,
+    checked INTEGER NOT NULL DEFAULT 0,
+    added_by TEXT NOT NULL,
+    checked_by TEXT,
+    created_at TEXT NOT NULL,
+    checked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_shopping_items_widget ON shopping_items (widget_id, checked, created_at);
+
+CREATE TABLE IF NOT EXISTS widget_settings (
+    widget_id TEXT PRIMARY KEY,
+    settings TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS network_integrations (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    name TEXT NOT NULL,
+    settings TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_network_integrations_type ON network_integrations (type);
+
+CREATE TABLE IF NOT EXISTS widget_layout (
+    user_id TEXT NOT NULL,
+    breakpoint TEXT NOT NULL,
+    widget_id TEXT NOT NULL,
+    layout TEXT NOT NULL,
+    PRIMARY KEY (user_id, breakpoint, widget_id)
+);
+CREATE INDEX IF NOT EXISTS idx_widget_layout_widget_id ON widget_layout (widget_id);
+
+CREATE TABLE IF NOT EXISTS screensaver_settings (
+    user_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    settings TEXT NOT NULL,
+    PRIMARY KEY (user_id, device_id)
+);
+
+CREATE TABLE IF NOT EXISTS widget_user_settings (
+    user_id TEXT NOT NULL,
+    widget_id TEXT NOT NULL,
+    settings TEXT NOT NULL,
+    PRIMARY KEY (user_id, widget_id)
+);
+CREATE INDEX IF NOT EXISTS idx_widget_user_settings_widget_id ON widget_user_settings (widget_id);
+
+CREATE TABLE IF NOT EXISTS widget_device_settings (
+    device_id TEXT NOT NULL,
+    widget_id TEXT NOT NULL,
+    settings TEXT NOT NULL,
+    PRIMARY KEY (device_id, widget_id)
+);
+CREATE INDEX IF NOT EXISTS idx_widget_device_settings_widget_id ON widget_device_settings (widget_id);
+
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    avatar TEXT,
+    pin_hash TEXT,
+    pin_salt TEXT,
+    pin_iterations INTEGER,
+    created_at TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'member'
+);
+
+CREATE TABLE IF NOT EXISTS devices (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions (user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_device_id ON sessions (device_id);
+
+CREATE TABLE IF NOT EXISTS user_preferences (
+    user_id TEXT PRIMARY KEY,
+    preferences TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    widget_id TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    message TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT,
+    dismissed INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_alerts_widget_id ON alerts (widget_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+    provider TEXT PRIMARY KEY,
+    refresh_token TEXT NOT NULL,
+    access_token TEXT,
+    expires_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS custom_widgets (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    layout TEXT NOT NULL,
+    tab TEXT
+);
+
+CREATE TABLE IF NOT EXISTS removed_widget_ids (
+    widget_id TEXT PRIMARY KEY
+);
+
+CREATE TABLE IF NOT EXISTS photo_index (
+    widget_id TEXT NOT NULL,
+    photo_id TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    generation INTEGER NOT NULL,
+    PRIMARY KEY (widget_id, photo_id)
+);
+CREATE INDEX IF NOT EXISTS idx_photo_index_widget_position ON photo_index (widget_id, position);
+
+CREATE TABLE IF NOT EXISTS photo_index_meta (
+    widget_id TEXT PRIMARY KEY,
+    generation INTEGER NOT NULL,
+    updated_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'ok',
+    last_error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS severe_weather_seen (
+    widget_id TEXT NOT NULL,
+    alert_key TEXT NOT NULL,
+    first_seen_at TEXT NOT NULL,
+    PRIMARY KEY (widget_id, alert_key)
+);
+
+CREATE TABLE IF NOT EXISTS packages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    widget_id TEXT NOT NULL,
+    tracking_number TEXT NOT NULL,
+    carrier TEXT,
+    label TEXT,
+    status TEXT,
+    last_event TEXT,
+    eta_date TEXT,
+    delivered INTEGER NOT NULL DEFAULT 0,
+    added_at TEXT NOT NULL,
+    updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_packages_widget ON packages (widget_id, delivered, eta_date);
+
+CREATE TABLE IF NOT EXISTS rss_feeds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    url TEXT NOT NULL,
+    name TEXT,
+    item_limit INTEGER NOT NULL DEFAULT 10,
+    created_at TEXT NOT NULL,
+    UNIQUE (user_id, url)
+);
+CREATE INDEX IF NOT EXISTS idx_rss_feeds_user_id ON rss_feeds (user_id);
+"""
+
+
+def test_upgrade_from_v0_10_0_schema_runs_every_migration_cleanly(tmp_path, monkeypatch):
+    """Regression test for the real crash: `sqlite3.OperationalError: no such
+    column: user_id` from `init_db()` on a database that already had
+    `photo_index`/`packages` in their pre-migration shape (see the
+    `CREATE INDEX` comments left in `_SCHEMA` next to those two tables).
+    `_V0_10_0_SCHEMA` above is what any environment still running the last
+    real release has on disk right now; this proves the current code
+    upgrades it all the way to the latest migration without raising, the
+    same as it will need to for a real deployed instance.
+    """
+    db_path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(_V0_10_0_SCHEMA)
+    conn.execute("PRAGMA user_version = 8")
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(db, "DB_PATH", db_path)
+
+    db.init_db()
+
+    conn = sqlite3.connect(db_path)
+    version = conn.execute("PRAGMA user_version").fetchone()[0]
+    photo_index_columns = {row[1] for row in conn.execute("PRAGMA table_info(photo_index)")}
+    packages_columns = {row[1] for row in conn.execute("PRAGMA table_info(packages)")}
+    indexes = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
+    conn.close()
+
+    assert version == len(db._MIGRATIONS)
+    assert "user_id" in photo_index_columns
+    assert "user_id" in packages_columns
+    assert "idx_photo_index_widget_user_position" in indexes
+    assert "idx_packages_widget_user" in indexes
+
+
+def test_schema_indexes_never_reference_a_column_only_an_alter_migration_adds(tmp_path, monkeypatch):
+    """Static guard against the same bug class recurring. Note `_SCHEMA`'s
+    `CREATE TABLE IF NOT EXISTS` for `photo_index`/`packages` already lists
+    `user_id` (correct — that's the final shape a brand-new install should
+    get), so diffing `_SCHEMA`'s own CREATE TABLE/CREATE INDEX text against
+    each other can't detect this: the bug only bites an *upgrading* database,
+    where that same CREATE TABLE is a no-op and the column doesn't exist
+    until its migration's `ALTER TABLE ... ADD COLUMN` runs. So instead this
+    finds every (table, column) added by an ALTER-style migration and
+    asserts `_SCHEMA` never indexes that column for that table — keeps
+    catching this the moment a new offending index is added, with no
+    per-migration maintenance required.
+    """
+    import inspect
+
+    altered_columns = set(re.findall(r"ALTER TABLE (\w+) ADD COLUMN (\w+)", inspect.getsource(db)))
+
+    offenders = []
+    for index_name, table_name, columns_blob in re.findall(
+        r"CREATE INDEX IF NOT EXISTS (\w+) ON (\w+) \(([^)]*)\)", db._SCHEMA
+    ):
+        referenced = {c.strip().split()[0] for c in columns_blob.split(",")}
+        for column in referenced:
+            if (table_name, column) in altered_columns:
+                offenders.append((index_name, table_name, column))
+
+    assert offenders == []

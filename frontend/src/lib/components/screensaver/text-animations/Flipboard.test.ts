@@ -28,6 +28,7 @@ function mockClientHeight(height: number) {
 describe('Flipboard', () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
+		localStorage.clear();
 	});
 
 	afterEach(() => {
@@ -38,7 +39,9 @@ describe('Flipboard', () => {
 	it('shows a single row when the container is too short for more', () => {
 		mockClientHeight(40);
 
-		const { container } = render(Flipboard, { props: { lines: [line('One'), line('Two'), line('Three')] } });
+		const { container } = render(Flipboard, {
+			props: { id: 'test', lines: [line('One'), line('Two'), line('Three')] },
+		});
 
 		expect(container.querySelectorAll('.row')).toHaveLength(1);
 	});
@@ -47,7 +50,7 @@ describe('Flipboard', () => {
 		mockClientHeight(4 * ROW_HEIGHT_PX);
 
 		const { container } = render(Flipboard, {
-			props: { lines: [line('One'), line('Two'), line('Three'), line('Four'), line('Five')] },
+			props: { id: 'test', lines: [line('One'), line('Two'), line('Three'), line('Four'), line('Five')] },
 		});
 
 		expect(container.querySelectorAll('.row')).toHaveLength(4);
@@ -56,7 +59,7 @@ describe('Flipboard', () => {
 	it('wraps around the lines array via modulo when rowsToShow exceeds the line count', () => {
 		mockClientHeight(4 * ROW_HEIGHT_PX);
 
-		const { container } = render(Flipboard, { props: { lines: [line('Alpha'), line('Beta')] } });
+		const { container } = render(Flipboard, { props: { id: 'test', lines: [line('Alpha'), line('Beta')] } });
 
 		const rowTexts = Array.from(container.querySelectorAll('.row')).map((row) => row.textContent?.trim());
 		expect(rowTexts).toEqual([rowTexts[0], rowTexts[1], rowTexts[0], rowTexts[1]]);
@@ -66,7 +69,7 @@ describe('Flipboard', () => {
 		mockClientHeight(3 * ROW_HEIGHT_PX);
 
 		const { container } = render(Flipboard, {
-			props: { lines: ['Row A', 'Row B', 'Row C', 'Row D', 'Row E', 'Row F'].map(line), pauseSeconds: 6 },
+			props: { id: 'test', lines: ['Row A', 'Row B', 'Row C', 'Row D', 'Row E', 'Row F'].map(line), pauseSeconds: 6 },
 		});
 
 		const normalize = (text: string | null | undefined) => text?.replace(/\u00A0/g, ' ').trim();
@@ -83,7 +86,7 @@ describe('Flipboard', () => {
 		mockClientHeight(3 * ROW_HEIGHT_PX);
 
 		const { container } = render(Flipboard, {
-			props: { lines: ['Row A', 'Row B', 'Row C', 'Row D', 'Row E', 'Row F'].map(line), pauseSeconds: 6 },
+			props: { id: 'test', lines: ['Row A', 'Row B', 'Row C', 'Row D', 'Row E', 'Row F'].map(line), pauseSeconds: 6 },
 		});
 
 		const normalize = (text: string | null | undefined) => text?.replace(/\u00A0/g, ' ').trim();
@@ -103,7 +106,7 @@ describe('Flipboard', () => {
 		mockClientHeight(ROW_HEIGHT_PX);
 
 		const longLine = 'This message is much longer than a single row of flaps can hold without wrapping';
-		const { container } = render(Flipboard, { props: { lines: [line(longLine)] } });
+		const { container } = render(Flipboard, { props: { id: 'test', lines: [line(longLine)] } });
 
 		const normalize = (text: string | null | undefined) => text?.replace(/\u00A0/g, ' ').trim();
 		expect(normalize(container.querySelector('.row')?.textContent)).toBe(longLine);
@@ -113,7 +116,7 @@ describe('Flipboard', () => {
 		mockClientHeight(ROW_HEIGHT_PX);
 
 		const { container } = render(Flipboard, {
-			props: { lines: [[{ text: 'ab', italic: true }, { text: 'c' }]] },
+			props: { id: 'test', lines: [[{ text: 'ab', italic: true }, { text: 'c' }]] },
 		});
 
 		const flaps = Array.from(container.querySelectorAll('.flap'));
@@ -128,7 +131,7 @@ describe('Flipboard', () => {
 		vi.spyOn(Math, 'random').mockReturnValue(0);
 
 		const { container } = render(Flipboard, {
-			props: { lines: ['Row A', 'Row B', 'Row C'].map(line), pauseSeconds: 6, pattern: 'random' },
+			props: { id: 'test', lines: ['Row A', 'Row B', 'Row C'].map(line), pauseSeconds: 6, pattern: 'random' },
 		});
 
 		const normalize = (text: string | null | undefined) => text?.replace(/\u00A0/g, ' ').trim();
@@ -146,7 +149,7 @@ describe('Flipboard', () => {
 		vi.spyOn(Math, 'random').mockReturnValue(0);
 
 		const { container } = render(Flipboard, {
-			props: { lines: ['Row A', 'Row B'].map(line), pauseSeconds: 6, pattern: 'random' },
+			props: { id: 'test', lines: ['Row A', 'Row B'].map(line), pauseSeconds: 6, pattern: 'random' },
 		});
 
 		const normalize = (text: string | null | undefined) => text?.replace(/\u00A0/g, ' ').trim();
@@ -161,7 +164,7 @@ describe('Flipboard', () => {
 	it('cascades flap delays left-to-right within a row and top-to-bottom across rows', () => {
 		mockClientHeight(2 * ROW_HEIGHT_PX);
 
-		const { container } = render(Flipboard, { props: { lines: [line('Row A'), line('Row B')] } });
+		const { container } = render(Flipboard, { props: { id: 'test', lines: [line('Row A'), line('Row B')] } });
 
 		const getDelay = (flap: Element) => Number(flap.getAttribute('style')?.match(/animation-delay: (\d+)ms/)?.[1]);
 
