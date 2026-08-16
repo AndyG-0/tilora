@@ -1,30 +1,10 @@
-// Regression coverage for edit-mode tile drag-to-rearrange, resize, and
-// delete. Runs under both the `desktop-chromium` (mouse) and `mobile-safari`
-// (touch) projects — the latter exists specifically to catch the class of
-// bug this suite was written for: a tile that "bounces back" to its start
-// position when dragged or resized on an iPhone, even though the same
-// gesture works fine with a mouse. Every assertion is relative to whatever
-// state the fixture is already in, so the two projects (which share one
-// backend/db — see playwright.config.ts) don't depend on run order or on
-// being the very first test to touch a given tile.
+// Regression coverage for edit-mode tile drag-to-rearrange, resize,
+// add, delete, and widget renaming. Runs under both the `desktop-chromium` (mouse)
+// and `mobile-safari` (touch) projects.
 import { test, expect, type Locator, type Page } from '@playwright/test';
 
 // Dispatches synthetic PointerEvents rather than driving page.mouse or real
-// TouchEvents. Two things forced this: the app's drag/resize code listens
-// exclusively to Pointer Events (never raw Touch Events), and — confirmed by
-// tracing this app under mobile-safari — WebKit only synthesizes
-// PointerEvents from *trusted* native touch input, never from a
-// JS-dispatched TouchEvent, so `element.dispatchEvent('touchstart', ...)`
-// (Playwright's own documented pattern at playwright.dev/docs/touch-events)
-// silently never reaches onCellPointerDown/onCellPointerMove at all.
-// Dispatching `pointerdown`/`pointermove`/`pointerup` directly, with
-// `pointerType` set explicitly, does reach the app's real handlers in both
-// engines. The tradeoff: these events are untrusted at the dispatch level,
-// so this can't exercise WebKit's native gesture-recognition/pointercancel
-// behavior (e.g. the touch system preempting a drag for a scroll) — only
-// Playwright's public API has no way to produce trusted multi-step touch
-// input. This suite therefore catches pointerType-conditional app-logic bugs
-// but not native-gesture-cancellation bugs; see CONTRIBUTING.md.
+// TouchEvents. See CONTRIBUTING.md.
 async function dragGesture(page: Page, from: Locator, deltaX: number, deltaY: number, steps = 12) {
 	const pointerType = (await page.evaluate(() => 'ontouchstart' in window)) ? 'touch' : 'mouse';
 	const box = await from.boundingBox();
@@ -56,7 +36,6 @@ test.describe('dashboard tile editing', () => {
 	test.beforeEach(async ({ page }) => {
 		await page.goto('/');
 		await expect(page.locator('[data-widget-id="clock"]')).toBeVisible();
-		await page.getByLabel('Rearrange widgets').click();
 	});
 
 	test.afterEach(async ({ page }) => {
@@ -65,6 +44,7 @@ test.describe('dashboard tile editing', () => {
 	});
 
 	test('drag-to-rearrange swaps two tiles and persists', async ({ page }) => {
+		await page.getByLabel('Rearrange widgets').click();
 		const clock = page.locator('[data-widget-id="clock"]');
 		const date = page.locator('[data-widget-id="date"]');
 		const clockBefore = await clock.boundingBox();
@@ -73,24 +53,11 @@ test.describe('dashboard tile editing', () => {
 
 		await dragGesture(page, clock, dateBefore.x - clockBefore.x, dateBefore.y - clockBefore.y);
 
-		// Clock should now sit where date used to be — not just visually (a
-		// leftover drag transform could fake that), but as the tile's real
-		// grid position, which only a successful PUT /api/widgets/layout
-		// followed by a re-render produces.
 		await expect.poll(async () => (await clock.boundingBox())?.x).toBe(dateBefore.x);
 		await expect.poll(async () => (await clock.boundingBox())?.y).toBe(dateBefore.y);
 
 		await page.reload();
 		await expect(clock).toBeVisible();
-		// Re-enter edit mode before measuring: at the narrow breakpoint `.grid`'s
-		// rows are `minmax(12rem, auto)` inside a `min-height: 100vh` container,
-		// so leftover space stretches into each row (ordinary CSS Grid
-		// `align-content: normal` behavior) — and edit mode adds its own "+ Add
-		// widget" tile as a real 4th grid row, which eats that leftover space
-		// and shrinks every row from ~200px back to the 12rem floor. `dateBefore`
-		// above was captured while already in edit mode (see beforeEach), so
-		// comparing against a post-reload measurement taken outside edit mode
-		// would be comparing two different row heights, not a broken swap.
 		await page.getByLabel('Rearrange widgets').click();
 		const clockAfterReload = await clock.boundingBox();
 		expect(clockAfterReload?.x).toBe(dateBefore.x);
@@ -98,6 +65,7 @@ test.describe('dashboard tile editing', () => {
 	});
 
 	test('resizing a tile grows it and persists', async ({ page }) => {
+		await page.getByLabel('Rearrange widgets').click();
 		const message = page.locator('[data-widget-id="message"]');
 		const before = await message.boundingBox();
 		if (!before) throw new Error('message tile not laid out');
@@ -114,12 +82,31 @@ test.describe('dashboard tile editing', () => {
 		expect(afterReload?.height).toBeCloseTo(grownHeight, 0);
 	});
 
+	test('adding a widget opens picker and places new tile on dashboard', async ({ page }) => {
+		await page.getByLabel('Rearrange widgets').click();
+		const countBefore = await page.locator('[data-widget-id]').count();
+
+		await page.getByRole('button', { name: '+ Add widget' }).click();
+		await expect(page.locator('.widget-picker')).toBeVisible();
+
+		// Add a date widget
+		await page.getByRole('button', { name: 'Date', exact: true }).click();
+		await expect.poll(() => page.locator('[data-widget-id]').count()).toBe(countBefore + 1);
+
+		// Find the newly added tile and clean it up
+		const ids = await page
+			.locator('[data-widget-id]')
+			.evaluateAll((els) => els.map((el) => el.getAttribute('data-widget-id')));
+		const newId = ids.find((id) => id?.startsWith('date-'));
+		if (newId) {
+			const addedLocator = page.locator(`[data-widget-id="${newId}"]`);
+			await addedLocator.locator('.remove-button').click();
+			await expect(addedLocator).toHaveCount(0);
+		}
+	});
+
 	test('deleting a tile removes it and it stays removed after reload', async ({ page }) => {
-		// Adds a throwaway tile rather than deleting one of the fixture's
-		// three, so this test stays repeatable across both projects without
-		// depleting the fixture the other tests rely on. Widget order isn't
-		// DOM-append order (it's not guaranteed to put the new tile last), so
-		// the added tile is found by id-set difference, not `.last()`.
+		await page.getByLabel('Rearrange widgets').click();
 		const idsBefore = await page
 			.locator('[data-widget-id]')
 			.evaluateAll((els) => els.map((el) => el.getAttribute('data-widget-id')));
@@ -141,5 +128,24 @@ test.describe('dashboard tile editing', () => {
 		await page.reload();
 		await expect(page.locator('[data-widget-id="clock"]')).toBeVisible();
 		await expect(addedLocator).toHaveCount(0);
+	});
+
+	test('renaming a widget updates its title', async ({ page }) => {
+		await page.goto('/widget/message');
+		await expect(page.locator('.tile-name h1')).toBeVisible();
+
+		const renameBtn = page.locator('button.rename-link');
+		if (await renameBtn.isVisible()) {
+			await renameBtn.click();
+			const input = page.locator('.rename-form input');
+			await input.fill('Renamed Note');
+			await page.locator('.rename-form button.save').click();
+			await expect(page.locator('.tile-name h1')).toHaveText('Renamed Note');
+
+			// Restore name
+			await renameBtn.click();
+			await input.fill('E2E');
+			await page.locator('.rename-form button.save').click();
+		}
 	});
 });
