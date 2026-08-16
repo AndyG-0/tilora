@@ -88,6 +88,27 @@ describe('ShoppingDetail', () => {
 		expect(await screen.findByText('checked off by Bob')).toBeInTheDocument();
 	});
 
+	it('unchecks an item via its checkbox and refetches to show active state', async () => {
+		const checkedItem = { ...item1, checked: true, checked_by: 'Bob' };
+		checkShoppingItem.mockResolvedValue({ ...item1, checked: false, checked_by: null });
+		widgetDetail.mockResolvedValue({
+			title: 'Shopping List',
+			items: [item1],
+			open_count: 1,
+		});
+
+		render(ShoppingDetail, {
+			props: { data: { title: 'Shopping List', items: [checkedItem], open_count: 0 } },
+		});
+
+		expect(screen.getByText('checked off by Bob')).toBeInTheDocument();
+
+		await fireEvent.click(screen.getByRole('checkbox'));
+
+		await vi.waitFor(() => expect(checkShoppingItem).toHaveBeenCalledWith(1));
+		expect(await screen.findByText('added by Alice')).toBeInTheDocument();
+	});
+
 	it('removes an item and refetches', async () => {
 		removeShoppingItem.mockResolvedValue({ status: 'ok' });
 		widgetDetail.mockResolvedValue({ title: 'Shopping List', items: [], open_count: 0 });

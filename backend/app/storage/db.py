@@ -1641,18 +1641,27 @@ def list_chores(widget_id: str, user_id: str) -> list[dict[str, Any]]:
 
 
 def complete_chore(chore_id: int, user_id: str) -> dict[str, Any] | None:
-    """Mark a chore done, scoped to `user_id` so one user can't complete another's item.
+    """Toggle a chore's completed state, scoped to `user_id` so one user can't toggle another's item.
 
     Returns the updated row, or None if no chore with that id belongs to this user.
     """
-    completed_at = datetime.now(UTC).isoformat()
     with _connect() as conn:
-        cursor = conn.execute(
-            "UPDATE chores SET completed = 1, completed_at = ? WHERE id = ? AND user_id = ?",
-            (completed_at, chore_id, user_id),
-        )
-        if cursor.rowcount == 0:
+        row = conn.execute(
+            f"SELECT {_CHORE_COLUMNS} FROM chores WHERE id = ? AND user_id = ?", (chore_id, user_id)
+        ).fetchone()
+        if row is None:
             return None
+        if bool(row["completed"]):
+            conn.execute(
+                "UPDATE chores SET completed = 0, completed_at = NULL WHERE id = ? AND user_id = ?",
+                (chore_id, user_id),
+            )
+        else:
+            completed_at = datetime.now(UTC).isoformat()
+            conn.execute(
+                "UPDATE chores SET completed = 1, completed_at = ? WHERE id = ? AND user_id = ?",
+                (completed_at, chore_id, user_id),
+            )
         row = conn.execute(f"SELECT {_CHORE_COLUMNS} FROM chores WHERE id = ?", (chore_id,)).fetchone()
     return dict(row) | {"completed": bool(row["completed"])}
 
@@ -1704,15 +1713,22 @@ def list_shopping_items(widget_id: str) -> list[dict[str, Any]]:
 
 
 def check_shopping_item(item_id: int, checked_by: str) -> dict[str, Any] | None:
-    """Mark a shopping item checked off. Returns the updated row, or None if not found."""
-    checked_at = datetime.now(UTC).isoformat()
+    """Toggle a shopping item's checked state. Returns the updated row, or None if not found."""
     with _connect() as conn:
-        cursor = conn.execute(
-            "UPDATE shopping_items SET checked = 1, checked_by = ?, checked_at = ? WHERE id = ?",
-            (checked_by, checked_at, item_id),
-        )
-        if cursor.rowcount == 0:
+        row = conn.execute(f"SELECT {_SHOPPING_COLUMNS} FROM shopping_items WHERE id = ?", (item_id,)).fetchone()
+        if row is None:
             return None
+        if bool(row["checked"]):
+            conn.execute(
+                "UPDATE shopping_items SET checked = 0, checked_by = NULL, checked_at = NULL WHERE id = ?",
+                (item_id,),
+            )
+        else:
+            checked_at = datetime.now(UTC).isoformat()
+            conn.execute(
+                "UPDATE shopping_items SET checked = 1, checked_by = ?, checked_at = ? WHERE id = ?",
+                (checked_by, checked_at, item_id),
+            )
         row = conn.execute(f"SELECT {_SHOPPING_COLUMNS} FROM shopping_items WHERE id = ?", (item_id,)).fetchone()
     return dict(row) | {"checked": bool(row["checked"])}
 
