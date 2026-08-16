@@ -36,7 +36,7 @@
 
 	const LED_COLOR = '#ff8a00';
 
-	let { widgetId }: { widgetId: string } = $props();
+	let { widgetId, refreshIntervalSeconds }: { widgetId: string; refreshIntervalSeconds: number } = $props();
 
 	let summary = $state<FlightsSummary | null>(null);
 
@@ -48,7 +48,7 @@
 		}
 	}
 
-	pollWidget(refresh, 60_000);
+	pollWidget(refresh, refreshIntervalSeconds * 1000);
 
 	function airportCode(airport: AirportRef): string {
 		return airport.iata ?? airport.icao;

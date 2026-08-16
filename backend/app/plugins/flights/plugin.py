@@ -251,10 +251,21 @@ class FlightsPlugin(Plugin):
         async def get_nearby_flights_summary() -> dict[str, Any]:
             return await self.get_summary()
 
+        tool_name = (
+            "get_nearby_flights_summary"
+            if self.id == "flights"
+            else f"get_nearby_flights_summary_{self.id.replace('-', '_')}"
+        )
+        location_name = self.config["settings"].get("location_name")
+        desc = (
+            f"Get a summary of aircraft currently near {location_name}."
+            if location_name
+            else "Get a summary of aircraft currently near the dashboard's configured location."
+        )
         return [
             ToolDef(
-                name="get_nearby_flights_summary",
-                description="Get a summary of aircraft currently near the dashboard's configured location.",
+                name=tool_name,
+                description=desc,
                 parameters={"type": "object", "properties": {}},
                 handler=get_nearby_flights_summary,
             )

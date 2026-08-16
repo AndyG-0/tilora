@@ -19,7 +19,7 @@ describe('WeatherTile', () => {
 		await waitLocale();
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(WeatherTile, { props: { widgetId: 'weather' } });
+		render(WeatherTile, { props: { widgetId: 'weather', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Cargando el clima…')).toBeInTheDocument();
 	});
@@ -27,7 +27,7 @@ describe('WeatherTile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(WeatherTile, { props: { widgetId: 'weather' } });
+		render(WeatherTile, { props: { widgetId: 'weather', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Loading weather…')).toBeInTheDocument();
 	});
@@ -41,7 +41,7 @@ describe('WeatherTile', () => {
 			is_day: true,
 		});
 
-		render(WeatherTile, { props: { widgetId: 'weather' } });
+		render(WeatherTile, { props: { widgetId: 'weather', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Fort Worth, TX')).toBeInTheDocument();
 		expect(screen.getByText('72°')).toBeInTheDocument();
@@ -59,7 +59,7 @@ describe('WeatherTile', () => {
 				weather_code: 0,
 				is_day: true,
 			});
-			render(WeatherTile, { props: { widgetId: 'weather' } });
+			render(WeatherTile, { props: { widgetId: 'weather', refreshIntervalSeconds: 60 } });
 			await vi.advanceTimersByTimeAsync(0); // flush the initial refresh() from onMount
 			expect(screen.getByText('Fort Worth, TX')).toBeInTheDocument();
 

@@ -52,6 +52,19 @@ def test_me_returns_the_registered_device(client, tmp_db):
     assert response.json()["name"] == "New Device"
 
 
+def test_register_creates_unique_default_names_when_collisions_exist(client, tmp_db):
+    first = client.post("/api/devices/register").json()
+    assert first["name"] == "New Device"
+
+    client.cookies.clear()
+    second = client.post("/api/devices/register").json()
+    assert second["name"] == "New Device 2"
+
+    client.cookies.clear()
+    third = client.post("/api/devices/register").json()
+    assert third["name"] == "New Device 3"
+
+
 def test_patch_me_renames_the_device(client, tmp_db):
     client.post("/api/devices/register")
 
@@ -60,6 +73,32 @@ def test_patch_me_renames_the_device(client, tmp_db):
     assert response.status_code == 200
     assert response.json()["name"] == "Kitchen Tablet"
     assert client.get("/api/devices/me").json()["name"] == "Kitchen Tablet"
+
+
+def test_patch_me_refuses_empty_or_whitespace_name(client, tmp_db):
+    client.post("/api/devices/register")
+
+    response = client.patch("/api/devices/me", json={"name": "   "})
+    assert response.status_code == 400
+    assert "cannot be empty" in response.json()["detail"]
+
+
+def test_patch_me_refuses_duplicate_name_case_insensitive(client, tmp_db):
+    db.create_device("dev2", "Living Room TV", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")
+    client.post("/api/devices/register")
+
+    response = client.patch("/api/devices/me", json={"name": "living room tv"})
+    assert response.status_code == 400
+    assert "already exists" in response.json()["detail"]
+
+
+def test_patch_me_allows_same_name_case_change_on_same_device(client, tmp_db):
+    client.post("/api/devices/register")
+    client.patch("/api/devices/me", json={"name": "Living Room TV"})
+
+    response = client.patch("/api/devices/me", json={"name": "living room tv"})
+    assert response.status_code == 200
+    assert response.json()["name"] == "living room tv"
 
 
 def test_list_all_devices_requires_a_user_session(client, tmp_db):

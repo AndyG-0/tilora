@@ -20,6 +20,7 @@ import httpx
 
 from app.config import settings
 from app.plugins.base import Plugin, ToolDef
+from app.storage.cache import cached_call
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 POSTER_BASE_URL = "https://image.tmdb.org/t/p/w342"
@@ -58,6 +59,14 @@ _PROVIDER_HOME_URLS: dict[str, str] = {
 # get_detail — each one is an extra TMDB request, so keep it bounded.
 _DETAIL_ITEM_COUNT = 10
 _SUMMARY_ITEM_COUNT = 5
+
+# Per-item streaming-provider lookups are cached independently of the
+# widget-level summary/detail cache (see _fetch_providers) — a title's
+# flatrate availability changes on the order of days, not within the hour
+# the outer widget cache already covers, and caching per-(region, media
+# type, item id) means every widget/user asking about the same title shares
+# one TMDB call instead of each re-fetching it.
+_PROVIDER_CACHE_TTL_SECONDS = 24 * 60 * 60
 
 # Settings-facing category keys, in canonical display/response order.
 _ALL_CATEGORIES: tuple[str, ...] = (
@@ -154,7 +163,9 @@ class MoviesPlugin(Plugin):
         path, extra_params = self._list_request(response_key)
         return await self._fetch_path(client, path, extra_params)
 
-    async def _fetch_providers(self, client: httpx.AsyncClient, media_type: str, item_id: int) -> list[dict[str, Any]]:
+    async def _fetch_providers_uncached(
+        self, client: httpx.AsyncClient, media_type: str, item_id: int
+    ) -> list[dict[str, Any]]:
         response = await client.get(
             f"{TMDB_BASE_URL}/{media_type}/{item_id}/watch/providers",
             params={"api_key": settings.tmdb_api_key or ""},
@@ -169,6 +180,12 @@ class MoviesPlugin(Plugin):
             }
             for p in sorted(region_data.get("flatrate", []), key=lambda p: p["provider_name"])
         ]
+
+    async def _fetch_providers(self, client: httpx.AsyncClient, media_type: str, item_id: int) -> list[dict[str, Any]]:
+        key = f"movies:providers:{self.region}:{media_type}:{item_id}"
+        return await cached_call(
+            key, _PROVIDER_CACHE_TTL_SECONDS, lambda: self._fetch_providers_uncached(client, media_type, item_id)
+        )
 
     def _media_summary(self, item: dict[str, Any], media_type: str) -> dict[str, Any]:
         # TV objects use `name`/`first_air_date` instead of movies'

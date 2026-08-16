@@ -16,6 +16,7 @@ from app.api import (
     calendar_auth,
     chores,
     icloud_auth,
+    mapping,
     movies,
     photos,
     shopping,
@@ -51,6 +52,9 @@ from app.api import (
     qbittorrent as qbittorrent_api,
 )
 from app.api import (
+    reports as reports_api,
+)
+from app.api import (
     rss as rss_api,
 )
 from app.api import (
@@ -64,6 +68,9 @@ from app.api import (
 )
 from app.api import (
     sports as sports_api,
+)
+from app.api import (
+    system as system_api,
 )
 from app.api import (
     tabs as tabs_api,
@@ -90,7 +97,7 @@ from app.scheduler import (
     schedule_speedtest_widgets,
     scheduler,
 )
-from app.storage.db import get_widget_settings, init_db
+from app.storage.db import init_db, list_widget_settings
 from app.update_check import check_for_update, schedule_update_check
 
 configure_logging()
@@ -100,6 +107,7 @@ logger = logging.getLogger(__name__)
 
 def load_plugins() -> None:
     config = load_dashboard_config()
+    all_overrides = list_widget_settings()
     for widget in list_widget_configs(config):
         if not widget.get("enabled", True):
             continue
@@ -112,7 +120,7 @@ def load_plugins() -> None:
         # that predates a plugin adding `default_settings` (or a UI-added
         # widget whose empty starter settings were never persisted) still
         # loads with usable settings instead of missing required keys.
-        overrides = get_widget_settings(widget["id"]) or {}
+        overrides = all_overrides.get(widget["id"], {})
         settings = {**plugin_cls.default_settings, **widget.get("settings", {}), **overrides}
         if plugin_cls.network_integration_type:
             settings = {**settings, **resolve_network_settings(plugin_cls, settings)}
@@ -171,6 +179,7 @@ app.include_router(tabs_api.router)
 app.include_router(theme.router)
 app.include_router(photos.router)
 app.include_router(weather.router)
+app.include_router(mapping.router)
 app.include_router(movies.router)
 app.include_router(settings_api.router)
 app.include_router(version_api.router)
@@ -195,6 +204,8 @@ app.include_router(tts_api.router)
 app.include_router(users_api.router)
 app.include_router(setup_api.router)
 app.include_router(admin_api.router)
+app.include_router(system_api.router)
+app.include_router(reports_api.router)
 
 
 @app.get("/api/health")

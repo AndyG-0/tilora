@@ -89,7 +89,7 @@ async def test_get_summary_surfaces_error_without_raising():
 
 @respx.mock
 async def test_get_detail_includes_image_and_id():
-    respx.get("http://docker.local:2375/containers/json", params={"all": "true"}).mock(
+    containers_route = respx.get("http://docker.local:2375/containers/json", params={"all": "true"}).mock(
         return_value=httpx.Response(200, json=CONTAINERS_RESPONSE)
     )
     plugin = make_plugin(**ENGINE_TCP_SETTINGS["docker"])
@@ -106,6 +106,9 @@ async def test_get_detail_includes_image_and_id():
             "status": "Exited (1) 3 days ago",
         },
     ]
+    # Regression: get_detail() must share the one containers fetch with
+    # get_summary() rather than redundantly re-fetching it.
+    assert containers_route.call_count == 1
 
 
 async def test_get_detail_when_not_configured():

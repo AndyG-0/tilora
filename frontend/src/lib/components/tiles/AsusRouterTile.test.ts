@@ -10,7 +10,7 @@ describe('AsusRouterTile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(AsusRouterTile, { props: { widgetId: 'asus_router' } });
+		render(AsusRouterTile, { props: { widgetId: 'asus_router', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Loading…')).toBeInTheDocument();
 	});
@@ -26,7 +26,7 @@ describe('AsusRouterTile', () => {
 			has_password: false,
 		});
 
-		render(AsusRouterTile, { props: { widgetId: 'asus_router' } });
+		render(AsusRouterTile, { props: { widgetId: 'asus_router', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Not connected')).toBeInTheDocument();
 	});
@@ -42,7 +42,7 @@ describe('AsusRouterTile', () => {
 			has_password: true,
 		});
 
-		render(AsusRouterTile, { props: { widgetId: 'asus_router' } });
+		render(AsusRouterTile, { props: { widgetId: 'asus_router', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('WAN up')).toBeInTheDocument();
 		expect(screen.getByText('3 connected')).toBeInTheDocument();
@@ -59,7 +59,7 @@ describe('AsusRouterTile', () => {
 			has_password: true,
 		});
 
-		render(AsusRouterTile, { props: { widgetId: 'asus_router' } });
+		render(AsusRouterTile, { props: { widgetId: 'asus_router', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('WAN down')).toBeInTheDocument();
 		expect(screen.getByText('1 connected')).toBeInTheDocument();
@@ -77,7 +77,7 @@ describe('AsusRouterTile', () => {
 			error: 'Could not reach the router',
 		});
 
-		render(AsusRouterTile, { props: { widgetId: 'asus_router' } });
+		render(AsusRouterTile, { props: { widgetId: 'asus_router', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Could not reach the router')).toBeInTheDocument();
 	});

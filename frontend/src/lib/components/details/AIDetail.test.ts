@@ -132,6 +132,16 @@ describe('AIDetail', () => {
 		expect(screen.getByLabelText('Calendar')).not.toBeChecked();
 	});
 
+	it('renders whatever disambiguated name the backend sends for a topic, verbatim', async () => {
+		assistantTopics.mockResolvedValue([{ id: 'weather-b', name: 'Weather (Chicago, IL) (2)' }]);
+
+		render(AIDetail, { props: { data: baseData } });
+
+		await fireEvent.click(screen.getByText('Edit prompt'));
+
+		expect(await screen.findByLabelText('Weather (Chicago, IL) (2)')).toBeInTheDocument();
+	});
+
 	it('regenerates the briefing on demand', async () => {
 		runAiWidget.mockResolvedValue({ ...baseData, text: 'Fresh briefing text' });
 

@@ -23,6 +23,7 @@ from app.plugins.game2048.plugin import Game2048Plugin
 from app.plugins.goodreads.plugin import GoodreadsPlugin
 from app.plugins.hdhomerun.plugin import HDHomeRunPlugin
 from app.plugins.jellyfin.plugin import JellyfinPlugin
+from app.plugins.mapping.plugin import MappingPlugin
 from app.plugins.message.plugin import MessagePlugin
 from app.plugins.movies.plugin import MoviesPlugin
 from app.plugins.nasa_apod.plugin import NASAApodPlugin
@@ -55,6 +56,7 @@ PLUGIN_CLASSES_BY_TYPE = {
     "bookmarks": BookmarksPlugin,
     "rss": RSSPlugin,
     "flights": FlightsPlugin,
+    "mapping": MappingPlugin,
     "chores": ChoresPlugin,
     "shopping": ShoppingPlugin,
     "alert": AlertPlugin,

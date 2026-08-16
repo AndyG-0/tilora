@@ -22,7 +22,7 @@ describe('DiscordTile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(DiscordTile, { props: { widgetId: 'discord' } });
+		render(DiscordTile, { props: { widgetId: 'discord', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Loading messages…')).toBeInTheDocument();
 	});
@@ -30,7 +30,7 @@ describe('DiscordTile', () => {
 	it('shows an empty state when there are no recent messages', async () => {
 		widgetSummary.mockResolvedValue(baseSummary());
 
-		render(DiscordTile, { props: { widgetId: 'discord' } });
+		render(DiscordTile, { props: { widgetId: 'discord', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('#general')).toBeInTheDocument();
 		expect(screen.getByText('No recent messages.')).toBeInTheDocument();
@@ -45,7 +45,7 @@ describe('DiscordTile', () => {
 			}),
 		);
 
-		render(DiscordTile, { props: { widgetId: 'discord' } });
+		render(DiscordTile, { props: { widgetId: 'discord', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Alice')).toBeInTheDocument();
 		expect(screen.getByText('Hello there')).toBeInTheDocument();
@@ -62,7 +62,7 @@ describe('DiscordTile', () => {
 			}),
 		);
 
-		render(DiscordTile, { props: { widgetId: 'discord' } });
+		render(DiscordTile, { props: { widgetId: 'discord', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('First message')).toBeInTheDocument();
 	});
@@ -82,7 +82,7 @@ describe('DiscordTile', () => {
 			}),
 		);
 
-		const { container } = render(DiscordTile, { props: { widgetId: 'discord' } });
+		const { container } = render(DiscordTile, { props: { widgetId: 'discord', refreshIntervalSeconds: 60 } });
 
 		await screen.findByText('Alice');
 		expect(container.querySelector('.content strong')).toHaveTextContent('bold');
@@ -106,7 +106,7 @@ describe('DiscordTile', () => {
 			mockClientHeight(400);
 			widgetSummary.mockResolvedValue(baseSummary({ display_mode: 'marquee', marquee_speed_seconds: 40, messages }));
 
-			const { container } = render(DiscordTile, { props: { widgetId: 'discord' } });
+			const { container } = render(DiscordTile, { props: { widgetId: 'discord', refreshIntervalSeconds: 60 } });
 
 			await screen.findAllByText('Alice');
 			const track = container.querySelector('.marquee-track') as HTMLElement;
@@ -118,7 +118,7 @@ describe('DiscordTile', () => {
 			mockClientHeight(400);
 			widgetSummary.mockResolvedValue(baseSummary({ display_mode: 'marquee', marquee_speed_seconds: 80, messages }));
 
-			const { container } = render(DiscordTile, { props: { widgetId: 'discord' } });
+			const { container } = render(DiscordTile, { props: { widgetId: 'discord', refreshIntervalSeconds: 60 } });
 
 			await screen.findAllByText('Alice');
 			const track = container.querySelector('.marquee-track') as HTMLElement;
@@ -129,7 +129,7 @@ describe('DiscordTile', () => {
 			mockClientHeight(400);
 			widgetSummary.mockResolvedValue(baseSummary({ display_mode: 'marquee', messages }));
 
-			render(DiscordTile, { props: { widgetId: 'discord' } });
+			render(DiscordTile, { props: { widgetId: 'discord', refreshIntervalSeconds: 60 } });
 
 			expect(await screen.findAllByText('Alice')).toHaveLength(2);
 			expect(await screen.findAllByText('Bob')).toHaveLength(2);

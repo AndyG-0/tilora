@@ -5,7 +5,7 @@
 	import type { ChoresData } from '$lib/api';
 	import { _ } from 'svelte-i18n';
 
-	let { widgetId }: { widgetId: string } = $props();
+	let { widgetId, refreshIntervalSeconds }: { widgetId: string; refreshIntervalSeconds: number } = $props();
 
 	let summary = $state<ChoresData | null>(null);
 
@@ -17,7 +17,7 @@
 		}
 	}
 
-	pollWidget(refresh, 60_000);
+	pollWidget(refresh, refreshIntervalSeconds * 1000);
 
 	// Checking an item off from the tile should complete it, not fall
 	// through to TileCard's button and navigate to the detail page.

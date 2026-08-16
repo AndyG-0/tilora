@@ -58,9 +58,7 @@ class SynologyPlugin(Plugin):
             return [], str(exc)
         return volumes, None
 
-    async def get_summary(self) -> dict[str, Any]:
-        connected = self._is_connected()
-        volumes, error = await self._volumes()
+    def _build_summary(self, connected: bool, volumes: list[dict[str, Any]], error: str | None) -> dict[str, Any]:
         result: dict[str, Any] = {
             "connected": connected,
             "volumes": [{"name": v["name"], "used_percent": v["used_percent"], "status": v["status"]} for v in volumes],
@@ -70,18 +68,21 @@ class SynologyPlugin(Plugin):
             result["error"] = error
         return result
 
+    async def get_summary(self) -> dict[str, Any]:
+        connected = self._is_connected()
+        volumes, error = await self._volumes()
+        return self._build_summary(connected, volumes, error)
+
     @staticmethod
     def _empty_system_info() -> dict[str, Any]:
         return {"model": None, "uptime": None, "temperature_celsius": None}
 
     async def get_detail(self) -> dict[str, Any]:
-        summary = await self.get_summary()
-        if not summary["connected"] or summary.get("error"):
-            return {**summary, "volumes": [], **self._empty_system_info()}
-
+        connected = self._is_connected()
         volumes, error = await self._volumes()
-        if error:
-            return {**summary, "error": error, "volumes": [], **self._empty_system_info()}
+        summary = self._build_summary(connected, volumes, error)
+        if not connected or error:
+            return {**summary, "volumes": [], **self._empty_system_info()}
 
         try:
             system_info = await synology_client.get_system_info(self.config["settings"], self.id)

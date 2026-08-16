@@ -202,7 +202,14 @@ def test_get_and_patch_preferences_round_trip(client, tmp_db):
     client.post("/api/devices/register")
     client.post("/api/users", json={"name": "Alice"})
 
-    defaults = {"theme": "dark", "voice_provider": "browser", "voice_id": "", "voice_name": "", "locale": "en"}
+    defaults = {
+        "theme": "dark",
+        "voice_provider": "browser",
+        "voice_id": "",
+        "voice_name": "",
+        "locale": "en",
+        "location": None,
+    }
     assert client.get("/api/users/me/preferences").json() == defaults
 
     response = client.patch("/api/users/me/preferences", json={"theme": "light"})
@@ -235,3 +242,38 @@ def test_patch_preferences_round_trips_locale(client, tmp_db):
     assert response.status_code == 200
     assert response.json()["locale"] == "es"
     assert client.get("/api/users/me/preferences").json()["locale"] == "es"
+
+
+def test_patch_preferences_round_trips_location(client, tmp_db):
+    client.post("/api/devices/register")
+    client.post("/api/users", json={"name": "Alice"})
+    location = {
+        "query": "Fort Worth",
+        "display_name": "Fort Worth, TX",
+        "latitude": 32.7555,
+        "longitude": -97.3308,
+    }
+
+    response = client.patch("/api/users/me/preferences", json={"location": location})
+
+    assert response.status_code == 200
+    assert response.json()["location"] == location
+    assert client.get("/api/users/me/preferences").json()["location"] == location
+
+
+def test_patch_preferences_clears_location(client, tmp_db):
+    client.post("/api/devices/register")
+    client.post("/api/users", json={"name": "Alice"})
+    location = {
+        "query": "Fort Worth",
+        "display_name": "Fort Worth, TX",
+        "latitude": 32.7555,
+        "longitude": -97.3308,
+    }
+    client.patch("/api/users/me/preferences", json={"location": location})
+
+    response = client.patch("/api/users/me/preferences", json={"location": None})
+
+    assert response.status_code == 200
+    assert response.json()["location"] is None
+    assert client.get("/api/users/me/preferences").json()["location"] is None

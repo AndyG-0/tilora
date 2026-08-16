@@ -51,3 +51,43 @@ export function isRectFree(
 
 	return true;
 }
+
+// At the narrow breakpoint, `.cell` is forced to `grid-row: auto` (see
+// +page.svelte's media query) — a tile's visual stacking position there is
+// its position in this array, not its `row`. This sorts a tab's widgets
+// into that stacking order using `row` as a plain sequence number rather
+// than a 2D grid coordinate, falling back to the array's existing relative
+// order when rows tie (e.g. two widgets that still share a wide-grid row
+// because neither has ever been reordered on a phone yet).
+export function sortForNarrow(widgets: WidgetSummaryMeta[]): WidgetSummaryMeta[] {
+	return [...widgets].sort((a, b) => a.layout.row - b.layout.row);
+}
+
+// The narrow-breakpoint equivalent of the wide grid's "swap two widgets'
+// layouts" drop: moves `sourceId` to sit where `targetId` currently is in
+// `orderedWidgets` (already in narrow stacking order, e.g. via
+// `sortForNarrow`) and returns fresh sequential `row` values — a list
+// reorder instead of a 2D swap, since col/row don't correspond to anything
+// visible at this breakpoint. Returns every widget's new layout, not just
+// the two that moved, since a single insert can shift everyone between the
+// old and new position.
+export function reorderNarrow(
+	orderedWidgets: WidgetSummaryMeta[],
+	sourceId: string,
+	targetId: string,
+): { id: string; layout: WidgetLayout }[] {
+	const ids = orderedWidgets.map((w) => w.id);
+	const from = ids.indexOf(sourceId);
+	const to = ids.indexOf(targetId);
+	if (from === -1 || to === -1 || from === to) return [];
+
+	const reordered = [...ids];
+	reordered.splice(from, 1);
+	reordered.splice(to, 0, sourceId);
+
+	const byId = new Map(orderedWidgets.map((w) => [w.id, w]));
+	return reordered.map((id, index) => ({
+		id,
+		layout: { ...byId.get(id)!.layout, row: index + 1 },
+	}));
+}

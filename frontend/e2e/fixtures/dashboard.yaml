@@ -1,0 +1,90 @@
+# Dashboard fixture used by the Playwright e2e suite (see
+# frontend/playwright.config.ts / e2e/global-setup.ts / env.ts).
+# Includes two tabs and core interactive, network-free widgets so the
+# e2e suite can test multi-tab navigation, tile manipulation, interactive
+# mini-apps, and detail views.
+tabs:
+  - id: home
+    name: Home
+  - id: extras
+    name: Extras
+
+widgets:
+  - id: clock
+    type: clock
+    tab: home
+    enabled: true
+    layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 }
+    settings:
+      style: digital
+
+  - id: date
+    type: date
+    tab: home
+    enabled: true
+    layout: { col: 2, row: 1, colSpan: 1, rowSpan: 1 }
+    settings: {}
+
+  - id: message
+    type: message
+    tab: home
+    enabled: true
+    layout: { col: 1, row: 2, colSpan: 2, rowSpan: 1 }
+    settings:
+      title: 'E2E'
+      text: 'fixture widget'
+
+  - id: chores
+    type: chores
+    tab: home
+    enabled: true
+    layout: { col: 3, row: 1, colSpan: 1, rowSpan: 2 }
+    settings:
+      title: 'To-Do'
+
+  - id: shopping
+    type: shopping
+    tab: home
+    enabled: true
+    layout: { col: 4, row: 1, colSpan: 1, rowSpan: 2 }
+    settings:
+      title: 'Shopping List'
+
+  - id: bookmarks
+    type: bookmarks
+    tab: extras
+    enabled: true
+    layout: { col: 1, row: 1, colSpan: 1, rowSpan: 2 }
+    settings:
+      title: 'Bookmarks'
+      bookmarks:
+        - name: 'GitHub'
+          url: 'https://github.com'
+
+  - id: game2048
+    type: game2048
+    tab: extras
+    enabled: true
+    layout: { col: 2, row: 1, colSpan: 1, rowSpan: 1 }
+    settings: {}
+
+  - id: wordle
+    type: wordle
+    tab: extras
+    enabled: true
+    layout: { col: 3, row: 1, colSpan: 1, rowSpan: 1 }
+    settings: {}
+
+  - id: system-monitor
+    type: system_monitor
+    tab: extras
+    enabled: true
+    layout: { col: 4, row: 1, colSpan: 1, rowSpan: 1 }
+    settings: {}
+
+  - id: alert
+    type: alert
+    tab: extras
+    enabled: true
+    layout: { col: 2, row: 2, colSpan: 3, rowSpan: 1 }
+    settings: {}

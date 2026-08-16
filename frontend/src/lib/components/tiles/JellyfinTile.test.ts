@@ -37,7 +37,7 @@ describe('JellyfinTile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(JellyfinTile, { props: { widgetId: 'jellyfin' } });
+		render(JellyfinTile, { props: { widgetId: 'jellyfin', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Loading…')).toBeInTheDocument();
 	});
@@ -45,7 +45,7 @@ describe('JellyfinTile', () => {
 	it('shows a not-connected state', async () => {
 		widgetSummary.mockResolvedValue({ connected: false, sections: [] });
 
-		render(JellyfinTile, { props: { widgetId: 'jellyfin' } });
+		render(JellyfinTile, { props: { widgetId: 'jellyfin', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Not connected')).toBeInTheDocument();
 	});
@@ -53,7 +53,7 @@ describe('JellyfinTile', () => {
 	it('shows an empty state when connected with no recent items', async () => {
 		widgetSummary.mockResolvedValue({ connected: true, sections: [{ label: 'Recently added', items: [] }] });
 
-		render(JellyfinTile, { props: { widgetId: 'jellyfin' } });
+		render(JellyfinTile, { props: { widgetId: 'jellyfin', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Nothing to show yet')).toBeInTheDocument();
 	});
@@ -72,7 +72,7 @@ describe('JellyfinTile', () => {
 			],
 		});
 
-		render(JellyfinTile, { props: { widgetId: 'jellyfin' } });
+		render(JellyfinTile, { props: { widgetId: 'jellyfin', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByAltText('Movie With Poster')).toBeInTheDocument();
 		expect(screen.queryByAltText('Movie Without Poster')).not.toBeInTheDocument();
@@ -87,7 +87,7 @@ describe('JellyfinTile', () => {
 			],
 		});
 
-		render(JellyfinTile, { props: { widgetId: 'jellyfin' } });
+		render(JellyfinTile, { props: { widgetId: 'jellyfin', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Recently added')).toBeInTheDocument();
 		expect(screen.getByText('Continue watching')).toBeInTheDocument();
@@ -99,7 +99,7 @@ describe('JellyfinTile', () => {
 			sections: [{ label: 'Recently added', items: [{ id: '1', name: 'Movie With Poster', has_poster: true }] }],
 		});
 
-		render(JellyfinTile, { props: { widgetId: 'jellyfin' } });
+		render(JellyfinTile, { props: { widgetId: 'jellyfin', refreshIntervalSeconds: 60 } });
 		const poster = await screen.findByRole('button', { name: 'Play Movie With Poster' });
 
 		await fireEvent.click(poster);

@@ -12,7 +12,7 @@ describe('NASATile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(NASATile, { props: { widgetId: 'nasa_apod' } });
+		render(NASATile, { props: { widgetId: 'nasa_apod', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Loading…')).toBeInTheDocument();
 	});
@@ -27,7 +27,7 @@ describe('NASATile', () => {
 			thumbnail_url: 'https://apod.nasa.gov/apod/image/nebula.jpg',
 		});
 
-		const { container } = render(NASATile, { props: { widgetId: 'nasa_apod' } });
+		const { container } = render(NASATile, { props: { widgetId: 'nasa_apod', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('A Beautiful Nebula')).toBeInTheDocument();
 		expect(screen.getByText('2026-08-05')).toBeInTheDocument();
@@ -47,7 +47,7 @@ describe('NASATile', () => {
 			fetched_at: '2026-08-05T12:00:00Z',
 		});
 
-		render(NASATile, { props: { widgetId: 'nasa_apod' } });
+		render(NASATile, { props: { widgetId: 'nasa_apod', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('A Beautiful Nebula')).toBeInTheDocument();
 		expect(screen.getByText('Cached')).toBeInTheDocument();
@@ -63,7 +63,7 @@ describe('NASATile', () => {
 			thumbnail_url: 'https://img.youtube.com/vi/abc123/0.jpg',
 		});
 
-		const { container } = render(NASATile, { props: { widgetId: 'nasa_apod' } });
+		const { container } = render(NASATile, { props: { widgetId: 'nasa_apod', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('A Cool Video')).toBeInTheDocument();
 		expect(container.querySelector('img')).toHaveAttribute('src', 'https://img.youtube.com/vi/abc123/0.jpg');
@@ -75,7 +75,7 @@ describe('NASATile', () => {
 			available: false,
 		});
 
-		render(NASATile, { props: { widgetId: 'nasa_apod' } });
+		render(NASATile, { props: { widgetId: 'nasa_apod', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Picture of the day unavailable')).toBeInTheDocument();
 	});

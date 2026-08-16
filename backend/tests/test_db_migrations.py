@@ -364,15 +364,18 @@ def test_migration_005_copies_sports_and_weather_settings_to_every_existing_user
         ],
     )
 
-    monkeypatch.setattr(db, "DB_PATH", db_path)
-    db.init_db()
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    db._migration_005_seed_personal_sports_weather_settings(conn)
+    conn.commit()
 
-    assert db.get_widget_user_settings("alice", "sports") == {"teams": [{"league": "nfl", "team": "PHI"}]}
-    assert db.get_widget_user_settings("bob", "sports") == {"teams": [{"league": "nfl", "team": "PHI"}]}
-    assert db.get_widget_user_settings("alice", "weather") == {"location_name": "Fort Worth, TX"}
-    assert db.get_widget_user_settings("bob", "weather") == {"location_name": "Fort Worth, TX"}
-    # The original global rows are left in place, not deleted.
-    assert db.get_widget_settings("sports") == {"teams": [{"league": "nfl", "team": "PHI"}]}
+    rows = [(r[0], r[1], r[2]) for r in conn.execute("SELECT user_id, widget_id, settings FROM widget_user_settings")]
+    conn.close()
+
+    assert ("alice", "sports", '{"teams": [{"league": "nfl", "team": "PHI"}]}') in rows
+    assert ("bob", "sports", '{"teams": [{"league": "nfl", "team": "PHI"}]}') in rows
+    assert ("alice", "weather", '{"location_name": "Fort Worth, TX"}') in rows
+    assert ("bob", "weather", '{"location_name": "Fort Worth, TX"}') in rows
 
 
 def test_migration_005_ignores_network_scope_widget_settings(tmp_path, monkeypatch):
@@ -1071,3 +1074,136 @@ def test_schema_indexes_never_reference_a_column_only_an_alter_migration_adds(tm
                 offenders.append((index_name, table_name, column))
 
     assert offenders == []
+
+
+def test_migration_015_deduplicates_duplicate_device_names(tmp_path):
+    db_path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(db._SCHEMA)
+    conn.executemany(
+        "INSERT INTO devices (id, name, created_at, last_seen_at) VALUES (?, ?, ?, ?)",
+        [
+            ("dev1", "New Device", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
+            ("dev2", "New Device", "2026-01-02T00:00:00Z", "2026-01-02T00:00:00Z"),
+            ("dev3", "New Device", "2026-01-03T00:00:00Z", "2026-01-03T00:00:00Z"),
+            ("dev4", "Tablet", "2026-01-04T00:00:00Z", "2026-01-04T00:00:00Z"),
+            ("dev5", "tablet", "2026-01-05T00:00:00Z", "2026-01-05T00:00:00Z"),
+        ],
+    )
+    conn.commit()
+
+    db._migration_015_deduplicate_device_names(conn)
+    conn.commit()
+
+    rows = conn.execute("SELECT id, name FROM devices ORDER BY created_at ASC").fetchall()
+    conn.close()
+
+    assert rows == [
+        ("dev1", "New Device"),
+        ("dev2", "New Device 2"),
+        ("dev3", "New Device 3"),
+        ("dev4", "Tablet"),
+        ("dev5", "tablet 2"),
+    ]
+
+
+def test_migration_016_migrates_weather_flights_to_network_settings(tmp_path):
+    import json
+
+    db_path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(db._SCHEMA)
+    conn.executemany(
+        "INSERT INTO users (id, name, created_at, role) VALUES (?, ?, ?, ?)",
+        [
+            ("alice", "Alice", "2026-01-01T00:00:00Z", "admin"),
+            ("bob", "Bob", "2026-01-02T00:00:00Z", "member"),
+        ],
+    )
+    conn.execute(
+        "INSERT INTO custom_widgets (id, type, layout, tab) VALUES ('flights-custom', 'flights', '{}', 'home')"
+    )
+    conn.executemany(
+        "INSERT INTO widget_user_settings (user_id, widget_id, settings) VALUES (?, ?, ?)",
+        [
+            ("bob", "weather", json.dumps({"location_name": "Bob City", "latitude": 10.0, "longitude": 20.0})),
+            (
+                "alice",
+                "weather",
+                json.dumps({"location_name": "Chicago, IL", "latitude": 41.8781, "longitude": -87.6298}),
+            ),
+            (
+                "alice",
+                "flights-custom",
+                json.dumps({"location_name": "London, UK", "latitude": 51.5, "longitude": -0.12}),
+            ),
+            ("alice", "sports", json.dumps({"teams": []})),  # Should not be deleted
+        ],
+    )
+    conn.commit()
+
+    db._migration_016_weather_flights_network_scope(conn)
+    conn.commit()
+
+    # Weather settings in widget_settings should prefer admin (alice)
+    weather_row = conn.execute("SELECT settings FROM widget_settings WHERE widget_id = 'weather'").fetchone()
+    assert json.loads(weather_row[0])["location_name"] == "Chicago, IL"
+
+    # Custom flights widget settings in widget_settings
+    flights_row = conn.execute("SELECT settings FROM widget_settings WHERE widget_id = 'flights-custom'").fetchone()
+    assert json.loads(flights_row[0])["location_name"] == "London, UK"
+
+    # widget_user_settings should have weather and flights removed, but keep sports
+    remaining_user_settings = conn.execute("SELECT widget_id FROM widget_user_settings").fetchall()
+    assert [r[0] for r in remaining_user_settings] == ["sports"]
+    conn.close()
+
+
+def test_migration_017_migrates_weather_flights_to_personal_settings(tmp_path):
+    import json
+
+    db_path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(db._SCHEMA)
+    conn.executemany(
+        "INSERT INTO users (id, name, created_at, role) VALUES (?, ?, ?, ?)",
+        [
+            ("alice", "Alice", "2026-01-01T00:00:00Z", "admin"),
+            ("bob", "Bob", "2026-01-02T00:00:00Z", "member"),
+        ],
+    )
+    conn.execute(
+        "INSERT INTO custom_widgets (id, type, layout, tab) VALUES ('flights-custom', 'flights', '{}', 'home')"
+    )
+    conn.executemany(
+        "INSERT INTO widget_settings (widget_id, settings) VALUES (?, ?)",
+        [
+            ("weather", json.dumps({"location_name": "Chicago, IL", "latitude": 41.8781, "longitude": -87.6298})),
+            ("flights-custom", json.dumps({"location_name": "London, UK", "latitude": 51.5, "longitude": -0.12})),
+        ],
+    )
+    conn.commit()
+
+    db._migration_017_weather_flights_personal_scope(conn)
+    conn.commit()
+
+    alice_weather = conn.execute(
+        "SELECT settings FROM widget_user_settings WHERE user_id = 'alice' AND widget_id = 'weather'"
+    ).fetchone()
+    assert json.loads(alice_weather[0])["location_name"] == "Chicago, IL"
+
+    bob_weather = conn.execute(
+        "SELECT settings FROM widget_user_settings WHERE user_id = 'bob' AND widget_id = 'weather'"
+    ).fetchone()
+    assert json.loads(bob_weather[0])["location_name"] == "Chicago, IL"
+
+    alice_flights = conn.execute(
+        "SELECT settings FROM widget_user_settings WHERE user_id = 'alice' AND widget_id = 'flights-custom'"
+    ).fetchone()
+    assert json.loads(alice_flights[0])["location_name"] == "London, UK"
+
+    bob_flights = conn.execute(
+        "SELECT settings FROM widget_user_settings WHERE user_id = 'bob' AND widget_id = 'flights-custom'"
+    ).fetchone()
+    assert json.loads(bob_flights[0])["location_name"] == "London, UK"
+    conn.close()

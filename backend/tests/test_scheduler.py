@@ -154,6 +154,42 @@ async def test_run_ai_widget_swallows_exceptions(tmp_db, monkeypatch):
     assert db.latest_ai_run(plugin.id) is None
 
 
+async def test_run_ai_widget_resolves_owner_or_admin_user(tmp_db, dashboard_yaml, monkeypatch):
+    db.create_user("test-user", "Test User", None, None, None, None, "2026-01-01T00:00:00Z", role="admin")
+    plugin = make_ai_plugin()
+    registry.register(plugin)
+    captured = {}
+
+    async def fake_ask(text, system_prompt=None, user=None, device=None, allowed_widget_ids=None):
+        captured["user"] = user
+        captured["device"] = device
+        return "Sunny and 75."
+
+    monkeypatch.setattr(scheduler_module.assistant, "ask", fake_ask)
+
+    # Base dashboard widget resolves admin user
+    await scheduler_module.run_ai_widget(plugin)
+    assert captured["user"]["id"] == "test-user"
+    assert captured["device"] == {"id": "server"}
+
+    # Custom widget with owner resolves owner user
+    db.create_user("alice", "Alice", None, None, None, None, "2026-01-01T00:00:00Z", role="member")
+    db.save_custom_widget(
+        "ai-custom",
+        "ai_insights",
+        {"colSpan": 1, "rowSpan": 1},
+        "home",
+        owner_user_id="alice",
+        owner_device_id="dev-1",
+    )
+    custom_plugin = AIInsightsPlugin({"id": "ai-custom", "settings": {"cron": "* * * * *", "prompt": "Hi"}})
+    registry.register(custom_plugin)
+
+    await scheduler_module.run_ai_widget(custom_plugin)
+    assert captured["user"]["id"] == "alice"
+    assert captured["device"] == {"id": "server"}
+
+
 def test_schedule_photo_index_widgets_only_schedules_photos_plugins():
     registry.register(make_photos_plugin())
     registry.register(WeatherPlugin({"id": "weather", "settings": {"latitude": 0, "longitude": 0}}))

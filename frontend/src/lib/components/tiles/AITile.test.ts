@@ -10,7 +10,7 @@ describe('AITile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(AITile, { props: { widgetId: 'ai-insights' } });
+		render(AITile, { props: { widgetId: 'ai-insights', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Loading briefing…')).toBeInTheDocument();
 	});
@@ -22,7 +22,7 @@ describe('AITile', () => {
 			ran_at: '2024-03-15T06:30:00Z',
 		});
 
-		render(AITile, { props: { widgetId: 'ai-insights' } });
+		render(AITile, { props: { widgetId: 'ai-insights', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText("Today's briefing")).toBeInTheDocument();
 		expect(screen.getByText('Traffic is light and the weather looks clear all day.')).toBeInTheDocument();
@@ -35,7 +35,7 @@ describe('AITile', () => {
 			ran_at: '2024-03-15T06:30:00Z',
 		});
 
-		render(AITile, { props: { widgetId: 'ai-insights' } });
+		render(AITile, { props: { widgetId: 'ai-insights', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Rain', { selector: 'strong' })).toBeInTheDocument();
 		expect(screen.getByText('noon', { selector: 'code' })).toBeInTheDocument();
@@ -48,7 +48,7 @@ describe('AITile', () => {
 			ran_at: '2024-03-15T06:30:00Z',
 		});
 
-		const { container } = render(AITile, { props: { widgetId: 'ai-insights' } });
+		const { container } = render(AITile, { props: { widgetId: 'ai-insights', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Detailed Insights')).toBeInTheDocument();
 		expect(screen.getByText('Overview', { selector: 'h3' })).toBeInTheDocument();

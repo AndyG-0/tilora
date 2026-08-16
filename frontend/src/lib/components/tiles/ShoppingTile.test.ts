@@ -26,7 +26,7 @@ describe('ShoppingTile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(ShoppingTile, { props: { widgetId: 'shopping' } });
+		render(ShoppingTile, { props: { widgetId: 'shopping', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Loading…')).toBeInTheDocument();
 	});
@@ -34,7 +34,7 @@ describe('ShoppingTile', () => {
 	it('renders open items with a count badge', async () => {
 		widgetSummary.mockResolvedValue({ title: 'Shopping List', items: [OPEN_ITEM], open_count: 1 });
 
-		render(ShoppingTile, { props: { widgetId: 'shopping' } });
+		render(ShoppingTile, { props: { widgetId: 'shopping', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Milk')).toBeInTheDocument();
 		expect(screen.getByText('Shopping List')).toBeInTheDocument();
@@ -48,7 +48,7 @@ describe('ShoppingTile', () => {
 			open_count: 1,
 		});
 
-		render(ShoppingTile, { props: { widgetId: 'shopping' } });
+		render(ShoppingTile, { props: { widgetId: 'shopping', refreshIntervalSeconds: 60 } });
 
 		await screen.findByText('Milk');
 		expect(screen.queryByText('Eggs')).not.toBeInTheDocument();
@@ -57,7 +57,7 @@ describe('ShoppingTile', () => {
 	it('shows an empty state when there are no open items', async () => {
 		widgetSummary.mockResolvedValue({ title: 'Shopping List', items: [], open_count: 0 });
 
-		render(ShoppingTile, { props: { widgetId: 'shopping' } });
+		render(ShoppingTile, { props: { widgetId: 'shopping', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('All done!')).toBeInTheDocument();
 	});
@@ -68,7 +68,7 @@ describe('ShoppingTile', () => {
 			.mockResolvedValueOnce({ title: 'Shopping List', items: [OPEN_ITEM], open_count: 1 })
 			.mockResolvedValueOnce({ title: 'Shopping List', items: [], open_count: 0 });
 
-		render(ShoppingTile, { props: { widgetId: 'shopping' } });
+		render(ShoppingTile, { props: { widgetId: 'shopping', refreshIntervalSeconds: 60 } });
 
 		await screen.findByText('Milk');
 		await fireEvent.click(screen.getByRole('checkbox'));

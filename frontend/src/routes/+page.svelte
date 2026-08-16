@@ -9,7 +9,7 @@
 	import { api, type WidgetLayout, type WidgetSummaryMeta } from '$lib/api';
 	import { groupWidgetsByTab, resolveSwipe } from '$lib/tabNavigation';
 	import { computeResizedLayout, MAX_ROW_SPAN } from '$lib/resize';
-	import { computeEmptyCells, isRectFree } from '$lib/layout';
+	import { computeEmptyCells, isRectFree, reorderNarrow, sortForNarrow } from '$lib/layout';
 	import { breakpoint } from '$lib/stores/breakpoint';
 	import { isSpeechRecognitionSupported, listenOnce, speak } from '$lib/speech';
 	import { voiceSelection } from '$lib/stores/voice';
@@ -20,6 +20,18 @@
 	// Matches the `.grid`'s `grid-template-columns: repeat(4, 1fr)` below —
 	// caps how wide a tile can grow when resizing.
 	const GRID_COLUMNS = 4;
+
+	// At the narrow breakpoint `.cell` is forced to `grid-row: auto` (see the
+	// media query below) since a tile's `row` number was chosen for the wide
+	// 2D grid and doesn't mean anything in a single-column stack — but that
+	// override also discards `rowSpan`, a stylesheet `!important` always
+	// beating a plain inline style, so a resize that grows rowSpan had no
+	// visible effect at all on a phone. This computes an explicit min-height
+	// instead so growth stays visible; `13` (= the `.grid`'s 12rem row height
+	// + 1rem gap) matches the `--resize-scroll-buffer` constant below.
+	function narrowRowHeight(rowSpan: number): string {
+		return rowSpan > 1 ? `min-height: calc(${rowSpan} * 13rem - 1rem);` : '';
+	}
 
 	const THEME_ICONS: Record<string, string> = {
 		light: '🌙',
@@ -84,7 +96,16 @@
 		goto('/login');
 	}
 
-	const grouped = $derived(groupWidgetsByTab($widgets, $tabs));
+	// At the narrow breakpoint a tile's stacking position is its position in
+	// this array (see the `.cell` media-query override below), so it's sorted
+	// into narrow order here — the one place every consumer of `grouped`
+	// (the template, and the empty-cell/reorder math above) reads from.
+	const grouped = $derived(
+		groupWidgetsByTab($widgets, $tabs).map((tab) => ({
+			...tab,
+			widgets: $breakpoint === 'narrow' ? sortForNarrow(tab.widgets) : tab.widgets,
+		})),
+	);
 	const clampedIndex = $derived(Math.min($activeTabIndex, Math.max(grouped.length - 1, 0)));
 
 	function goToTab(index: number) {
@@ -123,7 +144,7 @@
 	// Captured at gesture-start rather than read live at pointer-up, so a
 	// breakpoint change mid-drag (e.g. a tablet rotated) doesn't write the
 	// gesture's result into the wrong breakpoint's saved layout.
-	let dragBreakpoint = get(breakpoint);
+	let dragBreakpoint = $state(get(breakpoint));
 
 	function toggleEditMode() {
 		editMode = !editMode;
@@ -155,6 +176,20 @@
 		}
 		dropTargetId = null;
 
+		// Empty-cell drop targets only make sense in the wide 2D grid — at the
+		// narrow breakpoint every `.cell` is force-stacked full-width in DOM
+		// order (see the `.cell` media-query override below), so the empty-cell
+		// markers below (positioned via GRID_COLUMNS, the *wide* column count)
+		// would sit at explicit grid coordinates that don't correspond to
+		// anything visible, and — worse — those explicit placements are reserved
+		// by CSS Grid's auto-placement algorithm ahead of the auto-flowed
+		// `.cell` elements, shoving real tiles out of the positions this same
+		// function's own `elementFromPoint` hit-test expects them to be in.
+		if (dragBreakpoint === 'narrow') {
+			dropEmptyCell = null;
+			return;
+		}
+
 		const hoveredEmpty = hovered?.closest<HTMLElement>('[data-empty-cell]');
 		const source = $widgets.find((w) => w.id === dragWidgetId);
 		if (hoveredEmpty && source) {
@@ -181,7 +216,13 @@
 		const source = $widgets.find((w) => w.id === sourceId);
 		if (!source) return;
 
-		if (targetId) {
+		if (targetId && dragBreakpoint === 'narrow') {
+			const siblings = sortForNarrow($widgets.filter((w) => w.tab === source.tab));
+			const updates = reorderNarrow(siblings, source.id, targetId);
+			if (updates.length === 0) return;
+			await api.updateWidgetsLayout(updates, dragBreakpoint);
+			applyLayoutUpdates(updates);
+		} else if (targetId) {
 			const target = $widgets.find((w) => w.id === targetId);
 			if (!target) return;
 			const updates = [
@@ -426,6 +467,7 @@
 			<span class="update-badge" aria-label={$_('dashboard.update_available')}></span>
 		{/if}
 	</button>
+	<button class="icon-button" onclick={() => goto('/reports')} aria-label={$_('reports.title')}> 📊 </button>
 	<button class="icon-button" onclick={cycleTheme} aria-label={$_('dashboard.change_theme')}>
 		{THEME_ICONS[$theme] ?? '🎨'}
 	</button>
@@ -498,16 +540,16 @@
 							class:drop-target={dropTargetId === widget.id}
 							data-widget-id={widget.id}
 							role="presentation"
-							style="grid-column: {layout.col} / span {layout.colSpan}; grid-row: {layout.row} / span {layout.rowSpan}; {dragWidgetId ===
-							widget.id
-								? `transform: translate(${dragDelta.x}px, ${dragDelta.y}px);`
-								: ''}"
+							style="grid-column: {layout.col} / span {layout.colSpan}; grid-row: {layout.row} / span {layout.rowSpan}; {$breakpoint ===
+							'narrow'
+								? narrowRowHeight(layout.rowSpan)
+								: ''} {dragWidgetId === widget.id ? `transform: translate(${dragDelta.x}px, ${dragDelta.y}px);` : ''}"
 							onpointerdown={(e) => onCellPointerDown(e, widget.id)}
 							onpointerup={onCellPointerUp}
 							onpointercancel={onCellPointerUp}
 						>
 							{#if Tile}
-								<Tile widgetId={widget.id} />
+								<Tile widgetId={widget.id} refreshIntervalSeconds={widget.refresh_interval_seconds} />
 							{/if}
 							{#if editMode}
 								<div class="edit-overlay" aria-hidden="true"></div>
@@ -531,7 +573,7 @@
 							{/if}
 						</div>
 					{/each}
-					{#if dragWidgetId && tabIndex === clampedIndex}
+					{#if dragWidgetId && tabIndex === clampedIndex && dragBreakpoint === 'wide'}
 						{@const emptyCells = computeEmptyCells(tab.widgets, dragWidgetId, GRID_COLUMNS)}
 						{#each emptyCells as cell (cell.col + '-' + cell.row)}
 							<div

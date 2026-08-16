@@ -74,7 +74,9 @@ async def test_get_summary_surfaces_error_without_raising():
 @respx.mock
 async def test_get_detail_includes_top_domains_and_gravity():
     respx.post("http://pi.local:80/api/auth").mock(return_value=httpx.Response(200, json=AUTH_OK))
-    respx.get("http://pi.local:80/api/stats/summary").mock(return_value=httpx.Response(200, json=SUMMARY_RESPONSE))
+    summary_route = respx.get("http://pi.local:80/api/stats/summary").mock(
+        return_value=httpx.Response(200, json=SUMMARY_RESPONSE)
+    )
     respx.get("http://pi.local:80/api/dns/blocking").mock(
         return_value=httpx.Response(200, json={"blocking": "enabled", "timer": None})
     )
@@ -94,6 +96,9 @@ async def test_get_detail_includes_top_domains_and_gravity():
     assert detail["gravity_last_update"] == 1700000000
     assert detail["top_blocked_domains"] == [{"domain": "ads.example.com", "count": 42}]
     assert detail["top_permitted_domains"] == [{"domain": "example.com", "count": 100}]
+    # Regression: get_detail() must share the one summary-stats fetch with
+    # get_summary() rather than redundantly re-fetching it.
+    assert summary_route.call_count == 1
 
 
 async def test_get_detail_when_not_configured():

@@ -11,7 +11,7 @@ describe('BF6Tile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(BF6Tile, { props: { widgetId: 'bf6' } });
+		render(BF6Tile, { props: { widgetId: 'bf6', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Loading…')).toBeInTheDocument();
 	});
@@ -26,7 +26,7 @@ describe('BF6Tile', () => {
 			platform: 'pc',
 		});
 
-		render(BF6Tile, { props: { widgetId: 'bf6' } });
+		render(BF6Tile, { props: { widgetId: 'bf6', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Not configured')).toBeInTheDocument();
 	});
@@ -42,7 +42,7 @@ describe('BF6Tile', () => {
 			error: "No server found matching 'Tsuru'.",
 		});
 
-		render(BF6Tile, { props: { widgetId: 'bf6' } });
+		render(BF6Tile, { props: { widgetId: 'bf6', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText("No server found matching 'Tsuru'.")).toBeInTheDocument();
 	});
@@ -66,7 +66,7 @@ describe('BF6Tile', () => {
 			platform: 'pc',
 		});
 
-		render(BF6Tile, { props: { widgetId: 'bf6' } });
+		render(BF6Tile, { props: { widgetId: 'bf6', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('24/64')).toBeInTheDocument();
 		expect(screen.getByText('players')).toBeInTheDocument();
@@ -100,7 +100,7 @@ describe('BF6Tile', () => {
 			platform: 'pc',
 		});
 
-		render(BF6Tile, { props: { widgetId: 'bf6' } });
+		render(BF6Tile, { props: { widgetId: 'bf6', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('levelcap')).toBeInTheDocument();
 		expect(screen.getByText('0.84 K/D')).toBeInTheDocument();
@@ -143,7 +143,7 @@ describe('BF6Tile', () => {
 			platform: 'pc',
 		});
 
-		render(BF6Tile, { props: { widgetId: 'bf6' } });
+		render(BF6Tile, { props: { widgetId: 'bf6', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('24/64')).toBeInTheDocument();
 		expect(screen.getByText('levelcap')).toBeInTheDocument();
