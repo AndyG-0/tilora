@@ -275,6 +275,60 @@
 			"unknown": "Type d'avion inconnu"
 		}
 	},
+	"mapping": {
+		"tile": {
+			"no_location": "Aucun emplacement défini",
+			"directions": "Itinéraire",
+			"nearby": "À proximité"
+		},
+		"detail": {
+			"no_location": "Aucun emplacement défini",
+			"change_home": "Changer le domicile",
+			"cancel": "Annuler",
+			"search_placeholder": "Rechercher un lieu ou une adresse…",
+			"searching": "Recherche…",
+			"search_failed": "Échec de la recherche.",
+			"no_results": "Aucun résultat trouvé.",
+			"update_failed": "Impossible de mettre à jour l'emplacement.",
+			"map_label": "Carte",
+			"tab_search": "Recherche",
+			"tab_directions": "Itinéraire",
+			"tab_nearby": "À proximité",
+			"destination_placeholder": "Destination",
+			"origin_placeholder": "Point de départ",
+			"origin_placeholder_default": "Point de départ (par défaut : {location})",
+			"mode_label": "Mode de transport",
+			"mode_driving": "Voiture",
+			"mode_walking": "À pied",
+			"mode_cycling": "Vélo",
+			"get_directions": "Obtenir l'itinéraire",
+			"no_home_location": "Aucun domicile défini -- définissez-en un ci-dessus ou saisissez un point de départ.",
+			"directions_failed": "Impossible d'obtenir l'itinéraire.",
+			"loading": "Chargement…",
+			"category_label": "Catégorie",
+			"radius_label": "Rayon",
+			"radius_unit_label": "Unité de rayon",
+			"unit_mi": "mi",
+			"unit_m": "m",
+			"nearby_failed": "Impossible de trouver des lieux à proximité.",
+			"no_nearby_results": "Aucun lieu trouvé à proximité.",
+			"service_unavailable": "Ce service est temporairement indisponible. Veuillez réessayer plus tard.",
+			"website_link": "Site web"
+		},
+		"category": {
+			"restaurant": "Restaurants",
+			"cafe": "Cafés",
+			"bar": "Bars",
+			"grocery": "Épiceries",
+			"gas_station": "Stations-service",
+			"pharmacy": "Pharmacies",
+			"hospital": "Hôpitaux",
+			"atm_bank": "Distributeurs & banques",
+			"hotel": "Hôtels",
+			"attraction": "Attractions",
+			"park": "Parcs"
+		}
+	},
 	"game2048": {
 		"tile": {
 			"hint": "Touchez pour jouer"

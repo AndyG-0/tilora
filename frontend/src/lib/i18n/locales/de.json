@@ -275,6 +275,60 @@
 			"unknown": "Unbekannter Flugzeugtyp"
 		}
 	},
+	"mapping": {
+		"tile": {
+			"no_location": "Kein Standort festgelegt",
+			"directions": "Route",
+			"nearby": "In der Nähe"
+		},
+		"detail": {
+			"no_location": "Kein Standort festgelegt",
+			"change_home": "Zuhause-Standort ändern",
+			"cancel": "Abbrechen",
+			"search_placeholder": "Nach einem Ort oder einer Adresse suchen…",
+			"searching": "Suche läuft…",
+			"search_failed": "Suche fehlgeschlagen.",
+			"no_results": "Keine Ergebnisse gefunden.",
+			"update_failed": "Standort konnte nicht aktualisiert werden.",
+			"map_label": "Karte",
+			"tab_search": "Suche",
+			"tab_directions": "Route",
+			"tab_nearby": "In der Nähe",
+			"destination_placeholder": "Ziel",
+			"origin_placeholder": "Startpunkt",
+			"origin_placeholder_default": "Startpunkt (Standard: {location})",
+			"mode_label": "Verkehrsmittel",
+			"mode_driving": "Auto",
+			"mode_walking": "Zu Fuß",
+			"mode_cycling": "Fahrrad",
+			"get_directions": "Route berechnen",
+			"no_home_location": "Kein Zuhause-Standort festgelegt -- oben einen festlegen oder einen Startpunkt eingeben.",
+			"directions_failed": "Route konnte nicht berechnet werden.",
+			"loading": "Wird geladen…",
+			"category_label": "Kategorie",
+			"radius_label": "Radius",
+			"radius_unit_label": "Radiuseinheit",
+			"unit_mi": "mi",
+			"unit_m": "m",
+			"nearby_failed": "Orte in der Nähe konnten nicht gefunden werden.",
+			"no_nearby_results": "Keine Orte in der Nähe gefunden.",
+			"service_unavailable": "Dieser Dienst ist vorübergehend nicht verfügbar. Bitte versuchen Sie es später erneut.",
+			"website_link": "Webseite"
+		},
+		"category": {
+			"restaurant": "Restaurants",
+			"cafe": "Cafés",
+			"bar": "Bars",
+			"grocery": "Lebensmittelgeschäfte",
+			"gas_station": "Tankstellen",
+			"pharmacy": "Apotheken",
+			"hospital": "Krankenhäuser",
+			"atm_bank": "Geldautomaten & Banken",
+			"hotel": "Hotels",
+			"attraction": "Sehenswürdigkeiten",
+			"park": "Parks"
+		}
+	},
 	"game2048": {
 		"tile": {
 			"hint": "Zum Spielen tippen"

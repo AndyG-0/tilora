@@ -37,6 +37,7 @@ import ShoppingTile from '$lib/components/tiles/ShoppingTile.svelte';
 import PackageTile from '$lib/components/tiles/PackageTile.svelte';
 import NASATile from '$lib/components/tiles/NASATile.svelte';
 import FlightsTile from '$lib/components/tiles/FlightsTile.svelte';
+import MappingTile from '$lib/components/tiles/MappingTile.svelte';
 
 import WeatherDetail from '$lib/components/details/WeatherDetail.svelte';
 import AIDetail from '$lib/components/details/AIDetail.svelte';
@@ -70,6 +71,7 @@ import ShoppingDetail from '$lib/components/details/ShoppingDetail.svelte';
 import PackageDetail from '$lib/components/details/PackageDetail.svelte';
 import NASADetail from '$lib/components/details/NASADetail.svelte';
 import FlightsDetail from '$lib/components/details/FlightsDetail.svelte';
+import MappingDetail from '$lib/components/details/MappingDetail.svelte';
 
 import ClockScreensaver from '$lib/components/screensaver/ClockScreensaver.svelte';
 import DateScreensaver from '$lib/components/screensaver/DateScreensaver.svelte';
@@ -109,7 +111,8 @@ type TileComponent =
 	| typeof ShoppingTile
 	| typeof PackageTile
 	| typeof NASATile
-	| typeof FlightsTile;
+	| typeof FlightsTile
+	| typeof MappingTile;
 
 type DetailComponent =
 	| typeof WeatherDetail
@@ -143,7 +146,8 @@ type DetailComponent =
 	| typeof ShoppingDetail
 	| typeof PackageDetail
 	| typeof NASADetail
-	| typeof FlightsDetail;
+	| typeof FlightsDetail
+	| typeof MappingDetail;
 
 export const TILE_COMPONENTS: Record<string, TileComponent> = {
 	weather: WeatherTile,
@@ -180,6 +184,7 @@ export const TILE_COMPONENTS: Record<string, TileComponent> = {
 	packages: PackageTile,
 	nasa_apod: NASATile,
 	flights: FlightsTile,
+	mapping: MappingTile,
 };
 
 export const DETAIL_COMPONENTS: Record<string, DetailComponent> = {
@@ -217,6 +222,7 @@ export const DETAIL_COMPONENTS: Record<string, DetailComponent> = {
 	packages: PackageDetail,
 	nasa_apod: NASADetail,
 	flights: FlightsDetail,
+	mapping: MappingDetail,
 };
 
 type ScreensaverComponent =

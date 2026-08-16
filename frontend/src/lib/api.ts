@@ -98,6 +98,43 @@ export interface LocationPreference {
 	longitude: number;
 }
 
+export interface MapSearchResult {
+	display_name: string;
+	name: string;
+	latitude: number;
+	longitude: number;
+	type: string | null;
+	category: string | null;
+}
+
+export interface DirectionsStep {
+	instruction: string;
+	distance_meters: number;
+	duration_seconds: number;
+}
+
+export interface DirectionsResult {
+	origin: string;
+	destination: string;
+	mode: 'driving' | 'walking' | 'cycling';
+	distance_meters: number;
+	duration_seconds: number;
+	geometry: [number, number][];
+	steps: DirectionsStep[];
+}
+
+export interface NearbyPlace {
+	name: string;
+	category: string;
+	latitude: number;
+	longitude: number;
+	distance_m: number;
+	address: string | null;
+	phone: string | null;
+	website: string | null;
+	opening_hours: string | null;
+}
+
 export interface MovieProvider {
 	id: number;
 	name: string;
@@ -1053,14 +1090,28 @@ export function describeFetchError(error: unknown): FetchErrorKind {
 	return error instanceof TypeError ? 'network' : 'server';
 }
 
+// Carries the HTTP status alongside the message so callers can distinguish
+// e.g. a 502 (an upstream provider is down) from a 404 (nothing matched) --
+// a generic Error loses that distinction.
+export class ApiError extends Error {
+	status: number;
+
+	constructor(message: string, status: number) {
+		super(message);
+		this.name = 'ApiError';
+		this.status = status;
+	}
+}
+
 // `credentials: 'include'` on every request so the device/session cookies
 // (set by the backend as httponly, so JS can't attach them manually) round-trip
 // even when the frontend and backend are on different ports/origins.
 async function getJSON<T>(path: string): Promise<T> {
 	const response = await fetch(`${env.PUBLIC_API_BASE_URL}${path}`, { credentials: 'include' });
 	if (!response.ok) {
+		const message = await _errorMessage(path, response);
 		logger.warn(`Request to ${path} failed: ${response.status}`);
-		throw new Error(`Request to ${path} failed: ${response.status}`);
+		throw new ApiError(message, response.status);
 	}
 	return response.json();
 }
@@ -1174,6 +1225,26 @@ export const api = {
 		putJSON<{ status: string }>('/api/widgets/layout', { widgets, breakpoint }),
 	runAiWidget: <T = Record<string, unknown>>(id: string) => postJSON<T>(`/api/widgets/${id}/run`),
 	searchCities: (query: string) => getJSON<CityResult[]>(`/api/weather/search?q=${encodeURIComponent(query)}`),
+	mappingSearch: (query: string) => getJSON<MapSearchResult[]>(`/api/mapping/search?q=${encodeURIComponent(query)}`),
+	mappingReverse: (lat: number, lon: number) =>
+		getJSON<MapSearchResult | null>(`/api/mapping/reverse?lat=${lat}&lon=${lon}`),
+	mappingDirections: (
+		destination: string,
+		origin: string,
+		mode: 'driving' | 'walking' | 'cycling' = 'driving',
+		coords?: { destinationLat?: number; destinationLon?: number; originLat?: number; originLon?: number },
+	) => {
+		const params = new URLSearchParams({ destination, origin, mode });
+		if (coords?.destinationLat !== undefined) params.set('destination_lat', String(coords.destinationLat));
+		if (coords?.destinationLon !== undefined) params.set('destination_lon', String(coords.destinationLon));
+		if (coords?.originLat !== undefined) params.set('origin_lat', String(coords.originLat));
+		if (coords?.originLon !== undefined) params.set('origin_lon', String(coords.originLon));
+		return getJSON<DirectionsResult>(`/api/mapping/directions?${params}`);
+	},
+	mappingNearby: (lat: number, lon: number, category: string, radiusM = 40234) =>
+		getJSON<NearbyPlace[]>(
+			`/api/mapping/nearby?lat=${lat}&lon=${lon}&category=${encodeURIComponent(category)}&radius_m=${radiusM}`,
+		),
 	movieProviders: (region: string) =>
 		getJSON<MovieProvider[]>(`/api/movies/providers?region=${encodeURIComponent(region)}`),
 	themes: () => getJSON<{ themes: { id: string; name: string }[]; default: string }>('/api/theme'),

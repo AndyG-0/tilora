@@ -275,6 +275,60 @@
 			"unknown": "Unknown aircraft type"
 		}
 	},
+	"mapping": {
+		"tile": {
+			"no_location": "No location set",
+			"directions": "Directions",
+			"nearby": "Nearby"
+		},
+		"detail": {
+			"no_location": "No location set",
+			"change_home": "Change home location",
+			"cancel": "Cancel",
+			"search_placeholder": "Search for a place or address…",
+			"searching": "Searching…",
+			"search_failed": "Search failed.",
+			"no_results": "No results found.",
+			"update_failed": "Could not update the location.",
+			"map_label": "Map",
+			"tab_search": "Search",
+			"tab_directions": "Directions",
+			"tab_nearby": "Nearby",
+			"destination_placeholder": "Destination",
+			"origin_placeholder": "Starting point",
+			"origin_placeholder_default": "Starting point (default: {location})",
+			"mode_label": "Travel mode",
+			"mode_driving": "Driving",
+			"mode_walking": "Walking",
+			"mode_cycling": "Cycling",
+			"get_directions": "Get directions",
+			"no_home_location": "No home location set -- set one above or enter a starting point.",
+			"directions_failed": "Could not get directions.",
+			"loading": "Loading…",
+			"category_label": "Category",
+			"radius_label": "Radius",
+			"radius_unit_label": "Radius unit",
+			"unit_mi": "mi",
+			"unit_m": "m",
+			"nearby_failed": "Could not find nearby places.",
+			"no_nearby_results": "No places found nearby.",
+			"service_unavailable": "This service is temporarily unavailable. Please try again later.",
+			"website_link": "Website"
+		},
+		"category": {
+			"restaurant": "Restaurants",
+			"cafe": "Cafes",
+			"bar": "Bars",
+			"grocery": "Grocery",
+			"gas_station": "Gas stations",
+			"pharmacy": "Pharmacies",
+			"hospital": "Hospitals",
+			"atm_bank": "ATMs & banks",
+			"hotel": "Hotels",
+			"attraction": "Attractions",
+			"park": "Parks"
+		}
+	},
 	"game2048": {
 		"tile": {
 			"hint": "Tap to play"

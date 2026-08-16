@@ -275,6 +275,60 @@
 			"unknown": "Tipo de aeronave desconocido"
 		}
 	},
+	"mapping": {
+		"tile": {
+			"no_location": "Sin ubicación establecida",
+			"directions": "Direcciones",
+			"nearby": "Cercano"
+		},
+		"detail": {
+			"no_location": "Sin ubicación establecida",
+			"change_home": "Cambiar ubicación de casa",
+			"cancel": "Cancelar",
+			"search_placeholder": "Buscar un lugar o dirección…",
+			"searching": "Buscando…",
+			"search_failed": "Error en la búsqueda.",
+			"no_results": "No se encontraron resultados.",
+			"update_failed": "No se pudo actualizar la ubicación.",
+			"map_label": "Mapa",
+			"tab_search": "Buscar",
+			"tab_directions": "Direcciones",
+			"tab_nearby": "Cercano",
+			"destination_placeholder": "Destino",
+			"origin_placeholder": "Punto de partida",
+			"origin_placeholder_default": "Punto de partida (predeterminado: {location})",
+			"mode_label": "Modo de viaje",
+			"mode_driving": "En coche",
+			"mode_walking": "A pie",
+			"mode_cycling": "En bicicleta",
+			"get_directions": "Obtener direcciones",
+			"no_home_location": "No hay ubicación de casa establecida -- configura una arriba o introduce un punto de partida.",
+			"directions_failed": "No se pudieron obtener las direcciones.",
+			"loading": "Cargando…",
+			"category_label": "Categoría",
+			"radius_label": "Radio",
+			"radius_unit_label": "Unidad de radio",
+			"unit_mi": "mi",
+			"unit_m": "m",
+			"nearby_failed": "No se pudieron encontrar lugares cercanos.",
+			"no_nearby_results": "No se encontraron lugares cercanos.",
+			"service_unavailable": "Este servicio no está disponible temporalmente. Inténtalo de nuevo más tarde.",
+			"website_link": "Sitio web"
+		},
+		"category": {
+			"restaurant": "Restaurantes",
+			"cafe": "Cafeterías",
+			"bar": "Bares",
+			"grocery": "Supermercados",
+			"gas_station": "Gasolineras",
+			"pharmacy": "Farmacias",
+			"hospital": "Hospitales",
+			"atm_bank": "Cajeros y bancos",
+			"hotel": "Hoteles",
+			"attraction": "Atracciones",
+			"park": "Parques"
+		}
+	},
 	"game2048": {
 		"tile": {
 			"hint": "Toca para jugar"
