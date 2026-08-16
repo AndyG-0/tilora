@@ -49,6 +49,20 @@ def test_ask_passes_speech_system_prompt(client, tmp_db, monkeypatch):
     assert captured["system_prompt"]
 
 
+def test_ask_returns_502_and_logs_when_assistant_raises(client, tmp_db, monkeypatch, caplog):
+    async def fake_ask(text, system_prompt=None, user=None, device=None):
+        raise RuntimeError("Request too large for gpt-5.6-luna: tokens per min (TPM) exceeded")
+
+    monkeypatch.setattr(assistant_api.assistant, "ask", fake_ask)
+
+    with caplog.at_level("ERROR"):
+        response = client.post("/api/assistant/ask", json={"text": "get me directions to taco bell"})
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": "The AI assistant is unavailable right now."}
+    assert "Assistant request failed" in caplog.text
+
+
 def test_ask_rejects_empty_text(client, tmp_db):
     response = client.post("/api/assistant/ask", json={"text": "   "})
 

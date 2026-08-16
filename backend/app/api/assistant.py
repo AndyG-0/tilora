@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,6 +15,8 @@ from app.plugins.alert.plugin import AlertPlugin
 from app.plugins.base import registry
 from app.plugins.naming import display_names
 from app.storage.db import hidden_widget_ids
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
@@ -36,7 +39,11 @@ async def ask(
     text = payload.get("text", "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="'text' is required")
-    reply = await assistant.ask(text, system_prompt=_SPEECH_SYSTEM_PROMPT, user=user, device=device)
+    try:
+        reply = await assistant.ask(text, system_prompt=_SPEECH_SYSTEM_PROMPT, user=user, device=device)
+    except Exception as exc:
+        logger.exception("Assistant request failed")
+        raise HTTPException(status_code=502, detail="The AI assistant is unavailable right now.") from exc
     return {"text": reply}
 
 

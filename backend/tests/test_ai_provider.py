@@ -3,7 +3,7 @@ from __future__ import annotations
 import litellm
 import pytest
 
-from app.ai.provider import AIProvider, _api_key_for_model
+from app.ai.provider import _MAX_COMPLETION_TOKENS, AIProvider, _api_key_for_model
 from app.ai.tools import ToolBridge
 from app.plugins.base import ToolDef
 
@@ -118,6 +118,9 @@ async def test_run_prompt_calls_tool_then_returns_final_answer(monkeypatch, tmp_
     tool_messages = [m for m in calls[1]["messages"] if m.get("role") == "tool"]
     assert len(tool_messages) == 1
     assert "Austin" in tool_messages[0]["content"]
+    # every call caps output tokens, so a single request never gets rate-limited
+    # by a provider reserving an unbounded amount of headroom for the reply
+    assert all(call["max_completion_tokens"] == _MAX_COMPLETION_TOKENS for call in calls)
 
 
 async def test_run_prompt_surfaces_tool_handler_exception_instead_of_raising(monkeypatch, tmp_db):
@@ -151,7 +154,7 @@ async def test_run_prompt_surfaces_tool_handler_exception_instead_of_raising(mon
 
 
 async def test_run_prompt_forces_final_answer_after_max_rounds(monkeypatch, tmp_db):
-    call_count = 0
+    calls = []
 
     async def handler() -> dict:
         return {"ok": True}
@@ -161,8 +164,7 @@ async def test_run_prompt_forces_final_answer_after_max_rounds(monkeypatch, tmp_
     tool_call = FakeToolCall("call_1", "noop", "{}")
 
     async def fake_acompletion(**kwargs):
-        nonlocal call_count
-        call_count += 1
+        calls.append(kwargs)
         if kwargs.get("tools"):
             return FakeResponse(FakeMessage(tool_calls=[tool_call]))
         return FakeResponse(FakeMessage(content="giving up, here's what I know"))
@@ -173,7 +175,10 @@ async def test_run_prompt_forces_final_answer_after_max_rounds(monkeypatch, tmp_
     result = await provider.run_prompt("loop forever", max_tool_rounds=2)
 
     assert result == "giving up, here's what I know"
-    assert call_count == 3  # 2 tool rounds + 1 final forced call without tools
+    assert len(calls) == 3  # 2 tool rounds + 1 final forced call without tools
+    # the forced final call (no tools) still caps output tokens, same as the
+    # tool-loop calls before it
+    assert calls[-1]["max_completion_tokens"] == _MAX_COMPLETION_TOKENS
 
 
 @pytest.mark.parametrize(

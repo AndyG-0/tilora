@@ -136,3 +136,29 @@ def test_patch_settings_persists_agent_name_and_searxng_url(client, tmp_db):
     body = response.json()
     assert body["ai_agent_name"] == "Friday"
     assert body["searxng_url"] == "http://searxng.local:8080"
+
+
+def test_patch_settings_rejects_searxng_url_without_http_or_https(client, tmp_db):
+    response = client.patch(
+        "/api/settings",
+        json={"searxng_url": "searxng.local:8080"},
+    )
+    assert response.status_code == 422
+    assert "SearXNG URL must start with http:// or https://" in response.text
+
+    response_ftp = client.patch(
+        "/api/settings",
+        json={"searxng_url": "ftp://searxng.local:8080"},
+    )
+    assert response_ftp.status_code == 422
+    assert "SearXNG URL must start with http:// or https://" in response_ftp.text
+
+
+def test_patch_settings_accepts_https_and_clearing_searxng_url(client, tmp_db):
+    res_https = client.patch("/api/settings", json={"searxng_url": "https://searxng.secure:8443"})
+    assert res_https.status_code == 200
+    assert res_https.json()["searxng_url"] == "https://searxng.secure:8443"
+
+    res_clear = client.patch("/api/settings", json={"searxng_url": ""})
+    assert res_clear.status_code == 200
+    assert res_clear.json()["searxng_url"] == ""

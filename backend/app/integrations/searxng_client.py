@@ -85,6 +85,8 @@ async def search(query: str, searxng_url: str, limit: int = _DEFAULT_SEARCH_LIMI
         return []
 
     base_url = searxng_url.strip().rstrip("/")
+    if not (base_url.startswith("http://") or base_url.startswith("https://")):
+        raise SearXNGError("Invalid SearXNG URL scheme. Must start with http:// or https://")
     search_url = f"{base_url}/search"
 
     async with httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT_SECONDS) as client:

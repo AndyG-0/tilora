@@ -292,7 +292,7 @@ async def _timed_call(kind: str, plugin: Plugin, call: Any) -> Any:
         logger.exception("widget %s %s failed after %.1fms", plugin_label, kind, elapsed_ms)
         raise
     elapsed_ms = (time.monotonic() - start) * 1000
-    logger.info("widget %s %s took %.1fms", plugin_label, kind, elapsed_ms)
+    logger.debug("widget %s %s took %.1fms", plugin_label, kind, elapsed_ms)
     return result
 
 

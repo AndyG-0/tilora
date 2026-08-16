@@ -888,15 +888,6 @@
 			"content_played": "Weiterschauen",
 			"content_both": "Beides",
 			"resume_unavailable_hint": "„Weiterschauen“ benötigt Benutzername/Passwort-Authentifizierung — wechsle oben den Authentifizierungsmodus, um es zu aktivieren.",
-			"playback_heading": "Wiedergabe (dieses Gerät)",
-			"playback_compatible": "Kompatibles Audio",
-			"playback_compatible_video": "Transcodierung erzwingen",
-			"playback_direct": "Direkte Wiedergabe",
-			"override_active_hint": "Dieses Gerät hat einen eigenen Wiedergabemodus, der die Haushaltsvorgabe überschreibt.",
-			"override_inactive_hint": "Dieses Gerät verwendet den Standard-Wiedergabemodus des Haushalts. Wähle oben einen Modus, um ihn nur für dieses Gerät zu überschreiben.",
-			"use_household_default": "Haushaltsvorgabe verwenden",
-			"save_device_override_error": "Die Wiedergabe-Überschreibung für dieses Gerät konnte nicht gespeichert werden.",
-			"reset_device_override_error": "Die Wiedergabe-Überschreibung für dieses Gerät konnte nicht zurückgesetzt werden.",
 			"save_content_mode_error": "Die Kachelinhaltseinstellung konnte nicht gespeichert werden.",
 			"libraries_root": "Bibliotheken",
 			"load_items_error": "Die Bibliothekselemente konnten nicht geladen werden.",
@@ -1000,7 +991,12 @@
 		"subtitle": "Untertitel",
 		"container": "Container",
 		"resolution": "Auflösung",
-		"playback_mode": "Wiedergabemodus"
+		"playback_mode": "Wiedergabemodus",
+		"playback_method_direct": "Direkte Wiedergabe",
+		"playback_method_hls": "Transkodierung (HLS)",
+		"playback_cache_active": "Dieses Gerät ist zuvor bei der direkten Wiedergabe fehlgeschlagen und nutzt jetzt Transkodierung.",
+		"playback_failed": "Wiedergabe fehlgeschlagen. Versuche es erneut oder wähle einen anderen Titel.",
+		"transcoding": "Transkodierung…"
 	},
 	"clock": {
 		"aria_analog": "Analoges Zifferblatt",
@@ -1030,7 +1026,7 @@
 		"resize_widget": "Widget-Größe ändern",
 		"add_widget": "+ Widget hinzufügen",
 		"mic_no_match": "Das wurde nicht verstanden.",
-		"assistant_error": "Es konnte keine Antwort abgerufen werden."
+		"assistant_error": "Etwas ist schiefgelaufen. Versuchen Sie es erneut oder bitten Sie Ihren Administrator, die Protokolle zu prüfen, falls dies weiterhin auftritt."
 	},
 	"widget_detail": {
 		"unknown_widget": "Unbekanntes Widget",

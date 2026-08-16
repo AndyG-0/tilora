@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 import respx
@@ -148,17 +150,103 @@ def test_get_subtitle_endpoint(client):
 
 
 @respx.mock
-def test_stream_forwards_audio_stream_index(client):
+def test_hls_master_playlist_rewrites_uris(client):
+    register_plugin(host="jf.local", api_key="k1")
+    respx.get("http://jf.local:8096/Videos/vid1/master.m3u8").mock(
+        return_value=httpx.Response(200, text="#EXTM3U\nmain/0.m3u8\n")
+    )
+
+    response = client.get("/api/jellyfin/jf1/hls/vid1/master.m3u8?play_session_id=sess1")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/vnd.apple.mpegurl"
+    assert "/api/jellyfin/jf1/hls-resource/vid1?path=" in response.text
+    assert "main%2F0.m3u8" in response.text
+
+
+@respx.mock
+def test_hls_master_playlist_forwards_audio_stream_index(client):
     register_plugin(host="jf.local", api_key="k1")
 
     def handler(request: httpx.Request) -> httpx.Response:
         params = dict(httpx.QueryParams(request.url.query))
         assert params.get("AudioStreamIndex") == "3"
-        return httpx.Response(200, content=b"stream-bytes")
+        return httpx.Response(200, text="#EXTM3U\n")
 
-    respx.get("http://jf.local:8096/Videos/vid1/stream").mock(side_effect=handler)
+    respx.get("http://jf.local:8096/Videos/vid1/master.m3u8").mock(side_effect=handler)
 
-    response = client.get("/api/jellyfin/jf1/stream/vid1?audio_stream_index=3")
+    response = client.get("/api/jellyfin/jf1/hls/vid1/master.m3u8?play_session_id=sess1&audio_stream_index=3")
 
     assert response.status_code == 200
-    assert response.content == b"stream-bytes"
+
+
+@respx.mock
+def test_hls_resource_streams_segment_bytes(client):
+    register_plugin(host="jf.local", api_key="k1")
+    respx.get("http://jf.local:8096/Videos/vid1/0.ts", params={"a": "1"}).mock(
+        return_value=httpx.Response(200, content=b"segment-bytes", headers={"content-type": "video/mp2t"})
+    )
+
+    response = client.get("/api/jellyfin/jf1/hls-resource/vid1", params={"path": "/Videos/vid1/0.ts?a=1"})
+
+    assert response.status_code == 200
+    assert response.content == b"segment-bytes"
+
+
+@respx.mock
+def test_hls_resource_rewrites_nested_variant_playlist(client):
+    register_plugin(host="jf.local", api_key="k1")
+    respx.get("http://jf.local:8096/Videos/vid1/main/master.m3u8").mock(
+        return_value=httpx.Response(
+            200, text="#EXTM3U\n0.ts\n", headers={"content-type": "application/vnd.apple.mpegurl"}
+        )
+    )
+
+    response = client.get("/api/jellyfin/jf1/hls-resource/vid1", params={"path": "/Videos/vid1/main/master.m3u8"})
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/vnd.apple.mpegurl"
+    assert "main%2F0.ts" in response.text
+
+
+@respx.mock
+def test_playback_stopped_calls_jellyfin_and_returns_ok(client):
+    register_plugin(host="jf.local", api_key="k1")
+    route = respx.post("http://jf.local:8096/Sessions/Playing/Stopped").mock(return_value=httpx.Response(204))
+
+    response = client.post("/api/jellyfin/jf1/playback-stopped/vid1?play_session_id=sess1&position_seconds=12.5")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert route.called
+    assert json.loads(route.calls.last.request.content)["PositionTicks"] == 125_000_000
+
+
+@respx.mock
+def test_playback_started_calls_jellyfin_and_returns_ok(client):
+    register_plugin(host="jf.local", api_key="k1")
+    route = respx.post("http://jf.local:8096/Sessions/Playing").mock(return_value=httpx.Response(204))
+
+    response = client.post("/api/jellyfin/jf1/playback-started/vid1?play_session_id=sess1")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert route.called
+    assert json.loads(route.calls.last.request.content)["ItemId"] == "vid1"
+
+
+@respx.mock
+def test_playback_progress_calls_jellyfin_and_returns_ok(client):
+    register_plugin(host="jf.local", api_key="k1")
+    route = respx.post("http://jf.local:8096/Sessions/Playing/Progress").mock(return_value=httpx.Response(204))
+
+    response = client.post(
+        "/api/jellyfin/jf1/playback-progress/vid1?play_session_id=sess1&position_seconds=45&is_paused=true"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert route.called
+    body = json.loads(route.calls.last.request.content)
+    assert body["PositionTicks"] == 450_000_000
+    assert body["IsPaused"] is True

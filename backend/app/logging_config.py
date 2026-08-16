@@ -28,6 +28,10 @@ class RequestIdFilter(logging.Filter):
 
 
 def configure_logging() -> None:
+    root_level = settings.log_level.upper()
+    is_debug = root_level in ("DEBUG", "TRACE")
+    third_party_level = root_level if is_debug else "WARNING"
+
     logging.config.dictConfig(
         {
             "version": 1,
@@ -49,9 +53,31 @@ def configure_logging() -> None:
                     "filters": ["request_id"],
                 },
             },
+            "loggers": {
+                "asyncssh": {
+                    "level": third_party_level,
+                    "handlers": ["console"],
+                    "propagate": False,
+                },
+                "httpx": {
+                    "level": third_party_level,
+                    "handlers": ["console"],
+                    "propagate": False,
+                },
+                "httpcore": {
+                    "level": third_party_level,
+                    "handlers": ["console"],
+                    "propagate": False,
+                },
+                "uvicorn.access": {
+                    "level": third_party_level,
+                    "handlers": ["console"],
+                    "propagate": False,
+                },
+            },
             "root": {
                 "handlers": ["console"],
-                "level": settings.log_level,
+                "level": root_level,
             },
         }
     )

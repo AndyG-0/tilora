@@ -59,7 +59,7 @@
 		{#key index}
 			<img
 				class="photo"
-				src={`${env.PUBLIC_API_BASE_URL}${data.photos[index].url}`}
+				src={`${env.PUBLIC_API_BASE_URL ?? ''}${data.photos[index].url}`}
 				alt={data.photos[index].filename}
 				transition:fade={{ duration: 800 }}
 			/>

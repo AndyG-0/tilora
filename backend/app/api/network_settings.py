@@ -76,10 +76,17 @@ def _mask(settings: dict[str, Any]) -> dict[str, Any]:
     return masked
 
 
-def _invalidate(affected: list[str]) -> None:
-    for widget_id in affected:
-        cache.delete_prefix(f"summary:{widget_id}:")
-        cache.delete_prefix(f"detail:{widget_id}:")
+def _invalidate(affected: list[str], integration_type: str | None = None) -> None:
+    targets = set(affected)
+    if integration_type:
+        targets.add(integration_type)
+    for target in targets:
+        cache.delete_prefix(f"summary:{target}:")
+        cache.delete_prefix(f"detail:{target}:")
+        cache.delete(f"pihole_sid:{target}")
+        cache.delete(f"jellyfin_token:{target}")
+        cache.delete(f"synology_sid:{target}")
+        cache.delete(f"qbittorrent_sid:{target}")
 
 
 def _singleton_plugin_cls(type_: str) -> type | None:
@@ -126,7 +133,7 @@ async def update_network_settings(
     base = existing["settings"] if existing else dict(plugin_cls.network_default_settings)
     merged = {**base, **payload}
     await asyncio.to_thread(save_network_integration, type, type, plugin_cls.name, merged)
-    _invalidate(apply_network_integration_update(type, type, merged))
+    _invalidate(apply_network_integration_update(type, type, merged), type)
     return {"id": type, "type": type, "name": plugin_cls.name, "settings": _mask(merged)}
 
 
@@ -197,7 +204,7 @@ async def update_container_integration(
     name = payload.get("name", existing["name"])
     settings = {**existing["settings"], **{k: v for k, v in payload.items() if k != "name"}}
     await asyncio.to_thread(save_network_integration, id, "container", name, settings)
-    _invalidate(apply_network_integration_update("container", id, settings))
+    _invalidate(apply_network_integration_update("container", id, settings), id)
     return {"id": id, "type": "container", "name": name, "settings": _mask(settings)}
 
 

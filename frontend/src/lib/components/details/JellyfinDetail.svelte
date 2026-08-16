@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { api, type JellyfinItem } from '$lib/api';
 	import JellyfinPlayer from '$lib/components/JellyfinPlayer.svelte';
@@ -9,7 +8,6 @@
 
 	interface JellyfinDetailData {
 		connected: boolean;
-		playback_mode: 'compatible' | 'compatible_video' | 'direct';
 		content_mode: 'added' | 'played' | 'both';
 		resume_available: boolean;
 	}
@@ -26,52 +24,10 @@
 	let itemsError = $state<string | null>(null);
 	let playingItem = $state<JellyfinItem | null>(null);
 
-	// Raw override for this device — {} means "inheriting the household
-	// default," which is already reflected in jellyfin.playback_mode itself,
-	// so this is only consulted to tell an override apart from a default.
-	let deviceOverride = $state<Record<string, unknown>>({});
-	let deviceSaving = $state(false);
-	let deviceError = $state<string | null>(null);
-
 	let contentModeSaving = $state(false);
 	let contentModeError = $state<string | null>(null);
 
 	const widgetId = $derived(page.params.id!);
-
-	async function loadDeviceOverride() {
-		try {
-			deviceOverride = await api.getWidgetDeviceSettings(widgetId);
-		} catch {
-			deviceOverride = {};
-		}
-	}
-
-	async function setDevicePlaybackMode(mode: 'compatible' | 'compatible_video' | 'direct') {
-		deviceSaving = true;
-		deviceError = null;
-		try {
-			deviceOverride = await api.updateWidgetDeviceSettings(widgetId, { playback_mode: mode });
-			jellyfin = await api.widgetDetail<JellyfinDetailData>(widgetId);
-		} catch {
-			deviceError = get(_)('jellyfin.detail.save_device_override_error');
-		} finally {
-			deviceSaving = false;
-		}
-	}
-
-	async function clearDevicePlaybackMode() {
-		deviceSaving = true;
-		deviceError = null;
-		try {
-			await api.clearWidgetDeviceSettings(widgetId);
-			deviceOverride = {};
-			jellyfin = await api.widgetDetail<JellyfinDetailData>(widgetId);
-		} catch {
-			deviceError = get(_)('jellyfin.detail.reset_device_override_error');
-		} finally {
-			deviceSaving = false;
-		}
-	}
 
 	async function setContentMode(mode: 'added' | 'played' | 'both') {
 		contentModeSaving = true;
@@ -122,8 +78,6 @@
 	$effect(() => {
 		loadItems();
 	});
-
-	onMount(loadDeviceOverride);
 </script>
 
 <div class="header">
@@ -171,51 +125,6 @@
 		</div>
 	{/if}
 
-	<div class="device-settings">
-		<h2>{$_('jellyfin.detail.playback_heading')}</h2>
-		<div class="auth-mode">
-			<button
-				type="button"
-				disabled={deviceSaving}
-				class:active={jellyfin.playback_mode === 'compatible'}
-				onclick={() => setDevicePlaybackMode('compatible')}
-			>
-				{$_('jellyfin.detail.playback_compatible')}
-			</button>
-			<button
-				type="button"
-				disabled={deviceSaving}
-				class:active={jellyfin.playback_mode === 'compatible_video'}
-				onclick={() => setDevicePlaybackMode('compatible_video')}
-			>
-				{$_('jellyfin.detail.playback_compatible_video')}
-			</button>
-			<button
-				type="button"
-				disabled={deviceSaving}
-				class:active={jellyfin.playback_mode === 'direct'}
-				onclick={() => setDevicePlaybackMode('direct')}
-			>
-				{$_('jellyfin.detail.playback_direct')}
-			</button>
-		</div>
-		<p class="hint">
-			{#if deviceOverride.playback_mode}
-				{$_('jellyfin.detail.override_active_hint')}
-			{:else}
-				{$_('jellyfin.detail.override_inactive_hint')}
-			{/if}
-		</p>
-		{#if deviceOverride.playback_mode}
-			<button class="clear" disabled={deviceSaving} onclick={clearDevicePlaybackMode}>
-				{$_('jellyfin.detail.use_household_default')}
-			</button>
-		{/if}
-		{#if deviceError}
-			<p class="hint error">{deviceError}</p>
-		{/if}
-	</div>
-
 	<div class="breadcrumbs">
 		<button class="crumb" onclick={goToRoot}>{$_('jellyfin.detail.libraries_root')}</button>
 		{#each path as segment, index (segment.id)}
@@ -258,13 +167,7 @@
 {/if}
 
 {#if playingItem}
-	<JellyfinPlayer
-		{widgetId}
-		itemId={playingItem.id}
-		src={api.jellyfinStreamUrl(widgetId, playingItem.id)}
-		title={playingItem.name}
-		onClose={() => (playingItem = null)}
-	/>
+	<JellyfinPlayer {widgetId} itemId={playingItem.id} title={playingItem.name} onClose={() => (playingItem = null)} />
 {/if}
 
 <style>
@@ -314,17 +217,6 @@
 	.auth-mode button.active {
 		border-color: var(--color-accent);
 		color: var(--color-accent);
-	}
-
-	.clear {
-		align-self: flex-start;
-		background: none;
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		padding: 0.3rem 0.6rem;
-		font-size: 0.85rem;
-		color: var(--color-text-muted);
-		cursor: pointer;
 	}
 
 	.breadcrumbs {

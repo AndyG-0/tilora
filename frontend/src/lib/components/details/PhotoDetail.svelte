@@ -120,7 +120,7 @@
 		const neighborUrls = [photoData.photos[(index + 1) % count].url, photoData.photos[(index - 1 + count) % count].url];
 		for (const url of neighborUrls) {
 			const img = new Image();
-			img.src = `${env.PUBLIC_API_BASE_URL}${url}`;
+			img.src = `${env.PUBLIC_API_BASE_URL ?? ''}${url}`;
 		}
 	});
 
@@ -451,7 +451,10 @@
 		{#if photoData.photos.length > 1}
 			<button class="nav prev" aria-label={$_('photos.detail.previous_photo')} onclick={prevPhoto}>‹</button>
 		{/if}
-		<img src={`${env.PUBLIC_API_BASE_URL}${photoData.photos[index].url}`} alt={photoData.photos[index].filename} />
+		<img
+			src={`${env.PUBLIC_API_BASE_URL ?? ''}${photoData.photos[index].url}`}
+			alt={photoData.photos[index].filename}
+		/>
 		{#if photoData.photos.length > 1}
 			<button class="nav next" aria-label={$_('photos.detail.next_photo')} onclick={nextPhoto}>›</button>
 		{/if}

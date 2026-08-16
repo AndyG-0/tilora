@@ -25,11 +25,6 @@ class JellyfinPlugin(Plugin):
     id = "jellyfin"
     name = "Jellyfin"
     refresh_interval_seconds = 600
-    # playback_mode depends on the playing device's hardware/browser (e.g. an
-    # iPhone that can't decode a source codec a Mac handles fine), not on
-    # household policy — any user may override it for their own device even
-    # though the rest of this plugin's settings are "network"-scope/admin-only.
-    device_overridable_settings = frozenset({"playback_mode"})
     network_integration_type = "jellyfin"
     network_default_settings = {
         "host": "",
@@ -42,8 +37,6 @@ class JellyfinPlugin(Plugin):
     }
     default_settings = {
         "library_ids": [],  # optional filter; empty = show all libraries
-        # "compatible" | "compatible_video" | "direct" — see jellyfin_client.open_video_stream
-        "playback_mode": "compatible",
         # "added" | "played" | "both" — which section(s) the tile/detail show.
         # "played" (Continue Watching) needs a real user context, which
         # api_key auth doesn't have — see resume_available below.
@@ -63,7 +56,6 @@ class JellyfinPlugin(Plugin):
             "auth_mode": s.get("auth_mode", "api_key"),
             "username": s.get("username", ""),
             "library_ids": s.get("library_ids") or [],
-            "playback_mode": s.get("playback_mode", "compatible"),
             "content_mode": s.get("content_mode", "added"),
             "has_api_key": bool(s.get("api_key")),
             "has_password": bool(s.get("password")),

@@ -79,6 +79,11 @@ async def test_search_http_error(monkeypatch):
         await searxng_client.search("test", "http://searxng.test")
 
 
+async def test_search_invalid_url_scheme():
+    with pytest.raises(searxng_client.SearXNGError, match="Invalid SearXNG URL scheme"):
+        await searxng_client.search("test", "searxng.test:8080")
+
+
 async def test_fetch_page_invalid_url():
     res = await searxng_client.fetch_page("ftp://invalid.com")
     assert "error" in res

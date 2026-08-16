@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from fastapi.testclient import TestClient
 
 from app import config, main
 from app.plugins.base import registry
@@ -64,3 +65,37 @@ def test_load_plugins_layers_db_persisted_settings_over_yaml(dashboard_yaml, tmp
     weather = registry.get("weather")
     assert weather.config["settings"]["latitude"] == 99
     assert weather.config["settings"]["longitude"] == 2
+
+
+def test_cors_middleware_allows_lan_origin():
+    client = TestClient(main.app)
+    response = client.get("/api/health", headers={"Origin": "http://192.168.1.123:5173"})
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "http://192.168.1.123:5173"
+    assert response.headers.get("access-control-allow-credentials") == "true"
+
+
+def test_request_logging_levels(caplog):
+    import logging
+
+    client = TestClient(main.app)
+
+    # Routine GET request should log at DEBUG level
+    with caplog.at_level(logging.DEBUG, logger="app.main"):
+        caplog.clear()
+        res = client.get("/api/health")
+        assert res.status_code == 200
+        get_records = [r for r in caplog.records if r.name == "app.main" and "GET /api/health" in r.message]
+        assert len(get_records) == 1
+        assert get_records[0].levelno == logging.DEBUG
+
+    # 404 error request should log at INFO level
+    with caplog.at_level(logging.INFO, logger="app.main"):
+        caplog.clear()
+        res = client.get("/api/nonexistent-endpoint-test")
+        assert res.status_code == 404
+        error_records = [
+            r for r in caplog.records if r.name == "app.main" and "/api/nonexistent-endpoint-test" in r.message
+        ]
+        assert len(error_records) == 1
+        assert error_records[0].levelno == logging.INFO

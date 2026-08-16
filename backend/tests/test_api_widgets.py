@@ -328,11 +328,11 @@ def test_summary_logs_latency_tagged_with_widget_id(client, dashboard_yaml, tmp_
     plugin = StubPlugin({})
     registry.register(plugin)
 
-    with caplog.at_level(logging.INFO, logger="app.api.widgets"):
+    with caplog.at_level(logging.DEBUG, logger="app.api.widgets"):
         response = client.get("/api/widgets/stub/summary")
 
     assert response.status_code == 200
-    assert any("stub" in r.message and "summary" in r.message for r in caplog.records)
+    assert any("stub" in r.message and "summary" in r.message and r.levelno == logging.DEBUG for r in caplog.records)
 
 
 def test_summary_logs_and_reraises_plugin_errors(client, dashboard_yaml, tmp_db, caplog):

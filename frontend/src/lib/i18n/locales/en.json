@@ -888,15 +888,6 @@
 			"content_played": "Continue watching",
 			"content_both": "Both",
 			"resume_unavailable_hint": "Continue Watching needs username/password auth — switch the auth mode above to enable it.",
-			"playback_heading": "Playback (this device)",
-			"playback_compatible": "Compatible audio",
-			"playback_compatible_video": "Force transcode",
-			"playback_direct": "Direct play",
-			"override_active_hint": "This device has its own playback mode, overriding the household default.",
-			"override_inactive_hint": "This device is using the household default playback mode. Pick a mode above to override it just for this device.",
-			"use_household_default": "Use household default",
-			"save_device_override_error": "Could not save the playback override for this device.",
-			"reset_device_override_error": "Could not reset the playback override for this device.",
 			"save_content_mode_error": "Could not save the tile content setting.",
 			"libraries_root": "Libraries",
 			"load_items_error": "Could not load library items.",
@@ -1021,7 +1012,12 @@
 		"container": "Container",
 		"resolution": "Resolution",
 		"playback_mode": "Playback Mode",
-		"duration": "Duration"
+		"duration": "Duration",
+		"playback_method_direct": "Direct Play",
+		"playback_method_hls": "Transcoding (HLS)",
+		"playback_cache_active": "This device previously failed Direct Play and is using transcoding instead.",
+		"playback_failed": "Playback failed. Try again or pick a different item.",
+		"transcoding": "Transcoding…"
 	},
 	"clock": {
 		"aria_analog": "Analog clock face",
@@ -1051,7 +1047,7 @@
 		"resize_widget": "Resize widget",
 		"add_widget": "+ Add widget",
 		"mic_no_match": "Didn't catch that.",
-		"assistant_error": "Couldn't get an answer."
+		"assistant_error": "Something went wrong. Try again, or ask your admin to check the logs if this keeps happening."
 	},
 	"widget_detail": {
 		"unknown_widget": "Unknown widget",

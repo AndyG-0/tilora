@@ -194,6 +194,42 @@ describe('settings +page.svelte — voice sections', () => {
 		});
 	});
 
+	it('shows validation error if SearXNG URL is missing http or https protocol and does not save', async () => {
+		user.set({ id: 'admin1', name: 'Admin', avatar: null, role: 'admin' });
+		render(Page);
+
+		await screen.findByText('AI provider');
+
+		await fireEvent.input(screen.getByPlaceholderText('http://searxng:8080'), {
+			target: { value: 'searxng.internal:8080' },
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Save AI provider' }));
+
+		expect(await screen.findByText('SearXNG URL must start with http:// or https://')).toBeInTheDocument();
+		expect(updateSettings).not.toHaveBeenCalled();
+	});
+
+	it('lets an admin clear SearXNG URL', async () => {
+		user.set({ id: 'admin1', name: 'Admin', avatar: null, role: 'admin' });
+		render(Page);
+
+		await screen.findByText('AI provider');
+
+		await fireEvent.input(screen.getByPlaceholderText('http://searxng:8080'), {
+			target: { value: '' },
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Save AI provider' }));
+
+		await waitFor(() => expect(updateSettings).toHaveBeenCalled());
+		expect(updateSettings).toHaveBeenCalledWith(
+			expect.objectContaining({
+				searxng_url: '',
+			}),
+		);
+	});
+
 	it('does not show the Voice output section to a non-admin member', async () => {
 		user.set({ id: 'u1', name: 'Member', avatar: null, role: 'member' });
 		render(Page);

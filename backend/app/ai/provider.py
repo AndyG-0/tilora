@@ -20,6 +20,16 @@ from app.config import effective_settings
 _REQUEST_TIMEOUT_SECONDS = 60
 _NUM_RETRIES = 2
 
+# litellm defaults `max_tokens`/`max_completion_tokens` to unbounded ("infinity"
+# per its own docstring) when omitted. For OpenAI-family models this lets the
+# provider reserve the model's entire remaining context window as output
+# headroom when checking a request against a TPM rate limit — a large-context
+# reasoning model can reserve hundreds of thousands of tokens for a one-line
+# question, tripping even a generous rate limit. Anthropic doesn't show this
+# (it requires a bounded max_tokens on every request), but capping here keeps
+# behavior consistent and answers concise across providers regardless.
+_MAX_COMPLETION_TOKENS = 4096
+
 # Maps a model string's "<provider>/..." prefix (litellm's convention) to
 # the effective_settings() key holding its API key.
 _KEY_BY_MODEL_PREFIX = {
@@ -86,6 +96,7 @@ class AIProvider:
                 api_key=api_key,
                 timeout=_REQUEST_TIMEOUT_SECONDS,
                 num_retries=_NUM_RETRIES,
+                max_completion_tokens=_MAX_COMPLETION_TOKENS,
                 **extra_kwargs,
             )
             message = response.choices[0].message
@@ -114,6 +125,7 @@ class AIProvider:
             api_key=api_key,
             timeout=_REQUEST_TIMEOUT_SECONDS,
             num_retries=_NUM_RETRIES,
+            max_completion_tokens=_MAX_COMPLETION_TOKENS,
             **extra_kwargs,
         )
         return response.choices[0].message.content or ""

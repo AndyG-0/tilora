@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('$env/dynamic/public', () => ({ env: { PUBLIC_API_BASE_URL: 'http://api.test' } }));
 
-const { api } = await import('./api');
+const { api, apiUrl } = await import('./api');
 
 describe('api', () => {
 	beforeEach(() => {
@@ -401,5 +401,24 @@ describe('api', () => {
 		await expect(api.synthesizeSpeech('piper', 'en_US-amy-medium', 'hi')).rejects.toThrow(
 			'Request to /api/tts/synthesize failed: 400',
 		);
+	});
+
+	it('updateSettings surfaces detail message on patch error', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue({
+				ok: false,
+				status: 422,
+				json: async () => ({ detail: [{ msg: 'Value error, SearXNG URL must start with http:// or https://' }] }),
+			}),
+		);
+
+		await expect(api.updateSettings({ searxng_url: 'searxng.local:8080' })).rejects.toThrow(
+			'SearXNG URL must start with http:// or https://',
+		);
+	});
+
+	it('apiUrl prepends configured base URL or falls back to relative path', () => {
+		expect(apiUrl('/api/widgets')).toBe('http://api.test/api/widgets');
 	});
 });

@@ -85,6 +85,8 @@ async def test_request_sends_sid_and_csrf():
 
     request = route.calls.last.request
     assert dict(httpx.QueryParams(request.url.query))["sid"] == "sid1"
+    assert request.headers["X-FTL-SID"] == "sid1"
+    assert request.headers["sid"] == "sid1"
     assert request.headers["X-FTL-CSRF"] == "csrf1"
 
 
@@ -113,7 +115,7 @@ async def test_request_retries_once_on_401():
 @respx.mock
 async def test_get_summary_stats_returns_raw_payload():
     respx.post("http://pi.local:80/api/auth").mock(return_value=httpx.Response(200, json=AUTH_OK))
-    respx.get("http://pi.local:80/api/stats/summary").mock(
+    get_route = respx.get("http://pi.local:80/api/stats/summary").mock(
         return_value=httpx.Response(
             200,
             json={
@@ -129,6 +131,10 @@ async def test_get_summary_stats_returns_raw_payload():
     assert stats["queries"]["total"] == 100
     assert stats["clients"]["active"] == 3
     assert stats["gravity"]["domains_being_blocked"] == 1000000
+    req = get_route.calls.last.request
+    assert req.headers["X-FTL-SID"] == "sid1"
+    assert req.headers["sid"] == "sid1"
+    assert req.headers["X-FTL-CSRF"] == "csrf1"
 
 
 @respx.mock

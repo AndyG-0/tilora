@@ -85,9 +85,18 @@
 	<JellyfinPlayer
 		{widgetId}
 		itemId={playingItem.id}
-		src={api.jellyfinStreamUrl(widgetId, playingItem.id)}
 		title={playingItem.name}
-		onClose={() => (playingItem = null)}
+		onClose={() => {
+			playingItem = null;
+			// Jellyfin's resume state updates as soon as the stop/progress
+			// reports land server-side (see JellyfinPlayer), but the tile
+			// itself only refetches on the poll interval — refresh now so
+			// "Continue Watching" reflects this session immediately. A short
+			// delay gives the (fire-and-forget) stop-playback report time to
+			// reach Jellyfin first, so this refresh doesn't win the race and
+			// fetch stale resume state.
+			setTimeout(refresh, 500);
+		}}
 	/>
 {/if}
 

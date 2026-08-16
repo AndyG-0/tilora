@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 import respx
@@ -238,7 +240,7 @@ async def test_fetch_image_bytes_requests_a_capped_thumbnail_size():
 
 
 @respx.mock
-async def test_open_video_stream_compatible_mode_transcodes_audio_only():
+async def test_open_video_stream_requests_static_passthrough():
     route = respx.get("http://jf.local:8096/Videos/vid1/stream").mock(return_value=httpx.Response(200, content=b"data"))
 
     client, response = await jellyfin_client.open_video_stream(API_KEY_SETTINGS, "w13", "vid1", None)
@@ -248,41 +250,179 @@ async def test_open_video_stream_compatible_mode_transcodes_audio_only():
     assert route.called
     request = route.calls.last.request
     params = dict(httpx.QueryParams(request.url.query))
-    assert params["static"] == "false"
-    assert params["VideoCodec"] == "copy"
-    assert params["AudioCodec"] == "aac"
-
-
-@respx.mock
-async def test_open_video_stream_compatible_video_mode_transcodes_video_too():
-    settings = {**API_KEY_SETTINGS, "playback_mode": "compatible_video"}
-    route = respx.get("http://jf.local:8096/Videos/vid1/stream").mock(return_value=httpx.Response(200, content=b"data"))
-
-    client, response = await jellyfin_client.open_video_stream(settings, "w15", "vid1", None)
-    await response.aclose()
-    await client.aclose()
-
-    assert route.called
-    request = route.calls.last.request
-    params = dict(httpx.QueryParams(request.url.query))
-    assert params["static"] == "false"
-    assert params["VideoCodec"] == "h264"
-    assert params["AudioCodec"] == "aac"
-
-
-@respx.mock
-async def test_open_video_stream_direct_mode_requests_static_passthrough():
-    settings = {**API_KEY_SETTINGS, "playback_mode": "direct"}
-    route = respx.get("http://jf.local:8096/Videos/vid1/stream").mock(return_value=httpx.Response(200, content=b"data"))
-
-    client, response = await jellyfin_client.open_video_stream(settings, "w14", "vid1", None)
-    await response.aclose()
-    await client.aclose()
-
-    assert route.called
-    request = route.calls.last.request
-    params = dict(httpx.QueryParams(request.url.query))
     assert params == {"static": "true"}
+
+
+@respx.mock
+async def test_open_video_stream_forwards_range_header():
+    route = respx.get("http://jf.local:8096/Videos/vid1/stream").mock(return_value=httpx.Response(206, content=b"data"))
+
+    client, response = await jellyfin_client.open_video_stream(API_KEY_SETTINGS, "w14", "vid1", "bytes=100-")
+    await response.aclose()
+    await client.aclose()
+
+    assert route.called
+    assert route.calls.last.request.headers.get("range") == "bytes=100-"
+
+
+@respx.mock
+async def test_open_hls_playlist_requests_master_with_expected_params():
+    route = respx.get("http://jf.local:8096/Videos/vid1/master.m3u8").mock(
+        return_value=httpx.Response(200, text="#EXTM3U\n")
+    )
+
+    text = await jellyfin_client.open_hls_playlist(API_KEY_SETTINGS, "w15", "vid1", play_session_id="sess1")
+
+    assert route.called
+    request = route.calls.last.request
+    params = dict(httpx.QueryParams(request.url.query))
+    assert params["VideoCodec"] == "h264,hevc"
+    assert params["AudioCodec"] == "aac"
+    assert params["DeviceId"] == "dashboard-w15"
+    assert params["PlaySessionId"] == "sess1"
+    # Jellyfin 400s ("The mediaSourceId field is required") without this.
+    assert params["MediaSourceId"] == "vid1"
+    assert text == "#EXTM3U\n"
+
+
+@respx.mock
+async def test_open_hls_playlist_forwards_audio_stream_index():
+    route = respx.get("http://jf.local:8096/Videos/vid1/master.m3u8").mock(
+        return_value=httpx.Response(200, text="#EXTM3U\n")
+    )
+
+    await jellyfin_client.open_hls_playlist(
+        API_KEY_SETTINGS, "w16", "vid1", audio_stream_index=3, play_session_id="sess1"
+    )
+
+    request = route.calls.last.request
+    params = dict(httpx.QueryParams(request.url.query))
+    assert params["AudioStreamIndex"] == "3"
+
+
+@respx.mock
+async def test_open_hls_playlist_raises_on_error_status():
+    respx.get("http://jf.local:8096/Videos/vid1/master.m3u8").mock(return_value=httpx.Response(500))
+
+    with pytest.raises(jellyfin_client.JellyfinError):
+        await jellyfin_client.open_hls_playlist(API_KEY_SETTINGS, "w17", "vid1", play_session_id="sess1")
+
+
+def test_rewrite_hls_playlist_rewrites_media_playlist_segment_uris():
+    text = "#EXTM3U\n#EXTINF:6.0,\n0.ts?a=1\n#EXTINF:6.0,\nsegs/1.ts\n#EXT-X-ENDLIST\n"
+
+    rewritten = jellyfin_client.rewrite_hls_playlist(text, "w1", "vid1", "/Videos/vid1/main.m3u8")
+
+    lines = rewritten.splitlines()
+    assert lines[0] == "#EXTM3U"
+    assert lines[2] == "/api/jellyfin/w1/hls-resource/vid1?path=%2FVideos%2Fvid1%2F0.ts%3Fa%3D1"
+    assert lines[4] == "/api/jellyfin/w1/hls-resource/vid1?path=%2FVideos%2Fvid1%2Fsegs%2F1.ts"
+    assert lines[5] == "#EXT-X-ENDLIST"
+
+
+def test_rewrite_hls_playlist_rewrites_nested_variant_playlist_uri():
+    text = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\nmain/master.m3u8\n"
+
+    rewritten = jellyfin_client.rewrite_hls_playlist(text, "w1", "vid1", "/Videos/vid1/master.m3u8")
+
+    assert "hls-resource/vid1?path=%2FVideos%2Fvid1%2Fmain%2Fmaster.m3u8" in rewritten.splitlines()[2]
+
+
+def test_rewrite_hls_playlist_resolves_relative_uris_against_the_nested_playlists_own_path():
+    text = "#EXTM3U\n0.ts\n"
+
+    rewritten = jellyfin_client.rewrite_hls_playlist(text, "w1", "vid1", "/Videos/vid1/main/master.m3u8")
+
+    assert "path=%2FVideos%2Fvid1%2Fmain%2F0.ts" in rewritten.splitlines()[1]
+
+
+@respx.mock
+async def test_open_hls_resource_streams_bytes_with_auth_header():
+    route = respx.get("http://jf.local:8096/Videos/vid1/0.ts", params={"a": "1"}).mock(
+        return_value=httpx.Response(200, content=b"segment-bytes")
+    )
+
+    client, response = await jellyfin_client.open_hls_resource(API_KEY_SETTINGS, "w18", "/Videos/vid1/0.ts", "a=1")
+    content = await response.aread()
+    await response.aclose()
+    await client.aclose()
+
+    assert route.called
+    assert route.calls.last.request.headers.get("x-emby-token") == "k1"
+    assert content == b"segment-bytes"
+
+
+@respx.mock
+async def test_stop_playback_session_posts_session_id_and_position():
+    route = respx.post("http://jf.local:8096/Sessions/Playing/Stopped").mock(return_value=httpx.Response(204))
+
+    await jellyfin_client.stop_playback_session(API_KEY_SETTINGS, "w19", "vid1", "sess1", 12.5)
+
+    assert route.called
+    body = json.loads(route.calls.last.request.content)
+    assert body == {
+        "ItemId": "vid1",
+        "MediaSourceId": "vid1",
+        "PlaySessionId": "sess1",
+        "PositionTicks": 125_000_000,
+    }
+
+
+@respx.mock
+async def test_stop_playback_session_swallows_errors():
+    respx.post("http://jf.local:8096/Sessions/Playing/Stopped").mock(return_value=httpx.Response(500))
+
+    # Best-effort cleanup — a failure here must never raise into the caller.
+    await jellyfin_client.stop_playback_session(API_KEY_SETTINGS, "w20", "vid1", "sess1", 0)
+
+
+@respx.mock
+async def test_report_playback_start_posts_session_info():
+    route = respx.post("http://jf.local:8096/Sessions/Playing").mock(return_value=httpx.Response(204))
+
+    await jellyfin_client.report_playback_start(API_KEY_SETTINGS, "w21", "vid1", "sess1")
+
+    assert route.called
+    body = json.loads(route.calls.last.request.content)
+    assert body == {
+        "ItemId": "vid1",
+        "MediaSourceId": "vid1",
+        "PlaySessionId": "sess1",
+        "PlayMethod": "Transcode",
+        "CanSeek": True,
+    }
+
+
+@respx.mock
+async def test_report_playback_start_swallows_errors():
+    respx.post("http://jf.local:8096/Sessions/Playing").mock(return_value=httpx.Response(500))
+
+    await jellyfin_client.report_playback_start(API_KEY_SETTINGS, "w22", "vid1", "sess1")
+
+
+@respx.mock
+async def test_report_playback_progress_posts_position_ticks():
+    route = respx.post("http://jf.local:8096/Sessions/Playing/Progress").mock(return_value=httpx.Response(204))
+
+    await jellyfin_client.report_playback_progress(API_KEY_SETTINGS, "w23", "vid1", "sess1", 90.25, is_paused=True)
+
+    assert route.called
+    body = json.loads(route.calls.last.request.content)
+    assert body == {
+        "ItemId": "vid1",
+        "MediaSourceId": "vid1",
+        "PlaySessionId": "sess1",
+        "PlayMethod": "Transcode",
+        "PositionTicks": 902_500_000,
+        "IsPaused": True,
+    }
+
+
+@respx.mock
+async def test_report_playback_progress_swallows_errors():
+    respx.post("http://jf.local:8096/Sessions/Playing/Progress").mock(return_value=httpx.Response(500))
+
+    await jellyfin_client.report_playback_progress(API_KEY_SETTINGS, "w24", "vid1", "sess1", 10)
 
 
 @respx.mock
@@ -357,19 +497,3 @@ async def test_fetch_subtitle_vtt_returns_content():
 
     assert route.called
     assert content.startswith(b"WEBVTT")
-
-
-@respx.mock
-async def test_open_video_stream_with_audio_stream_index():
-    route = respx.get("http://jf.local:8096/Videos/vid1/stream").mock(return_value=httpx.Response(200, content=b"data"))
-
-    client, response = await jellyfin_client.open_video_stream(
-        API_KEY_SETTINGS, "w20", "vid1", None, audio_stream_index=2
-    )
-    await response.aclose()
-    await client.aclose()
-
-    assert route.called
-    request = route.calls.last.request
-    params = dict(httpx.QueryParams(request.url.query))
-    assert params["AudioStreamIndex"] == "2"

@@ -969,12 +969,20 @@
 		aiProviderSaving = true;
 		aiProviderSaved = false;
 		aiProviderError = null;
+
+		const trimmedSearxngUrl = searxngUrlInput.trim();
+		if (trimmedSearxngUrl && !/^https?:\/\//i.test(trimmedSearxngUrl)) {
+			aiProviderError = 'SearXNG URL must start with http:// or https://';
+			aiProviderSaving = false;
+			return;
+		}
+
 		try {
 			const partial: Record<string, string> = {
 				ai_model: aiModelInput,
 				ai_reasoning_effort: aiReasoningEffortInput,
 				ai_agent_name: aiAgentNameInput,
-				searxng_url: searxngUrlInput,
+				searxng_url: trimmedSearxngUrl,
 			};
 			if (anthropicKeyInput) partial.anthropic_api_key = anthropicKeyInput;
 			if (openaiKeyInput) partial.openai_api_key = openaiKeyInput;
@@ -985,8 +993,8 @@
 			openaiKeyInput = '';
 			geminiKeyInput = '';
 			aiProviderSaved = true;
-		} catch {
-			aiProviderError = 'Could not save AI provider settings.';
+		} catch (err: unknown) {
+			aiProviderError = err instanceof Error ? err.message : 'Could not save AI provider settings.';
 		} finally {
 			aiProviderSaving = false;
 		}
@@ -1380,7 +1388,8 @@
 					<p class="hint">
 						Only affects models that support tunable reasoning (OpenAI o-series/gpt-5.x, Anthropic extended thinking,
 						Gemini thinking) — ignored otherwise. Some OpenAI gpt-5.x models reject tool calls unless this is set to at
-						least "None".
+						least "None". Tilora caps assistant replies at a fixed token budget so requests stay well within typical
+						provider rate limits, regardless of this setting.
 					</p>
 
 					<label>
