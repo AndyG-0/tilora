@@ -1332,7 +1332,7 @@ widgets:
     assert names == {"docker": "Container (Docker Host)", "podman": "Container (Podman Host)"}
 
 
-def test_list_widgets_includes_name_for_custom_widget(client, tmp_db):
+def test_list_widgets_includes_name_for_custom_widget(client, dashboard_yaml, tmp_db):
     add_response = client.post(
         "/api/widgets",
         json={"type": "clock", "layout": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1}},
