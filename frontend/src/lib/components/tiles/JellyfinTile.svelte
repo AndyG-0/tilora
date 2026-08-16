@@ -12,7 +12,7 @@
 		sections: JellyfinSection[];
 	}
 
-	let { widgetId }: { widgetId: string } = $props();
+	let { widgetId, refreshIntervalSeconds }: { widgetId: string; refreshIntervalSeconds: number } = $props();
 
 	let summary = $state<JellyfinSummary | null>(null);
 	let playingItem = $state<JellyfinItem | null>(null);
@@ -25,7 +25,7 @@
 		}
 	}
 
-	pollWidget(refresh, 60_000);
+	pollWidget(refresh, refreshIntervalSeconds * 1000);
 
 	// A poster tap should play that item, not fall through to TileCard's
 	// button and maximize the whole widget — stop the click here so it never

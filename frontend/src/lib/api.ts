@@ -22,6 +22,7 @@ export interface WidgetSummaryMeta {
 	name: string;
 	layout: WidgetLayout;
 	tab: string;
+	refresh_interval_seconds: number;
 }
 
 export interface TileReportStats {

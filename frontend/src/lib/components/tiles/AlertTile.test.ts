@@ -31,7 +31,7 @@ describe('AlertTile', () => {
 	it('shows a no-alerts message when there are none', async () => {
 		widgetSummary.mockResolvedValue({ count: 0, most_urgent: null });
 
-		render(AlertTile, { props: { widgetId: 'alert' } });
+		render(AlertTile, { props: { widgetId: 'alert', refreshIntervalSeconds: 30 } });
 
 		expect(await screen.findByText('No active alerts')).toBeInTheDocument();
 	});
@@ -39,7 +39,7 @@ describe('AlertTile', () => {
 	it('renders the most urgent alert and a count badge', async () => {
 		widgetSummary.mockResolvedValue({ count: 2, most_urgent: CRITICAL_ALERT });
 
-		render(AlertTile, { props: { widgetId: 'alert' } });
+		render(AlertTile, { props: { widgetId: 'alert', refreshIntervalSeconds: 30 } });
 
 		expect(await screen.findByText('Freeze warning')).toBeInTheDocument();
 		expect(screen.getByText('2')).toBeInTheDocument();
@@ -48,7 +48,7 @@ describe('AlertTile', () => {
 	it('does not chime on the initial load, even if an alert is already active', async () => {
 		widgetSummary.mockResolvedValue({ count: 1, most_urgent: CRITICAL_ALERT });
 
-		render(AlertTile, { props: { widgetId: 'alert' } });
+		render(AlertTile, { props: { widgetId: 'alert', refreshIntervalSeconds: 30 } });
 
 		await screen.findByText('Freeze warning');
 		expect(playChime).not.toHaveBeenCalled();
@@ -58,7 +58,7 @@ describe('AlertTile', () => {
 		vi.useFakeTimers();
 		try {
 			widgetSummary.mockResolvedValueOnce({ count: 1, most_urgent: CRITICAL_ALERT });
-			render(AlertTile, { props: { widgetId: 'alert' } });
+			render(AlertTile, { props: { widgetId: 'alert', refreshIntervalSeconds: 30 } });
 			await vi.advanceTimersByTimeAsync(0);
 			expect(widgetSummary).toHaveBeenCalledTimes(1);
 			expect(playChime).not.toHaveBeenCalled();
@@ -79,7 +79,7 @@ describe('AlertTile', () => {
 		vi.useFakeTimers();
 		try {
 			widgetSummary.mockResolvedValue({ count: 1, most_urgent: CRITICAL_ALERT });
-			render(AlertTile, { props: { widgetId: 'alert' } });
+			render(AlertTile, { props: { widgetId: 'alert', refreshIntervalSeconds: 30 } });
 			await vi.advanceTimersByTimeAsync(0);
 			expect(widgetSummary).toHaveBeenCalledTimes(1);
 

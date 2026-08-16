@@ -15,7 +15,7 @@ describe('PhotoTile', () => {
 			current: { filename: 'a.jpg', url: '/api/photos/photos/a.jpg' },
 		});
 
-		render(PhotoTile, { props: { widgetId: 'photos' } });
+		render(PhotoTile, { props: { widgetId: 'photos', refreshIntervalSeconds: 60 } });
 
 		const img = await screen.findByAltText('');
 		expect(img).toHaveAttribute('src', 'http://api.test/api/photos/photos/a.jpg');
@@ -25,7 +25,7 @@ describe('PhotoTile', () => {
 	it('shows a no-photos-found hint when there is no current photo', async () => {
 		widgetSummary.mockResolvedValue({ count: 0, current: null });
 
-		render(PhotoTile, { props: { widgetId: 'photos' } });
+		render(PhotoTile, { props: { widgetId: 'photos', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('No photos found')).toBeInTheDocument();
 	});
@@ -33,7 +33,7 @@ describe('PhotoTile', () => {
 	it('shows a not-configured hint when the widget is not configured', async () => {
 		widgetSummary.mockResolvedValue({ count: 0, current: null, configured: false });
 
-		render(PhotoTile, { props: { widgetId: 'photos' } });
+		render(PhotoTile, { props: { widgetId: 'photos', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Not configured')).toBeInTheDocument();
 	});
@@ -47,7 +47,7 @@ describe('PhotoTile', () => {
 			connected: false,
 		});
 
-		render(PhotoTile, { props: { widgetId: 'photos' } });
+		render(PhotoTile, { props: { widgetId: 'photos', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Not connected')).toBeInTheDocument();
 	});
@@ -55,7 +55,7 @@ describe('PhotoTile', () => {
 	it('shows an indexing hint while the first scan is still running', async () => {
 		widgetSummary.mockResolvedValue({ count: 0, current: null, configured: true, indexing: true });
 
-		render(PhotoTile, { props: { widgetId: 'photos' } });
+		render(PhotoTile, { props: { widgetId: 'photos', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Indexing…')).toBeInTheDocument();
 	});
@@ -68,7 +68,7 @@ describe('PhotoTile', () => {
 			index_error: 'could not reach the source',
 		});
 
-		render(PhotoTile, { props: { widgetId: 'photos' } });
+		render(PhotoTile, { props: { widgetId: 'photos', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('could not reach the source')).toBeInTheDocument();
 	});

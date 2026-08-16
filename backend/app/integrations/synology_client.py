@@ -29,6 +29,13 @@ logger = logging.getLogger(__name__)
 _SESSION_TTL_SECONDS = 1800
 _SESSION_APP = "Tilora"
 
+# Shared across every call/widget instance rather than one httpx.AsyncClient
+# per request — every call here already carries its own full URL and
+# stateless auth (sid query param), so one pooled client avoids paying a
+# fresh TCP/TLS handshake on every poll (this plugin's default
+# refresh_interval_seconds is 60s).
+_client = httpx.AsyncClient(timeout=10)
+
 # DSM error codes common to every Web API endpoint (from the "Common Error
 # Codes" table in Synology's Web API guide).
 _COMMON_ERRORS = {
@@ -89,22 +96,21 @@ def _base_url(settings: dict[str, Any]) -> str:
 
 
 async def _authenticate(base_url: str, widget_id: str, username: str, password: str) -> SynologySession:
-    async with httpx.AsyncClient(timeout=10) as client:
-        try:
-            response = await client.get(
-                f"{base_url}/webapi/auth.cgi",
-                params={
-                    "api": "SYNO.API.Auth",
-                    "version": 6,
-                    "method": "login",
-                    "account": username,
-                    "passwd": password,
-                    "session": _SESSION_APP,
-                    "format": "sid",
-                },
-            )
-        except httpx.HTTPError as exc:
-            raise SynologyError(f"Could not reach the Synology NAS: {exc}") from exc
+    try:
+        response = await _client.get(
+            f"{base_url}/webapi/auth.cgi",
+            params={
+                "api": "SYNO.API.Auth",
+                "version": 6,
+                "method": "login",
+                "account": username,
+                "passwd": password,
+                "session": _SESSION_APP,
+                "format": "sid",
+            },
+        )
+    except httpx.HTTPError as exc:
+        raise SynologyError(f"Could not reach the Synology NAS: {exc}") from exc
 
     if response.status_code >= 400:
         raise SynologyError(f"Synology login failed (HTTP {response.status_code}).")
@@ -148,11 +154,10 @@ async def _discover_version(base_url: str, api: str, fallback: int, widget_id: s
     if cached is not None:
         return cached
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.get(
-                f"{base_url}/webapi/query.cgi",
-                params={"api": "SYNO.API.Info", "version": 1, "method": "query", "query": api},
-            )
+        response = await _client.get(
+            f"{base_url}/webapi/query.cgi",
+            params={"api": "SYNO.API.Info", "version": 1, "method": "query", "query": api},
+        )
         body = response.json()
         max_version = body["data"][api]["maxVersion"]
         if not isinstance(max_version, int):
@@ -184,8 +189,7 @@ async def _request(
 
     async def send(session: SynologySession) -> httpx.Response:
         query = {"api": api, "version": version, "method": method, "_sid": session.sid, **(params or {})}
-        async with httpx.AsyncClient(timeout=10) as client:
-            return await client.get(f"{base_url}/webapi/entry.cgi", params=query)
+        return await _client.get(f"{base_url}/webapi/entry.cgi", params=query)
 
     try:
         response = await send(session)

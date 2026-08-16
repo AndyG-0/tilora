@@ -11,7 +11,7 @@ describe('CalendarTile', () => {
 	it('shows a not-connected state', async () => {
 		widgetSummary.mockResolvedValue({ connected: false, events: [] });
 
-		render(CalendarTile, { props: { widgetId: 'calendar' } });
+		render(CalendarTile, { props: { widgetId: 'calendar', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Not connected')).toBeInTheDocument();
 	});
@@ -19,7 +19,7 @@ describe('CalendarTile', () => {
 	it('shows a no-events state when connected', async () => {
 		widgetSummary.mockResolvedValue({ connected: true, events: [] });
 
-		render(CalendarTile, { props: { widgetId: 'calendar' } });
+		render(CalendarTile, { props: { widgetId: 'calendar', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('No upcoming events')).toBeInTheDocument();
 	});
@@ -30,7 +30,7 @@ describe('CalendarTile', () => {
 			events: [{ id: 'e1', title: 'Team sync', start: '2026-01-01T10:00:00Z', all_day: false, location: null }],
 		});
 
-		render(CalendarTile, { props: { widgetId: 'calendar' } });
+		render(CalendarTile, { props: { widgetId: 'calendar', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Team sync')).toBeInTheDocument();
 	});
@@ -58,7 +58,7 @@ describe('CalendarTile', () => {
 			],
 		});
 
-		render(CalendarTile, { props: { widgetId: 'calendar' } });
+		render(CalendarTile, { props: { widgetId: 'calendar', refreshIntervalSeconds: 60 } });
 
 		await screen.findByText('Team sync');
 

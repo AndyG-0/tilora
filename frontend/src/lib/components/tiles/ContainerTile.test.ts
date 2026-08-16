@@ -11,7 +11,7 @@ describe('ContainerTile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(ContainerTile, { props: { widgetId: 'container' } });
+		render(ContainerTile, { props: { widgetId: 'container', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Loading…')).toBeInTheDocument();
 		expect(screen.getByText('Container')).toBeInTheDocument();
@@ -31,7 +31,7 @@ describe('ContainerTile', () => {
 			total_count: 0,
 		});
 
-		render(ContainerTile, { props: { widgetId: 'container' } });
+		render(ContainerTile, { props: { widgetId: 'container', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Not connected')).toBeInTheDocument();
 	});
@@ -53,7 +53,7 @@ describe('ContainerTile', () => {
 			total_count: 2,
 		});
 
-		render(ContainerTile, { props: { widgetId: 'container' } });
+		render(ContainerTile, { props: { widgetId: 'container', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Docker')).toBeInTheDocument();
 		expect(screen.getByText('1 running')).toBeInTheDocument();
@@ -76,7 +76,7 @@ describe('ContainerTile', () => {
 			total_count: 0,
 		});
 
-		render(ContainerTile, { props: { widgetId: 'container' } });
+		render(ContainerTile, { props: { widgetId: 'container', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Podman')).toBeInTheDocument();
 	});
@@ -96,7 +96,7 @@ describe('ContainerTile', () => {
 			error: 'Could not reach the container API: connection refused',
 		});
 
-		render(ContainerTile, { props: { widgetId: 'container' } });
+		render(ContainerTile, { props: { widgetId: 'container', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Could not reach the container API: connection refused')).toBeInTheDocument();
 	});

@@ -49,6 +49,7 @@ const dateWidget = (id: string) => ({
 	name: 'Date',
 	layout: { col: 0, row: 0, colSpan: 1, rowSpan: 1 },
 	tab: 'main',
+	refresh_interval_seconds: 60,
 });
 
 const jellyfinWidget = (id: string) => ({
@@ -57,6 +58,7 @@ const jellyfinWidget = (id: string) => ({
 	name: 'Jellyfin',
 	layout: { col: 0, row: 0, colSpan: 1, rowSpan: 1 },
 	tab: 'main',
+	refresh_interval_seconds: 60,
 });
 
 describe('Screensaver', () => {

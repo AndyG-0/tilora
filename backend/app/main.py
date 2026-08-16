@@ -96,7 +96,7 @@ from app.scheduler import (
     schedule_speedtest_widgets,
     scheduler,
 )
-from app.storage.db import get_widget_settings, init_db
+from app.storage.db import init_db, list_widget_settings
 from app.update_check import check_for_update, schedule_update_check
 
 configure_logging()
@@ -106,6 +106,7 @@ logger = logging.getLogger(__name__)
 
 def load_plugins() -> None:
     config = load_dashboard_config()
+    all_overrides = list_widget_settings()
     for widget in list_widget_configs(config):
         if not widget.get("enabled", True):
             continue
@@ -118,7 +119,7 @@ def load_plugins() -> None:
         # that predates a plugin adding `default_settings` (or a UI-added
         # widget whose empty starter settings were never persisted) still
         # loads with usable settings instead of missing required keys.
-        overrides = get_widget_settings(widget["id"]) or {}
+        overrides = all_overrides.get(widget["id"], {})
         settings = {**plugin_cls.default_settings, **widget.get("settings", {}), **overrides}
         if plugin_cls.network_integration_type:
             settings = {**settings, **resolve_network_settings(plugin_cls, settings)}

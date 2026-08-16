@@ -29,7 +29,7 @@ def test_run_speedtest_returns_mbps_and_server_name(monkeypatch):
         "ping": 12.5,
         "server": {"sponsor": "Acme ISP", "name": "Springfield"},
     }
-    monkeypatch.setattr(speedtest_runner.speedtest, "Speedtest", lambda: _FakeSpeedtest(results))
+    monkeypatch.setattr(speedtest_runner.speedtest, "Speedtest", lambda timeout=None: _FakeSpeedtest(results))
 
     result = speedtest_runner.run_speedtest()
 
@@ -48,7 +48,7 @@ def test_run_speedtest_falls_back_to_server_name_when_no_sponsor(monkeypatch):
         "ping": 20.0,
         "server": {"name": "Springfield"},
     }
-    monkeypatch.setattr(speedtest_runner.speedtest, "Speedtest", lambda: _FakeSpeedtest(results))
+    monkeypatch.setattr(speedtest_runner.speedtest, "Speedtest", lambda timeout=None: _FakeSpeedtest(results))
 
     result = speedtest_runner.run_speedtest()
 
@@ -66,7 +66,7 @@ def test_run_speedtest_raises_speedtest_error_when_client_fails(monkeypatch):
 
 
 def test_run_speedtest_raises_speedtest_error_on_unexpected_result_shape(monkeypatch):
-    monkeypatch.setattr(speedtest_runner.speedtest, "Speedtest", lambda: _FakeSpeedtest({"server": {}}))
+    monkeypatch.setattr(speedtest_runner.speedtest, "Speedtest", lambda timeout=None: _FakeSpeedtest({"server": {}}))
 
     with pytest.raises(speedtest_runner.SpeedtestError):
         speedtest_runner.run_speedtest()

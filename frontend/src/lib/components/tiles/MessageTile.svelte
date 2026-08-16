@@ -10,7 +10,7 @@
 		text: string;
 	}
 
-	let { widgetId }: { widgetId: string } = $props();
+	let { widgetId, refreshIntervalSeconds }: { widgetId: string; refreshIntervalSeconds: number } = $props();
 
 	let summary = $state<MessageSummary | null>(null);
 
@@ -22,7 +22,7 @@
 		}
 	}
 
-	pollWidget(refresh, 60_000);
+	pollWidget(refresh, refreshIntervalSeconds * 1000);
 </script>
 
 <TileCard {widgetId}>

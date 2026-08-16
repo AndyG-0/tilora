@@ -1158,6 +1158,15 @@ def get_widget_settings(widget_id: str) -> dict[str, Any] | None:
     return None if row is None else json.loads(row["settings"])
 
 
+def list_widget_settings() -> dict[str, dict[str, Any]]:
+    """All widget_settings rows in one query, keyed by widget_id — for
+    startup plugin loading, which otherwise calls `get_widget_settings` once
+    per configured widget (one connection/query per widget)."""
+    with _connect() as conn:
+        rows = conn.execute("SELECT widget_id, settings FROM widget_settings").fetchall()
+    return {row["widget_id"]: json.loads(row["settings"]) for row in rows}
+
+
 # Settings keys within a network_integrations row's `settings` blob that get
 # Fernet-encrypted per-value before being stored, mirroring
 # SECRET_APP_SETTINGS_KEYS' whole-row encryption for app_settings — see
@@ -1246,6 +1255,26 @@ def save_widget_layout(user_id: str, device_id: str, breakpoint: str, widget_id:
             },
             ("user_id", "device_id", "breakpoint", "widget_id"),
         )
+
+
+def save_widget_layouts(entries: list[tuple[str, str, str, str, dict[str, Any]]]) -> None:
+    """Batched `save_widget_layout` — one connection/transaction for the
+    whole list instead of one per entry, for callers persisting an entire
+    layout (e.g. a drag-to-rearrange save covering every widget on screen)."""
+    with _connect() as conn:
+        for user_id, device_id, breakpoint, widget_id, layout in entries:
+            _upsert(
+                conn,
+                "widget_layout",
+                {
+                    "user_id": user_id,
+                    "device_id": device_id,
+                    "breakpoint": breakpoint,
+                    "widget_id": widget_id,
+                    "layout": json.dumps(layout),
+                },
+                ("user_id", "device_id", "breakpoint", "widget_id"),
+            )
 
 
 def get_widget_layout(user_id: str, device_id: str, breakpoint: str, widget_id: str) -> dict[str, Any] | None:

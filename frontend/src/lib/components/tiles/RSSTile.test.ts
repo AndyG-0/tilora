@@ -11,7 +11,7 @@ describe('RSSTile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(RSSTile, { props: { widgetId: 'rss' } });
+		render(RSSTile, { props: { widgetId: 'rss', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Loading headlines…')).toBeInTheDocument();
 	});
@@ -31,7 +31,7 @@ describe('RSSTile', () => {
 			],
 		});
 
-		render(RSSTile, { props: { widgetId: 'rss' } });
+		render(RSSTile, { props: { widgetId: 'rss', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('First headline')).toBeInTheDocument();
 		expect(screen.getByText('Second headline')).toBeInTheDocument();
@@ -49,7 +49,7 @@ describe('RSSTile', () => {
 			],
 		});
 
-		render(RSSTile, { props: { widgetId: 'rss' } });
+		render(RSSTile, { props: { widgetId: 'rss', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Headlines')).toBeInTheDocument();
 	});
@@ -71,7 +71,7 @@ describe('RSSTile', () => {
 			],
 		});
 
-		render(RSSTile, { props: { widgetId: 'rss' } });
+		render(RSSTile, { props: { widgetId: 'rss', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Feed One')).toBeInTheDocument();
 		expect(screen.getByText('Feed Two')).toBeInTheDocument();
@@ -89,7 +89,7 @@ describe('RSSTile', () => {
 			],
 		});
 
-		render(RSSTile, { props: { widgetId: 'rss' } });
+		render(RSSTile, { props: { widgetId: 'rss', refreshIntervalSeconds: 60 } });
 
 		await screen.findByText('From one');
 		expect(screen.queryByText('Feed One')).not.toBeInTheDocument();

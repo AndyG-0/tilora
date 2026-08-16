@@ -1365,22 +1365,29 @@ async def _probe_tcp_port(ip: str, port: int, timeout: float = 0.6) -> bool:
         return False
 
 
+# Shared across every probe call rather than one httpx.AsyncClient per
+# attempt — `verify=False`/`follow_redirects=True` are fixed for every call,
+# and per-call timeouts are passed via the request's own `timeout=` kwarg,
+# so a single pooled client is safe and avoids a fresh TCP handshake for
+# each of the (scheme x candidate-port) attempts a client-port scan makes.
+_probe_client = httpx.AsyncClient(verify=False, timeout=1.2)
+
+
 async def _probe_web_service(ip: str, port: int, timeout: float = 1.2) -> tuple[str | None, str | None]:
     for scheme in ("http", "https"):
         url = f"{scheme}://{ip}" if port in (80, 443) else f"{scheme}://{ip}:{port}"
         try:
-            async with httpx.AsyncClient(verify=False, timeout=timeout, follow_redirects=True) as client:
-                resp = await client.get(url)
-                if resp.status_code < 500:
-                    html = resp.text[:4096]
-                    title_match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
-                    page_title = None
-                    if title_match:
-                        raw_title = title_match.group(1).strip()
-                        cleaned = re.sub(r"\s+", " ", raw_title)
-                        if cleaned and len(cleaned) < 100:
-                            page_title = cleaned
-                    return url, page_title
+            resp = await _probe_client.get(url, timeout=timeout, follow_redirects=True)
+            if resp.status_code < 500:
+                html = resp.text[:4096]
+                title_match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
+                page_title = None
+                if title_match:
+                    raw_title = title_match.group(1).strip()
+                    cleaned = re.sub(r"\s+", " ", raw_title)
+                    if cleaned and len(cleaned) < 100:
+                        page_title = cleaned
+                return url, page_title
         except Exception:
             continue
     fallback_url = f"http://{ip}" if port == 80 else f"http://{ip}:{port}"
@@ -1448,7 +1455,7 @@ def _send_udp_magic_packet(mac: str) -> None:
 async def send_wake_on_lan(settings: dict[str, Any], mac: str) -> dict[str, Any]:
     norm_mac = _normalize_mac(mac)
     try:
-        _send_udp_magic_packet(norm_mac)
+        await asyncio.to_thread(_send_udp_magic_packet, norm_mac)
     except Exception as exc:
         _LOGGER.warning("Local UDP WOL send failed: %s", exc)
 

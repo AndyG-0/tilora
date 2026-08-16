@@ -436,7 +436,14 @@ describe('settings +page.svelte — screensaver test button', () => {
 
 	it('flips forceScreensaverPreview when clicked with an eligible widget present', async () => {
 		widgets.set([
-			{ id: 'w1', type: 'rss', name: 'RSS', layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 }, tab: 'default' },
+			{
+				id: 'w1',
+				type: 'rss',
+				name: 'RSS',
+				layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 },
+				tab: 'default',
+				refresh_interval_seconds: 60,
+			},
 		]);
 		render(Page);
 
@@ -456,6 +463,7 @@ describe('settings +page.svelte — screensaver test button', () => {
 				name: 'Weather (Chicago, IL) (2)',
 				layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 },
 				tab: 'default',
+				refresh_interval_seconds: 60,
 			},
 		]);
 		render(Page);

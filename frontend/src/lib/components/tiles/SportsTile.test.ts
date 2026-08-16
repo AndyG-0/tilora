@@ -84,7 +84,7 @@ describe('SportsTile', () => {
 			upcoming_games: [],
 		});
 
-		render(SportsTile, { props: { widgetId: 'sports' } });
+		render(SportsTile, { props: { widgetId: 'sports', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('En direct — Q3 4:12')).toBeInTheDocument();
 	});
@@ -92,7 +92,7 @@ describe('SportsTile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(SportsTile, { props: { widgetId: 'sports' } });
+		render(SportsTile, { props: { widgetId: 'sports', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Loading…')).toBeInTheDocument();
 	});
@@ -100,7 +100,7 @@ describe('SportsTile', () => {
 	it('shows a not-configured hint', async () => {
 		widgetSummary.mockResolvedValue({ configured: false, todays_games: [], trending: [], upcoming_games: [] });
 
-		render(SportsTile, { props: { widgetId: 'sports' } });
+		render(SportsTile, { props: { widgetId: 'sports', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('No teams configured')).toBeInTheDocument();
 	});
@@ -108,7 +108,7 @@ describe('SportsTile', () => {
 	it('shows a no-upcoming-games hint when configured but empty', async () => {
 		widgetSummary.mockResolvedValue({ configured: true, todays_games: [], trending: [], upcoming_games: [] });
 
-		render(SportsTile, { props: { widgetId: 'sports' } });
+		render(SportsTile, { props: { widgetId: 'sports', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('No upcoming games')).toBeInTheDocument();
 	});
@@ -121,7 +121,7 @@ describe('SportsTile', () => {
 			upcoming_games: [],
 		});
 
-		const { container } = render(SportsTile, { props: { widgetId: 'sports' } });
+		const { container } = render(SportsTile, { props: { widgetId: 'sports', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('NFL')).toBeInTheDocument();
 		// The team name is wrapped in its own <a>, so the combined matchup
@@ -143,7 +143,7 @@ describe('SportsTile', () => {
 			upcoming_games: [makeGame()],
 		});
 
-		const { container } = render(SportsTile, { props: { widgetId: 'sports' } });
+		const { container } = render(SportsTile, { props: { widgetId: 'sports', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('NFL')).toBeInTheDocument();
 		expect(container.textContent).toContain('Dallas Cowboys @ New York Giants');
@@ -169,7 +169,7 @@ describe('SportsTile', () => {
 			upcoming_games: [],
 		});
 
-		render(SportsTile, { props: { widgetId: 'sports' } });
+		render(SportsTile, { props: { widgetId: 'sports', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Live — Q3 4:12')).toBeInTheDocument();
 	});
@@ -182,7 +182,7 @@ describe('SportsTile', () => {
 			upcoming_games: [makeGame({ id: '3', opponent: 'Chicago Bears', home_team: 'Chicago Bears' })],
 		});
 
-		const { container } = render(SportsTile, { props: { widgetId: 'sports' } });
+		const { container } = render(SportsTile, { props: { widgetId: 'sports', refreshIntervalSeconds: 60 } });
 
 		const today = await screen.findByText("My Team's Games Today");
 		const top = screen.getByText('Top Games Today');
@@ -203,7 +203,7 @@ describe('SportsTile', () => {
 			trending: [makeTrendingGame()],
 		});
 
-		const { container } = render(SportsTile, { props: { widgetId: 'sports' } });
+		const { container } = render(SportsTile, { props: { widgetId: 'sports', refreshIntervalSeconds: 60 } });
 
 		await screen.findByText('College Football');
 		expect(container.textContent).toContain('#1 Ohio State Buckeyes @ #3 Texas Longhorns');
@@ -225,7 +225,7 @@ describe('SportsTile', () => {
 			upcoming_games: [],
 		});
 
-		const { container } = render(SportsTile, { props: { widgetId: 'sports' } });
+		const { container } = render(SportsTile, { props: { widgetId: 'sports', refreshIntervalSeconds: 60 } });
 
 		await screen.findByText('NFL');
 		const occurrences = (container.textContent ?? '').split('Dallas Cowboys @ New York Giants').length - 1;
@@ -241,7 +241,7 @@ describe('SportsTile', () => {
 			upcoming_games: [],
 		});
 
-		render(SportsTile, { props: { widgetId: 'sports' } });
+		render(SportsTile, { props: { widgetId: 'sports', refreshIntervalSeconds: 60 } });
 
 		const link = await screen.findByRole('link', { name: 'NBC' });
 		expect(link).toHaveAttribute('href', 'https://www.nbc.com/live');
@@ -255,7 +255,7 @@ describe('SportsTile', () => {
 			trending: [makeTrendingGame()],
 		});
 
-		render(SportsTile, { props: { widgetId: 'sports' } });
+		render(SportsTile, { props: { widgetId: 'sports', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('ABC')).toBeInTheDocument();
 		expect(screen.queryByRole('link', { name: 'ABC' })).not.toBeInTheDocument();
@@ -269,7 +269,7 @@ describe('SportsTile', () => {
 			upcoming_games: [],
 		});
 
-		render(SportsTile, { props: { widgetId: 'sports' } });
+		render(SportsTile, { props: { widgetId: 'sports', refreshIntervalSeconds: 60 } });
 
 		const link = await screen.findByRole('link', { name: 'Dallas Cowboys' });
 		expect(link).toHaveAttribute('href', 'https://www.espn.com/nfl/team/_/name/dal');

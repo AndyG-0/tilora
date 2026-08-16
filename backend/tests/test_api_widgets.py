@@ -22,6 +22,7 @@ from app.plugins.speedtest.plugin import SpeedtestPlugin
 from app.plugins.sports.plugin import SportsPlugin
 from app.plugins.weather.plugin import WeatherPlugin
 from app.storage import db
+from app.storage.cache import cache, user_locale_cache_key
 
 TEST_USER_ID = "test-user"
 TEST_DEVICE_ID = "test-device"
@@ -197,6 +198,8 @@ def test_list_widgets_excludes_disabled(client, dashboard_yaml, tmp_db):
             "name": "stub",
             "layout": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1},
             "tab": "default",
+            # No live plugin registered, so this falls back to the default.
+            "refresh_interval_seconds": 300,
         }
     ]
 
@@ -385,6 +388,10 @@ def test_summary_cache_is_scoped_per_locale(client, dashboard_yaml, tmp_db, monk
 
     assert client.get("/api/widgets/locale-stub/summary").json() == {"value": "en"}
     db.save_user_preferences(TEST_USER_ID, {"locale": "es"})
+    # A direct DB write (unlike PATCH /me/preferences) doesn't go through
+    # update_preferences()'s invalidation, so drop the resolved-locale cache
+    # entry the same way that endpoint does.
+    cache.delete(user_locale_cache_key(TEST_USER_ID))
     assert client.get("/api/widgets/locale-stub/summary").json() == {"value": "es"}
 
     # Distinct cache entries per locale — the Spanish request didn't serve
@@ -406,8 +413,10 @@ def test_switching_locale_back_still_hits_the_original_cache_entry(client, dashb
 
     client.get("/api/widgets/locale-stub/summary")
     db.save_user_preferences(TEST_USER_ID, {"locale": "es"})
+    cache.delete(user_locale_cache_key(TEST_USER_ID))
     client.get("/api/widgets/locale-stub/summary")
     db.save_user_preferences(TEST_USER_ID, {"locale": "en"})
+    cache.delete(user_locale_cache_key(TEST_USER_ID))
     response = client.get("/api/widgets/locale-stub/summary")
 
     assert response.json() == {"value": "en"}

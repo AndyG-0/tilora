@@ -23,6 +23,13 @@ from app.storage.cache import cache
 
 _SESSION_TTL_SECONDS = 1800
 
+# Shared across every call/widget instance rather than one httpx.AsyncClient
+# per request — the SID cookie is passed per-request (via the `cookies=` kwarg
+# on each call) rather than baked into client construction, so one pooled
+# client is safe to share across widgets and avoids a fresh TCP handshake on
+# every poll (this plugin's default refresh_interval_seconds is 30s).
+_client = httpx.AsyncClient(timeout=10)
+
 
 class QBittorrentError(Exception):
     """Raised when a qBittorrent server can't be reached or rejects a request."""
@@ -43,15 +50,14 @@ def _base_url(settings: dict[str, Any]) -> str:
 
 
 async def _authenticate(base_url: str, widget_id: str, username: str, password: str) -> QBittorrentSession:
-    async with httpx.AsyncClient(timeout=10) as client:
-        try:
-            response = await client.post(
-                f"{base_url}/api/v2/auth/login",
-                data={"username": username, "password": password},
-                headers={"Referer": base_url},
-            )
-        except httpx.HTTPError as exc:
-            raise QBittorrentError(f"Could not reach the qBittorrent server: {exc}") from exc
+    try:
+        response = await _client.post(
+            f"{base_url}/api/v2/auth/login",
+            data={"username": username, "password": password},
+            headers={"Referer": base_url},
+        )
+    except httpx.HTTPError as exc:
+        raise QBittorrentError(f"Could not reach the qBittorrent server: {exc}") from exc
 
     if response.status_code == 403:
         raise QBittorrentError("qBittorrent has temporarily banned this IP after too many failed logins.")
@@ -63,6 +69,11 @@ async def _authenticate(base_url: str, widget_id: str, username: str, password: 
     sid = response.cookies.get("SID")
     if not sid:
         raise QBittorrentError("qBittorrent login succeeded but returned no session cookie.")
+    # The shared `_client`'s cookie jar auto-absorbs this Set-Cookie, which
+    # would otherwise get merged with the explicit `cookies={"SID": ...}` on
+    # every subsequent request below, sending a duplicate "SID=x; SID=x".
+    # The SID is threaded through explicitly instead, so drop it here.
+    _client.cookies.clear()
 
     session = QBittorrentSession(sid=sid)
     cache.set(f"qbittorrent_sid:{widget_id}", session, _SESSION_TTL_SECONDS)
@@ -94,8 +105,13 @@ async def _request(
     session = await _resolve_session(settings, widget_id)
 
     async def send(session: QBittorrentSession) -> httpx.Response:
-        async with httpx.AsyncClient(timeout=10, cookies={"SID": session.sid}) as client:
-            return await client.request(method, f"{base_url}{path}", params=params, headers={"Referer": base_url})
+        return await _client.request(
+            method,
+            f"{base_url}{path}",
+            params=params,
+            headers={"Referer": base_url},
+            cookies={"SID": session.sid},
+        )
 
     try:
         response = await send(session)

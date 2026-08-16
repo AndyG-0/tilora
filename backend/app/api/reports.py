@@ -11,11 +11,11 @@ from app.plugins.base import registry
 from app.plugins.naming import _raw_label, display_names
 from app.plugins.registry_types import PLUGIN_CLASSES_BY_TYPE
 from app.storage.db import (
-    get_network_integration,
     get_tile_report_stats,
     hidden_widget_ids,
     list_custom_widgets,
     list_devices,
+    list_network_integrations,
     list_users,
     list_widget_custom_names,
     list_widget_layouts,
@@ -53,6 +53,7 @@ def _build_tiles_report_sync(user_id: str, device_id: str) -> dict[str, Any]:
     devices_map = {d["id"]: d["name"] for d in list_devices()}
     wide_layouts = list_widget_layouts(user_id, device_id, "wide")
     db_stats = get_tile_report_stats()
+    network_integrations_map = {i["id"]: i for i in list_network_integrations()}
 
     # Plugins for display_names
     registered_plugins = [registry.get(w["id"]) for w in all_widget_configs]
@@ -114,11 +115,11 @@ def _build_tiles_report_sync(user_id: str, device_id: str) -> dict[str, Any]:
             settings = plugin.config.get("settings", {}) if plugin and hasattr(plugin, "config") else {}
             integration_id = settings.get("network_integration_id")
             if integration_id:
-                integration = get_network_integration(integration_id)
+                integration = network_integrations_map.get(integration_id)
                 if integration:
                     network_integration_name = integration.get("name")
             elif plugin_cls.network_integration_singleton:
-                integration = get_network_integration(plugin_cls.network_integration_type)
+                integration = network_integrations_map.get(plugin_cls.network_integration_type)
                 if integration:
                     network_integration_name = integration.get("name")
 

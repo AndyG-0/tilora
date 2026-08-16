@@ -70,10 +70,19 @@ describe('widgets store', () => {
 		await vi.waitFor(() => expect(value).toEqual([]));
 
 		const layout = { col: 1, row: 1, colSpan: 1, rowSpan: 1 };
-		addWidgetLocal({ id: 'new', type: 'weather', name: 'Weather', layout, tab: 'default' });
+		addWidgetLocal({
+			id: 'new',
+			type: 'weather',
+			name: 'Weather',
+			layout,
+			tab: 'default',
+			refresh_interval_seconds: 600,
+		});
 
 		expect(listWidgets).toHaveBeenCalledTimes(1);
-		expect(value).toEqual([{ id: 'new', type: 'weather', name: 'Weather', layout, tab: 'default' }]);
+		expect(value).toEqual([
+			{ id: 'new', type: 'weather', name: 'Weather', layout, tab: 'default', refresh_interval_seconds: 600 },
+		]);
 		unsubscribe();
 	});
 

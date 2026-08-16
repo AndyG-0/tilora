@@ -12,7 +12,7 @@ describe('HDHomeRunTile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(HDHomeRunTile, { props: { widgetId: 'hdhr' } });
+		render(HDHomeRunTile, { props: { widgetId: 'hdhr', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Loading…')).toBeInTheDocument();
 	});
@@ -27,7 +27,7 @@ describe('HDHomeRunTile', () => {
 			active_recordings_count: 0,
 		});
 
-		render(HDHomeRunTile, { props: { widgetId: 'hdhr' } });
+		render(HDHomeRunTile, { props: { widgetId: 'hdhr', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Not connected')).toBeInTheDocument();
 	});
@@ -42,7 +42,7 @@ describe('HDHomeRunTile', () => {
 			active_recordings_count: 1,
 		});
 
-		render(HDHomeRunTile, { props: { widgetId: 'hdhr' } });
+		render(HDHomeRunTile, { props: { widgetId: 'hdhr', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('42 channels')).toBeInTheDocument();
 		expect(screen.getByText('● Recording')).toBeInTheDocument();
@@ -59,7 +59,7 @@ describe('HDHomeRunTile', () => {
 			active_recordings_count: 0,
 		});
 
-		render(HDHomeRunTile, { props: { widgetId: 'hdhr' } });
+		render(HDHomeRunTile, { props: { widgetId: 'hdhr', refreshIntervalSeconds: 60 } });
 		const entry = await screen.findByText('Evening News');
 
 		await fireEvent.click(entry.closest('button')!);

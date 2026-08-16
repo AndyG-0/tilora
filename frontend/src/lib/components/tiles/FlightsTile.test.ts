@@ -19,7 +19,7 @@ describe('FlightsTile', () => {
 		await waitLocale();
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(FlightsTile, { props: { widgetId: 'flights' } });
+		render(FlightsTile, { props: { widgetId: 'flights', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Cargando vuelos…')).toBeInTheDocument();
 	});
@@ -27,7 +27,7 @@ describe('FlightsTile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(FlightsTile, { props: { widgetId: 'flights' } });
+		render(FlightsTile, { props: { widgetId: 'flights', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Loading flights…')).toBeInTheDocument();
 	});
@@ -52,7 +52,7 @@ describe('FlightsTile', () => {
 			],
 		});
 
-		render(FlightsTile, { props: { widgetId: 'flights' } });
+		render(FlightsTile, { props: { widgetId: 'flights', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('FORT WORTH, TX', { selector: '.dots' })).toBeInTheDocument();
 		expect(screen.getByText('1 nearby')).toBeInTheDocument();
@@ -82,7 +82,7 @@ describe('FlightsTile', () => {
 			],
 		});
 
-		render(FlightsTile, { props: { widgetId: 'flights' } });
+		render(FlightsTile, { props: { widgetId: 'flights', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('N126JH', { selector: '.dots' })).toBeInTheDocument();
 		expect(screen.queryByText('→', { exact: false })).not.toBeInTheDocument();
@@ -96,7 +96,7 @@ describe('FlightsTile', () => {
 			flights: [],
 		});
 
-		render(FlightsTile, { props: { widgetId: 'flights' } });
+		render(FlightsTile, { props: { widgetId: 'flights', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('No aircraft nearby')).toBeInTheDocument();
 	});
@@ -110,7 +110,7 @@ describe('FlightsTile', () => {
 				count: 0,
 				flights: [],
 			});
-			render(FlightsTile, { props: { widgetId: 'flights' } });
+			render(FlightsTile, { props: { widgetId: 'flights', refreshIntervalSeconds: 60 } });
 			await vi.advanceTimersByTimeAsync(0); // flush the initial refresh() from onMount
 			expect(screen.getByText('FORT WORTH, TX', { selector: '.dots' })).toBeInTheDocument();
 

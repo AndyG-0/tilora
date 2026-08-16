@@ -168,9 +168,7 @@ class WeatherPlugin(Plugin):
             response.raise_for_status()
             return response.json()
 
-    async def get_summary(self) -> dict[str, Any]:
-        data = await self._fetch()
-        current = data["current"]
+    def _build_summary(self, current: dict[str, Any]) -> dict[str, Any]:
         return {
             "location_name": self.config["settings"].get("location_name", "Your location"),
             "temperature": current["temperature_2m"],
@@ -178,6 +176,10 @@ class WeatherPlugin(Plugin):
             "weather_code": current["weather_code"],
             "is_day": bool(current["is_day"]),
         }
+
+    async def get_summary(self) -> dict[str, Any]:
+        data = await self._fetch()
+        return self._build_summary(data["current"])
 
     async def _fetch_air_quality(self) -> dict[str, Any] | None:
         settings = self.config["settings"]
@@ -225,7 +227,7 @@ class WeatherPlugin(Plugin):
             }
             for i in range(len(daily["time"]))
         ]
-        summary = await self.get_summary()
+        summary = self._build_summary(data["current"])
         detail = {
             **summary,
             "daily_forecast": forecast,

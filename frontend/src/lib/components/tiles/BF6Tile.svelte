@@ -4,7 +4,7 @@
 	import TileCard from '$lib/components/TileCard.svelte';
 	import { _ } from 'svelte-i18n';
 
-	let { widgetId }: { widgetId: string } = $props();
+	let { widgetId, refreshIntervalSeconds }: { widgetId: string; refreshIntervalSeconds: number } = $props();
 
 	let summary = $state<BF6Summary | null>(null);
 
@@ -18,7 +18,7 @@
 
 	// Server population changes fast — matches the plugin's own 60s refresh
 	// interval.
-	pollWidget(refresh, 60_000);
+	pollWidget(refresh, refreshIntervalSeconds * 1000);
 </script>
 
 <TileCard {widgetId}>

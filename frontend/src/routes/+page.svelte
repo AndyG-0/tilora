@@ -549,7 +549,7 @@
 							onpointercancel={onCellPointerUp}
 						>
 							{#if Tile}
-								<Tile widgetId={widget.id} />
+								<Tile widgetId={widget.id} refreshIntervalSeconds={widget.refresh_interval_seconds} />
 							{/if}
 							{#if editMode}
 								<div class="edit-overlay" aria-hidden="true"></div>

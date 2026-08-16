@@ -27,7 +27,7 @@ from app.scheduler import (
     schedule_speedtest_widget,
     unschedule_widget,
 )
-from app.storage.cache import cache
+from app.storage.cache import cache, cached_call, user_locale_cache_key
 from app.storage.db import (
     clear_widget_custom_name,
     delete_custom_widget,
@@ -47,7 +47,7 @@ from app.storage.db import (
     save_custom_widget,
     save_widget_custom_name,
     save_widget_device_settings,
-    save_widget_layout,
+    save_widget_layouts,
     save_widget_settings,
     save_widget_user_settings,
 )
@@ -128,6 +128,7 @@ def _list_widgets_sync(user_id: str, device_id: str, breakpoint: Breakpoint) -> 
     # bare type string below.
     plugins = [registry.get(w["id"]) for w in visible]
     names = display_names([p for p in plugins if p is not None])
+    plugins_by_id = {w["id"]: p for w, p in zip(visible, plugins, strict=True) if p is not None}
     return [
         {
             "id": w["id"],
@@ -139,6 +140,13 @@ def _list_widgets_sync(user_id: str, device_id: str, breakpoint: Breakpoint) -> 
             # overrides use, just with two extra dimensions.
             "layout": {**w["layout"], **layouts.get(w["id"], {})},
             "tab": w.get("tab", default_tab),
+            # Lets the frontend poll each tile at the same cadence its data
+            # actually refreshes at, instead of a fixed interval unrelated to
+            # this widget's cache TTL. Falls back to a sane default for the
+            # rare config entry with no live plugin registered.
+            "refresh_interval_seconds": (
+                plugins_by_id[w["id"]].refresh_interval_seconds if w["id"] in plugins_by_id else 300
+            ),
         }
         for w in visible
     ]
@@ -171,10 +179,10 @@ async def update_widgets_layout(
     user: dict[str, Any] = Depends(get_current_user),
     device: dict[str, Any] = Depends(get_current_device),
 ):
-    for entry in payload.widgets:
-        await asyncio.to_thread(
-            save_widget_layout, user["id"], device["id"], payload.breakpoint, entry.id, entry.layout.model_dump()
-        )
+    entries = [
+        (user["id"], device["id"], payload.breakpoint, entry.id, entry.layout.model_dump()) for entry in payload.widgets
+    ]
+    await asyncio.to_thread(save_widget_layouts, entries)
     return {"status": "ok"}
 
 
@@ -226,7 +234,14 @@ async def add_widget(
     default_tab = resolve_tabs(load_dashboard_config())[0]["id"]
     siblings = [p for p in registry.all() if type(p) is plugin_cls]
     name = display_names(siblings)[widget_id]
-    return {"id": widget_id, "type": payload.type, "name": name, "layout": layout, "tab": tab or default_tab}
+    return {
+        "id": widget_id,
+        "type": payload.type,
+        "name": name,
+        "layout": layout,
+        "tab": tab or default_tab,
+        "refresh_interval_seconds": plugin.refresh_interval_seconds,
+    }
 
 
 def _get_plugin(widget_id: str):
@@ -234,6 +249,23 @@ def _get_plugin(widget_id: str):
     if plugin is None:
         raise HTTPException(status_code=404, detail=f"Unknown widget '{widget_id}'")
     return plugin
+
+
+# How long a resolved locale is cached for, keyed by user id — avoids a DB
+# round-trip on every summary/detail poll (including cache *hits*, which
+# otherwise still paid for this lookup before ever checking the cache).
+# update_preferences() (see app.api.users) invalidates this immediately on
+# a locale change, so the TTL only bounds staleness from writes made
+# outside that endpoint, not normal user-facing latency.
+_LOCALE_CACHE_TTL_SECONDS = 3600
+
+
+async def _user_locale(user_id: str) -> str:
+    async def fetch() -> str:
+        prefs = await asyncio.to_thread(get_user_preferences, user_id)
+        return prefs.get("locale", "en")
+
+    return await cached_call(user_locale_cache_key(user_id), _LOCALE_CACHE_TTL_SECONDS, fetch)
 
 
 def _cache_key_prefix(kind: str, plugin: Plugin, user: dict[str, Any], device: dict[str, Any]) -> str:
@@ -281,7 +313,7 @@ async def widget_summary(
     device: dict[str, Any] = Depends(get_current_device),
 ):
     plugin = _get_plugin(widget_id)
-    locale = (await asyncio.to_thread(get_user_preferences, user["id"])).get("locale", "en")
+    locale = await _user_locale(user["id"])
     cache_key = _cache_key("summary", plugin, user, device, locale)
     cached = cache.get(cache_key)
     if cached is not None:
@@ -300,7 +332,7 @@ async def widget_detail(
     device: dict[str, Any] = Depends(get_current_device),
 ):
     plugin = _get_plugin(widget_id)
-    locale = (await asyncio.to_thread(get_user_preferences, user["id"])).get("locale", "en")
+    locale = await _user_locale(user["id"])
     cache_key = _cache_key("detail", plugin, user, device, locale)
     cached = cache.get(cache_key)
     if cached is not None:
