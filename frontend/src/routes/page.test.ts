@@ -265,6 +265,45 @@ describe('+page.svelte', () => {
 		expect(speak).toHaveBeenCalledWith('It is sunny and 75 degrees.', expect.anything());
 	});
 
+	it('stops speech when the page unmounts after an answer with no widget action', async () => {
+		isSpeechRecognitionSupported.mockReturnValue(true);
+		alwaysOnMic.set(false);
+		listenOnce.mockResolvedValue('what is the weather');
+		askAssistant.mockResolvedValue({ text: 'It is sunny and 75 degrees.', action: null });
+
+		const { unmount } = render(Page);
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Ask a question' }));
+
+		expect(await screen.findByText('It is sunny and 75 degrees.')).toBeInTheDocument();
+		expect(goto).not.toHaveBeenCalled();
+
+		unmount();
+
+		expect(stopSpeaking).toHaveBeenCalled();
+	});
+
+	it('does not cut off speech when the assistant answer launches a widget', async () => {
+		isSpeechRecognitionSupported.mockReturnValue(true);
+		alwaysOnMic.set(false);
+		listenOnce.mockResolvedValue('what is the weather');
+		askAssistant.mockResolvedValue({
+			text: 'It is sunny and 75 degrees.',
+			action: { widget_id: 'weather', panel: null },
+		});
+
+		const { unmount } = render(Page);
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Ask a question' }));
+
+		await waitFor(() => expect(goto).toHaveBeenCalledWith('/widget/weather'));
+		expect(speak).toHaveBeenCalledWith('It is sunny and 75 degrees.', expect.anything());
+
+		unmount();
+
+		expect(stopSpeaking).not.toHaveBeenCalled();
+	});
+
 	it('starts continuous listening when alwaysOnMic is enabled and triggers on wake word', async () => {
 		isSpeechRecognitionSupported.mockReturnValue(true);
 		alwaysOnMic.set(true);

@@ -384,6 +384,10 @@
 	const micSupported = isSpeechRecognitionSupported();
 	let continuousListener: ContinuousListenHandle | null = null;
 	const alwaysOnActive = $derived(micSupported && $alwaysOnMic);
+	// Set right before navigating to a widget the assistant itself launched,
+	// so onDestroy below knows not to cut off the answer that's still
+	// speaking — the unmount is this page's own doing, not the user leaving.
+	let navigatingFromAssistant = false;
 
 	async function processAssistantQuery(query: string) {
 		assistantState = { status: 'thinking', query };
@@ -397,6 +401,7 @@
 				if (action.destination) params.set('destination', action.destination);
 				if (action.origin) params.set('origin', action.origin);
 				const qs = params.toString();
+				navigatingFromAssistant = true;
 				goto(`/widget/${action.widget_id}${qs ? `?${qs}` : ''}`);
 			}
 		} catch (err) {
@@ -467,7 +472,9 @@
 			continuousListener.stop();
 			continuousListener = null;
 		}
-		stopSpeaking();
+		if (!navigatingFromAssistant) {
+			stopSpeaking();
+		}
 	});
 
 	// Add/remove widgets: edit mode gains a "✕" per cell and a "+ Add widget"
