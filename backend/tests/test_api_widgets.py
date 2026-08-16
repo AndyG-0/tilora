@@ -1345,3 +1345,19 @@ def test_list_widgets_includes_name_for_custom_widget(client, dashboard_yaml, tm
     assert response.status_code == 200
     names = {w["id"]: w["name"] for w in response.json()}
     assert names[widget_id] == "Clock"
+
+
+def test_update_photos_widget_cleans_legacy_user_settings(client, tmp_db):
+    plugin = PhotosPlugin({"id": "photos", "settings": {"provider": "local"}})
+    registry.register(plugin)
+    db.save_widget_user_settings(TEST_USER_ID, "photos", {"provider": "local", "directory": "/old/path"})
+
+    response = client.patch("/api/widgets/photos/settings", json={"provider": "icloud_private"})
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == "icloud_private"
+    assert db.get_widget_user_settings(TEST_USER_ID, "photos") is None
+
+    detail_res = client.get("/api/widgets/photos/detail")
+    assert detail_res.status_code == 200
+    assert detail_res.json()["provider"] == "icloud_private"

@@ -421,6 +421,8 @@ async def update_widget_settings(
     else:
         plugin.config["settings"].update(payload)
         await asyncio.to_thread(save_widget_settings, widget_id, plugin.config["settings"])
+        if isinstance(plugin, PhotosPlugin):
+            await asyncio.to_thread(delete_widget_user_settings_for_widget, widget_id)
     # Force the next summary/detail request to reflect the new settings
     # instead of serving a stale cached response. Every cache entry for this
     # widget starts with "{kind}:{widget_id}:" (locale is always appended,

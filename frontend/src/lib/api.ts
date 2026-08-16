@@ -202,6 +202,7 @@ export interface IcloudStatus {
 export interface IcloudAuthStartResult {
 	connected: boolean;
 	requires_2fa: boolean;
+	error?: string | null;
 }
 
 export interface IcloudCredentials {

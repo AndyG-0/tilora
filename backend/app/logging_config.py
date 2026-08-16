@@ -31,6 +31,7 @@ def configure_logging() -> None:
     root_level = settings.log_level.upper()
     is_debug = root_level in ("DEBUG", "TRACE")
     third_party_level = root_level if is_debug else "WARNING"
+    icloudpy_level = root_level if is_debug else "CRITICAL"
 
     logging.config.dictConfig(
         {
@@ -66,6 +67,11 @@ def configure_logging() -> None:
                 },
                 "httpcore": {
                     "level": third_party_level,
+                    "handlers": ["console"],
+                    "propagate": False,
+                },
+                "icloudpy": {
+                    "level": icloudpy_level,
                     "handlers": ["console"],
                     "propagate": False,
                 },

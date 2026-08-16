@@ -272,7 +272,7 @@
 			} else if (result.connected) {
 				photoData = await api.widgetDetail<PhotoDetailData>(page.params.id!);
 			} else {
-				connectError = get(_)('photos.detail.connect_error');
+				connectError = result.error || get(_)('photos.detail.connect_error');
 			}
 		} catch (err) {
 			logger.error('Failed to start iCloud auth', err);

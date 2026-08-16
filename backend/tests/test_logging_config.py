@@ -33,6 +33,7 @@ def test_configure_logging_quiets_third_party_loggers_at_info_level(monkeypatch)
     assert logging.getLogger("asyncssh").level == logging.WARNING
     assert logging.getLogger("httpx").level == logging.WARNING
     assert logging.getLogger("httpcore").level == logging.WARNING
+    assert logging.getLogger("icloudpy").level == logging.CRITICAL
     assert logging.getLogger("uvicorn.access").level == logging.WARNING
 
 
@@ -47,4 +48,5 @@ def test_configure_logging_enables_debug_level_for_third_party_when_debug(monkey
     assert logging.getLogger("asyncssh").level == logging.DEBUG
     assert logging.getLogger("httpx").level == logging.DEBUG
     assert logging.getLogger("httpcore").level == logging.DEBUG
+    assert logging.getLogger("icloudpy").level == logging.DEBUG
     assert logging.getLogger("uvicorn.access").level == logging.DEBUG

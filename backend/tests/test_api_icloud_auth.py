@@ -123,7 +123,9 @@ def test_status_reports_connected(client):
 
 def test_set_credentials_persists_and_invalidates_stale_session(client, monkeypatch):
     invalidated = []
-    monkeypatch.setattr(icloud_photos, "invalidate_service_cache", lambda user_id: invalidated.append(user_id))
+    monkeypatch.setattr(
+        icloud_photos, "invalidate_service_cache", lambda user_id, clear_disk=False: invalidated.append(user_id)
+    )
     cache.set("summary:photos", {"stale": True}, 60)
     cache.set("detail:photos", {"stale": True}, 60)
 
@@ -180,7 +182,9 @@ def test_get_credentials_returns_username_without_password(client):
 def test_clear_credentials_removes_them_and_invalidates_session(client, monkeypatch):
     _save_credentials()
     invalidated = []
-    monkeypatch.setattr(icloud_photos, "invalidate_service_cache", lambda user_id: invalidated.append(user_id))
+    monkeypatch.setattr(
+        icloud_photos, "invalidate_service_cache", lambda user_id, clear_disk=False: invalidated.append(user_id)
+    )
 
     response = client.delete("/api/icloud/credentials")
 
