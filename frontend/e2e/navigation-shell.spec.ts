@@ -9,7 +9,7 @@ test.describe('navigation and app shell', () => {
 	test('cycling theme updates document data-theme attribute and persists', async ({ page }) => {
 		const initialTheme = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
 
-		const themeButton = page.locator('.top-bar button').nth(3);
+		const themeButton = page.locator('.top-bar').getByRole('button', { name: /change theme|cambiar tema/i });
 		await expect(themeButton).toBeVisible();
 		await themeButton.click();
 
@@ -26,7 +26,10 @@ test.describe('navigation and app shell', () => {
 
 	test('header navigation buttons route to settings, reports, and back', async ({ page }) => {
 		// Navigate to Settings (⚙)
-		await page.locator('.top-bar button').filter({ hasText: '⚙' }).click();
+		await page
+			.locator('.top-bar')
+			.getByRole('button', { name: /settings|configuración/i })
+			.click();
 		await expect(page).toHaveURL(/\/settings$/);
 		await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -36,7 +39,10 @@ test.describe('navigation and app shell', () => {
 		await expect(page.locator('[data-widget-id="clock"]')).toBeVisible();
 
 		// Navigate to Reports (📊)
-		await page.locator('.top-bar button').filter({ hasText: '📊' }).click();
+		await page
+			.locator('.top-bar')
+			.getByRole('button', { name: /report/i })
+			.click();
 		await expect(page).toHaveURL(/\/reports$/);
 		await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
