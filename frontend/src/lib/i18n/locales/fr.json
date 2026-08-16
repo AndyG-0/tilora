@@ -262,7 +262,9 @@
 			"column_route": "Itinéraire",
 			"column_altitude": "Altitude",
 			"column_speed": "Vitesse",
-			"column_distance": "Distance"
+			"column_distance": "Distance",
+			"no_photo": "Photo non disponible",
+			"photo_by": "Photo par {name}"
 		},
 		"screensaver": {
 			"no_aircraft": "AUCUN AVION À PROXIMITÉ"

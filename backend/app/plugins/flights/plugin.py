@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, ClassVar
 
@@ -17,6 +18,9 @@ logger = logging.getLogger(__name__)
 
 ADSB_URL = "https://api.adsb.lol/v2/point/{lat}/{lon}/{radius_nm}"
 ROUTESET_URL = "https://api.adsb.lol/api/0/routeset"
+ADSBDB_CALLSIGN_URL = "https://api.adsbdb.com/v0/callsign/{callsign}"
+ADSBDB_AIRCRAFT_URL = "https://api.adsbdb.com/v0/aircraft/{hex}"
+PLANESPOTTERS_URL = "https://api.planespotters.net/pub/photos/reg/{reg}"
 
 # adsb.lol's routeset endpoint silently returns a 201 with an empty body
 # unless the request's Referer points at an adsb.lol-family site (confirmed
@@ -31,6 +35,10 @@ _HEADERS = {
         "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
     ),
     "Referer": "https://globe.adsb.lol/",
+}
+
+_PLANESPOTTERS_HEADERS = {
+    "User-Agent": "TiloraDashboard/1.0 (+https://github.com/tilora/tilora; support@tilora.local)",
 }
 
 _SUMMARY_CAP = 8
@@ -55,7 +63,10 @@ _CATEGORY_KIND: dict[str, str] = {
 
 _ROUTE_CACHE_TTL_FOUND_SECONDS = 6 * 60 * 60  # 6h — matches tar1090's own route-cache lifetime
 _ROUTE_CACHE_TTL_NOT_FOUND_SECONDS = 30 * 60  # 30min — retry routeless flights periodically without
-# hammering adsb.lol every 90s poll for callsigns that are unlikely to ever have a filed route (most GA).
+# hammering APIs every 90s poll for callsigns that are unlikely to ever have a filed route (most GA).
+
+_PHOTO_CACHE_TTL_FOUND_SECONDS = 7 * 24 * 60 * 60  # 7 days — aircraft registration photos rarely change
+_PHOTO_CACHE_TTL_NOT_FOUND_SECONDS = 24 * 60 * 60  # 24h — retry unfound photos after a day
 
 
 def _altitude_ft(ac: dict[str, Any]) -> int | float | None:
@@ -79,7 +90,9 @@ def _normalize(ac: dict[str, Any]) -> dict[str, Any]:
     airline = lookup(callsign)
     aircraft = lookup_aircraft(ac.get("t"))
     category = ac.get("category")
+    hex_code = (ac.get("hex") or "").strip().lower()
     return {
+        "hex": hex_code or None,
         "callsign": callsign,
         "airline_code": airline["airline_code"],
         "airline_name": airline["airline_name"],
@@ -98,6 +111,10 @@ def _normalize(ac: dict[str, Any]) -> dict[str, Any]:
         "longitude": ac.get("lon"),
         "origin": None,
         "destination": None,
+        "photo_thumbnail_url": None,
+        "photo_url": None,
+        "photo_photographer": None,
+        "photo_link": None,
     }
 
 
@@ -105,8 +122,23 @@ def _route_cache_key(callsign: str) -> str:
     return f"flights:route:{callsign}"
 
 
+def _photo_cache_key(reg_or_hex: str) -> str:
+    return f"flights:photo:{reg_or_hex.upper()}"
+
+
 def _airport_summary(airport: dict[str, Any]) -> dict[str, Any]:
     return {"iata": airport.get("iata") or None, "icao": airport.get("icao"), "city": airport.get("location")}
+
+
+def _parse_adsbdb_airport(airport: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not airport:
+        return None
+    iata = airport.get("iata_code") or airport.get("iata") or None
+    icao = airport.get("icao_code") or airport.get("icao") or None
+    if not icao and not iata:
+        return None
+    city = airport.get("municipality") or airport.get("city") or airport.get("name") or None
+    return {"iata": iata, "icao": icao, "city": city}
 
 
 def _parse_route(result: dict[str, Any]) -> dict[str, Any]:
@@ -118,16 +150,79 @@ def _parse_route(result: dict[str, Any]) -> dict[str, Any]:
     return {"origin": _airport_summary(airports[0]), "destination": _airport_summary(airports[-1])}
 
 
+async def _fetch_single_adsbdb_route(client: httpx.AsyncClient, callsign: str) -> dict[str, Any] | None:
+    try:
+        url = ADSBDB_CALLSIGN_URL.format(callsign=callsign)
+        resp = await client.get(url, headers=_HEADERS, timeout=4.0)
+        if resp.status_code == 200:
+            payload = resp.json().get("response", {}).get("flightroute", {})
+            origin = _parse_adsbdb_airport(payload.get("origin"))
+            destination = _parse_adsbdb_airport(payload.get("destination"))
+            if origin and destination:
+                return {"origin": origin, "destination": destination}
+        elif resp.status_code == 404:
+            return {"origin": None, "destination": None}
+    except Exception as exc:
+        logger.debug("ADSBDB lookup failed for %s: %s", callsign, exc)
+    return None
+
+
+async def _fetch_single_photo(
+    client: httpx.AsyncClient,
+    registration: str | None,
+    hex_code: str | None,
+) -> dict[str, Any]:
+    # 1. Try Planespotters by registration
+    if registration:
+        try:
+            url = PLANESPOTTERS_URL.format(reg=registration)
+            resp = await client.get(url, headers=_PLANESPOTTERS_HEADERS, timeout=4.0)
+            if resp.status_code == 200:
+                photos = resp.json().get("photos") or []
+                if photos:
+                    first = photos[0]
+                    thumb = first.get("thumbnail_large", {}).get("src") or first.get("thumbnail", {}).get("src")
+                    if thumb:
+                        return {
+                            "photo_thumbnail_url": thumb,
+                            "photo_url": first.get("link"),
+                            "photo_photographer": first.get("photographer"),
+                            "photo_link": first.get("link"),
+                        }
+        except Exception as exc:
+            logger.debug("Planespotters lookup failed for %s: %s", registration, exc)
+
+    # 2. Try ADSBDB aircraft endpoint by hex
+    if hex_code:
+        try:
+            url = ADSBDB_AIRCRAFT_URL.format(hex=hex_code)
+            resp = await client.get(url, headers=_HEADERS, timeout=4.0)
+            if resp.status_code == 200:
+                ac_data = resp.json().get("response", {}).get("aircraft", {})
+                thumb = ac_data.get("url_photo_thumbnail") or ac_data.get("url_photo")
+                if thumb:
+                    return {
+                        "photo_thumbnail_url": thumb,
+                        "photo_url": ac_data.get("url_photo") or thumb,
+                        "photo_photographer": None,
+                        "photo_link": None,
+                    }
+        except Exception as exc:
+            logger.debug("ADSBDB photo lookup failed for %s: %s", hex_code, exc)
+
+    return {
+        "photo_thumbnail_url": None,
+        "photo_url": None,
+        "photo_photographer": None,
+        "photo_link": None,
+    }
+
+
 async def _fetch_routes(client: httpx.AsyncClient, flights: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """Look up origin/destination for `flights`, keyed by callsign.
 
-    Cached per-callsign in the shared process-wide `cache` singleton, not
-    instance state -- `Plugin.with_settings()` builds a fresh FlightsPlugin
-    instance per personalized request (this plugin is settings_scope
-    "personal"), so anything stored on `self` would never survive between
-    polls. A negative "no route" result is cached too (shorter TTL) using an
-    explicit sentinel dict rather than storing `None`, since `cache.get()`
-    returns `None` for both "not cached" and a stored `None` value.
+    Uses ADSBDB as primary route source with fallback to adsb.lol routeset.
+    Cached per-callsign in the shared process-wide `cache` singleton.
     """
     routes: dict[str, dict[str, Any]] = {}
     to_fetch: list[dict[str, Any]] = []
@@ -146,13 +241,30 @@ async def _fetch_routes(client: httpx.AsyncClient, flights: list[dict[str, Any]]
     if not to_fetch:
         return routes
 
+    # 1. Query ADSBDB concurrently for all uncached callsigns
+    adsbdb_tasks = [_fetch_single_adsbdb_route(client, plane["callsign"]) for plane in to_fetch]
+    adsbdb_results = await asyncio.gather(*adsbdb_tasks, return_exceptions=True)
+
+    unresolved_planes: list[dict[str, Any]] = []
+    for plane, result in zip(to_fetch, adsbdb_results, strict=False):
+        callsign = plane["callsign"]
+        if isinstance(result, dict) and result.get("origin") and result.get("destination"):
+            routes[callsign] = result
+            cache.set(_route_cache_key(callsign), result, _ROUTE_CACHE_TTL_FOUND_SECONDS)
+        else:
+            unresolved_planes.append(plane)
+
+    if not unresolved_planes:
+        return routes
+
+    # 2. Fallback to adsb.lol routeset for remaining unresolved planes
     try:
-        response = await client.post(ROUTESET_URL, json={"planes": to_fetch})
+        response = await client.post(ROUTESET_URL, json={"planes": unresolved_planes}, headers=_HEADERS)
         response.raise_for_status()
         results = response.json()
     except httpx.HTTPError as exc:
-        logger.warning("Could not fetch flight routes: %s", exc)
-        return routes  # uncached callsigns just have no route this poll; retried next poll
+        logger.warning("Could not fetch flight routes from adsb.lol: %s", exc)
+        results = []
 
     resolved: set[str] = set()
     for result in results:
@@ -165,16 +277,55 @@ async def _fetch_routes(client: httpx.AsyncClient, flights: list[dict[str, Any]]
         ttl = _ROUTE_CACHE_TTL_FOUND_SECONDS if route["origin"] else _ROUTE_CACHE_TTL_NOT_FOUND_SECONDS
         cache.set(_route_cache_key(callsign), route, ttl)
 
-    # adsb.lol may drop invalid/unmatched callsigns from the response
-    # entirely -- treat those as "no route" too so they aren't re-POSTed
-    # every poll.
-    for plane in to_fetch:
-        if plane["callsign"] not in resolved:
+    for plane in unresolved_planes:
+        callsign = plane["callsign"]
+        if callsign not in resolved:
             no_route = {"origin": None, "destination": None}
-            routes[plane["callsign"]] = no_route
-            cache.set(_route_cache_key(plane["callsign"]), no_route, _ROUTE_CACHE_TTL_NOT_FOUND_SECONDS)
+            routes[callsign] = no_route
+            cache.set(_route_cache_key(callsign), no_route, _ROUTE_CACHE_TTL_NOT_FOUND_SECONDS)
 
     return routes
+
+
+async def _fetch_photos(client: httpx.AsyncClient, flights: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Look up aircraft photos, keyed by registration or hex code."""
+    photos: dict[str, dict[str, Any]] = {}
+    to_fetch: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for flight in flights:
+        key = flight.get("registration") or flight.get("hex")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        cached = cache.get(_photo_cache_key(key))
+        if cached is not None:
+            photos[key] = cached
+        else:
+            to_fetch.append({"key": key, "registration": flight.get("registration"), "hex": flight.get("hex")})
+
+    if not to_fetch:
+        return photos
+
+    tasks = [_fetch_single_photo(client, item["registration"], item["hex"]) for item in to_fetch]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for item, result in zip(to_fetch, results, strict=False):
+        key = item["key"]
+        if isinstance(result, dict) and result.get("photo_thumbnail_url"):
+            photos[key] = result
+            cache.set(_photo_cache_key(key), result, _PHOTO_CACHE_TTL_FOUND_SECONDS)
+        else:
+            no_photo = {
+                "photo_thumbnail_url": None,
+                "photo_url": None,
+                "photo_photographer": None,
+                "photo_link": None,
+            }
+            photos[key] = no_photo
+            cache.set(_photo_cache_key(key), no_photo, _PHOTO_CACHE_TTL_NOT_FOUND_SECONDS)
+
+    return photos
 
 
 class FlightsPlugin(Plugin):
@@ -214,14 +365,24 @@ class FlightsPlugin(Plugin):
             aircraft = await self._fetch(client)
             flights = [_normalize(ac) for ac in aircraft if ac.get("alt_baro") != "ground"]
             flights.sort(key=lambda f: f["distance_nm"] if f["distance_nm"] is not None else float("inf"))
-            # Never fetch routes for aircraft beyond what either endpoint
-            # ever displays, bounding the POST batch size even when
-            # radius_nm is large and many aircraft are in range.
-            routes = await _fetch_routes(client, flights[:_DETAIL_CAP])
+            # Never fetch routes or photos for aircraft beyond what either endpoint
+            # ever displays, bounding the batch size even when radius_nm is large.
+            target_slice = flights[:_DETAIL_CAP]
+            routes, photos = await asyncio.gather(
+                _fetch_routes(client, target_slice),
+                _fetch_photos(client, target_slice),
+            )
         for flight in flights:
             route = routes.get(flight["callsign"])
             if route is not None:
                 flight["origin"], flight["destination"] = route["origin"], route["destination"]
+            photo_key = flight.get("registration") or flight.get("hex")
+            photo = photos.get(photo_key) if photo_key else None
+            if photo is not None:
+                flight["photo_thumbnail_url"] = photo.get("photo_thumbnail_url")
+                flight["photo_url"] = photo.get("photo_url")
+                flight["photo_photographer"] = photo.get("photo_photographer")
+                flight["photo_link"] = photo.get("photo_link")
         return flights
 
     async def get_summary(self) -> dict[str, Any]:

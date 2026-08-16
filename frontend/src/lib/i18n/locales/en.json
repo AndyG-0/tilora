@@ -262,7 +262,9 @@
 			"column_route": "Route",
 			"column_altitude": "Altitude",
 			"column_speed": "Speed",
-			"column_distance": "Distance"
+			"column_distance": "Distance",
+			"no_photo": "No photo available",
+			"photo_by": "Photo by {name}"
 		},
 		"screensaver": {
 			"no_aircraft": "NO AIRCRAFT NEARBY"

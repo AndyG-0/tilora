@@ -262,7 +262,9 @@
 			"column_route": "Route",
 			"column_altitude": "Höhe",
 			"column_speed": "Geschwindigkeit",
-			"column_distance": "Entfernung"
+			"column_distance": "Entfernung",
+			"no_photo": "Kein Foto verfügbar",
+			"photo_by": "Foto von {name}"
 		},
 		"screensaver": {
 			"no_aircraft": "KEINE FLUGZEUGE IN DER NÄHE"
