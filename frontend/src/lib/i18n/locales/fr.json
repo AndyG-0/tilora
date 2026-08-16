@@ -101,7 +101,9 @@
 			"preview": "Aperçu de la voix",
 			"preview_text": "Ceci est un aperçu de la voix sélectionnée.",
 			"save": "Enregistrer la voix",
-			"save_error": "Impossible d'enregistrer votre sélection de voix."
+			"save_error": "Impossible d'enregistrer votre sélection de voix.",
+			"always_on_mic_label": "Microphone toujours actif",
+			"always_on_mic_hint": "Écouter en continu sur le tableau de bord le mot d'activation (\"{agentName}\") sans avoir à cliquer sur le bouton du micro."
 		},
 		"location": {
 			"heading": "Localisation",
@@ -1028,7 +1030,9 @@
 		"resize_widget": "Redimensionner le widget",
 		"add_widget": "+ Ajouter un widget",
 		"mic_no_match": "Je n'ai pas compris.",
-		"assistant_error": "Une erreur s'est produite. Réessayez, ou demandez à votre administrateur de vérifier les journaux si cela persiste."
+		"assistant_error": "Une erreur s'est produite. Réessayez, ou demandez à votre administrateur de vérifier les journaux si cela persiste.",
+		"always_on_standby": "En attente de « {agentName} »…",
+		"always_on_standby_label": "Microphone toujours actif : en attente de « {agentName} »"
 	},
 	"widget_detail": {
 		"unknown_widget": "Widget inconnu",

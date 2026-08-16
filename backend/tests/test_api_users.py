@@ -209,6 +209,7 @@ def test_get_and_patch_preferences_round_trip(client, tmp_db):
         "voice_name": "",
         "locale": "en",
         "location": None,
+        "always_on_mic": False,
     }
     assert client.get("/api/users/me/preferences").json() == defaults
 
@@ -277,3 +278,14 @@ def test_patch_preferences_clears_location(client, tmp_db):
     assert response.status_code == 200
     assert response.json()["location"] is None
     assert client.get("/api/users/me/preferences").json()["location"] is None
+
+
+def test_patch_preferences_round_trips_always_on_mic(client, tmp_db):
+    client.post("/api/devices/register")
+    client.post("/api/users", json={"name": "Alice"})
+
+    response = client.patch("/api/users/me/preferences", json={"always_on_mic": True})
+
+    assert response.status_code == 200
+    assert response.json()["always_on_mic"] is True
+    assert client.get("/api/users/me/preferences").json()["always_on_mic"] is True

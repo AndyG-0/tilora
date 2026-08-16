@@ -32,8 +32,9 @@
 		persistVoiceSelection,
 		type VoiceProvider,
 	} from '$lib/stores/voice';
+	import { agentName, alwaysOnMic, loadAlwaysOnMicFromServer, persistAlwaysOnMic } from '$lib/stores/assistant';
 	import { userLocation, loadLocationFromServer, persistLocation } from '$lib/stores/location';
-	import { listBrowserVoices, speak } from '$lib/speech';
+	import { listBrowserVoices, speak, ensureMicrophonePermission } from '$lib/speech';
 	import { getInsecureOriginInfo, type InsecureOriginInfo } from '$lib/network';
 	import { _ } from 'svelte-i18n';
 	import { get } from 'svelte/store';
@@ -734,6 +735,7 @@
 	let voiceSaving = $state(false);
 	let voiceSaved = $state(false);
 	let voiceError = $state<string | null>(null);
+	let alwaysOnMicInput = $state(false);
 	let voiceInitialized = false;
 
 	// Language and theme both apply live to the DOM the instant the store is
@@ -859,6 +861,9 @@
 				voiceProviderInput = $voiceSelection.provider;
 				voiceIdInput = $voiceSelection.voiceId;
 			});
+			loadAlwaysOnMicFromServer().then(() => {
+				alwaysOnMicInput = $alwaysOnMic;
+			});
 		}
 	});
 
@@ -913,6 +918,7 @@
 		voiceError = null;
 		try {
 			await persistVoiceSelection(currentVoiceSelection());
+			await persistAlwaysOnMic(alwaysOnMicInput);
 			voiceSaved = true;
 		} catch {
 			voiceError = get(_)('settings.voice.save_error');
@@ -989,6 +995,9 @@
 			if (geminiKeyInput) partial.gemini_api_key = geminiKeyInput;
 
 			settings = await api.updateSettings(partial);
+			if (settings?.ai_agent_name) {
+				agentName.set(settings.ai_agent_name.trim() || 'Tilora');
+			}
 			anthropicKeyInput = '';
 			openaiKeyInput = '';
 			geminiKeyInput = '';
@@ -2316,13 +2325,27 @@
 
 			<button class="clear" disabled={!voiceIdInput} onclick={previewVoice}>{$_('settings.voice.preview')}</button>
 
+			<label class="checkbox-label" style="margin-top: 1rem;">
+				<input
+					type="checkbox"
+					bind:checked={alwaysOnMicInput}
+					onchange={(e) => {
+						if (e.currentTarget.checked) void ensureMicrophonePermission();
+					}}
+				/>
+				{$_('settings.voice.always_on_mic_label')}
+			</label>
+			<p class="hint">
+				{$_('settings.voice.always_on_mic_hint', { values: { agentName: $agentName } })}
+			</p>
+
 			{#if voiceError}
 				<p class="hint error">{voiceError}</p>
 			{/if}
 			{#if voiceSaved}
 				<p class="hint">{$_('common.saved')}</p>
 			{/if}
-			<button class="save" disabled={voiceSaving || !voiceIdInput} onclick={saveVoiceSelection}>
+			<button class="save" disabled={voiceSaving} onclick={saveVoiceSelection}>
 				{voiceSaving ? $_('common.saving') : $_('settings.voice.save')}
 			</button>
 		</section>

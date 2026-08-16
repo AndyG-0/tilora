@@ -101,7 +101,9 @@
 			"preview": "Previsualizar voz",
 			"preview_text": "Esta es una vista previa de la voz seleccionada.",
 			"save": "Guardar voz",
-			"save_error": "No se pudo guardar tu selección de voz."
+			"save_error": "No se pudo guardar tu selección de voz.",
+			"always_on_mic_label": "Micrófono siempre activo",
+			"always_on_mic_hint": "Escuchar continuamente en el panel de control la palabra de activación (\"{agentName}\") sin tener que hacer clic en el micrófono."
 		},
 		"location": {
 			"heading": "Ubicación",
@@ -1028,7 +1030,9 @@
 		"resize_widget": "Redimensionar widget",
 		"add_widget": "+ Añadir widget",
 		"mic_no_match": "No se entendió eso.",
-		"assistant_error": "Algo salió mal. Inténtalo de nuevo o pide a tu administrador que revise los registros si esto continúa."
+		"assistant_error": "Algo salió mal. Inténtalo de nuevo o pide a tu administrador que revise los registros si esto continúa.",
+		"always_on_standby": "Escuchando \"{agentName}\"…",
+		"always_on_standby_label": "Micrófono siempre activo: escuchando \"{agentName}\""
 	},
 	"widget_detail": {
 		"unknown_widget": "Widget desconocido",

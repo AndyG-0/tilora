@@ -1,19 +1,52 @@
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { WidgetSummaryMeta, TabMeta, WidgetLayout } from '$lib/api';
 
-const { goto, listWidgets, tabsApi, version, themes, updateWidgetsLayout, removeWidget, widgetTypes, addWidget } =
-	vi.hoisted(() => ({
-		goto: vi.fn(),
-		listWidgets: vi.fn(() => new Promise(() => {})), // never resolves — tests seed the store directly
-		tabsApi: vi.fn(() => new Promise(() => {})), // never resolves — tests keep the single default tab
-		version: vi.fn().mockResolvedValue({ update_available: false }),
-		themes: vi.fn(() => new Promise(() => {})), // never resolves — keeps the fallback theme id list
-		updateWidgetsLayout: vi.fn().mockResolvedValue({ status: 'ok' }),
-		removeWidget: vi.fn().mockResolvedValue({ status: 'ok' }),
-		widgetTypes: vi.fn().mockResolvedValue([]),
-		addWidget: vi.fn(),
-	}));
+const {
+	goto,
+	listWidgets,
+	tabsApi,
+	version,
+	themes,
+	updateWidgetsLayout,
+	removeWidget,
+	widgetTypes,
+	addWidget,
+	askAssistant,
+	isSpeechRecognitionSupported,
+	isSpeechSynthesisSupported,
+	speak,
+	listenOnce,
+	playChime,
+	startContinuousListening,
+	stopSpeaking,
+	ensureMicrophonePermission,
+} = vi.hoisted(() => ({
+	goto: vi.fn(),
+	listWidgets: vi.fn(() => new Promise(() => {})), // never resolves — tests seed the store directly
+	tabsApi: vi.fn(() => new Promise(() => {})), // never resolves — tests keep the single default tab
+	version: vi.fn().mockResolvedValue({ update_available: false }),
+	themes: vi.fn(() => new Promise(() => {})), // never resolves — keeps the fallback theme id list
+	updateWidgetsLayout: vi.fn().mockResolvedValue({ status: 'ok' }),
+	removeWidget: vi.fn().mockResolvedValue({ status: 'ok' }),
+	widgetTypes: vi.fn().mockResolvedValue([]),
+	addWidget: vi.fn(),
+	askAssistant: vi.fn(),
+	isSpeechRecognitionSupported: vi.fn(() => false),
+	isSpeechSynthesisSupported: vi.fn(() => false),
+	speak: vi.fn(),
+	listenOnce: vi.fn(),
+	playChime: vi.fn(),
+	startContinuousListening: vi.fn<(options?: unknown) => { stop: () => void; pause: () => void; resume: () => void }>(
+		() => ({
+			stop: vi.fn(),
+			pause: vi.fn(),
+			resume: vi.fn(),
+		}),
+	),
+	stopSpeaking: vi.fn(),
+	ensureMicrophonePermission: vi.fn().mockResolvedValue(true),
+}));
 vi.mock('$app/navigation', () => ({ goto }));
 vi.mock('$lib/api', () => ({
 	api: {
@@ -25,14 +58,18 @@ vi.mock('$lib/api', () => ({
 		removeWidget,
 		widgetTypes,
 		addWidget,
-		askAssistant: vi.fn(),
+		askAssistant,
 	},
 }));
 vi.mock('$lib/speech', () => ({
-	isSpeechRecognitionSupported: () => false,
-	isSpeechSynthesisSupported: () => false,
-	speak: vi.fn(),
-	listenOnce: vi.fn(),
+	isSpeechRecognitionSupported,
+	isSpeechSynthesisSupported,
+	speak,
+	listenOnce,
+	playChime,
+	startContinuousListening,
+	stopSpeaking,
+	ensureMicrophonePermission,
 }));
 // Tile content isn't under test here — an empty map means `{#if Tile}` never
 // renders anything inside a `.cell`, leaving the grid/drag/resize scaffolding
@@ -42,6 +79,7 @@ vi.mock('$lib/widgetComponents', () => ({ TILE_COMPONENTS: {} }));
 import Page from './+page.svelte';
 import { widgets } from '$lib/stores/widgets';
 import { activeTabIndex } from '$lib/stores/activeTab';
+import { agentName, alwaysOnMic } from '$lib/stores/assistant';
 
 function widget(id: string, layout: WidgetLayout, tab = 'default'): WidgetSummaryMeta {
 	return { id, type: 'message', name: 'Message', layout, tab, refresh_interval_seconds: 60 };
@@ -206,5 +244,56 @@ describe('+page.svelte', () => {
 			'wide',
 		);
 		expect(cell).not.toHaveClass('resizing');
+	});
+
+	it('handles manual click on mic button to ask assistant a question', async () => {
+		isSpeechRecognitionSupported.mockReturnValue(true);
+		alwaysOnMic.set(false);
+		listenOnce.mockResolvedValue('what is the weather');
+		askAssistant.mockResolvedValue({ text: 'It is sunny and 75 degrees.', action: null });
+
+		render(Page);
+
+		const micButton = screen.getByRole('button', { name: 'Ask a question' });
+		expect(micButton).toBeInTheDocument();
+
+		await fireEvent.click(micButton);
+
+		expect(listenOnce).toHaveBeenCalled();
+		expect(await screen.findByText('what is the weather')).toBeInTheDocument();
+		expect(await screen.findByText('It is sunny and 75 degrees.')).toBeInTheDocument();
+		expect(speak).toHaveBeenCalledWith('It is sunny and 75 degrees.', expect.anything());
+	});
+
+	it('starts continuous listening when alwaysOnMic is enabled and triggers on wake word', async () => {
+		isSpeechRecognitionSupported.mockReturnValue(true);
+		alwaysOnMic.set(true);
+		agentName.set('Tilora');
+		askAssistant.mockResolvedValue({ text: 'Tomorrow will be rainy.', action: null });
+
+		let capturedCallback: ((query: string) => void) | undefined;
+		startContinuousListening.mockImplementation((opts) => {
+			const cOpts = opts as { onWakeWordDetected: (query: string) => void };
+			capturedCallback = cOpts?.onWakeWordDetected;
+			return { stop: vi.fn(), pause: vi.fn(), resume: vi.fn() };
+		});
+
+		render(Page);
+
+		expect(startContinuousListening).toHaveBeenCalled();
+		expect(
+			screen.getByRole('button', { name: 'Always-on microphone active: listening for "Tilora"' }),
+		).toBeInTheDocument();
+
+		// Simulate wake word detected with a command
+		if (capturedCallback) {
+			capturedCallback('what is tomorrow weather');
+		}
+
+		await waitFor(() => expect(askAssistant).toHaveBeenCalledWith('what is tomorrow weather'));
+		expect(playChime).toHaveBeenCalled();
+		expect(await screen.findByText('what is tomorrow weather')).toBeInTheDocument();
+		expect(await screen.findByText('Tomorrow will be rainy.')).toBeInTheDocument();
+		expect(speak).toHaveBeenCalledWith('Tomorrow will be rainy.', expect.anything());
 	});
 });

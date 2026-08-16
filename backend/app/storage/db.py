@@ -2297,6 +2297,7 @@ _DEFAULT_PREFERENCES: dict[str, Any] = {
     "voice_name": "",
     "locale": "en",
     "location": None,
+    "always_on_mic": False,
 }
 
 

@@ -101,7 +101,9 @@
 			"preview": "Preview voice",
 			"preview_text": "This is a preview of the selected voice.",
 			"save": "Save voice",
-			"save_error": "Could not save your voice selection."
+			"save_error": "Could not save your voice selection.",
+			"always_on_mic_label": "Always-on microphone",
+			"always_on_mic_hint": "Listen continuously on the dashboard for the wake word (\"{agentName}\") so you don't need to click the microphone button."
 		},
 		"location": {
 			"heading": "Location",
@@ -1049,7 +1051,9 @@
 		"resize_widget": "Resize widget",
 		"add_widget": "+ Add widget",
 		"mic_no_match": "Didn't catch that.",
-		"assistant_error": "Something went wrong. Try again, or ask your admin to check the logs if this keeps happening."
+		"assistant_error": "Something went wrong. Try again, or ask your admin to check the logs if this keeps happening.",
+		"always_on_standby": "Listening for \"{agentName}\"…",
+		"always_on_standby_label": "Always-on microphone active: listening for \"{agentName}\""
 	},
 	"widget_detail": {
 		"unknown_widget": "Unknown widget",

@@ -1047,6 +1047,11 @@ export interface UserPreferences {
 	voice_name: string;
 	locale: string;
 	location: LocationPreference | null;
+	always_on_mic: boolean;
+}
+
+export interface AssistantConfig {
+	agent_name: string;
 }
 
 export interface TTSVoice {
@@ -1299,7 +1304,12 @@ export const api = {
 	setIcloudCredentials: (username: string, password?: string) =>
 		putJSON<IcloudCredentials>('/api/icloud/credentials', { username, ...(password && { password }) }),
 	clearIcloudCredentials: () => deleteJSON<{ status: string }>('/api/icloud/credentials'),
-	askAssistant: (text: string) => postJSON<{ text: string }>('/api/assistant/ask', { text }),
+	askAssistant: (text: string) =>
+		postJSON<{
+			text: string;
+			action: { widget_id: string; panel: string | null; destination?: string; origin?: string } | null;
+		}>('/api/assistant/ask', { text }),
+	assistantConfig: () => getJSON<AssistantConfig>('/api/assistant/config'),
 	assistantTopics: () => getJSON<{ id: string; name: string }[]>('/api/assistant/topics'),
 	widgetTypes: () =>
 		getJSON<{ type: string; name: string; default_layout: { colSpan: number; rowSpan: number } }[]>(

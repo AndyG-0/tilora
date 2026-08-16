@@ -63,14 +63,14 @@ async def run_ai_widget(plugin: AIInsightsPlugin) -> None:
             system_prompt = f"Respond in {language_name}."
         user = await _resolve_ai_widget_user(plugin.id)
         device = {"id": "server"} if user else None
-        text = await assistant.ask(
+        result = await assistant.ask(
             plugin.prompt,
             system_prompt=system_prompt,
             user=user,
             device=device,
             allowed_widget_ids=plugin.topics or None,
         )
-        await asyncio.to_thread(db.record_ai_run, plugin.id, {"text": text})
+        await asyncio.to_thread(db.record_ai_run, plugin.id, {"text": result.text})
         logger.info("AI widget '%s' ran successfully", plugin.id)
     except Exception:
         logger.exception("AI widget '%s' failed to run", plugin.id)

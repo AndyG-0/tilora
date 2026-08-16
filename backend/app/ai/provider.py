@@ -8,6 +8,7 @@ is a config change (`AI_MODEL` in .env) rather than a code change.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any
 
 from app.ai.tools import ToolBridge
@@ -39,7 +40,7 @@ _KEY_BY_MODEL_PREFIX = {
 }
 
 
-def _api_key_for_model(model: str, settings: dict[str, Any]) -> str | None:
+def api_key_for_model(model: str, settings: dict[str, Any]) -> str | None:
     prefix = model.split("/", 1)[0]
     key_name = _KEY_BY_MODEL_PREFIX.get(prefix)
     if key_name is None:
@@ -53,12 +54,20 @@ def _api_key_for_model(model: str, settings: dict[str, Any]) -> str | None:
     return settings.get(key_name)
 
 
+@dataclass(frozen=True)
+class PromptResult:
+    text: str
+    #: {"widget_id": ..., "panel": ... | None} if the model called a plugin's
+    #: is_navigation tool during this run, else None. See ToolBridge.
+    navigation: dict[str, Any] | None = None
+
+
 class AIProvider:
     def __init__(self, tool_bridge: ToolBridge, model: str | None = None):
         self._tools = tool_bridge
         self._model = model or effective_settings()["ai_model"]
 
-    async def run_prompt(self, prompt: str, max_tool_rounds: int = 4, system_prompt: str | None = None) -> str:
+    async def run_prompt(self, prompt: str, max_tool_rounds: int = 4, system_prompt: str | None = None) -> PromptResult:
         """Run a prompt to completion, letting the model call tools as needed.
 
         `system_prompt`, when given, is prepended as a `system` message —
@@ -78,7 +87,7 @@ class AIProvider:
         messages.append({"role": "user", "content": prompt})
         tool_schemas = self._tools.schemas()
         settings = effective_settings()
-        api_key = _api_key_for_model(self._model, settings)
+        api_key = api_key_for_model(self._model, settings)
         # `drop_params=True` scopes the leniency to just this one param: if the
         # configured model doesn't support reasoning_effort, litellm drops it
         # instead of raising UnsupportedParamsError, so the setting stays safe
@@ -103,7 +112,7 @@ class AIProvider:
             tool_calls = getattr(message, "tool_calls", None)
 
             if not tool_calls:
-                return message.content or ""
+                return PromptResult(message.content or "", self._tools.navigation_action)
 
             messages.append(message.model_dump())
             for call in tool_calls:
@@ -128,4 +137,4 @@ class AIProvider:
             max_completion_tokens=_MAX_COMPLETION_TOKENS,
             **extra_kwargs,
         )
-        return response.choices[0].message.content or ""
+        return PromptResult(response.choices[0].message.content or "", self._tools.navigation_action)

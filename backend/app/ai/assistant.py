@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any
 
 from app.ai.mcp_client import MCPToolSource, load_mcp_server_configs
-from app.ai.provider import AIProvider
+from app.ai.provider import AIProvider, PromptResult
 from app.ai.tools import ToolBridge
 from app.ai.web_tools import get_web_tools
 from app.config import effective_settings, resolve_timezone
@@ -49,7 +49,7 @@ async def ask(
     user: dict[str, Any] | None = None,
     device: dict[str, Any] | None = None,
     allowed_widget_ids: list[str] | None = None,
-) -> str:
+) -> PromptResult:
     # MCP servers (if any are configured) are connected fresh for each call
     # and torn down afterwards — tools from local plugins and MCP servers are
     # merged into one bridge, so the model can't tell (or needs to care)

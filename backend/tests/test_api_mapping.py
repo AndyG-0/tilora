@@ -124,12 +124,15 @@ def test_reverse_returns_none_when_unmapped():
 
 @respx.mock
 def test_directions_calls_osrm_with_lon_lat_order():
+    # Overpass has no match, so the destination falls through to Nominatim.
+    respx.post(OVERPASS_URL).mock(return_value=httpx.Response(200, json={"elements": []}))
     respx.get(SEARCH_URL).mock(
-        # The router geocodes destination before origin -- see
+        # The router geocodes origin before destination, so it can bias the
+        # destination search towards the origin -- see
         # app.api.mapping.directions().
         side_effect=[
-            httpx.Response(200, json=FAKE_DESTINATION_RESPONSE),
             httpx.Response(200, json=FAKE_SEARCH_RESPONSE),
+            httpx.Response(200, json=FAKE_DESTINATION_RESPONSE),
         ]
     )
     osrm_route = respx.get(url__startswith=OSRM_BASE_URL).mock(
@@ -152,6 +155,94 @@ def test_directions_calls_osrm_with_lon_lat_order():
     requested_path = osrm_route.calls.last.request.url.path
     assert "-97.3308,32.7555" in requested_path
     assert "-96.797,32.7767" in requested_path
+
+
+@respx.mock
+def test_directions_biases_destination_geocode_towards_origin():
+    # Overpass has no match, so the destination falls through to Nominatim.
+    respx.post(OVERPASS_URL).mock(return_value=httpx.Response(200, json={"elements": []}))
+    search_route = respx.get(SEARCH_URL).mock(
+        side_effect=[
+            httpx.Response(200, json=FAKE_SEARCH_RESPONSE),
+            httpx.Response(200, json=FAKE_DESTINATION_RESPONSE),
+        ]
+    )
+    respx.get(url__startswith=OSRM_BASE_URL).mock(return_value=httpx.Response(200, json=FAKE_OSRM_RESPONSE))
+    client = make_client()
+
+    response = client.get(
+        "/api/mapping/directions",
+        params={"origin": "Fort Worth, TX", "destination": "Taco Bell", "mode": "driving"},
+    )
+
+    assert response.status_code == 200
+    # First call geocodes the origin, with no bias point yet -- and since
+    # there's no bias point, it skips Overpass and goes straight to Nominatim.
+    assert "viewbox" not in search_route.calls[0].request.url.params
+    # Second call geocodes the destination, biased around the origin's coords.
+    dest_params = search_route.calls[1].request.url.params
+    assert dest_params["q"] == "Taco Bell"
+    assert dest_params["viewbox"] == "-98.3308,33.7555,-96.3308,31.7555"
+
+
+@respx.mock
+def test_directions_skips_bias_when_origin_has_exact_coordinates():
+    respx.post(OVERPASS_URL).mock(return_value=httpx.Response(200, json={"elements": []}))
+    search_route = respx.get(SEARCH_URL).mock(return_value=httpx.Response(200, json=FAKE_DESTINATION_RESPONSE))
+    respx.get(url__startswith=OSRM_BASE_URL).mock(return_value=httpx.Response(200, json=FAKE_OSRM_RESPONSE))
+    client = make_client()
+
+    response = client.get(
+        "/api/mapping/directions",
+        params={
+            "origin": "Home",
+            "destination": "Taco Bell",
+            "mode": "driving",
+            "origin_lat": 32.7555,
+            "origin_lon": -97.3308,
+        },
+    )
+
+    assert response.status_code == 200
+    # Only the destination is geocoded (origin has exact coordinates), biased
+    # around those coordinates.
+    assert search_route.calls.call_count == 1
+    dest_params = search_route.calls[0].request.url.params
+    assert dest_params["viewbox"] == "-98.3308,33.7555,-96.3308,31.7555"
+
+
+@respx.mock
+def test_directions_prefers_overpass_nearest_match_for_destination():
+    respx.post(OVERPASS_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={"elements": [{"type": "node", "lat": 32.756, "lon": -97.331, "tags": {"name": "Taco Bell"}}]},
+        )
+    )
+    osrm_route = respx.get(url__startswith=OSRM_BASE_URL).mock(
+        return_value=httpx.Response(200, json=FAKE_OSRM_RESPONSE)
+    )
+    client = make_client()
+
+    # No SEARCH_URL mock is registered -- if the destination fell back to
+    # Nominatim despite an Overpass match existing, respx would fail this
+    # request since it would be unmocked.
+    response = client.get(
+        "/api/mapping/directions",
+        params={
+            "origin": "Home",
+            "destination": "Taco Bell",
+            "mode": "driving",
+            "origin_lat": 32.7555,
+            "origin_lon": -97.3308,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["destination"] == "Taco Bell"
+    requested_path = osrm_route.calls.last.request.url.path
+    assert "-97.331,32.756" in requested_path
 
 
 @respx.mock

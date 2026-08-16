@@ -418,6 +418,16 @@ describe('api', () => {
 		);
 	});
 
+	it('assistantConfig GETs /api/assistant/config and returns the config', async () => {
+		const config = { agent_name: 'Friday' };
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => config }));
+
+		const result = await api.assistantConfig();
+
+		expect(fetch).toHaveBeenCalledWith('http://api.test/api/assistant/config', { credentials: 'include' });
+		expect(result).toEqual(config);
+	});
+
 	it('apiUrl prepends configured base URL or falls back to relative path', () => {
 		expect(apiUrl('/api/widgets')).toBe('http://api.test/api/widgets');
 	});

@@ -150,10 +150,14 @@ async def test_get_ai_tools_exposes_weather_summary_tool():
 
     tools = plugin.get_ai_tools()
 
-    assert len(tools) == 1
+    assert len(tools) == 2
     assert tools[0].name == "get_weather_summary"
     result = await tools[0].handler()
     assert result["condition"] == "Mainly clear"
+    assert tools[1].name == "show_weather_detail"
+    assert tools[1].is_navigation is True
+    nav_result = await tools[1].handler()
+    assert nav_result == {"widget_id": plugin.id, "panel": None}
 
 
 @respx.mock
@@ -250,12 +254,16 @@ async def test_get_detail_omits_air_quality_on_fetch_error():
 def test_get_ai_tools_default_and_custom_instances():
     default_plugin = WeatherPlugin({"id": "weather", "settings": {"location_name": "Austin, TX"}})
     default_tools = default_plugin.get_ai_tools()
-    assert len(default_tools) == 1
+    assert len(default_tools) == 2
     assert default_tools[0].name == "get_weather_summary"
     assert "Austin, TX" in default_tools[0].description
+    assert default_tools[1].name == "show_weather_detail"
+    assert "Austin, TX" in default_tools[1].description
 
     custom_plugin = WeatherPlugin({"id": "weather-custom-123", "settings": {"location_name": "London, UK"}})
     custom_tools = custom_plugin.get_ai_tools()
-    assert len(custom_tools) == 1
+    assert len(custom_tools) == 2
     assert custom_tools[0].name == "get_weather_summary_weather_custom_123"
     assert "London, UK" in custom_tools[0].description
+    assert custom_tools[1].name == "show_weather_detail_weather_custom_123"
+    assert "London, UK" in custom_tools[1].description

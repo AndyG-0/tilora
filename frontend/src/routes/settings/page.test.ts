@@ -81,7 +81,11 @@ vi.mock('$lib/api', () => ({
 		triggerUpdate,
 	},
 }));
-vi.mock('$lib/speech', () => ({ listBrowserVoices, speak }));
+vi.mock('$lib/speech', () => ({
+	listBrowserVoices,
+	speak,
+	ensureMicrophonePermission: vi.fn().mockResolvedValue(true),
+}));
 
 import Page from './+page.svelte';
 import { user } from '$lib/stores/user';
@@ -295,6 +299,27 @@ describe('settings +page.svelte — voice sections', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Save voice' }));
 
 		expect(await screen.findByText('Could not save your voice selection.')).toBeInTheDocument();
+	});
+
+	it('toggles and saves the always-on microphone preference', async () => {
+		user.set({ id: 'u1', name: 'Member', avatar: null, role: 'member' });
+		listBrowserVoices.mockResolvedValue([]);
+		updatePreferences.mockResolvedValue({
+			...DEFAULT_PREFERENCES,
+			always_on_mic: true,
+		});
+		render(Page);
+
+		const checkbox = await screen.findByLabelText('Always-on microphone');
+		expect(checkbox).not.toBeChecked();
+
+		await fireEvent.click(checkbox);
+		expect(checkbox).toBeChecked();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Save voice' }));
+
+		await waitFor(() => expect(updatePreferences).toHaveBeenCalledWith({ always_on_mic: true }));
+		expect(await screen.findByText('Saved.')).toBeInTheDocument();
 	});
 });
 

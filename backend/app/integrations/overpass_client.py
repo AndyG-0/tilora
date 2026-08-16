@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import re
 from typing import Any
 
 import httpx
@@ -114,6 +115,37 @@ async def nearby(lat: float, lon: float, category: str, radius_m: int = 40234, l
     data = await _post_with_retry(query, category)
 
     results = [_normalize(element, category, lat, lon) for element in data.get("elements", [])]
+    places = [result for result in results if result is not None]
+    places.sort(key=lambda place: place["distance_m"])
+    return places[:limit]
+
+
+def _build_name_query(lat: float, lon: float, name: str, radius_m: int, limit: int) -> str:
+    escaped = re.escape(name)
+    return (
+        f"[out:json][timeout:15];\n(\n"
+        f'  node["name"~"{escaped}",i](around:{radius_m},{lat},{lon});\n'
+        f'  way["name"~"{escaped}",i](around:{radius_m},{lat},{lon});\n'
+        f");\nout center {limit};"
+    )
+
+
+async def find_by_name(
+    lat: float, lon: float, name: str, radius_m: int = 40234, limit: int = 5
+) -> list[dict[str, Any]]:
+    """Find named places (chains, businesses, landmarks) within radius_m of
+    (lat, lon), sorted nearest-first by real distance.
+
+    Unlike `nearby()`, this isn't limited to CATEGORY_TAGS's fixed
+    vocabulary -- it matches any node/way whose OSM `name` tag contains
+    `name` (case-insensitive), so it also covers places CATEGORY_TAGS has no
+    category for (e.g. fast-food chains are tagged amenity=fast_food, not
+    amenity=restaurant).
+    """
+    query = _build_name_query(lat, lon, name, radius_m, limit)
+    data = await _post_with_retry(query, name)
+
+    results = [_normalize(element, "place", lat, lon) for element in data.get("elements", [])]
     places = [result for result in results if result is not None]
     places.sort(key=lambda place: place["distance_m"])
     return places[:limit]

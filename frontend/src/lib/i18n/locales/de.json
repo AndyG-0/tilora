@@ -101,7 +101,9 @@
 			"preview": "Stimme testen",
 			"preview_text": "Dies ist eine Vorschau der ausgewählten Stimme.",
 			"save": "Stimme speichern",
-			"save_error": "Deine Stimmauswahl konnte nicht gespeichert werden."
+			"save_error": "Deine Stimmauswahl konnte nicht gespeichert werden.",
+			"always_on_mic_label": "Dauermikrofon (Wake-Word)",
+			"always_on_mic_hint": "Auf dem Dashboard kontinuierlich auf das Aktivierungswort (\"{agentName}\") lauschen, ohne das Mikrofonsymbol anklicken zu müssen."
 		},
 		"location": {
 			"heading": "Standort",
@@ -1028,7 +1030,9 @@
 		"resize_widget": "Widget-Größe ändern",
 		"add_widget": "+ Widget hinzufügen",
 		"mic_no_match": "Das wurde nicht verstanden.",
-		"assistant_error": "Etwas ist schiefgelaufen. Versuchen Sie es erneut oder bitten Sie Ihren Administrator, die Protokolle zu prüfen, falls dies weiterhin auftritt."
+		"assistant_error": "Etwas ist schiefgelaufen. Versuchen Sie es erneut oder bitten Sie Ihren Administrator, die Protokolle zu prüfen, falls dies weiterhin auftritt.",
+		"always_on_standby": "Wartet auf „{agentName}“…",
+		"always_on_standby_label": "Dauermikrofon aktiv: wartet auf „{agentName}“"
 	},
 	"widget_detail": {
 		"unknown_widget": "Unbekanntes Widget",
