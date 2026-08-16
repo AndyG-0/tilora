@@ -25,7 +25,7 @@ describe('ChoresTile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(ChoresTile, { props: { widgetId: 'chores' } });
+		render(ChoresTile, { props: { widgetId: 'chores', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Loading…')).toBeInTheDocument();
 	});
@@ -33,7 +33,7 @@ describe('ChoresTile', () => {
 	it('renders open items with a count badge', async () => {
 		widgetSummary.mockResolvedValue({ title: 'To-Do', chores: [OPEN_ITEM], open_count: 1 });
 
-		render(ChoresTile, { props: { widgetId: 'chores' } });
+		render(ChoresTile, { props: { widgetId: 'chores', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Take out trash')).toBeInTheDocument();
 		expect(screen.getByText('To-Do')).toBeInTheDocument();
@@ -47,7 +47,7 @@ describe('ChoresTile', () => {
 			open_count: 1,
 		});
 
-		render(ChoresTile, { props: { widgetId: 'chores' } });
+		render(ChoresTile, { props: { widgetId: 'chores', refreshIntervalSeconds: 60 } });
 
 		await screen.findByText('Take out trash');
 		expect(screen.queryByText('Done already')).not.toBeInTheDocument();
@@ -56,7 +56,7 @@ describe('ChoresTile', () => {
 	it('shows an empty state when there are no open items', async () => {
 		widgetSummary.mockResolvedValue({ title: 'To-Do', chores: [], open_count: 0 });
 
-		render(ChoresTile, { props: { widgetId: 'chores' } });
+		render(ChoresTile, { props: { widgetId: 'chores', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('All done!')).toBeInTheDocument();
 	});
@@ -67,7 +67,7 @@ describe('ChoresTile', () => {
 			.mockResolvedValueOnce({ title: 'To-Do', chores: [OPEN_ITEM], open_count: 1 })
 			.mockResolvedValueOnce({ title: 'To-Do', chores: [], open_count: 0 });
 
-		render(ChoresTile, { props: { widgetId: 'chores' } });
+		render(ChoresTile, { props: { widgetId: 'chores', refreshIntervalSeconds: 60 } });
 
 		await screen.findByText('Take out trash');
 		await fireEvent.click(screen.getByRole('checkbox'));

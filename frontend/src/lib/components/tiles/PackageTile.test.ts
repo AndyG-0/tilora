@@ -26,7 +26,7 @@ describe('PackageTile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(PackageTile, { props: { widgetId: 'packages' } });
+		render(PackageTile, { props: { widgetId: 'packages', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Loading…')).toBeInTheDocument();
 	});
@@ -39,7 +39,7 @@ describe('PackageTile', () => {
 			active_count: 1,
 		});
 
-		render(PackageTile, { props: { widgetId: 'packages' } });
+		render(PackageTile, { props: { widgetId: 'packages', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Gift')).toBeInTheDocument();
 		expect(screen.getByText('Packages')).toBeInTheDocument();
@@ -55,7 +55,7 @@ describe('PackageTile', () => {
 			active_count: 1,
 		});
 
-		render(PackageTile, { props: { widgetId: 'packages' } });
+		render(PackageTile, { props: { widgetId: 'packages', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('1Z999AA1')).toBeInTheDocument();
 	});
@@ -68,7 +68,7 @@ describe('PackageTile', () => {
 			active_count: 2,
 		});
 
-		render(PackageTile, { props: { widgetId: 'packages' } });
+		render(PackageTile, { props: { widgetId: 'packages', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('2 on the way')).toBeInTheDocument();
 	});
@@ -81,7 +81,7 @@ describe('PackageTile', () => {
 			active_count: 0,
 		});
 
-		render(PackageTile, { props: { widgetId: 'packages' } });
+		render(PackageTile, { props: { widgetId: 'packages', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Nothing tracked')).toBeInTheDocument();
 	});

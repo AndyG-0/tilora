@@ -12,7 +12,13 @@ beforeEach(() => {
 describe('widgets store', () => {
 	it('populates from api.listWidgets once loaded', async () => {
 		const data = [
-			{ id: 'weather', type: 'weather', layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 }, tab: 'default' },
+			{
+				id: 'weather',
+				type: 'weather',
+				name: 'Weather',
+				layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 },
+				tab: 'default',
+			},
 		];
 		listWidgets.mockResolvedValue(data);
 
@@ -38,8 +44,8 @@ describe('widgets store', () => {
 	it('applyLayoutUpdates patches matching widgets in place without a refetch', async () => {
 		const layout = { col: 1, row: 1, colSpan: 1, rowSpan: 1 };
 		listWidgets.mockResolvedValue([
-			{ id: 'a', type: 'weather', layout, tab: 'default' },
-			{ id: 'b', type: 'clock', layout, tab: 'default' },
+			{ id: 'a', type: 'weather', name: 'Weather', layout, tab: 'default' },
+			{ id: 'b', type: 'clock', name: 'Clock', layout, tab: 'default' },
 		]);
 
 		const { widgets, applyLayoutUpdates } = await import('./widgets');
@@ -64,18 +70,27 @@ describe('widgets store', () => {
 		await vi.waitFor(() => expect(value).toEqual([]));
 
 		const layout = { col: 1, row: 1, colSpan: 1, rowSpan: 1 };
-		addWidgetLocal({ id: 'new', type: 'weather', layout, tab: 'default' });
+		addWidgetLocal({
+			id: 'new',
+			type: 'weather',
+			name: 'Weather',
+			layout,
+			tab: 'default',
+			refresh_interval_seconds: 600,
+		});
 
 		expect(listWidgets).toHaveBeenCalledTimes(1);
-		expect(value).toEqual([{ id: 'new', type: 'weather', layout, tab: 'default' }]);
+		expect(value).toEqual([
+			{ id: 'new', type: 'weather', name: 'Weather', layout, tab: 'default', refresh_interval_seconds: 600 },
+		]);
 		unsubscribe();
 	});
 
 	it('removeWidgetLocal filters a widget out without a refetch', async () => {
 		const layout = { col: 1, row: 1, colSpan: 1, rowSpan: 1 };
 		listWidgets.mockResolvedValue([
-			{ id: 'a', type: 'weather', layout, tab: 'default' },
-			{ id: 'b', type: 'clock', layout, tab: 'default' },
+			{ id: 'a', type: 'weather', name: 'Weather', layout, tab: 'default' },
+			{ id: 'b', type: 'clock', name: 'Clock', layout, tab: 'default' },
 		]);
 
 		const { widgets, removeWidgetLocal } = await import('./widgets');
@@ -86,7 +101,7 @@ describe('widgets store', () => {
 		removeWidgetLocal('a');
 
 		expect(listWidgets).toHaveBeenCalledTimes(1);
-		expect(value).toEqual([{ id: 'b', type: 'clock', layout, tab: 'default' }]);
+		expect(value).toEqual([{ id: 'b', type: 'clock', name: 'Clock', layout, tab: 'default' }]);
 		unsubscribe();
 	});
 });

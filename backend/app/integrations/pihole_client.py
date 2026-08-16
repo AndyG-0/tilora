@@ -22,6 +22,13 @@ from app.storage.cache import cache
 _SESSION_TTL_SAFETY_MARGIN_SECONDS = 60
 _MIN_SESSION_TTL_SECONDS = 60
 
+# Shared across every call/widget instance rather than one httpx.AsyncClient
+# per request — every call here already carries its own full URL and
+# stateless auth (sid query param / CSRF header), so one pooled client
+# avoids paying a fresh TCP/TLS handshake on every poll (this plugin's
+# default refresh_interval_seconds is 60s).
+_client = httpx.AsyncClient(timeout=10)
+
 
 class PiholeError(Exception):
     """Raised when a Pi-hole server can't be reached or rejects a request."""
@@ -43,11 +50,10 @@ def _base_url(settings: dict[str, Any]) -> str:
 
 
 async def _authenticate(base_url: str, widget_id: str, password: str) -> PiholeSession:
-    async with httpx.AsyncClient(timeout=10) as client:
-        try:
-            response = await client.post(f"{base_url}/api/auth", json={"password": password})
-        except httpx.HTTPError as exc:
-            raise PiholeError(f"Could not reach the Pi-hole server: {exc}") from exc
+    try:
+        response = await _client.post(f"{base_url}/api/auth", json={"password": password})
+    except httpx.HTTPError as exc:
+        raise PiholeError(f"Could not reach the Pi-hole server: {exc}") from exc
 
     if response.status_code == 401:
         raise PiholeError("Pi-hole rejected that password.")
@@ -88,8 +94,7 @@ async def _request(
     async def send(session: PiholeSession) -> httpx.Response:
         query = {**(params or {}), "sid": session.sid}
         headers = {"X-FTL-CSRF": session.csrf} if method != "GET" else {}
-        async with httpx.AsyncClient(timeout=10) as client:
-            return await client.request(method, f"{base_url}{path}", params=query, headers=headers, json=json)
+        return await _client.request(method, f"{base_url}{path}", params=query, headers=headers, json=json)
 
     try:
         response = await send(session)

@@ -10,7 +10,7 @@ describe('MovieTile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(MovieTile, { props: { widgetId: 'movies' } });
+		render(MovieTile, { props: { widgetId: 'movies', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Movies & Shows')).toBeInTheDocument();
 		expect(screen.getByText('Loading…')).toBeInTheDocument();
@@ -21,7 +21,7 @@ describe('MovieTile', () => {
 			popular_movies: [{ id: 1, title: 'A Movie', poster_url: 'https://example.com/a.jpg' }],
 		});
 
-		render(MovieTile, { props: { widgetId: 'movies' } });
+		render(MovieTile, { props: { widgetId: 'movies', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Popular Movies')).toBeInTheDocument();
 		expect(screen.getByAltText('A Movie')).toBeInTheDocument();
@@ -40,7 +40,7 @@ describe('MovieTile', () => {
 			on_streaming_tv_shows: [{ id: 6, title: 'Streaming Show', poster_url: 'https://example.com/f.jpg' }],
 		});
 
-		render(MovieTile, { props: { widgetId: 'movies' } });
+		render(MovieTile, { props: { widgetId: 'movies', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Popular Movies')).toBeInTheDocument();
 		expect(screen.getByText('Popular Shows')).toBeInTheDocument();

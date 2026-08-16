@@ -11,7 +11,10 @@ import yaml
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
-DASHBOARD_CONFIG_PATH = BACKEND_ROOT / "config" / "dashboard.yaml"
+# Overridable via env for the same reason as DB_PATH below — also lets the
+# Playwright e2e suite (frontend/e2e) point at an isolated fixture file
+# instead of the real, gitignored dev config/dashboard.yaml.
+DASHBOARD_CONFIG_PATH = Path(os.environ.get("DASHBOARD_CONFIG_PATH", str(BACKEND_ROOT / "config" / "dashboard.yaml")))
 # Overridable via env so a Docker deployment can point it at a volume-mounted
 # directory (mounting a named volume directly onto a single file isn't
 # possible) — see docker-compose.yml.

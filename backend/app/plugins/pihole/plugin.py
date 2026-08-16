@@ -47,29 +47,37 @@ class PiholePlugin(Plugin):
     def _is_connected(self) -> bool:
         return pihole_client.is_configured(self.config["settings"])
 
-    async def _stats(self) -> dict[str, Any]:
+    async def _stats(self) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        """Returns (summary fields, raw get_summary_stats() response).
+
+        The raw response is returned alongside the derived summary fields so
+        get_detail() can pull its extra fields (clients, gravity) from it
+        without a second `get_summary_stats` round-trip — it's None only
+        when the fetch itself failed, in which case the summary dict is
+        just `{"error": ...}`.
+        """
         settings = self.config["settings"]
         try:
-            summary = await pihole_client.get_summary_stats(settings, self.id)
+            raw_summary = await pihole_client.get_summary_stats(settings, self.id)
             blocking = await pihole_client.get_blocking_status(settings, self.id)
         except pihole_client.PiholeError as exc:
             logger.warning("Could not fetch Pi-hole stats for widget '%s': %s", self.id, exc)
-            return {"error": str(exc)}
+            return {"error": str(exc)}, None
 
-        queries = summary.get("queries") or {}
+        queries = raw_summary.get("queries") or {}
         return {
             "blocking_enabled": blocking.get("blocking") == "enabled",
             "blocking_timer": blocking.get("timer"),
             "queries_today": queries.get("total", 0),
             "blocked_today": queries.get("blocked", 0),
             "percent_blocked": queries.get("percent_blocked", 0),
-        }
+        }, raw_summary
 
     async def get_summary(self) -> dict[str, Any]:
         connected = self._is_connected()
         stats: dict[str, Any] = {}
         if connected:
-            stats = await self._stats()
+            stats, _ = await self._stats()
         return {"connected": connected, **stats, **self._safe_settings()}
 
     @staticmethod
@@ -84,13 +92,17 @@ class PiholePlugin(Plugin):
         }
 
     async def get_detail(self) -> dict[str, Any]:
-        summary = await self.get_summary()
-        if not summary["connected"] or summary.get("error"):
+        connected = self._is_connected()
+        if not connected:
+            return {"connected": False, **self._safe_settings(), **self._empty_detail_fields()}
+
+        stats, raw_summary = await self._stats()
+        summary = {"connected": connected, **stats, **self._safe_settings()}
+        if raw_summary is None:
             return {**summary, **self._empty_detail_fields()}
 
         settings = self.config["settings"]
         try:
-            raw_summary = await pihole_client.get_summary_stats(settings, self.id)
             top_blocked = await pihole_client.get_top_domains(settings, self.id, blocked=True, count=_TOP_DOMAINS_COUNT)
             top_permitted = await pihole_client.get_top_domains(
                 settings, self.id, blocked=False, count=_TOP_DOMAINS_COUNT

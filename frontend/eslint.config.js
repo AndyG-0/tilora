@@ -6,7 +6,15 @@ import globals from 'globals';
 
 export default tseslint.config(
 	{
-		ignores: ['build/', '.svelte-kit/', 'node_modules/', 'coverage/'],
+		ignores: [
+			'build/',
+			'.svelte-kit/',
+			'node_modules/',
+			'coverage/',
+			'playwright-report/',
+			'test-results/',
+			'blob-report/',
+		],
 	},
 	js.configs.recommended,
 	...tseslint.configs.recommended,

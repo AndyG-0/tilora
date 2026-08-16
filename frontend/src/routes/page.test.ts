@@ -44,7 +44,7 @@ import { widgets } from '$lib/stores/widgets';
 import { activeTabIndex } from '$lib/stores/activeTab';
 
 function widget(id: string, layout: WidgetLayout, tab = 'default'): WidgetSummaryMeta {
-	return { id, type: 'message', layout, tab };
+	return { id, type: 'message', name: 'Message', layout, tab, refresh_interval_seconds: 60 };
 }
 
 function stubCellRect(id: string, width: number, height: number) {

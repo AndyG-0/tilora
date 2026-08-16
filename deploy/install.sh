@@ -183,6 +183,7 @@ prepare_configuration() {
     cp "$FRONTEND_DIR/.env.example" "$FRONTEND_DIR/.env"
   fi
   chmod 600 "$BACKEND_DIR/.env"
+  set_env_value "$BACKEND_DIR/.env" TILORA_INSTALL_METHOD native
 
   printf '%s' "$first_install"
 }
@@ -241,6 +242,26 @@ print_completion() {
   printf 'Rerun this installer later to fast-forward, rebuild, and restart Tilora.\n'
 }
 
+install_sudoers_restart() {
+  local sudoers_file="/etc/sudoers.d/tilora-restart"
+  local restart_script="$INSTALL_DIR/deploy/restart.sh"
+  # Make the restart wrapper executable.
+  chmod 755 "$restart_script"
+  # Write a targeted sudoers rule granting only this one script, no-password.
+  # visudo -c validates the syntax before it's put in place.
+  local tmp_sudoers
+  tmp_sudoers="$(mktemp)"
+  printf '# Tilora: allow the service user to restart tilora services only.\n' >"$tmp_sudoers"
+  printf '%s ALL=(root) NOPASSWD: %s\n' "$INSTALL_USER" "$restart_script" >>"$tmp_sudoers"
+  if visudo -c -f "$tmp_sudoers" >/dev/null 2>&1; then
+    sudo install -m 440 "$tmp_sudoers" "$sudoers_file"
+  else
+    rm -f "$tmp_sudoers"
+    fail "Generated sudoers file failed validation — not installing."
+  fi
+  rm -f "$tmp_sudoers"
+}
+
 main() {
   require_command sudo
   sudo -v
@@ -258,6 +279,7 @@ main() {
     configure_ai
   fi
   render_service_units
+  install_sudoers_restart
   wait_for_health
   print_completion
 }

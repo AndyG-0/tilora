@@ -5,7 +5,7 @@
 	import TileCard from '$lib/components/TileCard.svelte';
 	import { _ } from 'svelte-i18n';
 
-	let { widgetId }: { widgetId: string } = $props();
+	let { widgetId, refreshIntervalSeconds }: { widgetId: string; refreshIntervalSeconds: number } = $props();
 
 	let summary = $state<SportsSummary | null>(null);
 
@@ -24,7 +24,7 @@
 
 	// Schedules/broadcasts don't change minute to minute — matches the
 	// plugin's own 15-minute cache TTL, no point polling more often.
-	pollWidget(refresh, 15 * 60_000);
+	pollWidget(refresh, refreshIntervalSeconds * 1000);
 
 	function formatDate(iso: string | null): string {
 		if (!iso) return '';

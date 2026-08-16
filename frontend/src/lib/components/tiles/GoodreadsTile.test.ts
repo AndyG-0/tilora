@@ -10,7 +10,7 @@ describe('GoodreadsTile', () => {
 	it('shows an empty state when there are no books', async () => {
 		widgetSummary.mockResolvedValue({ shelf: 'currently-reading', books: [] });
 
-		render(GoodreadsTile, { props: { widgetId: 'goodreads' } });
+		render(GoodreadsTile, { props: { widgetId: 'goodreads', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('No books on this shelf')).toBeInTheDocument();
 	});
@@ -28,7 +28,7 @@ describe('GoodreadsTile', () => {
 			],
 		});
 
-		render(GoodreadsTile, { props: { widgetId: 'goodreads' } });
+		render(GoodreadsTile, { props: { widgetId: 'goodreads', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Goodreads')).toBeInTheDocument();
 		expect(screen.getByText('Project Hail Mary')).toBeInTheDocument();
@@ -56,7 +56,7 @@ describe('GoodreadsTile', () => {
 			],
 		});
 
-		render(GoodreadsTile, { props: { widgetId: 'goodreads' } });
+		render(GoodreadsTile, { props: { widgetId: 'goodreads', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Book One')).toBeInTheDocument();
 		expect(screen.getByText('Book Two')).toBeInTheDocument();
@@ -76,7 +76,7 @@ describe('GoodreadsTile', () => {
 			books: [{ title: 'Solo Book', link: 'https://x/1', book_image_url: '', author_name: 'A' }],
 		});
 
-		render(GoodreadsTile, { props: { widgetId: 'goodreads' } });
+		render(GoodreadsTile, { props: { widgetId: 'goodreads', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Solo Book')).toBeInTheDocument();
 		expect(document.querySelector('ul.more-books')).toBeInTheDocument();

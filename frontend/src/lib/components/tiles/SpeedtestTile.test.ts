@@ -11,7 +11,7 @@ describe('SpeedtestTile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(SpeedtestTile, { props: { widgetId: 'speedtest' } });
+		render(SpeedtestTile, { props: { widgetId: 'speedtest', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Loading speedtest…')).toBeInTheDocument();
 	});
@@ -26,7 +26,7 @@ describe('SpeedtestTile', () => {
 			server_name: null,
 		});
 
-		render(SpeedtestTile, { props: { widgetId: 'speedtest' } });
+		render(SpeedtestTile, { props: { widgetId: 'speedtest', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('No results yet')).toBeInTheDocument();
 	});
@@ -41,7 +41,7 @@ describe('SpeedtestTile', () => {
 			server_name: 'Acme ISP',
 		});
 
-		render(SpeedtestTile, { props: { widgetId: 'speedtest' } });
+		render(SpeedtestTile, { props: { widgetId: 'speedtest', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('↓ 250.4 Mbps')).toBeInTheDocument();
 		expect(screen.getByText('↑ 25.1 Mbps')).toBeInTheDocument();

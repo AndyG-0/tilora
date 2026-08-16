@@ -74,6 +74,18 @@ CREATE TABLE IF NOT EXISTS widget_settings (
     settings TEXT NOT NULL
 );
 
+-- User-set override of a widget instance's display name, used to tell
+-- apart multiple instances of the same tile type (e.g. two Weather tiles)
+-- in places like the AI insights topic list. Keyed by widget_id rather than
+-- living on custom_widgets so it also covers dashboard.yaml-defined widgets
+-- that never get a custom_widgets row (e.g. the Docker/Podman pair, both
+-- type "container"). Row absent means no override — see
+-- app.plugins.naming.display_names for the auto-generated fallback.
+CREATE TABLE IF NOT EXISTS widget_custom_names (
+    widget_id TEXT PRIMARY KEY,
+    custom_name TEXT NOT NULL
+);
+
 -- One row per physical LAN device (Pi-hole, Jellyfin, Synology, Asus
 -- Router, HDHomeRun, and each named Docker/Podman host) shared across every
 -- widget instance of that type/host, instead of duplicating connection
@@ -898,6 +910,90 @@ ALTER TABLE photo_index_meta_new RENAME TO photo_index_meta;
 """
 
 
+def _migration_015_deduplicate_device_names(conn: sqlite3.Connection) -> None:
+    rows = conn.execute("SELECT id, name FROM devices ORDER BY created_at ASC, id ASC").fetchall()
+    seen_normalized: set[str] = set()
+    for row in rows:
+        device_id = row[0]
+        name = row[1]
+        base_name = name.strip() if name and name.strip() else "New Device"
+        normalized = base_name.casefold()
+        if normalized not in seen_normalized:
+            seen_normalized.add(normalized)
+            if base_name != name:
+                conn.execute("UPDATE devices SET name = ? WHERE id = ?", (base_name, device_id))
+        else:
+            counter = 2
+            candidate = f"{base_name} {counter}"
+            while candidate.casefold() in seen_normalized:
+                counter += 1
+                candidate = f"{base_name} {counter}"
+            seen_normalized.add(candidate.casefold())
+            conn.execute("UPDATE devices SET name = ? WHERE id = ?", (candidate, device_id))
+
+
+def _migration_016_weather_flights_network_scope(conn: sqlite3.Connection) -> None:
+    """Migrates personal-scoped weather and flights settings back to network scope.
+
+    Copies each user's configured settings for weather/flights widgets into
+    widget_settings (prioritizing the admin user's row, if available) so
+    existing deployments keep their configured location on upgrade, and
+    cleans up the now-obsolete widget_user_settings rows.
+    """
+    custom_types = {row[0]: row[1] for row in conn.execute("SELECT id, type FROM custom_widgets")}
+    user_roles = {row[0]: row[1] for row in conn.execute("SELECT id, role FROM users")}
+
+    rows = conn.execute("SELECT user_id, widget_id, settings FROM widget_user_settings").fetchall()
+    settings_by_widget: dict[str, list[tuple[str, str]]] = {}
+    for row in rows:
+        user_id, widget_id, settings = row[0], row[1], row[2]
+        widget_type = custom_types.get(widget_id, widget_id)
+        if widget_type in ("weather", "flights"):
+            settings_by_widget.setdefault(widget_id, []).append((user_id, settings))
+
+    for widget_id, user_entries in settings_by_widget.items():
+        admin_entry = next((s for u_id, s in user_entries if user_roles.get(u_id) == "admin"), None)
+        chosen_settings = admin_entry if admin_entry is not None else user_entries[0][1]
+
+        conn.execute(
+            "INSERT INTO widget_settings (widget_id, settings) VALUES (?, ?) "
+            "ON CONFLICT (widget_id) DO UPDATE SET settings = excluded.settings",
+            (widget_id, chosen_settings),
+        )
+
+    for row in rows:
+        user_id, widget_id = row[0], row[1]
+        widget_type = custom_types.get(widget_id, widget_id)
+        if widget_type in ("weather", "flights"):
+            conn.execute(
+                "DELETE FROM widget_user_settings WHERE user_id = ? AND widget_id = ?",
+                (user_id, widget_id),
+            )
+
+
+def _migration_017_weather_flights_personal_scope(conn: sqlite3.Connection) -> None:
+    """Migrates weather and flights widget settings to personal user scope.
+
+    Copies existing widget_settings for weather and flights widgets into
+    widget_user_settings for all existing users (if not already present), so
+    every user retains the configured location on upgrade.
+    """
+    custom_types = {row[0]: row[1] for row in conn.execute("SELECT id, type FROM custom_widgets")}
+    users = [row[0] for row in conn.execute("SELECT id FROM users")]
+
+    settings_rows = conn.execute("SELECT widget_id, settings FROM widget_settings").fetchall()
+    for row in settings_rows:
+        widget_id, settings = row[0], row[1]
+        widget_type = custom_types.get(widget_id, widget_id)
+        if widget_type in ("weather", "flights"):
+            for user_id in users:
+                conn.execute(
+                    "INSERT INTO widget_user_settings (user_id, widget_id, settings) VALUES (?, ?, ?) "
+                    "ON CONFLICT (user_id, widget_id) DO NOTHING",
+                    (user_id, widget_id, settings),
+                )
+
+
 _MIGRATIONS: tuple[str | Callable[[sqlite3.Connection], None], ...] = (
     _MIGRATION_001_USERS_DEVICES,
     _migration_002_user_roles,
@@ -913,6 +1009,9 @@ _MIGRATIONS: tuple[str | Callable[[sqlite3.Connection], None], ...] = (
     _migration_012_packages_user_id,
     _migration_013_seed_icloud_user_credentials,
     _MIGRATION_014_PHOTO_INDEX_USER_ID,
+    _migration_015_deduplicate_device_names,
+    _migration_016_weather_flights_network_scope,
+    _migration_017_weather_flights_personal_scope,
 )
 
 
@@ -1059,6 +1158,15 @@ def get_widget_settings(widget_id: str) -> dict[str, Any] | None:
     return None if row is None else json.loads(row["settings"])
 
 
+def list_widget_settings() -> dict[str, dict[str, Any]]:
+    """All widget_settings rows in one query, keyed by widget_id — for
+    startup plugin loading, which otherwise calls `get_widget_settings` once
+    per configured widget (one connection/query per widget)."""
+    with _connect() as conn:
+        rows = conn.execute("SELECT widget_id, settings FROM widget_settings").fetchall()
+    return {row["widget_id"]: json.loads(row["settings"]) for row in rows}
+
+
 # Settings keys within a network_integrations row's `settings` blob that get
 # Fernet-encrypted per-value before being stored, mirroring
 # SECRET_APP_SETTINGS_KEYS' whole-row encryption for app_settings — see
@@ -1147,6 +1255,26 @@ def save_widget_layout(user_id: str, device_id: str, breakpoint: str, widget_id:
             },
             ("user_id", "device_id", "breakpoint", "widget_id"),
         )
+
+
+def save_widget_layouts(entries: list[tuple[str, str, str, str, dict[str, Any]]]) -> None:
+    """Batched `save_widget_layout` — one connection/transaction for the
+    whole list instead of one per entry, for callers persisting an entire
+    layout (e.g. a drag-to-rearrange save covering every widget on screen)."""
+    with _connect() as conn:
+        for user_id, device_id, breakpoint, widget_id, layout in entries:
+            _upsert(
+                conn,
+                "widget_layout",
+                {
+                    "user_id": user_id,
+                    "device_id": device_id,
+                    "breakpoint": breakpoint,
+                    "widget_id": widget_id,
+                    "layout": json.dumps(layout),
+                },
+                ("user_id", "device_id", "breakpoint", "widget_id"),
+            )
 
 
 def get_widget_layout(user_id: str, device_id: str, breakpoint: str, widget_id: str) -> dict[str, Any] | None:
@@ -1922,6 +2050,22 @@ def list_custom_widgets() -> list[dict[str, Any]]:
     ]
 
 
+def save_widget_custom_name(widget_id: str, name: str) -> None:
+    with _connect() as conn:
+        _upsert(conn, "widget_custom_names", {"widget_id": widget_id, "custom_name": name}, ("widget_id",))
+
+
+def clear_widget_custom_name(widget_id: str) -> None:
+    with _connect() as conn:
+        conn.execute("DELETE FROM widget_custom_names WHERE widget_id = ?", (widget_id,))
+
+
+def list_widget_custom_names() -> dict[str, str]:
+    with _connect() as conn:
+        rows = conn.execute("SELECT widget_id, custom_name FROM widget_custom_names").fetchall()
+    return {row["widget_id"]: row["custom_name"] for row in rows}
+
+
 def mark_widget_removed(widget_id: str) -> None:
     """Soft-delete a dashboard.yaml-defined widget — the file itself is left alone.
 
@@ -2136,6 +2280,7 @@ _DEFAULT_PREFERENCES: dict[str, Any] = {
     "voice_id": "",
     "voice_name": "",
     "locale": "en",
+    "location": None,
 }
 
 
@@ -2152,3 +2297,68 @@ def save_user_preferences(user_id: str, overrides: dict[str, Any]) -> dict[str, 
     with _connect() as conn:
         _upsert(conn, "user_preferences", {"user_id": user_id, "preferences": json.dumps(merged)}, ("user_id",))
     return merged
+
+
+def get_tile_report_stats() -> dict[str, dict[str, Any]]:
+    """Aggregate per-widget database metrics for the tile reporting page."""
+    with _connect() as conn:
+        chores_rows = conn.execute(
+            "SELECT widget_id, COUNT(*) as total, SUM(CASE WHEN completed = 0 THEN 1 ELSE 0 END) as active "
+            "FROM chores GROUP BY widget_id"
+        ).fetchall()
+        shopping_rows = conn.execute(
+            "SELECT widget_id, COUNT(*) as total, SUM(CASE WHEN checked = 0 THEN 1 ELSE 0 END) as active "
+            "FROM shopping_items GROUP BY widget_id"
+        ).fetchall()
+        alerts_rows = conn.execute(
+            "SELECT widget_id, COUNT(*) as active FROM alerts WHERE dismissed = 0 GROUP BY widget_id"
+        ).fetchall()
+        photo_rows = conn.execute("SELECT widget_id, COUNT(*) as total FROM photo_index GROUP BY widget_id").fetchall()
+        packages_rows = conn.execute("SELECT widget_id, COUNT(*) as total FROM packages GROUP BY widget_id").fetchall()
+        custom_settings = {row["widget_id"] for row in conn.execute("SELECT widget_id FROM widget_settings").fetchall()}
+        user_settings = {
+            row["widget_id"] for row in conn.execute("SELECT DISTINCT widget_id FROM widget_user_settings").fetchall()
+        }
+        device_settings = {
+            row["widget_id"] for row in conn.execute("SELECT DISTINCT widget_id FROM widget_device_settings").fetchall()
+        }
+        layout_overrides = {
+            row["widget_id"] for row in conn.execute("SELECT DISTINCT widget_id FROM widget_layout").fetchall()
+        }
+
+    all_ids: set[str] = (
+        {r["widget_id"] for r in chores_rows}
+        | {r["widget_id"] for r in shopping_rows}
+        | {r["widget_id"] for r in alerts_rows}
+        | {r["widget_id"] for r in photo_rows}
+        | {r["widget_id"] for r in packages_rows}
+        | custom_settings
+        | user_settings
+        | device_settings
+        | layout_overrides
+    )
+
+    chores_map = {r["widget_id"]: {"total": r["total"], "active": r["active"]} for r in chores_rows}
+    shopping_map = {r["widget_id"]: {"total": r["total"], "active": r["active"]} for r in shopping_rows}
+    alerts_map = {r["widget_id"]: r["active"] for r in alerts_rows}
+    photo_map = {r["widget_id"]: r["total"] for r in photo_rows}
+    packages_map = {r["widget_id"]: r["total"] for r in packages_rows}
+
+    result: dict[str, dict[str, Any]] = {}
+    for wid in all_ids:
+        chores_info = chores_map.get(wid, {"total": 0, "active": 0})
+        shopping_info = shopping_map.get(wid, {"total": 0, "active": 0})
+        result[wid] = {
+            "chores_active": chores_info["active"],
+            "chores_total": chores_info["total"],
+            "shopping_active": shopping_info["active"],
+            "shopping_total": shopping_info["total"],
+            "alerts_active": alerts_map.get(wid, 0),
+            "photos_count": photo_map.get(wid, 0),
+            "packages_count": packages_map.get(wid, 0),
+            "has_custom_settings": wid in custom_settings,
+            "has_user_settings": wid in user_settings,
+            "has_device_settings": wid in device_settings,
+            "has_layout_overrides": wid in layout_overrides,
+        }
+    return result

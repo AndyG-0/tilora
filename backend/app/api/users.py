@@ -22,6 +22,7 @@ from app.auth import (
     set_session_cookie,
     verify_pin,
 )
+from app.storage.cache import cache, user_locale_cache_key
 from app.storage.db import (
     create_session,
     create_user,
@@ -58,12 +59,20 @@ class UpdateUserRequest(BaseModel):
     pin: str | None = Field(default=None, pattern=r"^$|^\d{4,8}$")
 
 
+class LocationPreference(BaseModel):
+    query: str
+    display_name: str
+    latitude: float
+    longitude: float
+
+
 class UpdatePreferencesRequest(BaseModel):
     theme: str | None = None
     voice_provider: str | None = None
     voice_id: str | None = None
     voice_name: str | None = None
     locale: str | None = None
+    location: LocationPreference | None = None
 
 
 def _profile_shape(user: dict[str, Any]) -> dict[str, Any]:
@@ -181,4 +190,11 @@ async def get_preferences(user: dict[str, Any] = Depends(get_current_user)):
 @router.patch("/me/preferences")
 async def update_preferences(payload: UpdatePreferencesRequest, user: dict[str, Any] = Depends(get_current_user)):
     overrides = payload.model_dump(exclude_unset=True)
-    return await asyncio.to_thread(save_user_preferences, user["id"], overrides)
+    result = await asyncio.to_thread(save_user_preferences, user["id"], overrides)
+    if "locale" in overrides:
+        # Widget summary/detail responses cache the resolved locale for
+        # _LOCALE_CACHE_TTL_SECONDS (see app.api.widgets._user_locale) — drop
+        # it here so a locale change is picked up on the very next poll
+        # instead of waiting out that TTL.
+        cache.delete(user_locale_cache_key(user["id"]))
+    return result

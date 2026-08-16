@@ -17,9 +17,10 @@ from app.ai.web_tools import get_web_tools
 from app.config import effective_settings, resolve_timezone
 from app.plugins.base import registry
 from app.plugins.scoping import scoped_plugin
+from app.storage.db import get_user_preferences
 
 
-def _build_system_prompt(system_prompt: str | None = None) -> str:
+def _build_system_prompt(system_prompt: str | None = None, user: dict[str, Any] | None = None) -> str:
     settings = effective_settings()
     agent_name = (settings.get("ai_agent_name") or "").strip() or "Tilora"
     tz_name = settings.get("timezone") or "UTC"
@@ -30,6 +31,13 @@ def _build_system_prompt(system_prompt: str | None = None) -> str:
         f"You are {agent_name}, a helpful AI assistant for the Tilora smart dashboard.",
         f"Current date and time: {now_str} ({tz_name}).",
     ]
+    if user is not None:
+        location = get_user_preferences(user["id"]).get("location")
+        if location:
+            parts.append(
+                f"The user's location is {location['display_name']} "
+                f"(latitude {location['latitude']}, longitude {location['longitude']})."
+            )
     if system_prompt:
         parts.append(system_prompt)
     return "\n\n".join(parts)
@@ -66,5 +74,5 @@ async def ask(
 
         tools = [tool for plugin in plugins for tool in plugin.get_ai_tools()] + await mcp_source.tools() + web_tools
         provider = AIProvider(ToolBridge(tools))
-        full_system_prompt = _build_system_prompt(system_prompt)
+        full_system_prompt = _build_system_prompt(system_prompt, user=user)
         return await provider.run_prompt(text, system_prompt=full_system_prompt)

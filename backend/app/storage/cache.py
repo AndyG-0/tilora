@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 
@@ -35,3 +36,32 @@ class TTLCache:
 
 
 cache = TTLCache()
+
+
+async def cached_call(key: str, ttl_seconds: int, fetch: Callable[[], Awaitable[Any]]) -> Any:
+    """Get-or-compute a single source call's result against the shared
+    `cache` singleton.
+
+    Distinct from the per-widget response cache applied in
+    `app.api.widgets` (which is keyed by widget/user/device/locale and
+    caches a whole get_summary()/get_detail() response): this caches one
+    plugin-internal fetch, keyed by the call's own arguments, so it also
+    naturally shares results across every widget/user/device requesting the
+    same underlying source data — e.g. movies/plugin.py's per-item TMDB
+    provider lookups, one of which can otherwise fan out to ~50 uncached
+    calls per get_detail() invocation.
+    """
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    value = await fetch()
+    cache.set(key, value, ttl_seconds)
+    return value
+
+
+def user_locale_cache_key(user_id: str) -> str:
+    """Shared key format for the cached-locale lookup in app.api.widgets —
+    exposed here (rather than kept private to that module) so
+    app.api.users' update_preferences can invalidate it by the same key on
+    a locale change."""
+    return f"user-locale:{user_id}"

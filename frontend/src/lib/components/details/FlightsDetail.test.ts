@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { locale, waitLocale } from 'svelte-i18n';
 
 const { updateWidgetSettings, widgetDetail, searchCities } = vi.hoisted(() => ({
@@ -20,6 +20,7 @@ vi.mock('$lib/api', () => ({
 	},
 }));
 
+import { user } from '$lib/stores/user';
 import FlightsDetail from './FlightsDetail.svelte';
 
 const SAMPLE_DATA = {
@@ -68,6 +69,10 @@ const SAMPLE_DATA = {
 };
 
 describe('FlightsDetail', () => {
+	beforeEach(() => {
+		user.set({ id: 'admin-user', name: 'Admin', avatar: null, role: 'admin' });
+	});
+
 	afterEach(async () => {
 		locale.set('en');
 		await waitLocale();
@@ -152,5 +157,13 @@ describe('FlightsDetail', () => {
 		const row = screen.getByText('TEST99', { selector: '.dots' }).closest('.table-row');
 		const speedCell = row?.querySelector('.speed-cell');
 		expect(speedCell?.querySelector('.cell-popover')).toBeNull();
+	});
+
+	it('shows edit controls for non-admin members', () => {
+		user.set({ id: 'member-user', name: 'Member', avatar: null, role: 'member' });
+		render(FlightsDetail, { props: { data: SAMPLE_DATA } });
+
+		expect(screen.getByText('Change location')).toBeInTheDocument();
+		expect(screen.getByLabelText('Search radius (nm)')).toBeInTheDocument();
 	});
 });

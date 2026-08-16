@@ -22,6 +22,7 @@ from app.plugins.speedtest.plugin import SpeedtestPlugin
 from app.plugins.sports.plugin import SportsPlugin
 from app.plugins.weather.plugin import WeatherPlugin
 from app.storage import db
+from app.storage.cache import cache, user_locale_cache_key
 
 TEST_USER_ID = "test-user"
 TEST_DEVICE_ID = "test-device"
@@ -188,7 +189,18 @@ def test_list_widgets_excludes_disabled(client, dashboard_yaml, tmp_db):
     response = client.get("/api/widgets?breakpoint=wide")
     assert response.status_code == 200
     assert response.json() == [
-        {"id": "stub", "type": "stub", "layout": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1}, "tab": "default"}
+        {
+            "id": "stub",
+            "type": "stub",
+            # No plugin of this id is registered in this test, so the name
+            # falls back to the bare type string (no distinguishing data to
+            # compute a display name from).
+            "name": "stub",
+            "layout": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1},
+            "tab": "default",
+            # No live plugin registered, so this falls back to the default.
+            "refresh_interval_seconds": 300,
+        }
     ]
 
 
@@ -376,6 +388,10 @@ def test_summary_cache_is_scoped_per_locale(client, dashboard_yaml, tmp_db, monk
 
     assert client.get("/api/widgets/locale-stub/summary").json() == {"value": "en"}
     db.save_user_preferences(TEST_USER_ID, {"locale": "es"})
+    # A direct DB write (unlike PATCH /me/preferences) doesn't go through
+    # update_preferences()'s invalidation, so drop the resolved-locale cache
+    # entry the same way that endpoint does.
+    cache.delete(user_locale_cache_key(TEST_USER_ID))
     assert client.get("/api/widgets/locale-stub/summary").json() == {"value": "es"}
 
     # Distinct cache entries per locale — the Spanish request didn't serve
@@ -397,8 +413,10 @@ def test_switching_locale_back_still_hits_the_original_cache_entry(client, dashb
 
     client.get("/api/widgets/locale-stub/summary")
     db.save_user_preferences(TEST_USER_ID, {"locale": "es"})
+    cache.delete(user_locale_cache_key(TEST_USER_ID))
     client.get("/api/widgets/locale-stub/summary")
     db.save_user_preferences(TEST_USER_ID, {"locale": "en"})
+    cache.delete(user_locale_cache_key(TEST_USER_ID))
     response = client.get("/api/widgets/locale-stub/summary")
 
     assert response.json() == {"value": "en"}
@@ -510,6 +528,57 @@ def test_update_settings_skips_reindex_for_unrelated_keys(client, dashboard_yaml
     assert calls == []
 
 
+def test_update_settings_switches_photos_provider_to_personal_scope_without_admin(
+    member_client, dashboard_yaml, tmp_db, monkeypatch
+):
+    # Regression test: settings_scope used to be read off the plugin's
+    # *pre-patch* settings, so a member switching a "local" (network-scope)
+    # Photos widget to "icloud_private" (personal-scope, connecting their
+    # own Apple ID) was incorrectly rejected as a network-scope change.
+    plugin = PhotosPlugin({"id": "photos", "settings": {"provider": "local", "directory": "/a"}})
+    registry.register(plugin)
+    monkeypatch.setattr(widgets, "schedule_photo_index", lambda p: None)
+
+    response = member_client.patch("/api/widgets/photos/settings", json={"provider": "icloud_private"})
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == "icloud_private"
+
+
+def test_update_settings_keeps_photos_provider_in_the_shared_tier(client, dashboard_yaml, tmp_db, monkeypatch):
+    # Photos' `provider` (and everything else the background indexer and
+    # app.plugins.scoping.scoped_plugin key off) has to stay a single value
+    # the whole registry singleton agrees on — unlike weather/sports/etc,
+    # it must never be split into a per-user widget_user_settings override,
+    # or indexing and every other viewer's reads would silently keep using
+    # the old provider forever.
+    plugin = PhotosPlugin({"id": "photos", "settings": {"provider": "local", "directory": "/a"}})
+    registry.register(plugin)
+    monkeypatch.setattr(widgets, "schedule_photo_index", lambda p: None)
+
+    client.patch("/api/widgets/photos/settings", json={"provider": "icloud_private"})
+
+    assert plugin.config["settings"]["provider"] == "icloud_private"
+    assert db.get_widget_settings("photos")["provider"] == "icloud_private"
+    assert db.get_widget_user_settings(TEST_USER_ID, "photos") is None
+
+
+def test_update_settings_rejects_member_switching_photos_provider_back_to_local(
+    member_client, dashboard_yaml, tmp_db, monkeypatch
+):
+    # The reverse direction (icloud_private -> local) becomes a
+    # network-scope, household-wide change again, so it needs admin just
+    # like any other network-scope write.
+    plugin = PhotosPlugin({"id": "photos", "settings": {"provider": "icloud_private"}})
+    registry.register(plugin)
+    monkeypatch.setattr(widgets, "schedule_photo_index", lambda p: None)
+
+    response = member_client.patch("/api/widgets/photos/settings", json={"provider": "local"})
+
+    assert response.status_code == 403
+    assert plugin.config["settings"]["provider"] == "icloud_private"
+
+
 def test_update_settings_reschedules_speedtest_when_interval_changes(client, dashboard_yaml, tmp_db, monkeypatch):
     plugin = SpeedtestPlugin({"id": "speedtest", "settings": dict(SpeedtestPlugin.default_settings)})
     registry.register(plugin)
@@ -590,13 +659,28 @@ def test_update_settings_allows_member_for_sports_widget(member_client, dashboar
     assert db.get_widget_user_settings("member-user", "sports")["teams"] == [{"league": "nfl", "team": "PHI"}]
 
 
-def test_update_settings_allows_member_for_weather_widget(member_client, dashboard_yaml, tmp_db):
+def test_weather_widget_settings_are_personal_per_user(client, member_client, dashboard_yaml, tmp_db):
     registry.register(WeatherPlugin({"id": "weather", "settings": dict(WeatherPlugin.default_settings)}))
 
     response = member_client.patch("/api/widgets/weather/settings", json={"location_name": "Austin, TX"})
-
     assert response.status_code == 200
     assert db.get_widget_user_settings("member-user", "weather")["location_name"] == "Austin, TX"
+
+    admin_response = client.patch("/api/widgets/weather/settings", json={"location_name": "Chicago, IL"})
+    assert admin_response.status_code == 200
+    assert db.get_widget_user_settings(TEST_USER_ID, "weather")["location_name"] == "Chicago, IL"
+    assert db.get_widget_user_settings("member-user", "weather")["location_name"] == "Austin, TX"
+
+
+def test_multiple_weather_widgets_have_independent_settings(client, dashboard_yaml, tmp_db):
+    registry.register(WeatherPlugin({"id": "weather", "settings": dict(WeatherPlugin.default_settings)}))
+    registry.register(WeatherPlugin({"id": "weather-2", "settings": dict(WeatherPlugin.default_settings)}))
+
+    client.patch("/api/widgets/weather/settings", json={"location_name": "Austin, TX"})
+    client.patch("/api/widgets/weather-2/settings", json={"location_name": "London, UK"})
+
+    assert db.get_widget_user_settings(TEST_USER_ID, "weather")["location_name"] == "Austin, TX"
+    assert db.get_widget_user_settings(TEST_USER_ID, "weather-2")["location_name"] == "London, UK"
 
 
 def test_personal_scope_settings_and_summary_are_isolated_per_user(dashboard_yaml, tmp_db):
@@ -1159,3 +1243,105 @@ def test_update_settings_container_re_resolves_on_reference_change(client, tmp_d
     # Only the display-only key is persisted to widget_settings — connection
     # fields stay live-only, re-resolved from the integration row on read.
     assert db.get_widget_settings("container-a") == {"network_integration_id": "container-podman"}
+
+
+def test_rename_widget_saves_custom_name(client, tmp_db):
+    registry.register(WeatherPlugin({"id": "weather", "settings": {"location_name": "Chicago, IL"}}))
+
+    response = client.patch("/api/widgets/weather/name", json={"name": "Home"})
+
+    assert response.status_code == 200
+    assert response.json() == {"id": "weather", "name": "Home"}
+    assert db.list_widget_custom_names() == {"weather": "Home"}
+
+
+def test_rename_widget_strips_whitespace(client, tmp_db):
+    registry.register(WeatherPlugin({"id": "weather", "settings": {"location_name": "Chicago, IL"}}))
+
+    response = client.patch("/api/widgets/weather/name", json={"name": "  Home  "})
+
+    assert response.status_code == 200
+    assert response.json() == {"id": "weather", "name": "Home"}
+
+
+def test_rename_widget_empty_name_clears_override_and_reverts_to_auto_name(client, tmp_db):
+    registry.register(WeatherPlugin({"id": "weather", "settings": {"location_name": "Chicago, IL"}}))
+    db.save_widget_custom_name("weather", "Home")
+
+    response = client.patch("/api/widgets/weather/name", json={"name": "   "})
+
+    assert response.status_code == 200
+    assert response.json() == {"id": "weather", "name": "Weather (Chicago, IL)"}
+    assert db.list_widget_custom_names() == {}
+
+
+def test_rename_widget_rejects_name_over_60_chars(client, tmp_db):
+    registry.register(WeatherPlugin({"id": "weather", "settings": {"location_name": "Chicago, IL"}}))
+
+    response = client.patch("/api/widgets/weather/name", json={"name": "x" * 61})
+
+    assert response.status_code == 400
+    assert db.list_widget_custom_names() == {}
+
+
+def test_rename_widget_returns_404_for_unregistered_widget(client, tmp_db):
+    response = client.patch("/api/widgets/nonexistent/name", json={"name": "Home"})
+
+    assert response.status_code == 404
+
+
+def test_rename_widget_allowed_for_member_no_admin_gate(member_client, tmp_db):
+    registry.register(WeatherPlugin({"id": "weather", "settings": {"location_name": "Chicago, IL"}}))
+
+    response = member_client.patch("/api/widgets/weather/name", json={"name": "Home"})
+
+    assert response.status_code == 200
+
+
+def test_list_widgets_disambiguates_yaml_defined_collision(client, tmp_path, monkeypatch, tmp_db):
+    # Mirrors the real-world Docker/Podman case: two YAML-defined widgets of
+    # the same type, distinguished only by which network integration each
+    # references, never a `custom_widgets` row.
+    db.save_network_integration("nas-docker", "container", "Docker Host", {})
+    db.save_network_integration("nas-podman", "container", "Podman Host", {})
+    registry.register(ContainerPlugin({"id": "docker", "settings": {"network_integration_id": "nas-docker"}}))
+    registry.register(ContainerPlugin({"id": "podman", "settings": {"network_integration_id": "nas-podman"}}))
+
+    path = tmp_path / "dashboard.yaml"
+    path.write_text(
+        """
+widgets:
+  - id: docker
+    type: container
+    enabled: true
+    layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 }
+    settings: {}
+  - id: podman
+    type: container
+    enabled: true
+    layout: { col: 2, row: 1, colSpan: 1, rowSpan: 1 }
+    settings: {}
+"""
+    )
+    monkeypatch.setattr("app.api.widgets.load_dashboard_config", lambda: yaml.safe_load(path.read_text()))
+
+    response = client.get("/api/widgets?breakpoint=wide")
+
+    assert response.status_code == 200
+    names = {w["id"]: w["name"] for w in response.json()}
+    assert names == {"docker": "Container (Docker Host)", "podman": "Container (Podman Host)"}
+
+
+def test_list_widgets_includes_name_for_custom_widget(client, dashboard_yaml, tmp_db):
+    add_response = client.post(
+        "/api/widgets",
+        json={"type": "clock", "layout": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1}},
+    )
+    widget_id = add_response.json()["id"]
+    assert add_response.json()["name"] == "Clock"
+
+    response = client.get("/api/widgets?breakpoint=wide")
+
+    assert response.status_code == 200
+    names = {w["id"]: w["name"] for w in response.json()}
+    assert names[widget_id] == "Clock"

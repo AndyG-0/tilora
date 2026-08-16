@@ -4,7 +4,7 @@
 	import TileCard from '$lib/components/TileCard.svelte';
 	import { _ } from 'svelte-i18n';
 
-	let { widgetId }: { widgetId: string } = $props();
+	let { widgetId, refreshIntervalSeconds }: { widgetId: string; refreshIntervalSeconds: number } = $props();
 
 	let summary = $state<SystemMonitorSummary | null>(null);
 
@@ -16,7 +16,7 @@
 		}
 	}
 
-	pollWidget(refresh, 10_000);
+	pollWidget(refresh, refreshIntervalSeconds * 1000);
 </script>
 
 <TileCard {widgetId}>

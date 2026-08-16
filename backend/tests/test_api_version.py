@@ -26,6 +26,7 @@ def _reset_latest():
 
 def test_get_version_returns_update_status_shape(client, monkeypatch):
     monkeypatch.setattr(update_check, "CURRENT_VERSION", "1.0.0")
+    monkeypatch.setattr(update_check, "INSTALL_METHOD", "native")
     update_check._latest["latest_version"] = "1.2.0"
     update_check._latest["release_url"] = "https://github.com/x/releases/tag/v1.2.0"
 
@@ -37,4 +38,6 @@ def test_get_version_returns_update_status_shape(client, monkeypatch):
         "latest_version": "1.2.0",
         "update_available": True,
         "release_url": "https://github.com/x/releases/tag/v1.2.0",
+        "install_method": "native",
+        "update_running": False,
     }

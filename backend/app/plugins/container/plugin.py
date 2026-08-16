@@ -89,9 +89,7 @@ class ContainerPlugin(Plugin):
             return [], str(exc)
         return containers, None
 
-    async def get_summary(self) -> dict[str, Any]:
-        connected = self._is_connected()
-        containers, error = await self._containers()
+    def _build_summary(self, connected: bool, containers: list[dict[str, Any]], error: str | None) -> dict[str, Any]:
         running = sum(1 for c in containers if c["state"] == "running")
         result: dict[str, Any] = {
             "connected": connected,
@@ -105,18 +103,21 @@ class ContainerPlugin(Plugin):
             result["error"] = error
         return result
 
+    async def get_summary(self) -> dict[str, Any]:
+        connected = self._is_connected()
+        containers, error = await self._containers()
+        return self._build_summary(connected, containers, error)
+
     @staticmethod
     def _empty_detail_fields() -> dict[str, Any]:
         return {"containers": []}
 
     async def get_detail(self) -> dict[str, Any]:
-        summary = await self.get_summary()
-        if not summary["connected"] or summary.get("error"):
-            return {**summary, **self._empty_detail_fields()}
-
+        connected = self._is_connected()
         containers, error = await self._containers()
-        if error:
-            return {**summary, "error": error, **self._empty_detail_fields()}
+        summary = self._build_summary(connected, containers, error)
+        if not connected or error:
+            return {**summary, **self._empty_detail_fields()}
 
         return {
             **summary,

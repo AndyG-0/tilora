@@ -11,7 +11,7 @@ describe('PiholeTile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(PiholeTile, { props: { widgetId: 'pihole' } });
+		render(PiholeTile, { props: { widgetId: 'pihole', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Loading Pi-hole…')).toBeInTheDocument();
 	});
@@ -19,7 +19,7 @@ describe('PiholeTile', () => {
 	it('shows a not-connected state', async () => {
 		widgetSummary.mockResolvedValue({ connected: false, host: '', port: 80, use_https: false, has_password: false });
 
-		render(PiholeTile, { props: { widgetId: 'pihole' } });
+		render(PiholeTile, { props: { widgetId: 'pihole', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Not connected')).toBeInTheDocument();
 	});
@@ -37,7 +37,7 @@ describe('PiholeTile', () => {
 			percent_blocked: 19.0,
 		});
 
-		render(PiholeTile, { props: { widgetId: 'pihole' } });
+		render(PiholeTile, { props: { widgetId: 'pihole', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('19%')).toBeInTheDocument();
 		expect(screen.getByText('2,345 / 12,345 blocked')).toBeInTheDocument();
@@ -57,7 +57,7 @@ describe('PiholeTile', () => {
 			percent_blocked: 10,
 		});
 
-		render(PiholeTile, { props: { widgetId: 'pihole' } });
+		render(PiholeTile, { props: { widgetId: 'pihole', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('⏸ Paused')).toBeInTheDocument();
 	});

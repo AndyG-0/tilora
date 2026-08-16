@@ -11,7 +11,7 @@ describe('QBittorrentTile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(QBittorrentTile, { props: { widgetId: 'qbittorrent' } });
+		render(QBittorrentTile, { props: { widgetId: 'qbittorrent', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Loading qBittorrent…')).toBeInTheDocument();
 	});
@@ -26,7 +26,7 @@ describe('QBittorrentTile', () => {
 			has_password: false,
 		});
 
-		render(QBittorrentTile, { props: { widgetId: 'qbittorrent' } });
+		render(QBittorrentTile, { props: { widgetId: 'qbittorrent', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Not connected')).toBeInTheDocument();
 	});
@@ -46,7 +46,7 @@ describe('QBittorrentTile', () => {
 			upload_speed_bps: 500_000,
 		});
 
-		render(QBittorrentTile, { props: { widgetId: 'qbittorrent' } });
+		render(QBittorrentTile, { props: { widgetId: 'qbittorrent', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('3 torrents')).toBeInTheDocument();
 		expect(screen.getByText('↓ 8.0 Mbps')).toBeInTheDocument();

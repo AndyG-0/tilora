@@ -94,7 +94,7 @@ async def test_get_summary_maps_current_conditions():
 
 @respx.mock
 async def test_get_detail_includes_daily_forecast():
-    respx.get(FORECAST_URL).mock(return_value=httpx.Response(200, json=FAKE_RESPONSE))
+    forecast_route = respx.get(FORECAST_URL).mock(return_value=httpx.Response(200, json=FAKE_RESPONSE))
     respx.get(AIR_QUALITY_URL).mock(return_value=httpx.Response(200, json=FAKE_AIR_QUALITY_RESPONSE))
     plugin = make_plugin()
 
@@ -105,6 +105,9 @@ async def test_get_detail_includes_daily_forecast():
         {"date": "2026-07-24", "high": 85.0, "low": 68.0, "condition": "Mainly clear", "weather_code": 1},
         {"date": "2026-07-25", "high": 88.0, "low": 70.0, "condition": "Slight rain", "weather_code": 61},
     ]
+    # Regression: get_detail() must share the one forecast fetch with
+    # get_summary() rather than redundantly re-fetching it.
+    assert forecast_route.call_count == 1
 
 
 @respx.mock
@@ -242,3 +245,17 @@ async def test_get_detail_omits_air_quality_on_fetch_error():
     detail = await plugin.get_detail()
 
     assert "air_quality" not in detail
+
+
+def test_get_ai_tools_default_and_custom_instances():
+    default_plugin = WeatherPlugin({"id": "weather", "settings": {"location_name": "Austin, TX"}})
+    default_tools = default_plugin.get_ai_tools()
+    assert len(default_tools) == 1
+    assert default_tools[0].name == "get_weather_summary"
+    assert "Austin, TX" in default_tools[0].description
+
+    custom_plugin = WeatherPlugin({"id": "weather-custom-123", "settings": {"location_name": "London, UK"}})
+    custom_tools = custom_plugin.get_ai_tools()
+    assert len(custom_tools) == 1
+    assert custom_tools[0].name == "get_weather_summary_weather_custom_123"
+    assert "London, UK" in custom_tools[0].description

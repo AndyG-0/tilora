@@ -16,6 +16,11 @@ from typing import Any
 
 import caldav
 
+# caldav.DAVClient defaults to no timeout at all — pin one so a hung/slow
+# CalDAV server can't tie up a thread-pool worker indefinitely (this runs
+# via asyncio.to_thread, matching every other sync integration client here).
+_TIMEOUT_SECONDS = 10
+
 # Fixed categorical palette (CVD-safe in this order — do not reorder) used to
 # assign each calendar a distinct default color with no setup required. Users
 # can override any of these from the widget's "Manage calendars" picker.
@@ -56,7 +61,7 @@ def _calendar_dict(calendar: caldav.Calendar) -> dict[str, Any]:
 
 
 def _list_calendars_sync(url: str, username: str, password: str) -> list[dict[str, Any]]:
-    client = caldav.DAVClient(url=url, username=username, password=password)
+    client = caldav.DAVClient(url=url, username=username, password=password, timeout=_TIMEOUT_SECONDS)
     calendars = client.principal().calendars()
     return sorted((_calendar_dict(calendar) for calendar in calendars), key=lambda c: c["name"])
 
@@ -84,7 +89,7 @@ def _event_dict(event: caldav.Event, calendar_id: str, calendar_name: str) -> di
 def _fetch_events_sync(
     url: str, username: str, password: str, calendar_ids: list[str] | None, days_ahead: int
 ) -> list[dict[str, Any]]:
-    client = caldav.DAVClient(url=url, username=username, password=password)
+    client = caldav.DAVClient(url=url, username=username, password=password, timeout=_TIMEOUT_SECONDS)
     calendars = _resolve_calendars(client, calendar_ids)
     if not calendars:
         return []

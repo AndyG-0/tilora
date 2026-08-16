@@ -19,8 +19,63 @@ export type Breakpoint = 'wide' | 'narrow';
 export interface WidgetSummaryMeta {
 	id: string;
 	type: string;
+	name: string;
 	layout: WidgetLayout;
 	tab: string;
+	refresh_interval_seconds: number;
+}
+
+export interface TileReportStats {
+	chores_active: number;
+	chores_total: number;
+	shopping_active: number;
+	shopping_total: number;
+	alerts_active: number;
+	photos_count: number;
+	packages_count: number;
+	has_custom_settings: boolean;
+	has_user_settings: boolean;
+	has_device_settings: boolean;
+	has_layout_overrides: boolean;
+}
+
+export interface TileReportItem {
+	id: string;
+	type: string;
+	type_name: string;
+	name: string;
+	custom_name: string | null;
+	default_name: string;
+	has_custom_name: boolean;
+	source: 'builtin' | 'custom';
+	tab_id: string;
+	tab_name: string;
+	layout: WidgetLayout;
+	size_description: string;
+	owner_user_id: string | null;
+	owner_user_name: string;
+	owner_device_id: string | null;
+	owner_device_name: string;
+	settings_scope: 'network' | 'personal';
+	device_overridable: boolean;
+	refresh_interval_seconds: number;
+	network_integration: string | null;
+	is_hidden: boolean;
+	stats: TileReportStats;
+}
+
+export interface TileReportSummary {
+	total_tiles: number;
+	custom_tiles: number;
+	builtin_tiles: number;
+	custom_named_tiles: number;
+	hidden_tiles: number;
+	tabs_count: number;
+}
+
+export interface TileReportResponse {
+	summary: TileReportSummary;
+	tiles: TileReportItem[];
 }
 
 export interface TabMeta {
@@ -34,6 +89,50 @@ export interface CityResult {
 	country: string | null;
 	latitude: number;
 	longitude: number;
+}
+
+export interface LocationPreference {
+	query: string;
+	display_name: string;
+	latitude: number;
+	longitude: number;
+}
+
+export interface MapSearchResult {
+	display_name: string;
+	name: string;
+	latitude: number;
+	longitude: number;
+	type: string | null;
+	category: string | null;
+}
+
+export interface DirectionsStep {
+	instruction: string;
+	distance_meters: number;
+	duration_seconds: number;
+}
+
+export interface DirectionsResult {
+	origin: string;
+	destination: string;
+	mode: 'driving' | 'walking' | 'cycling';
+	distance_meters: number;
+	duration_seconds: number;
+	geometry: [number, number][];
+	steps: DirectionsStep[];
+}
+
+export interface NearbyPlace {
+	name: string;
+	category: string;
+	latitude: number;
+	longitude: number;
+	distance_m: number;
+	address: string | null;
+	phone: string | null;
+	website: string | null;
+	opening_hours: string | null;
 }
 
 export interface MovieProvider {
@@ -63,8 +162,6 @@ export interface AppSettings {
 	caldav_url: string;
 	caldav_username: string;
 	has_caldav_password: boolean;
-	icloud_username: string;
-	has_icloud_password: boolean;
 }
 
 export interface VersionInfo {
@@ -72,6 +169,8 @@ export interface VersionInfo {
 	latest_version: string | null;
 	update_available: boolean;
 	release_url: string | null;
+	install_method: string;
+	update_running: boolean;
 }
 
 export type AlertSeverity = 'info' | 'warning' | 'critical';
@@ -103,6 +202,11 @@ export interface IcloudStatus {
 export interface IcloudAuthStartResult {
 	connected: boolean;
 	requires_2fa: boolean;
+}
+
+export interface IcloudCredentials {
+	username: string;
+	has_password: boolean;
 }
 
 export interface JellyfinAudioStream {
@@ -942,6 +1046,7 @@ export interface UserPreferences {
 	voice_id: string;
 	voice_name: string;
 	locale: string;
+	location: LocationPreference | null;
 }
 
 export interface TTSVoice {
@@ -985,14 +1090,28 @@ export function describeFetchError(error: unknown): FetchErrorKind {
 	return error instanceof TypeError ? 'network' : 'server';
 }
 
+// Carries the HTTP status alongside the message so callers can distinguish
+// e.g. a 502 (an upstream provider is down) from a 404 (nothing matched) --
+// a generic Error loses that distinction.
+export class ApiError extends Error {
+	status: number;
+
+	constructor(message: string, status: number) {
+		super(message);
+		this.name = 'ApiError';
+		this.status = status;
+	}
+}
+
 // `credentials: 'include'` on every request so the device/session cookies
 // (set by the backend as httponly, so JS can't attach them manually) round-trip
 // even when the frontend and backend are on different ports/origins.
 async function getJSON<T>(path: string): Promise<T> {
 	const response = await fetch(`${env.PUBLIC_API_BASE_URL}${path}`, { credentials: 'include' });
 	if (!response.ok) {
+		const message = await _errorMessage(path, response);
 		logger.warn(`Request to ${path} failed: ${response.status}`);
-		throw new Error(`Request to ${path} failed: ${response.status}`);
+		throw new ApiError(message, response.status);
 	}
 	return response.json();
 }
@@ -1095,6 +1214,8 @@ export const api = {
 	widgetDetail: <T = Record<string, unknown>>(id: string) => getJSON<T>(`/api/widgets/${id}/detail`),
 	updateWidgetSettings: <T = Record<string, unknown>>(id: string, settings: Record<string, unknown>) =>
 		patchJSON<T>(`/api/widgets/${id}/settings`, settings),
+	renameWidget: (id: string, name: string) =>
+		patchJSON<{ id: string; name: string }>(`/api/widgets/${id}/name`, { name }),
 	getWidgetDeviceSettings: <T = Record<string, unknown>>(id: string) =>
 		getJSON<T>(`/api/widgets/${id}/device-settings`),
 	updateWidgetDeviceSettings: <T = Record<string, unknown>>(id: string, settings: Record<string, unknown>) =>
@@ -1104,6 +1225,26 @@ export const api = {
 		putJSON<{ status: string }>('/api/widgets/layout', { widgets, breakpoint }),
 	runAiWidget: <T = Record<string, unknown>>(id: string) => postJSON<T>(`/api/widgets/${id}/run`),
 	searchCities: (query: string) => getJSON<CityResult[]>(`/api/weather/search?q=${encodeURIComponent(query)}`),
+	mappingSearch: (query: string) => getJSON<MapSearchResult[]>(`/api/mapping/search?q=${encodeURIComponent(query)}`),
+	mappingReverse: (lat: number, lon: number) =>
+		getJSON<MapSearchResult | null>(`/api/mapping/reverse?lat=${lat}&lon=${lon}`),
+	mappingDirections: (
+		destination: string,
+		origin: string,
+		mode: 'driving' | 'walking' | 'cycling' = 'driving',
+		coords?: { destinationLat?: number; destinationLon?: number; originLat?: number; originLon?: number },
+	) => {
+		const params = new URLSearchParams({ destination, origin, mode });
+		if (coords?.destinationLat !== undefined) params.set('destination_lat', String(coords.destinationLat));
+		if (coords?.destinationLon !== undefined) params.set('destination_lon', String(coords.destinationLon));
+		if (coords?.originLat !== undefined) params.set('origin_lat', String(coords.originLat));
+		if (coords?.originLon !== undefined) params.set('origin_lon', String(coords.originLon));
+		return getJSON<DirectionsResult>(`/api/mapping/directions?${params}`);
+	},
+	mappingNearby: (lat: number, lon: number, category: string, radiusM = 40234) =>
+		getJSON<NearbyPlace[]>(
+			`/api/mapping/nearby?lat=${lat}&lon=${lon}&category=${encodeURIComponent(category)}&radius_m=${radiusM}`,
+		),
 	movieProviders: (region: string) =>
 		getJSON<MovieProvider[]>(`/api/movies/providers?region=${encodeURIComponent(region)}`),
 	themes: () => getJSON<{ themes: { id: string; name: string }[]; default: string }>('/api/theme'),
@@ -1111,6 +1252,8 @@ export const api = {
 	settings: () => getJSON<AppSettings>('/api/settings'),
 	updateSettings: (partial: Record<string, string>) => patchJSON<AppSettings>('/api/settings', partial),
 	version: () => getJSON<VersionInfo>('/api/version'),
+	health: () => getJSON<{ status: string }>('/api/health'),
+	triggerUpdate: () => postJSON<{ status: string }>('/api/system/update', {}),
 	createAlert: (alert: { message: string; severity?: AlertSeverity; expires_in_minutes?: number }) =>
 		postJSON<Alert>('/api/alerts', alert),
 	dismissAlert: (id: number) => postJSON<{ status: string }>(`/api/alerts/${id}/dismiss`),
@@ -1140,6 +1283,10 @@ export const api = {
 	icloudStatus: () => getJSON<IcloudStatus>('/api/icloud/status'),
 	startIcloudAuth: () => postJSON<IcloudAuthStartResult>('/api/icloud/auth/start'),
 	verifyIcloudAuth: (code: string) => postJSON<IcloudStatus>('/api/icloud/auth/verify', { code }),
+	icloudCredentials: () => getJSON<IcloudCredentials>('/api/icloud/credentials'),
+	setIcloudCredentials: (username: string, password?: string) =>
+		putJSON<IcloudCredentials>('/api/icloud/credentials', { username, ...(password && { password }) }),
+	clearIcloudCredentials: () => deleteJSON<{ status: string }>('/api/icloud/credentials'),
 	askAssistant: (text: string) => postJSON<{ text: string }>('/api/assistant/ask', { text }),
 	assistantTopics: () => getJSON<{ id: string; name: string }[]>('/api/assistant/topics'),
 	widgetTypes: () =>
@@ -1149,6 +1296,7 @@ export const api = {
 	addWidget: (type: string, layout: WidgetLayout, tab?: string) =>
 		postJSON<WidgetSummaryMeta>('/api/widgets', { type, layout, ...(tab !== undefined && { tab }) }),
 	removeWidget: (id: string) => deleteJSON<{ status: string }>(`/api/widgets/${id}`),
+	tilesReport: () => getJSON<TileReportResponse>('/api/reports/tiles'),
 	jellyfinChildren: (id: string, parentId?: string) =>
 		getJSON<JellyfinItem[]>(
 			parentId

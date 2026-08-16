@@ -19,7 +19,8 @@ Runs the backend and frontend CI jobs locally, in the same order as
 .github/workflows/ci.yml:
 
   backend:  uv sync, ruff check, ruff format --check, pytest
-  frontend: npm ci, lint, format:check, check (svelte-check), test
+  frontend: npm ci, lint, format:check, check (svelte-check), test,
+            playwright install, test:e2e
 
 Stops at the first failing step.
 EOF
@@ -70,5 +71,11 @@ npm run check
 
 info "Frontend: test"
 npm run test
+
+info "Frontend: playwright install"
+npx playwright install --with-deps chromium webkit
+
+info "Frontend: test:e2e"
+npm run test:e2e
 
 info "All CI checks passed."

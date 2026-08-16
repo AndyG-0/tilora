@@ -10,7 +10,7 @@ describe('SynologyTile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(SynologyTile, { props: { widgetId: 'synology' } });
+		render(SynologyTile, { props: { widgetId: 'synology', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Loading…')).toBeInTheDocument();
 	});
@@ -26,7 +26,7 @@ describe('SynologyTile', () => {
 			volumes: [],
 		});
 
-		render(SynologyTile, { props: { widgetId: 'synology' } });
+		render(SynologyTile, { props: { widgetId: 'synology', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Not connected')).toBeInTheDocument();
 	});
@@ -42,7 +42,7 @@ describe('SynologyTile', () => {
 			volumes: [],
 		});
 
-		render(SynologyTile, { props: { widgetId: 'synology' } });
+		render(SynologyTile, { props: { widgetId: 'synology', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('No volumes found')).toBeInTheDocument();
 	});
@@ -61,7 +61,7 @@ describe('SynologyTile', () => {
 			],
 		});
 
-		render(SynologyTile, { props: { widgetId: 'synology' } });
+		render(SynologyTile, { props: { widgetId: 'synology', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Volume 1')).toBeInTheDocument();
 		expect(screen.getByText('Volume 2')).toBeInTheDocument();
@@ -81,7 +81,7 @@ describe('SynologyTile', () => {
 			error: 'Could not reach the Synology NAS',
 		});
 
-		render(SynologyTile, { props: { widgetId: 'synology' } });
+		render(SynologyTile, { props: { widgetId: 'synology', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Could not reach the Synology NAS')).toBeInTheDocument();
 	});

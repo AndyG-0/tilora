@@ -11,7 +11,7 @@ describe('BookmarksTile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(BookmarksTile, { props: { widgetId: 'bookmarks' } });
+		render(BookmarksTile, { props: { widgetId: 'bookmarks', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Loading bookmarks…')).toBeInTheDocument();
 	});
@@ -25,7 +25,7 @@ describe('BookmarksTile', () => {
 			],
 		});
 
-		render(BookmarksTile, { props: { widgetId: 'bookmarks' } });
+		render(BookmarksTile, { props: { widgetId: 'bookmarks', refreshIntervalSeconds: 60 } });
 
 		const link = await screen.findByText('GitHub');
 		expect(link.closest('a')).toHaveAttribute('href', 'https://github.com');
@@ -39,7 +39,7 @@ describe('BookmarksTile', () => {
 			bookmarks: [{ name: 'GitHub', url: 'https://github.com' }],
 		});
 
-		render(BookmarksTile, { props: { widgetId: 'bookmarks' } });
+		render(BookmarksTile, { props: { widgetId: 'bookmarks', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Bookmarks')).toBeInTheDocument();
 	});
@@ -47,7 +47,7 @@ describe('BookmarksTile', () => {
 	it('shows an empty state when there are no bookmarks', async () => {
 		widgetSummary.mockResolvedValue({ title: 'Links', bookmarks: [] });
 
-		render(BookmarksTile, { props: { widgetId: 'bookmarks' } });
+		render(BookmarksTile, { props: { widgetId: 'bookmarks', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('No bookmarks yet')).toBeInTheDocument();
 	});

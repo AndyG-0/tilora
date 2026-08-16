@@ -4,7 +4,7 @@ import pytest
 
 from app import config
 from app.ai import assistant
-from app.storage.db import save_app_settings
+from app.storage.db import save_app_settings, save_user_preferences
 
 
 @pytest.fixture
@@ -58,6 +58,62 @@ async def test_ask_uses_custom_agent_name(monkeypatch, tmp_db, dashboard_yaml):
 
     sys_prompt = captured["system_prompt"]
     assert "You are Jarvis" in sys_prompt
+
+
+async def test_ask_appends_user_location_to_system_prompt(monkeypatch, tmp_db, dashboard_yaml):
+    save_user_preferences(
+        "user-1",
+        {
+            "location": {
+                "query": "Fort Worth",
+                "display_name": "Fort Worth, TX",
+                "latitude": 32.7555,
+                "longitude": -97.3308,
+            }
+        },
+    )
+    captured = {}
+
+    async def fake_run_prompt(self, prompt, max_tool_rounds=4, system_prompt=None):
+        captured["system_prompt"] = system_prompt
+        return "ok"
+
+    monkeypatch.setattr("app.ai.provider.AIProvider.run_prompt", fake_run_prompt)
+
+    await assistant.ask("hi", user={"id": "user-1"}, device={"id": "device-1"})
+
+    sys_prompt = captured["system_prompt"]
+    assert "Fort Worth, TX" in sys_prompt
+    assert "32.7555" in sys_prompt
+    assert "-97.3308" in sys_prompt
+
+
+async def test_ask_omits_location_line_when_unset(monkeypatch, tmp_db, dashboard_yaml):
+    captured = {}
+
+    async def fake_run_prompt(self, prompt, max_tool_rounds=4, system_prompt=None):
+        captured["system_prompt"] = system_prompt
+        return "ok"
+
+    monkeypatch.setattr("app.ai.provider.AIProvider.run_prompt", fake_run_prompt)
+
+    await assistant.ask("hi", user={"id": "user-1"}, device={"id": "device-1"})
+
+    assert "location is" not in captured["system_prompt"]
+
+
+async def test_ask_omits_location_when_no_user(monkeypatch, tmp_db, dashboard_yaml):
+    captured = {}
+
+    async def fake_run_prompt(self, prompt, max_tool_rounds=4, system_prompt=None):
+        captured["system_prompt"] = system_prompt
+        return "ok"
+
+    monkeypatch.setattr("app.ai.provider.AIProvider.run_prompt", fake_run_prompt)
+
+    await assistant.ask("hi")
+
+    assert "location is" not in captured["system_prompt"]
 
 
 async def test_ask_registers_web_tools_when_searxng_url_configured(monkeypatch, tmp_db, dashboard_yaml):

@@ -29,7 +29,7 @@
 		{ key: 'on_streaming_tv_shows', titleKey: 'movies.section.on_streaming_tv_shows' },
 	];
 
-	let { widgetId }: { widgetId: string } = $props();
+	let { widgetId, refreshIntervalSeconds }: { widgetId: string; refreshIntervalSeconds: number } = $props();
 
 	let summary = $state<MoviesSummary | null>(null);
 
@@ -41,7 +41,7 @@
 		}
 	}
 
-	pollWidget(refresh, 60_000);
+	pollWidget(refresh, refreshIntervalSeconds * 1000);
 </script>
 
 <TileCard {widgetId}>

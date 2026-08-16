@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from app.storage import db
 
-_DEFAULTS = {"theme": "dark", "voice_provider": "browser", "voice_id": "", "voice_name": "", "locale": "en"}
+_DEFAULTS = {
+    "theme": "dark",
+    "voice_provider": "browser",
+    "voice_id": "",
+    "voice_name": "",
+    "locale": "en",
+    "location": None,
+}
 
 
 def test_get_user_preferences_returns_defaults_when_unset(tmp_db):
@@ -35,3 +42,12 @@ def test_save_user_preferences_round_trips_voice_selection(tmp_db):
 
     assert result == {**_DEFAULTS, "voice_provider": "openai", "voice_id": "nova"}
     assert db.get_user_preferences("alice") == {**_DEFAULTS, "voice_provider": "openai", "voice_id": "nova"}
+
+
+def test_save_user_preferences_round_trips_location(tmp_db):
+    location = {"query": "Fort Worth", "display_name": "Fort Worth, TX", "latitude": 32.7555, "longitude": -97.3308}
+
+    result = db.save_user_preferences("alice", {"location": location})
+
+    assert result == {**_DEFAULTS, "location": location}
+    assert db.get_user_preferences("alice") == {**_DEFAULTS, "location": location}

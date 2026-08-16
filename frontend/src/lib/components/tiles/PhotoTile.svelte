@@ -15,7 +15,7 @@
 		index_error?: string;
 	}
 
-	let { widgetId }: { widgetId: string } = $props();
+	let { widgetId, refreshIntervalSeconds }: { widgetId: string; refreshIntervalSeconds: number } = $props();
 
 	let summary = $state<PhotoSummary | null>(null);
 
@@ -27,7 +27,7 @@
 		}
 	}
 
-	pollWidget(refresh, 60_000);
+	pollWidget(refresh, refreshIntervalSeconds * 1000);
 </script>
 
 <TileCard

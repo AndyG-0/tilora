@@ -143,6 +143,40 @@ def test_set_credentials_requires_both_fields(client):
     assert db.get_user_credentials(USER_ID, "icloud") is None
 
 
+def test_set_credentials_keeps_existing_password_when_omitted(client):
+    _save_credentials(username="user@example.com", password="hunter2")
+
+    response = client.put("/api/icloud/credentials", json={"username": "new@example.com"})
+
+    assert response.status_code == 200
+    assert response.json() == {"username": "new@example.com", "has_password": True}
+    assert db.get_user_credentials(USER_ID, "icloud") == {"username": "new@example.com", "password": "hunter2"}
+
+
+def test_set_credentials_keeps_existing_username_when_omitted(client):
+    _save_credentials(username="user@example.com", password="hunter2")
+
+    response = client.put("/api/icloud/credentials", json={"password": "new-password"})
+
+    assert response.status_code == 200
+    assert response.json() == {"username": "user@example.com", "has_password": True}
+    assert db.get_user_credentials(USER_ID, "icloud") == {"username": "user@example.com", "password": "new-password"}
+
+
+def test_get_credentials_when_not_configured(client):
+    response = client.get("/api/icloud/credentials")
+
+    assert response.json() == {"username": "", "has_password": False}
+
+
+def test_get_credentials_returns_username_without_password(client):
+    _save_credentials(username="user@example.com", password="hunter2")
+
+    response = client.get("/api/icloud/credentials")
+
+    assert response.json() == {"username": "user@example.com", "has_password": True}
+
+
 def test_clear_credentials_removes_them_and_invalidates_session(client, monkeypatch):
     _save_credentials()
     invalidated = []

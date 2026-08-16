@@ -4,7 +4,7 @@
 	import TileCard from '$lib/components/TileCard.svelte';
 	import { _ } from 'svelte-i18n';
 
-	let { widgetId }: { widgetId: string } = $props();
+	let { widgetId, refreshIntervalSeconds }: { widgetId: string; refreshIntervalSeconds: number } = $props();
 
 	let summary = $state<QBittorrentSummary | null>(null);
 
@@ -16,7 +16,7 @@
 		}
 	}
 
-	pollWidget(refresh, 30_000);
+	pollWidget(refresh, refreshIntervalSeconds * 1000);
 
 	function formatSpeed(bps: number | undefined): string {
 		const mbps = ((bps ?? 0) * 8) / 1_000_000;

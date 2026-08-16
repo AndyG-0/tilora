@@ -18,7 +18,7 @@
 		events: CalendarEvent[];
 	}
 
-	let { widgetId }: { widgetId: string } = $props();
+	let { widgetId, refreshIntervalSeconds }: { widgetId: string; refreshIntervalSeconds: number } = $props();
 
 	let summary = $state<CalendarSummary | null>(null);
 
@@ -41,7 +41,7 @@
 				}).format(date);
 	}
 
-	pollWidget(refresh, 60_000);
+	pollWidget(refresh, refreshIntervalSeconds * 1000);
 </script>
 
 <TileCard {widgetId}>

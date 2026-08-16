@@ -22,7 +22,7 @@
 		messages: DiscordMessage[];
 	}
 
-	let { widgetId }: { widgetId: string } = $props();
+	let { widgetId, refreshIntervalSeconds }: { widgetId: string; refreshIntervalSeconds: number } = $props();
 
 	// A fixed animation-duration paired with a track whose height scales with
 	// message count/length makes longer content visibly speed up. Deriving the
@@ -50,7 +50,7 @@
 		}
 	}
 
-	pollWidget(refresh, 60_000);
+	pollWidget(refresh, refreshIntervalSeconds * 1000);
 
 	// Cycles the "fade" display mode through one message at a time; a no-op
 	// for the other modes since the effect bails out immediately.

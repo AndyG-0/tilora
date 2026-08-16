@@ -11,7 +11,7 @@ describe('SystemMonitorTile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(SystemMonitorTile, { props: { widgetId: 'system-monitor' } });
+		render(SystemMonitorTile, { props: { widgetId: 'system-monitor', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Loading system stats…')).toBeInTheDocument();
 	});
@@ -24,7 +24,7 @@ describe('SystemMonitorTile', () => {
 			disk_percent: 55.0,
 		});
 
-		render(SystemMonitorTile, { props: { widgetId: 'system-monitor' } });
+		render(SystemMonitorTile, { props: { widgetId: 'system-monitor', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('dashboard-host')).toBeInTheDocument();
 		expect(screen.getByText('13%')).toBeInTheDocument();

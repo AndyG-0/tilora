@@ -10,7 +10,7 @@
 		most_urgent: Alert | null;
 	}
 
-	let { widgetId }: { widgetId: string } = $props();
+	let { widgetId, refreshIntervalSeconds }: { widgetId: string; refreshIntervalSeconds: number } = $props();
 
 	let summary = $state<AlertSummary | null>(null);
 	let seenAlertId: number | null = null;
@@ -30,7 +30,7 @@
 		}
 	}
 
-	pollWidget(refresh, 30_000);
+	pollWidget(refresh, refreshIntervalSeconds * 1000);
 </script>
 
 <TileCard {widgetId}>

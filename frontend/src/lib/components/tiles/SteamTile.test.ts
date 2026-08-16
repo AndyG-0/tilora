@@ -11,7 +11,7 @@ describe('SteamTile', () => {
 	it('shows a loading state before the summary resolves', () => {
 		widgetSummary.mockReturnValue(new Promise(() => {})); // never resolves
 
-		render(SteamTile, { props: { widgetId: 'steam' } });
+		render(SteamTile, { props: { widgetId: 'steam', refreshIntervalSeconds: 60 } });
 
 		expect(screen.getByText('Loading…')).toBeInTheDocument();
 	});
@@ -27,7 +27,7 @@ describe('SteamTile', () => {
 			has_api_key: false,
 		});
 
-		render(SteamTile, { props: { widgetId: 'steam' } });
+		render(SteamTile, { props: { widgetId: 'steam', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Not configured')).toBeInTheDocument();
 	});
@@ -44,7 +44,7 @@ describe('SteamTile', () => {
 			error: 'Steam rejected the request — check the API key.',
 		});
 
-		render(SteamTile, { props: { widgetId: 'steam' } });
+		render(SteamTile, { props: { widgetId: 'steam', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Steam rejected the request — check the API key.')).toBeInTheDocument();
 	});
@@ -76,7 +76,7 @@ describe('SteamTile', () => {
 			has_api_key: true,
 		});
 
-		render(SteamTile, { props: { widgetId: 'steam' } });
+		render(SteamTile, { props: { widgetId: 'steam', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Robin')).toBeInTheDocument();
 		expect(screen.getAllByText('Half-Life 2').length).toBeGreaterThan(0);
@@ -101,7 +101,7 @@ describe('SteamTile', () => {
 			has_api_key: true,
 		});
 
-		render(SteamTile, { props: { widgetId: 'steam' } });
+		render(SteamTile, { props: { widgetId: 'steam', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Away')).toBeInTheDocument();
 	});
@@ -137,7 +137,7 @@ describe('SteamTile', () => {
 			has_api_key: true,
 		});
 
-		render(SteamTile, { props: { widgetId: 'steam' } });
+		render(SteamTile, { props: { widgetId: 'steam', refreshIntervalSeconds: 60 } });
 
 		expect(await screen.findByText('Latest: Half-Life 2 Update Released')).toBeInTheDocument();
 	});
@@ -160,7 +160,7 @@ describe('SteamTile', () => {
 			has_api_key: true,
 		});
 
-		render(SteamTile, { props: { widgetId: 'steam' } });
+		render(SteamTile, { props: { widgetId: 'steam', refreshIntervalSeconds: 60 } });
 
 		await screen.findByText('Robin');
 		expect(screen.queryByText(/^Latest:/)).not.toBeInTheDocument();

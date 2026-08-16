@@ -1,5 +1,36 @@
 # Linux installation and Raspberry Pi kiosk setup
 
+## Updating
+
+### Native (systemd) installation
+
+Run the standalone update script to pull the latest code, rebuild, and
+restart the services — no interactive prompts, preserves your configuration:
+
+```bash
+bash ~/tilora/deploy/update.sh
+```
+
+Or as a one-liner without a local checkout:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AndyG-0/tilora/main/deploy/update.sh | bash
+```
+
+You can also trigger the same update from the dashboard: **Settings → Software
+update → Update now** (admin-only, native installs only).  The UI shows a
+progress indicator and automatically reconnects once the services have
+restarted.
+
+### Docker
+
+```bash
+docker compose pull
+docker compose up --build -d
+```
+
+---
+
 ## One-line installation
 
 On Debian, Ubuntu, or Raspberry Pi OS, sign in as the non-root account that

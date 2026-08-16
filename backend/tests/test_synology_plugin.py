@@ -96,11 +96,10 @@ async def test_get_detail_when_not_configured():
 @respx.mock
 async def test_get_detail_when_connected_reports_volumes_and_system_info():
     respx.get("http://syno.local:5000/webapi/auth.cgi").mock(return_value=httpx.Response(200, json=AUTH_OK))
-    respx.get("http://syno.local:5000/webapi/entry.cgi").mock(
+    entry_route = respx.get("http://syno.local:5000/webapi/entry.cgi").mock(
         side_effect=[
-            # get_detail calls get_summary() (1 storage fetch) then re-fetches
-            # storage itself before the system-info call.
-            httpx.Response(200, json=STORAGE_RESPONSE),
+            # get_detail fetches storage once (shared with get_summary via
+            # _volumes()) then the system-info call.
             httpx.Response(200, json=STORAGE_RESPONSE),
             httpx.Response(200, json=SYSTEM_INFO_RESPONSE),
         ]
@@ -117,6 +116,9 @@ async def test_get_detail_when_connected_reports_volumes_and_system_info():
     assert detail["model"] == "DS920+"
     assert detail["uptime"] == "12:34:56"
     assert detail["temperature_celsius"] == 42
+    # Regression: get_detail() must share the one storage fetch with
+    # get_summary() rather than redundantly re-fetching it.
+    assert entry_route.call_count == 2
 
 
 @respx.mock
@@ -137,7 +139,6 @@ async def test_get_detail_surfaces_system_info_error_without_raising():
     respx.get("http://syno.local:5000/webapi/auth.cgi").mock(return_value=httpx.Response(200, json=AUTH_OK))
     respx.get("http://syno.local:5000/webapi/entry.cgi").mock(
         side_effect=[
-            httpx.Response(200, json=STORAGE_RESPONSE),
             httpx.Response(200, json=STORAGE_RESPONSE),
             httpx.ConnectError("refused"),
         ]

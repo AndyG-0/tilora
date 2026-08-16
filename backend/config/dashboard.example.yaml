@@ -172,6 +172,17 @@ widgets:
       location_name: "Fort Worth, TX"
       radius_nm: 15
 
+  - id: mapping
+    type: mapping
+    # Disabled by default — swap in your own coordinates before enabling.
+    enabled: false
+    layout: { col: 1, row: 7, colSpan: 1, rowSpan: 1 }
+    settings:
+      # Fort Worth, TX by default — swap for your own coordinates.
+      latitude: 32.7555
+      longitude: -97.3308
+      location_name: "Fort Worth, TX"
+
   - id: alert
     type: alert
     # Disabled by default — position it once you want alerts (raised manually

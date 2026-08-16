@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
+from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -39,13 +40,36 @@ _SEVERE_WEATHER_ALERT_EXPIRES_MINUTES = 360
 _PACKAGE_REFRESH_INTERVAL_MINUTES = 90
 
 
+async def _resolve_ai_widget_user(plugin_id: str) -> dict[str, Any] | None:
+    custom_widgets = await asyncio.to_thread(db.list_custom_widgets)
+    custom = next((w for w in custom_widgets if w["id"] == plugin_id), None)
+    if custom and custom.get("owner_user_id"):
+        user = await asyncio.to_thread(db.get_user, custom["owner_user_id"])
+        if user:
+            return user
+
+    users = await asyncio.to_thread(db.list_users)
+    if not users:
+        return None
+    admin_user = next((u for u in users if u.get("role") == "admin"), users[0])
+    return admin_user
+
+
 async def run_ai_widget(plugin: AIInsightsPlugin) -> None:
     try:
         system_prompt = None
         if plugin.language != DEFAULT_LOCALE:
             language_name = LANGUAGE_NAMES.get(plugin.language, plugin.language)
             system_prompt = f"Respond in {language_name}."
-        text = await assistant.ask(plugin.prompt, system_prompt=system_prompt, allowed_widget_ids=plugin.topics or None)
+        user = await _resolve_ai_widget_user(plugin.id)
+        device = {"id": "server"} if user else None
+        text = await assistant.ask(
+            plugin.prompt,
+            system_prompt=system_prompt,
+            user=user,
+            device=device,
+            allowed_widget_ids=plugin.topics or None,
+        )
         await asyncio.to_thread(db.record_ai_run, plugin.id, {"text": text})
         logger.info("AI widget '%s' ran successfully", plugin.id)
     except Exception:

@@ -19,9 +19,16 @@ class SpeedtestError(Exception):
     """Raised when a speedtest run can't be completed or its result parsed."""
 
 
+# speedtest-cli defaults to this already, but pin it explicitly rather than
+# relying on the library's default — a hang here occupies a thread-pool
+# worker (this runs via asyncio.to_thread) for however long the request
+# takes, even though the whole test is expected to run tens of seconds.
+_TIMEOUT_SECONDS = 10
+
+
 def run_speedtest() -> dict[str, Any]:
     try:
-        client = speedtest.Speedtest()
+        client = speedtest.Speedtest(timeout=_TIMEOUT_SECONDS)
         client.get_best_server()
         client.download()
         client.upload()

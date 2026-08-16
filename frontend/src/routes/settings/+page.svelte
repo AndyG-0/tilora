@@ -7,10 +7,12 @@
 		type VersionInfo,
 		type DeviceListEntry,
 		type HouseholdUser,
-		type WidgetSummaryMeta,
 		type TTSVoice,
 		type NetworkIntegration,
 		type NetworkTestConnectionResult,
+		type IcloudCredentials,
+		type CityResult,
+		type LocationPreference,
 	} from '$lib/api';
 	import ContainerHostRow from '$lib/components/settings/ContainerHostRow.svelte';
 	import { user, logout } from '$lib/stores/user';
@@ -30,6 +32,7 @@
 		persistVoiceSelection,
 		type VoiceProvider,
 	} from '$lib/stores/voice';
+	import { userLocation, loadLocationFromServer, persistLocation } from '$lib/stores/location';
 	import { listBrowserVoices, speak } from '$lib/speech';
 	import { getInsecureOriginInfo, type InsecureOriginInfo } from '$lib/network';
 	import { _ } from 'svelte-i18n';
@@ -39,6 +42,10 @@
 
 	let settings = $state<AppSettings | null>(null);
 	let version = $state<VersionInfo | null>(null);
+	let checkingUpdates = $state(false);
+	let updatingNow = $state(false);
+	let updateError = $state<string | null>(null);
+	let updateCheckedOnce = $state(false);
 	let insecureOriginInfo = $state<InsecureOriginInfo | null>(null);
 	let aiModelInput = $state('');
 	let aiReasoningEffortInput = $state('');
@@ -55,6 +62,7 @@
 	let caldavUrlInput = $state('');
 	let caldavUsernameInput = $state('');
 	let caldavPasswordInput = $state('');
+	let icloudCredentials = $state<IcloudCredentials>({ username: '', has_password: false });
 	let icloudUsernameInput = $state('');
 	let icloudPasswordInput = $state('');
 	let openaiTtsEnabledInput = $state(false);
@@ -66,9 +74,12 @@
 	let error = $state<string | null>(null);
 
 	// Each admin-settings section below (AI provider, voice output, Google/MS
-	// calendar, CalDAV, iCloud, timezone) saves independently — see save*()
-	// functions below — rather than sharing one big PATCH, so editing one
-	// doesn't silently resubmit unrelated fields (e.g. API keys) from another.
+	// calendar, CalDAV, timezone) saves independently — see save*() functions
+	// below — rather than sharing one big PATCH, so editing one doesn't
+	// silently resubmit unrelated fields (e.g. API keys) from another. iCloud
+	// Photos credentials are a personal (tier 2) setting, not admin-gated —
+	// see CONTRIBUTING.md's Settings tiers — so they save independently too,
+	// against /api/icloud/credentials rather than /api/settings.
 	let aiProviderSaving = $state(false);
 	let aiProviderSaved = $state(false);
 	let aiProviderError = $state<string | null>(null);
@@ -130,8 +141,29 @@
 		}
 	});
 
+	// iCloud Photos credentials are a personal (tier 2) setting — any
+	// logged-in user, not just admins, so this loads on $user the same way
+	// profileInitialized above does, independent of settingsInitialized below.
+	let icloudInitialized = false;
+
+	$effect(() => {
+		if ($user && !icloudInitialized) {
+			icloudInitialized = true;
+			loadIcloudCredentials();
+		}
+	});
+
+	async function loadIcloudCredentials() {
+		try {
+			icloudCredentials = await api.icloudCredentials();
+			icloudUsernameInput = icloudCredentials.username;
+		} catch {
+			icloudError = get(_)('settings.icloud.load_error');
+		}
+	}
+
 	// /api/settings is admin-only — load it lazily once $user is known to be
-	// an admin, mirroring profileInitialized below, so a member never fires a
+	// an admin, mirroring profileInitialized above, so a member never fires a
 	// request that's guaranteed to 403.
 	let settingsInitialized = false;
 
@@ -152,7 +184,6 @@
 			timezoneInput = settings.timezone;
 			caldavUrlInput = settings.caldav_url;
 			caldavUsernameInput = settings.caldav_username;
-			icloudUsernameInput = settings.icloud_username;
 			openaiTtsEnabledInput = settings.openai_tts_enabled === 'true';
 			openaiTtsModelInput = settings.openai_tts_model;
 			piperTtsEnabledInput = settings.piper_tts_enabled === 'true';
@@ -567,16 +598,21 @@
 	let devicesError = $state<string | null>(null);
 	let deviceNameInput = $state('');
 	let savingDeviceName = $state(false);
+	let editingDeviceName = $state(false);
 	let confirmingForgetDeviceId = $state<string | null>(null);
 	let forgettingDeviceId = $state<string | null>(null);
-	let deviceNameInitialized = false;
 
-	$effect(() => {
-		if ($currentDevice && !deviceNameInitialized) {
-			deviceNameInitialized = true;
-			deviceNameInput = $currentDevice.name;
-		}
-	});
+	function startEditingDeviceName() {
+		deviceNameInput = $currentDevice?.name ?? '';
+		devicesError = null;
+		editingDeviceName = true;
+	}
+
+	function cancelEditingDeviceName() {
+		editingDeviceName = false;
+		deviceNameInput = $currentDevice?.name ?? '';
+		devicesError = null;
+	}
 
 	async function loadDevices() {
 		try {
@@ -624,11 +660,6 @@
 		}
 	});
 
-	// Friendly type -> label lookup (e.g. "clock" -> "Clock"), same source
-	// the dashboard's "+ Add widget" picker uses — falls back to the raw
-	// type string per-widget below if this never loads.
-	let widgetTypeNames = $state<Record<string, string>>({});
-
 	// Fallback matches the backend's default set; refreshed from /api/theme
 	// on mount so new themes show up without a frontend redeploy.
 	let themeIds = $state(['light', 'dark', 'sepia', 'contrast', 'forest', 'ocean']);
@@ -651,13 +682,6 @@
 		top_to_bottom: $_('settings.screensaver.pattern_top_to_bottom'),
 		random: $_('settings.screensaver.pattern_random'),
 	});
-
-	function widgetLabel(widget: WidgetSummaryMeta, list: WidgetSummaryMeta[]) {
-		const base = widgetTypeNames[widget.type] ?? widget.type;
-		const sameType = list.filter((w) => w.type === widget.type);
-		if (sameType.length <= 1) return base;
-		return `${base} (${sameType.indexOf(widget) + 1})`;
-	}
 
 	function toggleScreensaverEnabled() {
 		ssEnabled = !ssEnabled;
@@ -720,6 +744,19 @@
 	let localeSaved = $state(false);
 	let localeError = $state<string | null>(null);
 
+	// Optional location the AI assistant can use for location-aware answers.
+	// Search stages a pending selection; Save/Clear persist it, matching
+	// every other section on this page rather than auto-saving on click.
+	let locationQuery = $state('');
+	let locationResults = $state<CityResult[]>([]);
+	let locationSearching = $state(false);
+	let locationPending = $state<LocationPreference | null>(null);
+	let locationSaving = $state(false);
+	let locationSaved = $state(false);
+	let locationError = $state<string | null>(null);
+	let locationInitialized = false;
+	let locationSearchTimeout: ReturnType<typeof setTimeout>;
+
 	let themeSaving = $state(false);
 	let themeSaved = $state(false);
 	let themeError = $state<string | null>(null);
@@ -734,6 +771,71 @@
 			localeError = get(_)('settings.language.save_error');
 		} finally {
 			localeSaving = false;
+		}
+	}
+
+	function onLocationQueryInput() {
+		clearTimeout(locationSearchTimeout);
+		const trimmed = locationQuery.trim();
+		if (trimmed.length < 2) {
+			locationResults = [];
+			locationSearching = false;
+			return;
+		}
+		locationSearching = true;
+		locationSearchTimeout = setTimeout(async () => {
+			try {
+				locationResults = await api.searchCities(trimmed);
+				locationError = null;
+			} catch {
+				locationError = get(_)('settings.location.search_failed');
+			} finally {
+				locationSearching = false;
+			}
+		}, 300);
+	}
+
+	function locationCityLabel(city: CityResult): string {
+		const region = city.admin1 ?? city.country ?? '';
+		return region ? `${city.name}, ${region}` : city.name;
+	}
+
+	function selectLocation(city: CityResult) {
+		locationPending = {
+			query: locationQuery.trim(),
+			display_name: locationCityLabel(city),
+			latitude: city.latitude,
+			longitude: city.longitude,
+		};
+		locationSaved = false;
+		locationQuery = '';
+		locationResults = [];
+	}
+
+	async function saveLocation() {
+		locationSaving = true;
+		locationError = null;
+		try {
+			await persistLocation(locationPending);
+			locationSaved = true;
+		} catch {
+			locationError = get(_)('settings.location.save_error');
+		} finally {
+			locationSaving = false;
+		}
+	}
+
+	async function clearLocation() {
+		locationSaving = true;
+		locationError = null;
+		try {
+			await persistLocation(null);
+			locationPending = null;
+			locationSaved = true;
+		} catch {
+			locationError = get(_)('settings.location.save_error');
+		} finally {
+			locationSaving = false;
 		}
 	}
 
@@ -756,6 +858,15 @@
 			loadVoiceSelectionFromServer().then(() => {
 				voiceProviderInput = $voiceSelection.provider;
 				voiceIdInput = $voiceSelection.voiceId;
+			});
+		}
+	});
+
+	$effect(() => {
+		if ($user && !locationInitialized) {
+			locationInitialized = true;
+			loadLocationFromServer().then(() => {
+				locationPending = $userLocation;
 			});
 		}
 	});
@@ -830,13 +941,6 @@
 		}
 
 		insecureOriginInfo = getInsecureOriginInfo();
-
-		try {
-			const types = await api.widgetTypes();
-			widgetTypeNames = Object.fromEntries(types.map((t) => [t.type, t.name]));
-		} catch {
-			// fall back to showing raw type strings below
-		}
 
 		try {
 			const { themes } = await api.themes();
@@ -972,15 +1076,24 @@
 		icloudSaved = false;
 		icloudError = null;
 		try {
-			const partial: Record<string, string> = { icloud_username: icloudUsernameInput };
-			if (icloudPasswordInput) partial.icloud_password = icloudPasswordInput;
-			settings = await api.updateSettings(partial);
+			icloudCredentials = await api.setIcloudCredentials(icloudUsernameInput, icloudPasswordInput || undefined);
 			icloudPasswordInput = '';
 			icloudSaved = true;
 		} catch {
-			icloudError = 'Could not save iCloud Photos settings.';
+			icloudError = get(_)('settings.icloud.save_error');
 		} finally {
 			icloudSaving = false;
+		}
+	}
+
+	async function clearIcloudCredentials() {
+		icloudError = null;
+		try {
+			await api.clearIcloudCredentials();
+			icloudCredentials = { username: '', has_password: false };
+			icloudUsernameInput = '';
+		} catch {
+			icloudError = get(_)('settings.icloud.clear_error');
 		}
 	}
 
@@ -1007,8 +1120,7 @@
 			| 'google_calendar_client_secret'
 			| 'microsoft_calendar_client_id'
 			| 'microsoft_calendar_client_secret'
-			| 'caldav_password'
-			| 'icloud_password',
+			| 'caldav_password',
 		onError: (message: string) => void,
 	) {
 		onError('');
@@ -1071,13 +1183,36 @@
 	}
 
 	async function saveDeviceName() {
+		const trimmed = deviceNameInput.trim();
+		if (!trimmed) {
+			devicesError = get(_)('settings.devices.empty_name_error');
+			return;
+		}
+		if (trimmed.length > 40) {
+			devicesError = get(_)('settings.devices.rename_error');
+			return;
+		}
+		if (trimmed === $currentDevice?.name) {
+			editingDeviceName = false;
+			return;
+		}
+		if (devices.some((d) => d.id !== $currentDevice?.id && d.name.trim().toLowerCase() === trimmed.toLowerCase())) {
+			devicesError = get(_)('settings.devices.duplicate_name_error');
+			return;
+		}
+
 		savingDeviceName = true;
 		devicesError = null;
 		try {
-			await renameCurrentDevice(deviceNameInput.trim());
+			await renameCurrentDevice(trimmed);
 			await loadDevices();
-		} catch {
-			devicesError = get(_)('settings.devices.rename_error');
+			editingDeviceName = false;
+		} catch (err: unknown) {
+			if (err instanceof Error && err.message) {
+				devicesError = err.message;
+			} else {
+				devicesError = get(_)('settings.devices.rename_error');
+			}
 		} finally {
 			savingDeviceName = false;
 		}
@@ -1095,6 +1230,49 @@
 			forgettingDeviceId = null;
 			confirmingForgetDeviceId = null;
 		}
+	}
+
+	async function checkForUpdates() {
+		checkingUpdates = true;
+		try {
+			version = await api.version();
+			updateCheckedOnce = true;
+		} catch {
+			// keep existing version data
+		} finally {
+			checkingUpdates = false;
+		}
+	}
+
+	async function pollUntilHealthy(maxAttempts = 30, intervalMs = 3000): Promise<void> {
+		for (let i = 0; i < maxAttempts; i++) {
+			await new Promise<void>((r) => setTimeout(r, intervalMs));
+			try {
+				await api.health();
+				return;
+			} catch {
+				// still restarting
+			}
+		}
+	}
+
+	async function triggerUpdate() {
+		updatingNow = true;
+		updateError = null;
+		try {
+			await api.triggerUpdate();
+		} catch {
+			// A network error here is expected — the backend restarts itself
+			// right after accepting the request, which drops the connection.
+		}
+		// Poll /api/health until the backend comes back (up to ~90 s).
+		await pollUntilHealthy();
+		try {
+			version = await api.version();
+		} catch {
+			// best effort — version panel will refresh on next manual check
+		}
+		updatingNow = false;
 	}
 </script>
 
@@ -1458,44 +1636,6 @@
 					{/if}
 					<button class="save" disabled={caldavSaving} onclick={saveCaldav}>
 						{caldavSaving ? 'Saving…' : 'Save CalDAV'}
-					</button>
-				</section>
-
-				<section>
-					<h3>iCloud Photos</h3>
-					<label>
-						Apple ID
-						<input type="text" bind:value={icloudUsernameInput} />
-					</label>
-
-					<label>
-						Password
-						<input
-							type="password"
-							bind:value={icloudPasswordInput}
-							placeholder={settings.has_icloud_password ? 'Set — enter a new value to replace it' : 'Not set'}
-						/>
-					</label>
-					{#if settings.has_icloud_password}
-						<button class="clear" onclick={() => clearKey('icloud_password', (m) => (icloudError = m))}
-							>Clear password</button
-						>
-					{/if}
-					<p class="hint">
-						Your real Apple ID and account password (Apple doesn't support app-specific passwords here), so this grants
-						full account access, not just Photos — only fill this in if you're comfortable with that. Save this section,
-						then switch a Photos widget to <strong>iCloud (Private Library)</strong> from that widget's detail view and connect
-						(including any 2FA prompt) there.
-					</p>
-
-					{#if icloudError}
-						<p class="hint error">{icloudError}</p>
-					{/if}
-					{#if icloudSaved}
-						<p class="hint">Saved.</p>
-					{/if}
-					<button class="save" disabled={icloudSaving} onclick={saveIcloud}>
-						{icloudSaving ? 'Saving…' : 'Save iCloud Photos'}
 					</button>
 				</section>
 
@@ -1928,47 +2068,122 @@
 
 		<section>
 			<h3>{$_('settings.devices.heading')}</h3>
-			{#if $currentDevice}
-				<label>
-					{$_('settings.devices.this_device_label')}
-					<input type="text" bind:value={deviceNameInput} maxlength="40" />
-				</label>
-				<button class="save" disabled={savingDeviceName || !deviceNameInput.trim()} onclick={saveDeviceName}>
-					{savingDeviceName ? $_('common.saving') : $_('settings.devices.rename')}
-				</button>
-			{/if}
 
 			{#if devicesError}
 				<p class="hint error">{devicesError}</p>
 			{/if}
 
-			{#if devices.filter((d) => d.id !== $currentDevice?.id).length > 0}
+			{#if devices.length > 0}
 				<ul class="device-list">
-					{#each devices.filter((d) => d.id !== $currentDevice?.id) as d (d.id)}
+					{#each devices as d (d.id)}
+						{@const isCurrent = d.id === $currentDevice?.id}
 						<li>
-							<span class="device-name">{d.name}</span>
-							{#if confirmingForgetDeviceId === d.id}
-								<span class="confirm-actions">
-									<button
-										class="cancel"
-										onclick={() => (confirmingForgetDeviceId = null)}
-										disabled={forgettingDeviceId === d.id}
-									>
-										{$_('common.cancel')}
-									</button>
-									<button class="danger" onclick={() => forgetDevice(d.id)} disabled={forgettingDeviceId === d.id}>
-										{forgettingDeviceId === d.id ? $_('settings.devices.forgetting') : $_('settings.devices.forget')}
-									</button>
-								</span>
-							{:else}
-								<button class="danger-link" onclick={() => (confirmingForgetDeviceId = d.id)}
-									>{$_('settings.devices.forget_device')}</button
+							{#if isCurrent && editingDeviceName}
+								<form
+									class="device-rename-form"
+									onsubmit={(e) => {
+										e.preventDefault();
+										saveDeviceName();
+									}}
 								>
+									<input
+										type="text"
+										bind:value={deviceNameInput}
+										maxlength="40"
+										aria-label={$_('settings.devices.rename')}
+										disabled={savingDeviceName}
+										onkeydown={(e) => {
+											if (e.key === 'Escape') cancelEditingDeviceName();
+										}}
+									/>
+									<span class="confirm-actions">
+										<button type="button" class="cancel" onclick={cancelEditingDeviceName} disabled={savingDeviceName}>
+											{$_('common.cancel')}
+										</button>
+										<button type="submit" class="save" disabled={savingDeviceName || !deviceNameInput.trim()}>
+											{savingDeviceName ? $_('common.saving') : $_('common.save')}
+										</button>
+									</span>
+								</form>
+							{:else}
+								<span class="device-info">
+									<span class="device-name">{d.name}</span>
+									{#if isCurrent}
+										<span class="device-badge">{$_('settings.devices.this_device_badge')}</span>
+									{/if}
+								</span>
+								<span class="device-actions">
+									{#if isCurrent}
+										<button type="button" class="action-link" onclick={startEditingDeviceName}>
+											{$_('settings.devices.rename_device')}
+										</button>
+									{:else if confirmingForgetDeviceId === d.id}
+										<span class="confirm-actions">
+											<button
+												type="button"
+												class="cancel"
+												onclick={() => (confirmingForgetDeviceId = null)}
+												disabled={forgettingDeviceId === d.id}
+											>
+												{$_('common.cancel')}
+											</button>
+											<button
+												type="button"
+												class="danger"
+												onclick={() => forgetDevice(d.id)}
+												disabled={forgettingDeviceId === d.id}
+											>
+												{forgettingDeviceId === d.id
+													? $_('settings.devices.forgetting')
+													: $_('settings.devices.forget')}
+											</button>
+										</span>
+									{:else}
+										<button type="button" class="danger-link" onclick={() => (confirmingForgetDeviceId = d.id)}>
+											{$_('settings.devices.forget_device')}
+										</button>
+									{/if}
+								</span>
 							{/if}
 						</li>
 					{/each}
 				</ul>
 			{/if}
+		</section>
+
+		<section>
+			<h3>{$_('settings.icloud.heading')}</h3>
+			<label>
+				{$_('settings.icloud.apple_id_label')}
+				<input type="text" bind:value={icloudUsernameInput} />
+			</label>
+
+			<label>
+				{$_('settings.icloud.password_label')}
+				<input
+					type="password"
+					bind:value={icloudPasswordInput}
+					placeholder={icloudCredentials.has_password ? $_('common.password_set_hint') : $_('common.password_not_set')}
+				/>
+			</label>
+			{#if icloudCredentials.has_password}
+				<button class="clear" onclick={clearIcloudCredentials}>{$_('settings.icloud.clear')}</button>
+			{/if}
+			<p class="hint">
+				{$_('settings.icloud.hint_prefix')}<strong>{$_('photos.detail.provider_icloud_private')}</strong>{$_(
+					'settings.icloud.hint_suffix',
+				)}
+			</p>
+
+			{#if icloudError}
+				<p class="hint error">{icloudError}</p>
+			{/if}
+			{#if icloudSaved}
+				<p class="hint">{$_('common.saved')}</p>
+			{/if}
+			<button class="save" disabled={icloudSaving} onclick={saveIcloud}>
+				{icloudSaving ? $_('common.saving') : $_('settings.icloud.save')}
+			</button>
 		</section>
 
 		<section>
@@ -2033,7 +2248,7 @@
 										checked={ssSelectedIds.has(w.id)}
 										onchange={() => toggleScreensaverWidget(w.id)}
 									/>
-									{widgetLabel(w, screensaverEligibleWidgets)}
+									{w.name}
 								</label>
 							</li>
 						{/each}
@@ -2104,6 +2319,49 @@
 		</section>
 
 		<section>
+			<h3>{$_('settings.location.heading')}</h3>
+			{#if locationPending}
+				<p class="hint">{$_('settings.location.current')}: {locationPending.display_name}</p>
+			{/if}
+			<div class="city-search">
+				<input
+					type="text"
+					placeholder={$_('settings.location.search_placeholder')}
+					bind:value={locationQuery}
+					oninput={onLocationQueryInput}
+				/>
+				{#if locationSearching}
+					<p class="hint">{$_('settings.location.searching')}</p>
+				{:else if locationError}
+					<p class="hint error">{locationError}</p>
+				{:else if locationQuery.trim().length >= 2 && locationResults.length === 0}
+					<p class="hint">{$_('settings.location.no_results')}</p>
+				{/if}
+				{#if locationResults.length > 0}
+					<ul class="results">
+						{#each locationResults as city (city.latitude + ',' + city.longitude)}
+							<li>
+								<button disabled={locationSaving} onclick={() => selectLocation(city)}>
+									{locationCityLabel(city)}
+								</button>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
+
+			{#if locationSaved}
+				<p class="hint">{$_('common.saved')}</p>
+			{/if}
+			<button class="clear" disabled={locationSaving || !locationPending} onclick={clearLocation}>
+				{$_('settings.location.clear')}
+			</button>
+			<button class="save" disabled={locationSaving} onclick={saveLocation}>
+				{locationSaving ? $_('common.saving') : $_('settings.location.save')}
+			</button>
+		</section>
+
+		<section>
 			<h3>{$_('settings.language.title')}</h3>
 			<select
 				aria-label={$_('settings.language.title')}
@@ -2156,26 +2414,72 @@
 			</button>
 		</section>
 
+		<section>
+			<h3>{$_('reports.title')}</h3>
+			<p class="hint">{$_('reports.subtitle')}</p>
+			<button class="clear" onclick={() => goto('/reports')}>
+				📊 {$_('reports.nav_report_button')}
+			</button>
+		</section>
+
 		{#if insecureOriginInfo?.needsInsecureOriginFlag}
-			<section>
+			<section class="microphone-section">
 				<h3>{$_('settings.microphone.heading')}</h3>
-				<p class="hint">
-					{$_('settings.microphone.intro', { values: { origin: insecureOriginInfo.origin } })}
-				</p>
-				{#if insecureOriginInfo.isChrome}
+				{#if insecureOriginInfo.browser === 'chrome'}
+					<p class="hint">
+						{$_('settings.microphone.chrome_intro', { values: { origin: insecureOriginInfo.origin } })}
+					</p>
 					<p class="hint">
 						{$_('settings.microphone.open_prefix')}
 						<a href="chrome://flags/#unsafely-treat-insecure-origin-as-secure" target="_blank" rel="noreferrer"
 							>chrome://flags/#unsafely-treat-insecure-origin-as-secure</a
 						>{$_('settings.microphone.after_link')} <code>{insecureOriginInfo.origin}</code>
-						{$_('settings.microphone.list_suffix')}
+						{$_('settings.microphone.chrome_list_suffix')}
 					</p>
+				{:else if insecureOriginInfo.browser === 'edge'}
+					<p class="hint">
+						{$_('settings.microphone.edge_intro', { values: { origin: insecureOriginInfo.origin } })}
+					</p>
+					<p class="hint">
+						{$_('settings.microphone.open_prefix')}
+						<a href="edge://flags/#unsafely-treat-insecure-origin-as-secure" target="_blank" rel="noreferrer"
+							>edge://flags/#unsafely-treat-insecure-origin-as-secure</a
+						>{$_('settings.microphone.after_link')} <code>{insecureOriginInfo.origin}</code>
+						{$_('settings.microphone.edge_list_suffix')}
+					</p>
+				{:else if insecureOriginInfo.browser === 'brave'}
+					<p class="hint">
+						{$_('settings.microphone.brave_intro', { values: { origin: insecureOriginInfo.origin } })}
+					</p>
+					<p class="hint">
+						{$_('settings.microphone.open_prefix')}
+						<a href="brave://flags/#unsafely-treat-insecure-origin-as-secure" target="_blank" rel="noreferrer"
+							>brave://flags/#unsafely-treat-insecure-origin-as-secure</a
+						>{$_('settings.microphone.after_link')} <code>{insecureOriginInfo.origin}</code>
+						{$_('settings.microphone.brave_list_suffix')}
+					</p>
+				{:else if insecureOriginInfo.browser === 'safari'}
+					<p class="hint">
+						{$_('settings.microphone.safari_intro', { values: { origin: insecureOriginInfo.origin } })}
+					</p>
+					<p class="hint">
+						{$_('settings.microphone.safari_https_req')}
+					</p>
+					<div class="cert-tips">
+						<p class="hint cert-tip-heading">
+							<strong>{$_('settings.microphone.safari_cert_tip_title')}</strong>
+						</p>
+						<ul class="cert-tips-list">
+							<li>{$_('settings.microphone.safari_ios_cert_tip')}</li>
+							<li>{$_('settings.microphone.safari_mac_cert_tip')}</li>
+						</ul>
+					</div>
 				{:else}
 					<p class="hint">
-						{$_('settings.microphone.in_chrome_open')}
-						<code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>{$_('settings.microphone.after_link')}
-						<code>{insecureOriginInfo.origin}</code>
-						{$_('settings.microphone.list_suffix')}
+						{$_('settings.microphone.other_intro', { values: { origin: insecureOriginInfo.origin } })}
+					</p>
+					<p class="hint">
+						{$_('settings.microphone.other_https_req')}
 					</p>
 				{/if}
 			</section>
@@ -2185,13 +2489,42 @@
 			<section>
 				<h3>{$_('settings.update.heading')}</h3>
 				<p class="hint">{$_('settings.update.running_version', { values: { version: version.current_version } })}</p>
-				{#if version.update_available}
+
+				<div class="update-check-row">
+					<button
+						id="check-for-updates-btn"
+						class="secondary"
+						onclick={checkForUpdates}
+						disabled={checkingUpdates || updatingNow}
+					>
+						{checkingUpdates ? $_('settings.update.checking') : $_('settings.update.check_now')}
+					</button>
+					{#if version.update_available}
+						<span class="update-badge-inline"
+							>{$_('settings.update.available', { values: { version: version.latest_version } })}</span
+						>
+					{:else if updateCheckedOnce && !checkingUpdates}
+						<span class="hint">{$_('settings.update.up_to_date')}</span>
+					{/if}
+				</div>
+
+				{#if version.update_available && version.release_url}
 					<p class="hint">
-						{$_('settings.update.available', { values: { version: version.latest_version } })}
-						{#if version.release_url}
-							— <a href={version.release_url} target="_blank" rel="noreferrer">{$_('settings.update.view_release')}</a>
-						{/if}
+						<a href={version.release_url} target="_blank" rel="noreferrer">{$_('settings.update.view_release')}</a>
 					</p>
+				{/if}
+
+				{#if version.install_method === 'native' && $user?.role === 'admin'}
+					{#if version.update_running || updatingNow}
+						<p class="hint">{$_('settings.update.update_in_progress')}</p>
+					{:else if version.update_available}
+						<button id="update-now-btn" onclick={triggerUpdate} disabled={updatingNow}>
+							{$_('settings.update.update_now')}
+						</button>
+						{#if updateError}
+							<p class="hint error">{updateError}</p>
+						{/if}
+					{/if}
 				{/if}
 			</section>
 		{/if}
@@ -2203,6 +2536,19 @@
 		padding: 2rem;
 		min-height: 100vh;
 		max-width: 30rem;
+	}
+
+	.update-check-row {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+	}
+
+	.update-badge-inline {
+		font-size: 0.85rem;
+		color: var(--color-accent);
+		font-weight: 500;
 	}
 
 	.back {
@@ -2367,6 +2713,39 @@
 		font-size: 0.85rem;
 	}
 
+	.city-search {
+		margin: 0.5rem 0;
+	}
+
+	.city-search input {
+		width: 100%;
+		max-width: 20rem;
+	}
+
+	.results {
+		list-style: none;
+		margin: 0.5rem 0 0;
+		padding: 0;
+		max-width: 20rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.results button {
+		width: 100%;
+		text-align: left;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		padding: 0.5rem 0.75rem;
+		cursor: pointer;
+	}
+
+	.results button:active {
+		background: var(--color-surface-hover);
+	}
+
 	.button-row {
 		display: flex;
 		align-items: center;
@@ -2439,10 +2818,55 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+
+	.device-info {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
 	}
 
 	.device-name {
 		font-size: 0.9rem;
+	}
+
+	.device-badge {
+		font-size: 0.75rem;
+		color: var(--color-accent);
+		border: 1px solid var(--color-accent);
+		border-radius: 999px;
+		padding: 0.1rem 0.5rem;
+		white-space: nowrap;
+	}
+
+	.device-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.device-rename-form {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		width: 100%;
+		flex-wrap: wrap;
+	}
+
+	.device-rename-form input {
+		flex: 1;
+		min-width: 150px;
+	}
+
+	.action-link {
+		background: none;
+		border: none;
+		color: var(--color-accent);
+		text-decoration: underline;
+		cursor: pointer;
+		padding: 0;
+		font-size: 0.85rem;
 	}
 
 	.member-list {
@@ -2530,5 +2954,31 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.4rem;
+	}
+
+	.cert-tips {
+		margin-top: 0.5rem;
+		padding: 0.6rem 0.8rem;
+		background: var(--color-surface-hover, rgba(255, 255, 255, 0.04));
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+	}
+
+	.cert-tip-heading {
+		color: var(--color-text);
+		font-size: 0.85rem;
+		margin: 0;
+	}
+
+	.cert-tips-list {
+		margin: 0.4rem 0 0;
+		padding-left: 1.2rem;
+		color: var(--color-text-muted);
+		font-size: 0.85rem;
+		line-height: 1.5;
+	}
+
+	.cert-tips-list li {
+		margin-bottom: 0.25rem;
 	}
 </style>

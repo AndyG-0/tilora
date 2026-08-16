@@ -13,6 +13,7 @@ from app.auth import get_current_device, get_current_user, require_write_access
 from app.config import list_widget_configs, load_dashboard_config, resolve_tabs
 from app.plugins.ai_insights.plugin import AIInsightsPlugin
 from app.plugins.base import Plugin, registry
+from app.plugins.naming import display_names
 from app.plugins.network_settings import resolve_network_settings
 from app.plugins.photos.plugin import PhotosPlugin
 from app.plugins.registry_types import PLUGIN_CLASSES_BY_TYPE
@@ -26,8 +27,9 @@ from app.scheduler import (
     schedule_speedtest_widget,
     unschedule_widget,
 )
-from app.storage.cache import cache
+from app.storage.cache import cache, cached_call, user_locale_cache_key
 from app.storage.db import (
+    clear_widget_custom_name,
     delete_custom_widget,
     delete_hidden_widget_ids_for_widget,
     delete_photo_index,
@@ -43,8 +45,9 @@ from app.storage.db import (
     list_custom_widgets,
     list_widget_layouts,
     save_custom_widget,
+    save_widget_custom_name,
     save_widget_device_settings,
-    save_widget_layout,
+    save_widget_layouts,
     save_widget_settings,
     save_widget_user_settings,
 )
@@ -114,19 +117,38 @@ def _list_widgets_sync(user_id: str, device_id: str, breakpoint: Breakpoint) -> 
     default_tab = resolve_tabs(config)[0]["id"]
     layouts = list_widget_layouts(user_id, device_id, breakpoint)
     hidden = hidden_widget_ids(user_id, device_id)
+    visible = [
+        w
+        for w in list_widget_configs(config)
+        if w.get("enabled", True) and _widget_is_visible(w, user_id, device_id, hidden)
+    ]
+    # Not every visible config entry has a live registry plugin yet (e.g. a
+    # config referencing a type that failed to load) — display_names only
+    # needs the ones that do, and a widget with no plugin falls back to its
+    # bare type string below.
+    plugins = [registry.get(w["id"]) for w in visible]
+    names = display_names([p for p in plugins if p is not None])
+    plugins_by_id = {w["id"]: p for w, p in zip(visible, plugins, strict=True) if p is not None}
     return [
         {
             "id": w["id"],
             "type": w["type"],
+            "name": names.get(w["id"], w["type"]),
             # A drag-to-rearrange edit persisted at runtime overrides the
             # dashboard.yaml position, scoped to this (user, device,
             # breakpoint) triple — the same layering pattern widget settings
             # overrides use, just with two extra dimensions.
             "layout": {**w["layout"], **layouts.get(w["id"], {})},
             "tab": w.get("tab", default_tab),
+            # Lets the frontend poll each tile at the same cadence its data
+            # actually refreshes at, instead of a fixed interval unrelated to
+            # this widget's cache TTL. Falls back to a sane default for the
+            # rare config entry with no live plugin registered.
+            "refresh_interval_seconds": (
+                plugins_by_id[w["id"]].refresh_interval_seconds if w["id"] in plugins_by_id else 300
+            ),
         }
-        for w in list_widget_configs(config)
-        if w.get("enabled", True) and _widget_is_visible(w, user_id, device_id, hidden)
+        for w in visible
     ]
 
 
@@ -157,10 +179,10 @@ async def update_widgets_layout(
     user: dict[str, Any] = Depends(get_current_user),
     device: dict[str, Any] = Depends(get_current_device),
 ):
-    for entry in payload.widgets:
-        await asyncio.to_thread(
-            save_widget_layout, user["id"], device["id"], payload.breakpoint, entry.id, entry.layout.model_dump()
-        )
+    entries = [
+        (user["id"], device["id"], payload.breakpoint, entry.id, entry.layout.model_dump()) for entry in payload.widgets
+    ]
+    await asyncio.to_thread(save_widget_layouts, entries)
     return {"status": "ok"}
 
 
@@ -210,7 +232,16 @@ async def add_widget(
         schedule_speedtest_widget(plugin)
 
     default_tab = resolve_tabs(load_dashboard_config())[0]["id"]
-    return {"id": widget_id, "type": payload.type, "layout": layout, "tab": tab or default_tab}
+    siblings = [p for p in registry.all() if type(p) is plugin_cls]
+    name = display_names(siblings)[widget_id]
+    return {
+        "id": widget_id,
+        "type": payload.type,
+        "name": name,
+        "layout": layout,
+        "tab": tab or default_tab,
+        "refresh_interval_seconds": plugin.refresh_interval_seconds,
+    }
 
 
 def _get_plugin(widget_id: str):
@@ -218,6 +249,23 @@ def _get_plugin(widget_id: str):
     if plugin is None:
         raise HTTPException(status_code=404, detail=f"Unknown widget '{widget_id}'")
     return plugin
+
+
+# How long a resolved locale is cached for, keyed by user id — avoids a DB
+# round-trip on every summary/detail poll (including cache *hits*, which
+# otherwise still paid for this lookup before ever checking the cache).
+# update_preferences() (see app.api.users) invalidates this immediately on
+# a locale change, so the TTL only bounds staleness from writes made
+# outside that endpoint, not normal user-facing latency.
+_LOCALE_CACHE_TTL_SECONDS = 3600
+
+
+async def _user_locale(user_id: str) -> str:
+    async def fetch() -> str:
+        prefs = await asyncio.to_thread(get_user_preferences, user_id)
+        return prefs.get("locale", "en")
+
+    return await cached_call(user_locale_cache_key(user_id), _LOCALE_CACHE_TTL_SECONDS, fetch)
 
 
 def _cache_key_prefix(kind: str, plugin: Plugin, user: dict[str, Any], device: dict[str, Any]) -> str:
@@ -265,7 +313,7 @@ async def widget_summary(
     device: dict[str, Any] = Depends(get_current_device),
 ):
     plugin = _get_plugin(widget_id)
-    locale = (await asyncio.to_thread(get_user_preferences, user["id"])).get("locale", "en")
+    locale = await _user_locale(user["id"])
     cache_key = _cache_key("summary", plugin, user, device, locale)
     cached = cache.get(cache_key)
     if cached is not None:
@@ -284,7 +332,7 @@ async def widget_detail(
     device: dict[str, Any] = Depends(get_current_device),
 ):
     plugin = _get_plugin(widget_id)
-    locale = (await asyncio.to_thread(get_user_preferences, user["id"])).get("locale", "en")
+    locale = await _user_locale(user["id"])
     cache_key = _cache_key("detail", plugin, user, device, locale)
     cached = cache.get(cache_key)
     if cached is not None:
@@ -310,7 +358,28 @@ async def update_widget_settings(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    if plugin.settings_scope == "personal":
+    # settings_scope may depend on the plugin's own settings (PhotosPlugin's
+    # does — see its docstring), so it's read off a throwaway instance
+    # carrying the settings this payload would produce, not the plugin's
+    # current (pre-patch) settings. Otherwise a payload that changes scope
+    # (e.g. Photos switching provider between "local"/"icloud_private")
+    # would be access-gated by the tier its *old* settings belonged to
+    # instead of its new ones — see app.api.widgets.add_widget, which has
+    # the same need.
+    prospective = plugin.with_settings({**plugin.config["settings"], **payload})
+    # PhotosPlugin's `provider` (and everything else the background indexer
+    # keys off, see _PHOTO_INDEX_RELEVANT_SETTINGS) has to stay a single
+    # shared value no matter who changes it — both the indexer
+    # (app.plugins.photos.indexer.index_photos) and every other viewer's
+    # reads (app.plugins.scoping.scoped_plugin) key off the registry
+    # singleton's live settings, not a per-user override, so a value stored
+    # only in widget_user_settings would silently never take effect. So
+    # unlike every other personal-scope plugin, Photos never takes the
+    # per-user storage branch below — "personal" here (switching *to*
+    # icloud_private, a viewer connecting their own account) only means the
+    # admin gate a couple lines down is skipped, not that the value is
+    # scoped per-user.
+    if prospective.settings_scope == "personal" and not isinstance(plugin, PhotosPlugin):
         current = await asyncio.to_thread(get_widget_user_settings, user["id"], widget_id) or {}
         merged = {**plugin.config["settings"], **current, **payload}
         await asyncio.to_thread(save_widget_user_settings, user["id"], widget_id, merged)
@@ -322,7 +391,10 @@ async def update_widget_settings(
             cache.delete_prefix(_cache_key_prefix("detail", plugin, user, device))
         return merged
 
-    require_write_access(plugin, user)
+    if prospective.settings_scope == "network":
+        require_write_access(prospective, user)
+    # else: PhotosPlugin settling into (or staying in) "personal" scope —
+    # no admin gate, but still falls through to the shared-tier write below.
     plugin_cls = type(plugin)
     if plugin_cls.network_integration_type:
         # Connection fields (host, password, ...) live in a network
@@ -361,6 +433,33 @@ async def update_widget_settings(
     elif isinstance(plugin, SpeedtestPlugin) and "interval_minutes" in payload:
         schedule_speedtest_widget(plugin)
     return plugin.config["settings"]
+
+
+class RenameWidgetRequest(BaseModel):
+    name: str
+
+
+@router.patch("/{widget_id}/name")
+async def rename_widget(
+    widget_id: str,
+    payload: RenameWidgetRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+    device: dict[str, Any] = Depends(get_current_device),
+):
+    # Display metadata, not plugin connection config, so unlike
+    # update_widget_settings this isn't gated behind require_write_access —
+    # any household member may relabel a shared tile for their own clarity.
+    plugin = _get_plugin(widget_id)
+    trimmed = payload.name.strip()
+    if len(trimmed) > 60:
+        raise HTTPException(status_code=400, detail="Name must be 60 characters or fewer")
+
+    if trimmed:
+        await asyncio.to_thread(save_widget_custom_name, widget_id, trimmed)
+    else:
+        await asyncio.to_thread(clear_widget_custom_name, widget_id)
+    siblings = [p for p in registry.all() if type(p) is type(plugin)]
+    return {"id": widget_id, "name": trimmed or display_names(siblings)[widget_id]}
 
 
 @router.get("/{widget_id}/device-settings")
@@ -459,6 +558,7 @@ async def remove_widget(
     await asyncio.to_thread(delete_widget_user_settings_for_widget, widget_id)
     await asyncio.to_thread(delete_widget_device_settings_for_widget, widget_id)
     await asyncio.to_thread(delete_hidden_widget_ids_for_widget, widget_id)
+    await asyncio.to_thread(clear_widget_custom_name, widget_id)
 
     registry.unregister(widget_id)
     unschedule_widget(widget_id)

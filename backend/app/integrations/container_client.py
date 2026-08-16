@@ -47,16 +47,43 @@ def is_configured(settings: dict[str, Any]) -> bool:
     return bool(settings.get("socket_path", _DEFAULT_SOCKET_PATH))
 
 
-def _client(settings: dict[str, Any]) -> httpx.AsyncClient:
+# Different Container widgets can point at different hosts/sockets, so a
+# single global client won't do — pool one client per distinct connection
+# target instead, keyed off the settings that determine that target, and
+# reuse it across polls (this plugin's default refresh_interval_seconds is
+# 30s) rather than paying a fresh connection per request.
+_clients: dict[str, httpx.AsyncClient] = {}
+
+
+def _client_key(settings: dict[str, Any]) -> str:
     if settings.get("connection", "socket") == "tcp":
         host = settings.get("host", "")
         port = settings.get("port", _DEFAULT_TCP_PORT)
-        return httpx.AsyncClient(base_url=f"http://{host}:{port}", timeout=10)
+        return f"tcp:{host}:{port}"
     socket_path = settings.get("socket_path") or _DEFAULT_SOCKET_PATH
-    transport = httpx.AsyncHTTPTransport(uds=socket_path)
-    # The host in this base URL is never actually resolved (the uds transport
-    # connects straight to the socket file), it just needs to be a valid URL.
-    return httpx.AsyncClient(transport=transport, base_url="http://container", timeout=10)
+    return f"socket:{socket_path}"
+
+
+def _client(settings: dict[str, Any]) -> httpx.AsyncClient:
+    key = _client_key(settings)
+    client = _clients.get(key)
+    if client is not None:
+        return client
+
+    if settings.get("connection", "socket") == "tcp":
+        host = settings.get("host", "")
+        port = settings.get("port", _DEFAULT_TCP_PORT)
+        client = httpx.AsyncClient(base_url=f"http://{host}:{port}", timeout=10)
+    else:
+        socket_path = settings.get("socket_path") or _DEFAULT_SOCKET_PATH
+        transport = httpx.AsyncHTTPTransport(uds=socket_path)
+        # The host in this base URL is never actually resolved (the uds
+        # transport connects straight to the socket file), it just needs to
+        # be a valid URL.
+        client = httpx.AsyncClient(transport=transport, base_url="http://container", timeout=10)
+
+    _clients[key] = client
+    return client
 
 
 def _container_dict(entry: dict[str, Any]) -> dict[str, Any]:
@@ -77,11 +104,11 @@ async def test_connection(settings: dict[str, Any]) -> str:
 
 
 async def fetch_containers(settings: dict[str, Any]) -> list[dict[str, Any]]:
-    async with _client(settings) as client:
-        try:
-            response = await client.get("/containers/json", params={"all": "true"})
-        except httpx.HTTPError as exc:
-            raise ContainerError(f"Could not reach the container API: {exc}") from exc
+    client = _client(settings)
+    try:
+        response = await client.get("/containers/json", params={"all": "true"})
+    except httpx.HTTPError as exc:
+        raise ContainerError(f"Could not reach the container API: {exc}") from exc
 
     if response.status_code >= 400:
         raise ContainerError(f"Container API request failed (HTTP {response.status_code}).")

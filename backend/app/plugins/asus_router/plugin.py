@@ -54,9 +54,9 @@ class AsusRouterPlugin(Plugin):
             return None, [], str(exc)
         return wan, clients, None
 
-    async def get_summary(self) -> dict[str, Any]:
-        connected = self._is_connected()
-        wan, clients, error = await self._wan_and_clients()
+    def _build_summary(
+        self, connected: bool, wan: dict[str, Any] | None, clients: list[dict[str, Any]], error: str | None
+    ) -> dict[str, Any]:
         result: dict[str, Any] = {
             "connected": connected,
             "wan_connected": wan["connected"] if wan else False,
@@ -67,18 +67,21 @@ class AsusRouterPlugin(Plugin):
             result["error"] = error
         return result
 
+    async def get_summary(self) -> dict[str, Any]:
+        connected = self._is_connected()
+        wan, clients, error = await self._wan_and_clients()
+        return self._build_summary(connected, wan, clients, error)
+
     @staticmethod
     def _empty_detail_fields() -> dict[str, Any]:
         return {"wan_ip": None, "clients": [], "rx_bytes": 0, "tx_bytes": 0}
 
     async def get_detail(self) -> dict[str, Any]:
-        summary = await self.get_summary()
-        if not summary["connected"] or summary.get("error"):
-            return {**summary, **self._empty_detail_fields()}
-
+        connected = self._is_connected()
         wan, clients, error = await self._wan_and_clients()
-        if error:
-            return {**summary, "error": error, **self._empty_detail_fields()}
+        summary = self._build_summary(connected, wan, clients, error)
+        if not connected or error:
+            return {**summary, **self._empty_detail_fields()}
 
         try:
             traffic = await asus_router_client.get_traffic(self.config["settings"], self.id)

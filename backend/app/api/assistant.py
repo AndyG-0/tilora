@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.ai import assistant
+from app.api.widgets import _widget_is_visible
 from app.auth import get_current_device, get_current_user
+from app.config import list_widget_configs, load_dashboard_config
 from app.plugins.ai_insights.plugin import AIInsightsPlugin
 from app.plugins.alert.plugin import AlertPlugin
 from app.plugins.base import registry
+from app.plugins.naming import display_names
+from app.storage.db import hidden_widget_ids
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
@@ -36,13 +41,26 @@ async def ask(
 
 
 @router.get("/topics")
-async def topics():
-    # The same catalog voice control draws its tools from (registry.all_tools
-    # via app.ai.assistant.ask), minus AlertPlugin (its one tool, create_alert,
-    # is a write action rather than something to "cover" in a summary) and
-    # AIInsightsPlugin instances (a summary widget can't reference itself).
-    return [
-        {"id": plugin.id, "name": plugin.name}
+async def topics(
+    user: dict[str, Any] = Depends(get_current_user),
+    device: dict[str, Any] = Depends(get_current_device),
+):
+    # Filter to plugins that have AI tools and are visible to this (user, device).
+    config = await asyncio.to_thread(load_dashboard_config)
+    hidden = await asyncio.to_thread(hidden_widget_ids, user["id"], device["id"])
+    visible_ids = {
+        w["id"]
+        for w in list_widget_configs(config)
+        if w.get("enabled", True) and _widget_is_visible(w, user["id"], device["id"], hidden)
+    }
+
+    topic_plugins = [
+        plugin
         for plugin in registry.all()
-        if plugin.get_ai_tools() and not isinstance(plugin, AlertPlugin) and not isinstance(plugin, AIInsightsPlugin)
+        if plugin.id in visible_ids
+        and plugin.get_ai_tools()
+        and not isinstance(plugin, AlertPlugin)
+        and not isinstance(plugin, AIInsightsPlugin)
     ]
+    names = display_names(topic_plugins)
+    return [{"id": plugin.id, "name": names[plugin.id]} for plugin in topic_plugins]

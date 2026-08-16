@@ -220,10 +220,52 @@ Component tests live next to the component (`AlertTile.svelte` +
 `vi.mock`/`vi.hoisted` rather than hitting the real backend — see
 `frontend/src/lib/components/tiles/AlertTile.test.ts`.
 
-CI (`.github/workflows/ci.yml`) runs both suites on every push; a PR should
-pass both before merge. `./scripts/ci-check.sh` runs everything the
-`backend` and `frontend` CI jobs run, in the same order, so you can catch a
-failure locally before pushing.
+**Frontend e2e** (Playwright, `frontend/e2e/`):
+
+```bash
+cd frontend && npx playwright install --with-deps chromium webkit  # once
+cd frontend && npm run test:e2e
+```
+
+Covers interactions that need a real browser's Pointer Event pipeline —
+currently just dashboard tile drag-to-rearrange, resize, and delete
+(`dashboard-tiles.spec.ts`) — which vitest/jsdom can't exercise, since jsdom
+doesn't run a layout/rendering engine at all. `playwright.config.ts` boots a
+real backend (`uv run uvicorn`) against an isolated temp SQLite db plus a
+minimal fixture `dashboard.yaml`, and the dev frontend, then runs the suite
+under two projects: `desktop-chromium` (mouse, wide viewport) and
+`mobile-safari` (WebKit, `iPhone 14` profile — touch input, narrow
+viewport). Add a case here when a bug is specific to real
+layout/rendering/pointer behavior rather than component logic; add a vitest
+case instead when jsdom can express it.
+
+Note `mobile-safari` differs from `desktop-chromium` on two independent
+axes at once — engine (WebKit vs Chromium) *and* viewport width (narrow vs
+wide) — so a failure that's specific to one axis can look like it's about
+the other. The bug this suite was originally written for (tiles not
+draggable/resizable on an iPhone) turned out to be three narrow-viewport
+CSS/layout bugs that reproduce identically with a mouse at the same
+viewport width, not a WebKit/touch-specific issue at all — see
+`frontend/src/lib/layout.ts` and the narrow-breakpoint styles in
+`+page.svelte` for the fixes. If you're chasing a `mobile-safari`-only
+failure, check whether it reproduces on `desktop-chromium` resized to
+≤700px before assuming it's WebKit- or touch-specific.
+
+`dragGesture` in `dashboard-tiles.spec.ts` dispatches synthetic
+`PointerEvent`s (with `pointerType` set explicitly) rather than using
+`page.mouse`/real touch input, because the app's drag/resize code listens
+exclusively to Pointer Events and WebKit only synthesizes those from
+*trusted* native touch input — a JS-dispatched `TouchEvent` never reaches
+them. The tradeoff: this can't exercise WebKit's native gesture-recognition
+or `pointercancel` behavior (e.g. the touch system preempting a drag for a
+scroll), since Playwright's public API has no way to produce trusted
+multi-step touch input. This suite catches pointerType-conditional
+app-logic bugs but not native-gesture-cancellation bugs.
+
+CI (`.github/workflows/ci.yml`) runs all three suites (backend, frontend,
+frontend e2e) on every push; a PR should pass all of them before merge.
+`./scripts/ci-check.sh` runs everything the `backend` and `frontend` CI jobs
+run, in the same order, so you can catch a failure locally before pushing.
 
 ## Logging
 
