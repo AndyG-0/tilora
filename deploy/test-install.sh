@@ -270,6 +270,7 @@ test_uninstall() {
     SUDOERS_FILE="$mock_sudoers"
     INSTALL_DIR="$mock_install"
     INSTALL_HOME="$mock_home"
+    # shellcheck source=deploy/uninstall.sh
     source "$uninstall_script"
     main --keep-data -y --install-dir "$mock_install"
   )
@@ -294,6 +295,7 @@ test_uninstall() {
     SUDOERS_FILE="$mock_sudoers"
     INSTALL_DIR="$mock_install"
     INSTALL_HOME="$mock_home"
+    # shellcheck source=deploy/uninstall.sh
     source "$uninstall_script"
     main --purge -y --install-dir "$mock_install"
   )
