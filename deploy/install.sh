@@ -9,11 +9,11 @@ OS_RELEASE_FILE="${TILORA_OS_RELEASE_FILE:-/etc/os-release}"
 readonly NODE_SETUP_URL="https://deb.nodesource.com/setup_24.x"
 SYSTEMD_DIR="${TILORA_SYSTEMD_DIR:-/etc/systemd/system}"
 
-INSTALL_USER=""
-INSTALL_HOME=""
-INSTALL_DIR=""
-BACKEND_DIR=""
-FRONTEND_DIR=""
+INSTALL_USER="${INSTALL_USER:-}"
+INSTALL_HOME="${INSTALL_HOME:-}"
+INSTALL_DIR="${INSTALL_DIR:-}"
+BACKEND_DIR="${BACKEND_DIR:-}"
+FRONTEND_DIR="${FRONTEND_DIR:-}"
 INSTALL_KIOSK=""
 CUSTOM_API_URL=""
 
@@ -59,6 +59,16 @@ parse_args() {
         CUSTOM_API_URL="${1#*=}"
         shift
         ;;
+      --uninstall)
+        local uninstall_script
+        uninstall_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/uninstall.sh"
+        if [[ -f "$uninstall_script" ]]; then
+          shift
+          exec bash "$uninstall_script" "$@"
+        else
+          fail "uninstall.sh not found. Run: curl -fsSL https://raw.githubusercontent.com/AndyG-0/tilora/main/deploy/uninstall.sh | bash"
+        fi
+        ;;
       -h|--help)
         printf 'Tilora Linux Installer\n\n'
         printf 'Usage: install.sh [options]\n\n'
@@ -67,6 +77,7 @@ parse_args() {
         printf '  --no-kiosk        Install backend and frontend as server-only (headless)\n'
         printf '  --server-only     Alias for --no-kiosk\n'
         printf '  --api-url URL     Set PUBLIC_API_BASE_URL for frontend (default: http://localhost:8000 for kiosk, http://<lan-ip>:8000 for server-only)\n'
+        printf '  --uninstall       Uninstall Tilora services and cleanup files (delegates to uninstall.sh)\n'
         printf '  -h, --help        Show this help message\n\n'
         printf 'Environment variables:\n'
         printf '  TILORA_KIOSK      Set to 1/true for kiosk mode, 0/false for server-only\n'
@@ -87,7 +98,14 @@ detect_install_user() {
   fi
 
   INSTALL_USER="$(id -un)"
-  INSTALL_HOME="$(getent passwd "$INSTALL_USER" | cut -d: -f6)"
+  if [[ -z "${INSTALL_HOME:-}" ]]; then
+    if command -v getent >/dev/null 2>&1; then
+      INSTALL_HOME="$(getent passwd "$INSTALL_USER" 2>/dev/null | cut -d: -f6 || true)"
+    fi
+    if [[ -z "${INSTALL_HOME:-}" ]]; then
+      INSTALL_HOME="${HOME:-}"
+    fi
+  fi
   [[ -n "$INSTALL_HOME" && -d "$INSTALL_HOME" ]] || fail "Could not determine the home directory for $INSTALL_USER."
 
   INSTALL_DIR="${TILORA_INSTALL_DIR:-$INSTALL_HOME/tilora}"

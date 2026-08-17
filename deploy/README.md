@@ -31,6 +31,41 @@ docker compose up --build -d
 
 ---
 
+## Uninstalling
+
+### Native (systemd) uninstallation
+
+Run the standalone uninstall script to stop and disable systemd services, remove sudoers rules, remove kiosk policies and autostart entries, and delete the installation directory:
+
+```bash
+bash ~/tilora/deploy/uninstall.sh
+```
+
+Or as a one-liner without a local checkout:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AndyG-0/tilora/main/deploy/uninstall.sh | bash
+```
+
+Or via the installer flag:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AndyG-0/tilora/main/deploy/install.sh | bash -s -- --uninstall
+```
+
+#### Uninstallation options
+
+- `--keep-data`: Removes systemd services, sudoers entries, and kiosk autostarts, but preserves your database, `.env`, and files in `~/tilora`:
+  ```bash
+  bash ~/tilora/deploy/uninstall.sh --keep-data
+  ```
+- `-y, --yes, --force`: Non-interactive mode (skips confirmation prompts):
+  ```bash
+  bash ~/tilora/deploy/uninstall.sh -y
+  ```
+
+---
+
 ## One-line installation
 
 On Debian, Ubuntu, Raspberry Pi OS, or other Debian-based distributions
