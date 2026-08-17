@@ -94,7 +94,7 @@ async def set_credentials(payload: dict[str, str], user: dict[str, Any] = Depend
         raise HTTPException(status_code=400, detail="username and password are required")
     credentials = {"username": username, "password": password}
     await asyncio.to_thread(db.save_user_credentials, user["id"], "icloud", credentials)
-    icloud_photos.invalidate_service_cache(user["id"])
+    icloud_photos.invalidate_service_cache(user["id"], clear_disk=True)
     cache.delete("summary:photos")
     cache.delete("detail:photos")
     return {"username": username, "has_password": bool(password)}
@@ -103,7 +103,7 @@ async def set_credentials(payload: dict[str, str], user: dict[str, Any] = Depend
 @router.delete("/credentials")
 async def clear_credentials(user: dict[str, Any] = Depends(get_current_user)):
     await asyncio.to_thread(db.delete_user_credentials, user["id"], "icloud")
-    icloud_photos.invalidate_service_cache(user["id"])
+    icloud_photos.invalidate_service_cache(user["id"], clear_disk=True)
     cache.delete("summary:photos")
     cache.delete("detail:photos")
     return {"status": "ok"}

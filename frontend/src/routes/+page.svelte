@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { widgets, applyLayoutUpdates, addWidgetLocal, removeWidgetLocal } from '$lib/stores/widgets';
 	import { tabs } from '$lib/stores/tabs';
@@ -11,8 +11,18 @@
 	import { computeResizedLayout, MAX_ROW_SPAN } from '$lib/resize';
 	import { computeEmptyCells, isRectFree, reorderNarrow, sortForNarrow } from '$lib/layout';
 	import { breakpoint } from '$lib/stores/breakpoint';
-	import { isSpeechRecognitionSupported, listenOnce, speak } from '$lib/speech';
+	import {
+		ensureMicrophonePermission,
+		isSpeechRecognitionSupported,
+		listenOnce,
+		playChime,
+		speak,
+		startContinuousListening,
+		stopSpeaking,
+		type ContinuousListenHandle,
+	} from '$lib/speech';
 	import { voiceSelection } from '$lib/stores/voice';
+	import { agentName, alwaysOnMic } from '$lib/stores/assistant';
 	import { TILE_COMPONENTS } from '$lib/widgetComponents';
 	import { _ } from 'svelte-i18n';
 	import { get } from 'svelte/store';
@@ -372,30 +382,100 @@
 
 	let assistantState = $state<AssistantState>({ status: 'idle' });
 	const micSupported = isSpeechRecognitionSupported();
+	let continuousListener: ContinuousListenHandle | null = null;
+	const alwaysOnActive = $derived(micSupported && $alwaysOnMic);
+	// Set right before navigating to a widget the assistant itself launched,
+	// so onDestroy below knows not to cut off the answer that's still
+	// speaking — the unmount is this page's own doing, not the user leaving.
+	let navigatingFromAssistant = false;
+
+	async function processAssistantQuery(query: string) {
+		assistantState = { status: 'thinking', query };
+		try {
+			const { text, action } = await api.askAssistant(query);
+			assistantState = { status: 'answered', query, answer: text };
+			speak(text, $voiceSelection);
+			if (action) {
+				const params = new URLSearchParams();
+				if (action.panel) params.set('panel', action.panel);
+				if (action.destination) params.set('destination', action.destination);
+				if (action.origin) params.set('origin', action.origin);
+				const qs = params.toString();
+				navigatingFromAssistant = true;
+				goto(`/widget/${action.widget_id}${qs ? `?${qs}` : ''}`);
+			}
+		} catch (err) {
+			const message = err instanceof Error && err.message ? err.message : get(_)('dashboard.assistant_error');
+			assistantState = { status: 'error', message };
+		} finally {
+			if (alwaysOnActive) {
+				continuousListener?.resume();
+			}
+		}
+	}
 
 	async function startListening() {
+		continuousListener?.pause();
 		assistantState = { status: 'listening' };
 		let query: string;
 		try {
 			query = await listenOnce();
 		} catch {
 			assistantState = { status: 'error', message: get(_)('dashboard.mic_no_match') };
+			if (alwaysOnActive) {
+				continuousListener?.resume();
+			}
 			return;
 		}
 
-		assistantState = { status: 'thinking', query };
-		try {
-			const { text } = await api.askAssistant(query);
-			assistantState = { status: 'answered', query, answer: text };
-			speak(text, $voiceSelection);
-		} catch {
-			assistantState = { status: 'error', message: get(_)('dashboard.assistant_error') };
+		await processAssistantQuery(query);
+	}
+
+	async function handleWakeWordDetected(commandQuery: string) {
+		playChime();
+		if (commandQuery) {
+			await processAssistantQuery(commandQuery);
+		} else {
+			await startListening();
 		}
 	}
 
 	function dismissAssistant() {
+		stopSpeaking();
 		assistantState = { status: 'idle' };
+		if (alwaysOnActive) {
+			continuousListener?.resume();
+		}
 	}
+
+	$effect(() => {
+		if (alwaysOnActive) {
+			void ensureMicrophonePermission();
+			if (!continuousListener) {
+				continuousListener = startContinuousListening({
+					getAgentName: () => get(agentName),
+					onWakeWordDetected: (query) => {
+						handleWakeWordDetected(query);
+					},
+				});
+			}
+		} else {
+			if (continuousListener) {
+				continuousListener.stop();
+				continuousListener = null;
+			}
+		}
+	});
+
+	onDestroy(() => {
+		if (continuousListener) {
+			continuousListener.stop();
+			continuousListener = null;
+		}
+		if (!navigatingFromAssistant) {
+			stopSpeaking();
+		}
+	});
 
 	// Add/remove widgets: edit mode gains a "✕" per cell and a "+ Add widget"
 	// tile that opens a small inline type picker. No naming/id prompt — the
@@ -454,11 +534,17 @@
 		<button
 			class="icon-button"
 			class:active={assistantState.status === 'listening'}
+			class:standby={alwaysOnActive && assistantState.status === 'idle'}
 			onclick={startListening}
 			disabled={assistantState.status === 'listening' || assistantState.status === 'thinking'}
-			aria-label={$_('dashboard.ask_question')}
+			aria-label={alwaysOnActive && assistantState.status === 'idle'
+				? $_('dashboard.always_on_standby_label', { values: { agentName: $agentName } })
+				: $_('dashboard.ask_question')}
 		>
 			🎙
+			{#if alwaysOnActive && assistantState.status === 'idle'}
+				<span class="standby-badge" aria-hidden="true"></span>
+			{/if}
 		</button>
 	{/if}
 	<button class="icon-button" onclick={() => goto('/settings')} aria-label={$_('settings.page.title')}>
@@ -735,6 +821,17 @@
 		height: 0.6rem;
 		border-radius: 50%;
 		background: var(--color-error);
+		border: 1px solid var(--color-surface);
+	}
+
+	.standby-badge {
+		position: absolute;
+		bottom: 0.35rem;
+		right: 0.35rem;
+		width: 0.55rem;
+		height: 0.55rem;
+		border-radius: 50%;
+		background: var(--color-accent, #10b981);
 		border: 1px solid var(--color-surface);
 	}
 

@@ -45,6 +45,7 @@ vi.mock('$lib/api', () => ({
 		listDevices: vi.fn().mockResolvedValue([]),
 		getScreensaverSettings,
 		updateScreensaverSettings: vi.fn(),
+		assistantConfig: vi.fn().mockResolvedValue({ agent_name: 'Tilora' }),
 	},
 	describeFetchError: (error: unknown) => (error instanceof TypeError ? 'network' : 'server'),
 }));

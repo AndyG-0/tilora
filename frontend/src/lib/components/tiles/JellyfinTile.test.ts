@@ -6,16 +6,23 @@ const {
 	widgetSummary,
 	jellyfinImageUrl,
 	jellyfinStreamUrl,
+	jellyfinHlsMasterUrl,
+	jellyfinStopPlayback,
 	jellyfinItemDetail,
 	jellyfinSubtitleUrl,
 	updatePreferences,
 	getPreferences,
 } = vi.hoisted(() => ({
 	widgetSummary: vi.fn(),
-	jellyfinItemDetail: vi.fn(),
+	jellyfinItemDetail: vi.fn().mockResolvedValue(null),
 	jellyfinSubtitleUrl: vi.fn(),
 	jellyfinImageUrl: vi.fn((widgetId: string, id: string) => `https://example.com/${widgetId}/${id}/image`),
 	jellyfinStreamUrl: vi.fn((widgetId: string, id: string) => `https://example.com/${widgetId}/${id}/stream`),
+	jellyfinHlsMasterUrl: vi.fn(
+		(wId: string, itemId: string, opts: { playSessionId: string }) =>
+			`https://example.com/${wId}/${itemId}/hls/master.m3u8?play_session_id=${opts.playSessionId}`,
+	),
+	jellyfinStopPlayback: vi.fn().mockResolvedValue({ status: 'ok' }),
 	updatePreferences: vi.fn().mockResolvedValue({}),
 	getPreferences: vi.fn().mockResolvedValue({}),
 }));
@@ -24,6 +31,8 @@ vi.mock('$lib/api', () => ({
 		widgetSummary,
 		jellyfinImageUrl,
 		jellyfinStreamUrl,
+		jellyfinHlsMasterUrl,
+		jellyfinStopPlayback,
 		jellyfinItemDetail,
 		jellyfinSubtitleUrl,
 		updatePreferences,

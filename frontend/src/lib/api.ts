@@ -202,6 +202,7 @@ export interface IcloudStatus {
 export interface IcloudAuthStartResult {
 	connected: boolean;
 	requires_2fa: boolean;
+	error?: string | null;
 }
 
 export interface IcloudCredentials {
@@ -1047,6 +1048,11 @@ export interface UserPreferences {
 	voice_name: string;
 	locale: string;
 	location: LocationPreference | null;
+	always_on_mic: boolean;
+}
+
+export interface AssistantConfig {
+	agent_name: string;
 }
 
 export interface TTSVoice {
@@ -1103,11 +1109,16 @@ export class ApiError extends Error {
 	}
 }
 
+export function apiUrl(path: string): string {
+	const base = env.PUBLIC_API_BASE_URL ?? '';
+	return `${base}${path}`;
+}
+
 // `credentials: 'include'` on every request so the device/session cookies
 // (set by the backend as httponly, so JS can't attach them manually) round-trip
 // even when the frontend and backend are on different ports/origins.
 async function getJSON<T>(path: string): Promise<T> {
-	const response = await fetch(`${env.PUBLIC_API_BASE_URL}${path}`, { credentials: 'include' });
+	const response = await fetch(apiUrl(path), { credentials: 'include' });
 	if (!response.ok) {
 		const message = await _errorMessage(path, response);
 		logger.warn(`Request to ${path} failed: ${response.status}`);
@@ -1117,15 +1128,16 @@ async function getJSON<T>(path: string): Promise<T> {
 }
 
 async function patchJSON<T>(path: string, body: Record<string, unknown>): Promise<T> {
-	const response = await fetch(`${env.PUBLIC_API_BASE_URL}${path}`, {
+	const response = await fetch(apiUrl(path), {
 		method: 'PATCH',
 		credentials: 'include',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify(body),
 	});
 	if (!response.ok) {
+		const message = await _errorMessage(path, response);
 		logger.warn(`Request to ${path} failed: ${response.status}`);
-		throw new Error(`Request to ${path} failed: ${response.status}`);
+		throw new Error(message);
 	}
 	return response.json();
 }
@@ -1141,6 +1153,12 @@ async function _errorMessage(path: string, response: Response): Promise<string> 
 		if (body && typeof body.detail === 'string' && body.detail) {
 			return body.detail;
 		}
+		if (body && Array.isArray(body.detail) && body.detail.length > 0) {
+			const first = body.detail[0];
+			if (typeof first === 'object' && first !== null && typeof first.msg === 'string') {
+				return first.msg.replace(/^Value error,\s*/i, '');
+			}
+		}
 	} catch {
 		// Not JSON, or already consumed — fall through to the generic message.
 	}
@@ -1148,7 +1166,7 @@ async function _errorMessage(path: string, response: Response): Promise<string> 
 }
 
 async function postJSON<T>(path: string, body?: Record<string, unknown>): Promise<T> {
-	const response = await fetch(`${env.PUBLIC_API_BASE_URL}${path}`, {
+	const response = await fetch(apiUrl(path), {
 		method: 'POST',
 		credentials: 'include',
 		...(body !== undefined && {
@@ -1168,7 +1186,7 @@ async function postJSON<T>(path: string, body?: Record<string, unknown>): Promis
 // than JSON (/api/tts/synthesize) — used to fetch cloud/Piper speech audio
 // for playback via an <audio> element.
 async function postForBlob(path: string, body: Record<string, unknown>): Promise<Blob> {
-	const response = await fetch(`${env.PUBLIC_API_BASE_URL}${path}`, {
+	const response = await fetch(apiUrl(path), {
 		method: 'POST',
 		credentials: 'include',
 		headers: { 'Content-Type': 'application/json' },
@@ -1182,7 +1200,7 @@ async function postForBlob(path: string, body: Record<string, unknown>): Promise
 }
 
 async function deleteJSON<T>(path: string): Promise<T> {
-	const response = await fetch(`${env.PUBLIC_API_BASE_URL}${path}`, {
+	const response = await fetch(apiUrl(path), {
 		method: 'DELETE',
 		credentials: 'include',
 	});
@@ -1195,7 +1213,7 @@ async function deleteJSON<T>(path: string): Promise<T> {
 }
 
 async function putJSON<T>(path: string, body: Record<string, unknown>): Promise<T> {
-	const response = await fetch(`${env.PUBLIC_API_BASE_URL}${path}`, {
+	const response = await fetch(apiUrl(path), {
 		method: 'PUT',
 		credentials: 'include',
 		headers: { 'Content-Type': 'application/json' },
@@ -1287,7 +1305,12 @@ export const api = {
 	setIcloudCredentials: (username: string, password?: string) =>
 		putJSON<IcloudCredentials>('/api/icloud/credentials', { username, ...(password && { password }) }),
 	clearIcloudCredentials: () => deleteJSON<{ status: string }>('/api/icloud/credentials'),
-	askAssistant: (text: string) => postJSON<{ text: string }>('/api/assistant/ask', { text }),
+	askAssistant: (text: string) =>
+		postJSON<{
+			text: string;
+			action: { widget_id: string; panel: string | null; destination?: string; origin?: string } | null;
+		}>('/api/assistant/ask', { text }),
+	assistantConfig: () => getJSON<AssistantConfig>('/api/assistant/config'),
 	assistantTopics: () => getJSON<{ id: string; name: string }[]>('/api/assistant/topics'),
 	widgetTypes: () =>
 		getJSON<{ type: string; name: string; default_layout: { colSpan: number; rowSpan: number } }[]>(
@@ -1306,24 +1329,49 @@ export const api = {
 	jellyfinItemDetail: (id: string, itemId: string) =>
 		getJSON<JellyfinMediaDetail>(`/api/jellyfin/${id}/detail/${itemId}`),
 	jellyfinSubtitleUrl: (id: string, itemId: string, streamIndex: number) =>
-		`${env.PUBLIC_API_BASE_URL}/api/jellyfin/${id}/subtitles/${itemId}/${streamIndex}.vtt`,
-	jellyfinImageUrl: (id: string, itemId: string) => `${env.PUBLIC_API_BASE_URL}/api/jellyfin/${id}/images/${itemId}`,
+		apiUrl(`/api/jellyfin/${id}/subtitles/${itemId}/${streamIndex}.vtt`),
+	jellyfinImageUrl: (id: string, itemId: string) => apiUrl(`/api/jellyfin/${id}/images/${itemId}`),
 	jellyfinStreamUrl: (id: string, itemId: string, options?: { audioStreamIndex?: number }) => {
-		const base = `${env.PUBLIC_API_BASE_URL}/api/jellyfin/${id}/stream/${itemId}`;
+		const base = apiUrl(`/api/jellyfin/${id}/stream/${itemId}`);
 		if (options?.audioStreamIndex !== undefined) {
 			return `${base}?audio_stream_index=${options.audioStreamIndex}`;
 		}
 		return base;
 	},
+	jellyfinHlsMasterUrl: (id: string, itemId: string, options: { playSessionId: string; audioStreamIndex?: number }) => {
+		const params = new URLSearchParams({ play_session_id: options.playSessionId });
+		if (options.audioStreamIndex !== undefined) {
+			params.set('audio_stream_index', String(options.audioStreamIndex));
+		}
+		return apiUrl(`/api/jellyfin/${id}/hls/${itemId}/master.m3u8?${params.toString()}`);
+	},
+	jellyfinReportPlaybackStart: (id: string, itemId: string, playSessionId: string) =>
+		postJSON<{ status: string }>(
+			`/api/jellyfin/${id}/playback-started/${itemId}?play_session_id=${encodeURIComponent(playSessionId)}`,
+		),
+	jellyfinReportPlaybackProgress: (
+		id: string,
+		itemId: string,
+		playSessionId: string,
+		positionSeconds: number,
+		isPaused = false,
+	) =>
+		postJSON<{ status: string }>(
+			`/api/jellyfin/${id}/playback-progress/${itemId}?play_session_id=${encodeURIComponent(playSessionId)}&position_seconds=${positionSeconds}&is_paused=${isPaused}`,
+		),
+	jellyfinStopPlayback: (id: string, itemId: string, playSessionId: string, positionSeconds = 0) =>
+		postJSON<{ status: string }>(
+			`/api/jellyfin/${id}/playback-stopped/${itemId}?play_session_id=${encodeURIComponent(playSessionId)}&position_seconds=${positionSeconds}`,
+		),
 	hdhomerunTranscodePresets: () => getJSON<HDHomeRunTranscodePreset[]>('/api/hdhomerun/transcode-presets'),
 	// Channel playback_url is a backend-relative proxy path — resolve it
 	// against the API base the same way jellyfinImageUrl/jellyfinStreamUrl do.
-	hdhomerunPlaybackUrl: (url: string) => (url.startsWith('/') ? `${env.PUBLIC_API_BASE_URL}${url}` : url),
+	hdhomerunPlaybackUrl: (url: string) => (url.startsWith('/') ? apiUrl(url) : url),
 	hdhomerunRecordingStreamUrl: (id: string, playUrl: string, options?: { start?: number; audioIndex?: number }) => {
 		const params = new URLSearchParams({ url: playUrl });
 		if (options?.start !== undefined) params.set('start', String(options.start));
 		if (options?.audioIndex !== undefined) params.set('audio_index', String(options.audioIndex));
-		return `${env.PUBLIC_API_BASE_URL}/api/hdhomerun/${id}/recording-stream?${params.toString()}`;
+		return apiUrl(`/api/hdhomerun/${id}/recording-stream?${params.toString()}`);
 	},
 	hdhomerunRecordingDetail: (
 		id: string,
@@ -1344,7 +1392,7 @@ export const api = {
 		if (options.recordEnd !== undefined && options.recordEnd !== null) {
 			params.set('record_end', String(options.recordEnd));
 		}
-		return `${env.PUBLIC_API_BASE_URL}/api/hdhomerun/${id}/recording-captions.vtt?${params.toString()}`;
+		return apiUrl(`/api/hdhomerun/${id}/recording-captions.vtt?${params.toString()}`);
 	},
 	hdhomerunRecordingThumbnailSpriteUrl: (
 		id: string,
@@ -1354,7 +1402,7 @@ export const api = {
 		if (options.recordEnd !== undefined && options.recordEnd !== null) {
 			params.set('record_end', String(options.recordEnd));
 		}
-		return `${env.PUBLIC_API_BASE_URL}/api/hdhomerun/${id}/recording-thumbnails/${options.recordingId}.jpg?${params.toString()}`;
+		return apiUrl(`/api/hdhomerun/${id}/recording-thumbnails/${options.recordingId}.jpg?${params.toString()}`);
 	},
 	hdhomerunRecordingThumbnailVttUrl: (
 		id: string,
@@ -1364,10 +1412,9 @@ export const api = {
 		if (options.recordEnd !== undefined && options.recordEnd !== null) {
 			params.set('record_end', String(options.recordEnd));
 		}
-		return `${env.PUBLIC_API_BASE_URL}/api/hdhomerun/${id}/recording-thumbnails/${options.recordingId}.vtt?${params.toString()}`;
+		return apiUrl(`/api/hdhomerun/${id}/recording-thumbnails/${options.recordingId}.vtt?${params.toString()}`);
 	},
-	hdhomerunPlaylistUrl: (id: string, channelNumber: string) =>
-		`${env.PUBLIC_API_BASE_URL}/api/hdhomerun/${id}/playlist/${channelNumber}`,
+	hdhomerunPlaylistUrl: (id: string, channelNumber: string) => apiUrl(`/api/hdhomerun/${id}/playlist/${channelNumber}`),
 	// Admin-only, and slow by design: it test-encodes a short clip through
 	// each plausible preset, so budget several seconds.
 	hdhomerunHwaccelDiagnostics: (id: string, device?: string) =>

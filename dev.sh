@@ -26,8 +26,24 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-(cd "$ROOT_DIR/backend" && uv sync && uv run uvicorn app.main:app --reload --host localhost --port 8000) &
+HOST="${HOST:-0.0.0.0}"
+BACKEND_PORT="${BACKEND_PORT:-8000}"
+FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 
-(cd "$ROOT_DIR/frontend" && npm install && npm run dev) &
+# Detect primary LAN IP on macOS / Linux
+LAN_IP="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")"
+
+echo ""
+echo "============================================================"
+echo " Tilora Development Servers Starting"
+echo " Backend:  http://localhost:${BACKEND_PORT}  (LAN: http://${LAN_IP}:${BACKEND_PORT})"
+echo " Frontend: http://localhost:${FRONTEND_PORT} (LAN: http://${LAN_IP}:${FRONTEND_PORT})"
+echo "============================================================"
+echo ""
+
+(cd "$ROOT_DIR/backend" && uv sync && uv run uvicorn app.main:app --reload --host "$HOST" --port "$BACKEND_PORT") &
+
+(cd "$ROOT_DIR/frontend" && npm install && npm run dev -- --host "$HOST" --port "$FRONTEND_PORT") &
 
 wait
+

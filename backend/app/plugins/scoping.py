@@ -12,6 +12,7 @@ import asyncio
 from typing import Any
 
 from app.plugins.base import Plugin
+from app.plugins.photos.plugin import PhotosPlugin
 from app.storage.db import get_widget_device_settings, get_widget_user_settings
 
 
@@ -37,8 +38,14 @@ async def scoped_plugin(plugin: Plugin, user: dict[str, Any], device: dict[str, 
     user_id = None
     if plugin.settings_scope == "personal":
         user_id = user["id"]
-        overrides = await asyncio.to_thread(get_widget_user_settings, user["id"], plugin.id) or {}
-        settings = {**plugin.config["settings"], **overrides}
+        # PhotosPlugin's settings (provider, directory, etc.) are always
+        # shared across the whole household (see app.api.widgets.update_widget_settings);
+        # only the iCloud credentials and photo index are per-user (carried
+        # via user_id above). Other personal-scope plugins layer per-user
+        # widget_user_settings on top of the base config.
+        if not isinstance(plugin, PhotosPlugin):
+            overrides = await asyncio.to_thread(get_widget_user_settings, user["id"], plugin.id) or {}
+            settings = {**plugin.config["settings"], **overrides}
     if plugin.device_overridable_settings:
         device_overrides = await asyncio.to_thread(get_widget_device_settings, device["id"], plugin.id) or {}
         settings = {

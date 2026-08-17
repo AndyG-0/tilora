@@ -55,6 +55,22 @@ def test_complete_chore_marks_done(client, tmp_db):
     assert response.json()["completed"] is True
 
 
+def test_complete_chore_toggles_completed_item_back_to_open(client, tmp_db):
+    chore = db.add_chore("chores", "user-1", "Finish me")
+    db.complete_chore(chore["id"], "user-1")
+    cache.set("summary:chores:user-1:en", {"stale": True}, ttl_seconds=60)
+    cache.set("detail:chores:user-1:en", {"stale": True}, ttl_seconds=60)
+
+    response = client.post(f"/api/chores/{chore['id']}/complete")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["completed"] is False
+    assert body["completed_at"] is None
+    assert cache.get("summary:chores:user-1:en") is None
+    assert cache.get("detail:chores:user-1:en") is None
+
+
 def test_complete_chore_returns_404_for_unknown_id(client, tmp_db):
     response = client.post("/api/chores/9999/complete")
 

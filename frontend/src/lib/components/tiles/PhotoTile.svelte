@@ -36,7 +36,7 @@
 >
 	{#if summary?.current}
 		<div class="frame">
-			<img class="photo" src={`${env.PUBLIC_API_BASE_URL}${summary.current.url}`} alt="" />
+			<img class="photo" src={`${env.PUBLIC_API_BASE_URL ?? ''}${summary.current.url}`} alt="" />
 			<div class="count">{$_('photos.tile.count', { values: { count: summary.count } })}</div>
 		</div>
 	{:else if summary?.indexing}

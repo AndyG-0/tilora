@@ -137,12 +137,12 @@
 			<a class="connect-button" href="/settings">{$_('calendar.detail.open_settings')}</a>
 		{:else if calendarData.provider === 'microsoft'}
 			<p class="hint">{$_('calendar.detail.microsoft_hint')}</p>
-			<a class="connect-button" href={`${env.PUBLIC_API_BASE_URL}/api/calendar/auth/microsoft/start`}>
+			<a class="connect-button" href={`${env.PUBLIC_API_BASE_URL ?? ''}/api/calendar/auth/microsoft/start`}>
 				{$_('calendar.detail.connect_outlook')}
 			</a>
 		{:else}
 			<p class="hint">{$_('calendar.detail.google_hint')}</p>
-			<a class="connect-button" href={`${env.PUBLIC_API_BASE_URL}/api/calendar/auth/start`}>
+			<a class="connect-button" href={`${env.PUBLIC_API_BASE_URL ?? ''}/api/calendar/auth/start`}>
 				{$_('calendar.detail.connect_google')}
 			</a>
 		{/if}

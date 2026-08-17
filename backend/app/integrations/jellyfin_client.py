@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote, urljoin, urlsplit
 
 import httpx
 
@@ -329,37 +330,209 @@ async def open_video_stream(
     widget_id: str,
     item_id: str,
     range_header: str | None,
-    audio_stream_index: int | None = None,
 ) -> tuple[httpx.AsyncClient, httpx.Response]:
+    """Proxy the *original file bytes* verbatim — genuine Direct Play.
+
+    Only used when the frontend has already confirmed (via `canPlayType`)
+    that the browser can natively decode the source container/codecs;
+    everything else goes through `open_hls_playlist`/`open_hls_resource`
+    instead, which is why this no longer branches on a playback-mode
+    setting the way it once did.
+    """
     conn = await resolve_connection(settings, widget_id)
     headers = dict(conn.headers)
     if range_header:
         headers["Range"] = range_header
 
-    playback_mode = settings.get("playback_mode", "compatible")
-    if playback_mode == "direct":
-        params: dict[str, Any] = {"static": "true"}
-    elif playback_mode == "compatible_video":
-        params = {
-            "static": "false",
-            "VideoCodec": "h264",
-            "AudioCodec": "aac",
-            "MaxAudioChannels": "2",
-            "Container": "mp4",
-        }
-    else:
-        params = {
-            "static": "false",
-            "VideoCodec": "copy",
-            "AudioCodec": "aac",
-            "MaxAudioChannels": "2",
-            "Container": "mp4",
-        }
+    client = httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=None, write=10, pool=10))
+    request = client.build_request(
+        "GET", f"{conn.base_url}/Videos/{item_id}/stream", headers=headers, params={"static": "true"}
+    )
+    response = await client.send(request, stream=True)
+    return client, response
 
+
+async def open_hls_playlist(
+    settings: dict[str, Any],
+    widget_id: str,
+    item_id: str,
+    *,
+    audio_stream_index: int | None = None,
+    play_session_id: str,
+) -> str:
+    """Fetch Jellyfin's own HLS master playlist for `item_id`.
+
+    h264 is always safe; hevc is included too since Safari/iOS hardware-
+    decodes it, letting Jellyfin skip a video re-encode when only the
+    container/audio needs fixing. The playlist is small, so it's read fully
+    here rather than streamed — the caller rewrites its URIs before
+    returning it to the browser (see `rewrite_hls_playlist`).
+    """
+    conn = await resolve_connection(settings, widget_id)
+    params: dict[str, Any] = {
+        "VideoCodec": "h264,hevc",
+        "AudioCodec": "aac",
+        "MaxAudioChannels": "2",
+        "DeviceId": f"dashboard-{widget_id}",
+        "PlaySessionId": play_session_id,
+        # Jellyfin 400s without this ("The mediaSourceId field is required").
+        # Tilora only ever plays an item's default media source, whose Id is
+        # the item Id itself.
+        "MediaSourceId": item_id,
+    }
     if audio_stream_index is not None:
         params["AudioStreamIndex"] = str(audio_stream_index)
 
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(
+                f"{conn.base_url}/Videos/{item_id}/master.m3u8",
+                headers=conn.headers,
+                params=params,
+            )
+    except httpx.HTTPError as exc:
+        raise JellyfinError(f"Could not reach the Jellyfin server: {exc}") from exc
+    if response.status_code >= 400:
+        raise JellyfinError(f"Jellyfin HLS request failed (HTTP {response.status_code}).")
+    return response.text
+
+
+async def open_hls_resource(
+    settings: dict[str, Any], widget_id: str, path: str, query: str
+) -> tuple[httpx.AsyncClient, httpx.Response]:
+    """Generic streamed passthrough for a segment or nested variant playlist
+    referenced by an HLS playlist. `path`/`query` come from
+    `rewrite_hls_playlist`'s own rewriting of what Jellyfin's playlist
+    referenced — never taken raw from the client — so this stays a closed
+    proxy rather than an open one.
+    """
+    conn = await resolve_connection(settings, widget_id)
     client = httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=None, write=10, pool=10))
-    request = client.build_request("GET", f"{conn.base_url}/Videos/{item_id}/stream", headers=headers, params=params)
+    request = client.build_request(
+        "GET", f"{conn.base_url}{path}", headers=conn.headers, params=httpx.QueryParams(query)
+    )
     response = await client.send(request, stream=True)
     return client, response
+
+
+def rewrite_hls_playlist(text: str, widget_id: str, item_id: str, upstream_path: str) -> str:
+    """Rewrite every URI line of an m3u8 playlist to an opaque
+    `hls-resource` URL pointing back at this backend, so the browser never
+    talks to Jellyfin (or sees its credentials) directly.
+
+    Works for both a media playlist (segment URIs) and a master playlist
+    (nested `#EXT-X-STREAM-INF` variant playlist URIs) — the same rewrite
+    applies to both since it's just "any non-comment, non-blank line".
+    `upstream_path` is the path this playlist itself was fetched from
+    (`/Videos/{id}/master.m3u8` for the master, or a prior rewrite's
+    resolved path for a nested playlist) — relative URIs in the playlist are
+    resolved against it, not against the item's root, since a nested
+    playlist's own segments are typically relative to *its* location.
+    """
+    lines = text.splitlines()
+    rewritten = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            rewritten.append(line)
+            continue
+        resolved = urljoin(upstream_path, stripped)
+        split = urlsplit(resolved)
+        upstream_path_and_query = split.path + (f"?{split.query}" if split.query else "")
+        rewritten.append(
+            f"/api/jellyfin/{widget_id}/hls-resource/{item_id}?path={quote(upstream_path_and_query, safe='')}"
+        )
+    return "\n".join(rewritten) + ("\n" if text.endswith("\n") else "")
+
+
+# .NET TimeSpan ticks (100ns units) — the unit Jellyfin's playstate APIs use
+# for every position field.
+_TICKS_PER_SECOND = 10_000_000
+
+
+async def report_playback_start(settings: dict[str, Any], widget_id: str, item_id: str, play_session_id: str) -> None:
+    """Best-effort: tell Jellyfin a transcode session has begun playing.
+
+    Without this, Jellyfin only learns about the session indirectly from the
+    HLS segment requests it's serving, which makes its own "continue
+    watching" resume state lag well behind actual playback. Reporting start/
+    progress/stop explicitly (mirroring what Jellyfin's own web/mobile apps
+    do) keeps that state accurate immediately. Errors are swallowed; this is
+    telemetry, not a step playback depends on.
+    """
+    try:
+        conn = await resolve_connection(settings, widget_id)
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(
+                f"{conn.base_url}/Sessions/Playing",
+                headers=conn.headers,
+                json={
+                    "ItemId": item_id,
+                    "MediaSourceId": item_id,
+                    "PlaySessionId": play_session_id,
+                    "PlayMethod": "Transcode",
+                    "CanSeek": True,
+                },
+            )
+    except (JellyfinError, httpx.HTTPError):
+        pass
+
+
+async def report_playback_progress(
+    settings: dict[str, Any],
+    widget_id: str,
+    item_id: str,
+    play_session_id: str,
+    position_seconds: float,
+    *,
+    is_paused: bool = False,
+) -> None:
+    """Best-effort heartbeat so Jellyfin's resume position stays current
+    while a transcode session is playing, rather than only updating once the
+    session ends. See `report_playback_start` for why this matters.
+    """
+    try:
+        conn = await resolve_connection(settings, widget_id)
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(
+                f"{conn.base_url}/Sessions/Playing/Progress",
+                headers=conn.headers,
+                json={
+                    "ItemId": item_id,
+                    "MediaSourceId": item_id,
+                    "PlaySessionId": play_session_id,
+                    "PlayMethod": "Transcode",
+                    "PositionTicks": round(position_seconds * _TICKS_PER_SECOND),
+                    "IsPaused": is_paused,
+                },
+            )
+    except (JellyfinError, httpx.HTTPError):
+        pass
+
+
+async def stop_playback_session(
+    settings: dict[str, Any], widget_id: str, item_id: str, play_session_id: str, position_seconds: float
+) -> None:
+    """Best-effort: tell Jellyfin to end its own transcode job promptly on
+    player close, mirroring the discipline HDHomeRun's teardown applies to
+    killing its ffmpeg subprocess — just backed by Jellyfin's session API
+    instead of a subprocess Tilora owns. Reports the final position so
+    Jellyfin's resume state reflects exactly where playback stopped, not just
+    the last progress heartbeat. Errors are swallowed; this is cleanup, not a
+    step playback depends on.
+    """
+    try:
+        conn = await resolve_connection(settings, widget_id)
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(
+                f"{conn.base_url}/Sessions/Playing/Stopped",
+                headers=conn.headers,
+                json={
+                    "ItemId": item_id,
+                    "MediaSourceId": item_id,
+                    "PlaySessionId": play_session_id,
+                    "PositionTicks": round(position_seconds * _TICKS_PER_SECOND),
+                },
+            )
+    except (JellyfinError, httpx.HTTPError):
+        pass

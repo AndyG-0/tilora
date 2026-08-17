@@ -8,6 +8,7 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
@@ -89,6 +90,18 @@ class Settings(BaseSettings):
     # configured, enables web search and fetch tools for the AI assistant.
     searxng_url: str | None = None
 
+    @field_validator("searxng_url")
+    @classmethod
+    def validate_searxng_url(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        stripped = v.strip()
+        if not stripped:
+            return None
+        if not (stripped.startswith("http://") or stripped.startswith("https://")):
+            raise ValueError("searxng_url must start with http:// or https://")
+        return stripped
+
     # IANA timezone (e.g. "America/Chicago"), used by any widget that
     # renders the current date/time (clock, date, ...).
     timezone: str = "UTC"
@@ -135,6 +148,18 @@ class Settings(BaseSettings):
     # once, and lets frontend/backend run on different hosts without the
     # backend rejecting the frontend's actual origin.
     cors_origin: str = "http://localhost:5173"
+
+    # Regex for origins allowed by CORS. Matches localhost, loopback, private
+    # RFC 1918 LAN subnets (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16), and
+    # .local mDNS hostnames on any port by default.
+    cors_origin_regex: str | None = (
+        r"^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|"
+        r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+        r"192\.168\.\d{1,3}\.\d{1,3}|"
+        r"172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|"
+        r"[a-zA-Z0-9-]+\.local)"
+        r"(:\d+)?$"
+    )
 
     # "owner/repo" the update checker polls GitHub releases for
     # (app/update_check.py). Defaults to upstream; forks should override

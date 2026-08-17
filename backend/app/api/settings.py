@@ -4,7 +4,7 @@ import asyncio
 from typing import Any
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.auth import get_current_admin
 from app.config import APP_SETTINGS_KEYS, SECRET_APP_SETTINGS_KEYS, effective_settings
@@ -61,6 +61,18 @@ class UpdateSettingsRequest(BaseModel):
     caldav_url: str | None = None
     caldav_username: str | None = None
     caldav_password: str | None = None
+
+    @field_validator("searxng_url")
+    @classmethod
+    def validate_searxng_url(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        stripped = v.strip()
+        if not stripped:
+            return ""
+        if not (stripped.startswith("http://") or stripped.startswith("https://")):
+            raise ValueError("SearXNG URL must start with http:// or https://")
+        return stripped
 
 
 assert set(UpdateSettingsRequest.model_fields) == set(APP_SETTINGS_KEYS), (

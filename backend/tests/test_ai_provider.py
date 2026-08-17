@@ -3,7 +3,7 @@ from __future__ import annotations
 import litellm
 import pytest
 
-from app.ai.provider import AIProvider, _api_key_for_model
+from app.ai.provider import _MAX_COMPLETION_TOKENS, AIProvider, api_key_for_model
 from app.ai.tools import ToolBridge
 from app.plugins.base import ToolDef
 
@@ -52,7 +52,8 @@ async def test_run_prompt_returns_content_when_no_tool_calls(monkeypatch, tmp_db
     provider = AIProvider(empty_bridge(), model="fake/model")
     result = await provider.run_prompt("Say hi")
 
-    assert result == "Hello there"
+    assert result.text == "Hello there"
+    assert result.navigation is None
 
 
 async def test_run_prompt_prepends_system_prompt_when_given(monkeypatch, tmp_db):
@@ -112,12 +113,15 @@ async def test_run_prompt_calls_tool_then_returns_final_answer(monkeypatch, tmp_
     provider = AIProvider(bridge, model="fake/model")
     result = await provider.run_prompt("What's the weather?")
 
-    assert result == "It's 72 in Austin"
+    assert result.text == "It's 72 in Austin"
     assert len(calls) == 2
     # second call's message list should include the tool result
     tool_messages = [m for m in calls[1]["messages"] if m.get("role") == "tool"]
     assert len(tool_messages) == 1
     assert "Austin" in tool_messages[0]["content"]
+    # every call caps output tokens, so a single request never gets rate-limited
+    # by a provider reserving an unbounded amount of headroom for the reply
+    assert all(call["max_completion_tokens"] == _MAX_COMPLETION_TOKENS for call in calls)
 
 
 async def test_run_prompt_surfaces_tool_handler_exception_instead_of_raising(monkeypatch, tmp_db):
@@ -145,13 +149,64 @@ async def test_run_prompt_surfaces_tool_handler_exception_instead_of_raising(mon
     provider = AIProvider(bridge, model="fake/model")
     result = await provider.run_prompt("What's the weather?")
 
-    assert result == "Couldn't check the weather"
+    assert result.text == "Couldn't check the weather"
     tool_messages = [m for m in calls[1]["messages"] if m.get("role") == "tool"]
     assert "network unreachable" in tool_messages[0]["content"]
 
 
+async def test_run_prompt_returns_navigation_from_is_navigation_tool(monkeypatch, tmp_db):
+    async def handler() -> dict:
+        return {"widget_id": "weather", "panel": None}
+
+    tool = ToolDef(
+        name="show_weather_detail", description="d", parameters={"type": "object"}, handler=handler, is_navigation=True
+    )
+    bridge = ToolBridge([tool])
+    calls = []
+
+    async def fake_acompletion(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            tool_call = FakeToolCall("call_1", "show_weather_detail", "{}")
+            return FakeResponse(FakeMessage(tool_calls=[tool_call]))
+        return FakeResponse(FakeMessage(content="It's sunny"))
+
+    monkeypatch.setattr(litellm, "acompletion", fake_acompletion)
+
+    provider = AIProvider(bridge, model="fake/model")
+    result = await provider.run_prompt("What's the weather?")
+
+    assert result.text == "It's sunny"
+    assert result.navigation == {"widget_id": "weather", "panel": None}
+
+
+async def test_run_prompt_navigation_none_when_navigation_tool_errors(monkeypatch, tmp_db):
+    async def handler() -> dict:
+        raise RuntimeError("boom")
+
+    tool = ToolDef(
+        name="show_weather_detail", description="d", parameters={"type": "object"}, handler=handler, is_navigation=True
+    )
+    bridge = ToolBridge([tool])
+    calls = []
+
+    async def fake_acompletion(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            tool_call = FakeToolCall("call_1", "show_weather_detail", "{}")
+            return FakeResponse(FakeMessage(tool_calls=[tool_call]))
+        return FakeResponse(FakeMessage(content="couldn't check"))
+
+    monkeypatch.setattr(litellm, "acompletion", fake_acompletion)
+
+    provider = AIProvider(bridge, model="fake/model")
+    result = await provider.run_prompt("What's the weather?")
+
+    assert result.navigation is None
+
+
 async def test_run_prompt_forces_final_answer_after_max_rounds(monkeypatch, tmp_db):
-    call_count = 0
+    calls = []
 
     async def handler() -> dict:
         return {"ok": True}
@@ -161,8 +216,7 @@ async def test_run_prompt_forces_final_answer_after_max_rounds(monkeypatch, tmp_
     tool_call = FakeToolCall("call_1", "noop", "{}")
 
     async def fake_acompletion(**kwargs):
-        nonlocal call_count
-        call_count += 1
+        calls.append(kwargs)
         if kwargs.get("tools"):
             return FakeResponse(FakeMessage(tool_calls=[tool_call]))
         return FakeResponse(FakeMessage(content="giving up, here's what I know"))
@@ -172,8 +226,11 @@ async def test_run_prompt_forces_final_answer_after_max_rounds(monkeypatch, tmp_
     provider = AIProvider(bridge, model="fake/model")
     result = await provider.run_prompt("loop forever", max_tool_rounds=2)
 
-    assert result == "giving up, here's what I know"
-    assert call_count == 3  # 2 tool rounds + 1 final forced call without tools
+    assert result.text == "giving up, here's what I know"
+    assert len(calls) == 3  # 2 tool rounds + 1 final forced call without tools
+    # the forced final call (no tools) still caps output tokens, same as the
+    # tool-loop calls before it
+    assert calls[-1]["max_completion_tokens"] == _MAX_COMPLETION_TOKENS
 
 
 @pytest.mark.parametrize(
@@ -191,13 +248,13 @@ def test_api_key_for_model_picks_key_matching_provider_prefix(model, expected_ke
         "gemini_api_key": "sk-gemini",
     }
 
-    assert _api_key_for_model(model, settings) == expected_key
+    assert api_key_for_model(model, settings) == expected_key
 
 
 def test_api_key_for_model_falls_back_to_any_key_for_unknown_prefix():
     settings = {"anthropic_api_key": None, "openai_api_key": "sk-openai", "gemini_api_key": None}
 
-    assert _api_key_for_model("fake/model", settings) == "sk-openai"
+    assert api_key_for_model("fake/model", settings) == "sk-openai"
 
 
 def test_api_key_for_model_does_not_borrow_another_providers_key():
@@ -205,7 +262,7 @@ def test_api_key_for_model_does_not_borrow_another_providers_key():
     # different provider's key — that key would get sent to the wrong API.
     settings = {"anthropic_api_key": None, "openai_api_key": "sk-openai", "gemini_api_key": None}
 
-    assert _api_key_for_model("gemini/gemini-2.5-flash", settings) is None
+    assert api_key_for_model("gemini/gemini-2.5-flash", settings) is None
 
 
 async def test_run_prompt_passes_provider_matched_key_to_litellm(monkeypatch):
@@ -277,7 +334,7 @@ async def test_run_prompt_passes_configured_reasoning_effort_to_litellm(monkeypa
     provider = AIProvider(bridge, model="openai/gpt-5.6-terra")
     result = await provider.run_prompt("do the thing", max_tool_rounds=1)
 
-    assert result == "done"
+    assert result.text == "done"
     assert len(calls) == 2  # 1 tool round (forces final since max_tool_rounds=1) + 1 forced final call
     for call in calls:
         assert call["reasoning_effort"] == "none"

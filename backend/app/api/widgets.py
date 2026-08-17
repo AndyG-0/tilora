@@ -292,7 +292,7 @@ async def _timed_call(kind: str, plugin: Plugin, call: Any) -> Any:
         logger.exception("widget %s %s failed after %.1fms", plugin_label, kind, elapsed_ms)
         raise
     elapsed_ms = (time.monotonic() - start) * 1000
-    logger.info("widget %s %s took %.1fms", plugin_label, kind, elapsed_ms)
+    logger.debug("widget %s %s took %.1fms", plugin_label, kind, elapsed_ms)
     return result
 
 
@@ -421,6 +421,8 @@ async def update_widget_settings(
     else:
         plugin.config["settings"].update(payload)
         await asyncio.to_thread(save_widget_settings, widget_id, plugin.config["settings"])
+        if isinstance(plugin, PhotosPlugin):
+            await asyncio.to_thread(delete_widget_user_settings_for_widget, widget_id)
     # Force the next summary/detail request to reflect the new settings
     # instead of serving a stale cached response. Every cache entry for this
     # widget starts with "{kind}:{widget_id}:" (locale is always appended,

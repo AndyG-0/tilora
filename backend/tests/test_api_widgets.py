@@ -328,11 +328,11 @@ def test_summary_logs_latency_tagged_with_widget_id(client, dashboard_yaml, tmp_
     plugin = StubPlugin({})
     registry.register(plugin)
 
-    with caplog.at_level(logging.INFO, logger="app.api.widgets"):
+    with caplog.at_level(logging.DEBUG, logger="app.api.widgets"):
         response = client.get("/api/widgets/stub/summary")
 
     assert response.status_code == 200
-    assert any("stub" in r.message and "summary" in r.message for r in caplog.records)
+    assert any("stub" in r.message and "summary" in r.message and r.levelno == logging.DEBUG for r in caplog.records)
 
 
 def test_summary_logs_and_reraises_plugin_errors(client, dashboard_yaml, tmp_db, caplog):
@@ -1345,3 +1345,19 @@ def test_list_widgets_includes_name_for_custom_widget(client, dashboard_yaml, tm
     assert response.status_code == 200
     names = {w["id"]: w["name"] for w in response.json()}
     assert names[widget_id] == "Clock"
+
+
+def test_update_photos_widget_cleans_legacy_user_settings(client, tmp_db):
+    plugin = PhotosPlugin({"id": "photos", "settings": {"provider": "local"}})
+    registry.register(plugin)
+    db.save_widget_user_settings(TEST_USER_ID, "photos", {"provider": "local", "directory": "/old/path"})
+
+    response = client.patch("/api/widgets/photos/settings", json={"provider": "icloud_private"})
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == "icloud_private"
+    assert db.get_widget_user_settings(TEST_USER_ID, "photos") is None
+
+    detail_res = client.get("/api/widgets/photos/detail")
+    assert detail_res.status_code == 200
+    assert detail_res.json()["provider"] == "icloud_private"

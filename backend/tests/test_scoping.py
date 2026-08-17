@@ -84,3 +84,16 @@ async def test_default_locale_argument_is_english(tmp_db):
 
     assert resolved is plugin
     assert resolved.locale == "en"
+
+
+async def test_photos_plugin_does_not_read_stale_widget_user_settings(tmp_db):
+    from app.plugins.photos.plugin import PhotosPlugin
+    from app.storage import db
+
+    plugin = PhotosPlugin({"id": "photos", "settings": {"provider": "icloud_private"}})
+    db.save_widget_user_settings(USER["id"], "photos", {"provider": "local", "directory": "/some/path"})
+
+    resolved = await scoped_plugin(plugin, USER, DEVICE)
+
+    assert resolved.provider == "icloud_private"
+    assert resolved.requesting_user_id == USER["id"]

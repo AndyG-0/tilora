@@ -51,3 +51,58 @@ async def test_call_unknown_tool_returns_error_dict():
     bridge = make_bridge()
     result = await bridge.call("nonexistent", {})
     assert result == {"error": "Unknown tool 'nonexistent'"}
+
+
+async def _navigate() -> dict:
+    return {"widget_id": "weather", "panel": None}
+
+
+def make_navigation_bridge(handler=_navigate) -> ToolBridge:
+    tool = ToolDef(
+        name="show_weather_detail",
+        description="Show weather detail",
+        parameters={"type": "object", "properties": {}},
+        handler=handler,
+        is_navigation=True,
+    )
+    return ToolBridge([tool])
+
+
+async def test_call_navigation_tool_sets_navigation_action_on_success():
+    bridge = make_navigation_bridge()
+    result = await bridge.call("show_weather_detail", {})
+    assert result == {"widget_id": "weather", "panel": None}
+    assert bridge.navigation_action == {"widget_id": "weather", "panel": None}
+
+
+async def test_call_navigation_tool_clears_navigation_action_on_error():
+    async def handler():
+        raise RuntimeError("boom")
+
+    bridge = make_navigation_bridge(handler)
+    result = await bridge.call("show_weather_detail", {})
+    assert result == {"error": "boom"}
+    assert bridge.navigation_action is None
+
+
+async def test_call_navigation_tool_ignores_result_missing_widget_id():
+    async def handler():
+        return {"panel": None}
+
+    bridge = make_navigation_bridge(handler)
+    await bridge.call("show_weather_detail", {})
+    assert bridge.navigation_action is None
+
+
+async def test_call_navigation_action_reflects_most_recent_call():
+    calls = iter([{"widget_id": "weather", "panel": None}, {"error": "boom"}])
+
+    async def handler():
+        return next(calls)
+
+    bridge = make_navigation_bridge(handler)
+    await bridge.call("show_weather_detail", {})
+    assert bridge.navigation_action == {"widget_id": "weather", "panel": None}
+
+    await bridge.call("show_weather_detail", {})
+    assert bridge.navigation_action is None

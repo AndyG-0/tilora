@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.integrations import nominatim_client, osrm_client, overpass_client
+from app.integrations import geocode, nominatim_client, osrm_client, overpass_client
 from app.integrations.overpass_client import CATEGORY_TAGS
 from app.storage.cache import cached_call
 
@@ -34,19 +34,20 @@ async def reverse(lat: float, lon: float) -> dict[str, Any] | None:
     return await cached_call(key, _GEOCODE_TTL_SECONDS, lambda: nominatim_client.reverse(lat, lon))
 
 
-async def _geocode_one(place: str) -> dict[str, Any] | None:
-    matches = await nominatim_client.search(place, limit=1)
-    return matches[0] if matches else None
+async def _geocode_one(place: str, near: tuple[float, float] | None = None) -> dict[str, Any] | None:
+    return await geocode.resolve_near(place, near=near)
 
 
-async def _resolve_endpoint(name: str, lat: float | None, lon: float | None) -> dict[str, Any] | None:
+async def _resolve_endpoint(
+    name: str, lat: float | None, lon: float | None, near: tuple[float, float] | None = None
+) -> dict[str, Any] | None:
     # The frontend already knows exact coordinates for the home location and
     # for a nearby-search result (from Overpass), so skip Nominatim geocoding
     # in those cases -- re-geocoding by name risks landing on a different,
     # same-named place (e.g. a different city's "Starbucks").
     if lat is not None and lon is not None:
         return {"name": name, "latitude": lat, "longitude": lon}
-    return await _geocode_one(name)
+    return await _geocode_one(name, near=near)
 
 
 def _geo_cache_key(name: str, lat: float | None, lon: float | None) -> str:
@@ -66,12 +67,17 @@ async def directions(
     origin_lon: float | None = None,
 ) -> dict[str, Any]:
     async def fetch() -> dict[str, Any]:
-        dest = await _resolve_endpoint(destination, destination_lat, destination_lon)
-        if dest is None:
-            raise HTTPException(404, f"Could not find a location for '{destination}'")
         orig = await _resolve_endpoint(origin, origin_lat, origin_lon)
         if orig is None:
             raise HTTPException(404, f"Could not find a location for '{origin}'")
+        # Bias an ambiguous/chain-name destination (e.g. "Taco Bell") towards
+        # the origin instead of Nominatim's global ranking -- see
+        # nominatim_client.search.
+        dest = await _resolve_endpoint(
+            destination, destination_lat, destination_lon, near=(orig["latitude"], orig["longitude"])
+        )
+        if dest is None:
+            raise HTTPException(404, f"Could not find a location for '{destination}'")
         try:
             result = await osrm_client.route(
                 (orig["latitude"], orig["longitude"]), (dest["latitude"], dest["longitude"]), mode

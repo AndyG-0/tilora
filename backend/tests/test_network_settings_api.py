@@ -161,6 +161,8 @@ def test_patch_propagates_live_and_invalidates_cache(admin_client, tmp_db):
     registry.register(plugin)
     cache.set("summary:ph1:en", {"stale": True}, 60)
     cache.set("detail:ph1:en", {"stale": True}, 60)
+    cache.set("pihole_sid:ph1", "stale_session", 60)
+    cache.set("pihole_sid:pihole", "stale_session", 60)
 
     response = admin_client.patch("/api/network-settings/pihole", json={"host": "new.local"})
 
@@ -168,6 +170,8 @@ def test_patch_propagates_live_and_invalidates_cache(admin_client, tmp_db):
     assert plugin.config["settings"]["host"] == "new.local"
     assert cache.get("summary:ph1:en") is None
     assert cache.get("detail:ph1:en") is None
+    assert cache.get("pihole_sid:ph1") is None
+    assert cache.get("pihole_sid:pihole") is None
 
 
 # --- POST /api/network-settings/{type}/test-connection ----------------------

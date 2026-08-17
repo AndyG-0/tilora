@@ -142,6 +142,32 @@ def test_get_photo_404s_for_unknown_icloud_guid(client, icloud_widget, monkeypat
     assert response.status_code == 404
 
 
+def test_get_photo_404s_when_icloud_shared_fetch_photos_raises(client, icloud_widget, monkeypatch):
+    async def fake_fetch_photos(token):
+        raise RuntimeError("shared album connection error")
+
+    monkeypatch.setattr(icloud_shared_album, "fetch_photos", fake_fetch_photos)
+
+    response = client.get("/api/photos/photos/guid-1")
+
+    assert response.status_code == 404
+
+
+def test_get_photo_404s_when_icloud_shared_fetch_asset_url_raises(client, icloud_widget, monkeypatch):
+    async def fake_fetch_photos(token):
+        return [{"guid": "guid-1", "checksum": "chk-1", "width": 100, "height": 100}]
+
+    async def fake_fetch_asset_url(token, guid, checksum):
+        raise RuntimeError("asset url fetch failed")
+
+    monkeypatch.setattr(icloud_shared_album, "fetch_photos", fake_fetch_photos)
+    monkeypatch.setattr(icloud_shared_album, "fetch_asset_url", fake_fetch_asset_url)
+
+    response = client.get("/api/photos/photos/guid-1")
+
+    assert response.status_code == 404
+
+
 @pytest.fixture
 def icloud_private_widget():
     # Photo bytes are fetched with the *requesting viewer's own* credentials
@@ -180,6 +206,17 @@ def test_get_photo_404s_for_unknown_private_photo_id(client, icloud_private_widg
     monkeypatch.setattr(icloud_photos, "fetch_photo_bytes", fake_fetch_photo_bytes)
 
     response = client.get("/api/photos/photos/missing-id")
+
+    assert response.status_code == 404
+
+
+def test_get_photo_404s_when_private_fetch_photo_bytes_raises(client, icloud_private_widget, monkeypatch):
+    async def fake_fetch_photo_bytes(user_id, username, password, photo_id, album_name):
+        raise RuntimeError("iCloud API error")
+
+    monkeypatch.setattr(icloud_photos, "fetch_photo_bytes", fake_fetch_photo_bytes)
+
+    response = client.get("/api/photos/photos/id-1")
 
     assert response.status_code == 404
 

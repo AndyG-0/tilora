@@ -11,6 +11,8 @@ immediately.
 
 from __future__ import annotations
 
+from urllib.parse import urlsplit
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
@@ -78,11 +80,11 @@ async def get_subtitle(widget_id: str, item_id: str, stream_index: int):
 
 
 @router.get("/{widget_id}/stream/{item_id}")
-async def stream_item(widget_id: str, item_id: str, request: Request, audio_stream_index: int | None = None):
+async def stream_item(widget_id: str, item_id: str, request: Request):
     plugin = _get_plugin(widget_id)
     try:
         client, upstream = await jellyfin_client.open_video_stream(
-            plugin.config["settings"], widget_id, item_id, request.headers.get("range"), audio_stream_index
+            plugin.config["settings"], widget_id, item_id, request.headers.get("range")
         )
     except jellyfin_client.JellyfinError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -102,3 +104,91 @@ async def stream_item(widget_id: str, item_id: str, request: Request, audio_stre
 
     headers = {k: v for k, v in upstream.headers.items() if k.lower() in _FORWARDED_STREAM_HEADERS}
     return StreamingResponse(body(), status_code=upstream.status_code, headers=headers)
+
+
+@router.get("/{widget_id}/hls/{item_id}/master.m3u8")
+async def hls_master_playlist(
+    widget_id: str, item_id: str, play_session_id: str, audio_stream_index: int | None = None
+):
+    plugin = _get_plugin(widget_id)
+    try:
+        text = await jellyfin_client.open_hls_playlist(
+            plugin.config["settings"],
+            widget_id,
+            item_id,
+            audio_stream_index=audio_stream_index,
+            play_session_id=play_session_id,
+        )
+    except jellyfin_client.JellyfinError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    rewritten = jellyfin_client.rewrite_hls_playlist(text, widget_id, item_id, f"/Videos/{item_id}/master.m3u8")
+    return Response(content=rewritten, media_type="application/vnd.apple.mpegurl")
+
+
+@router.get("/{widget_id}/hls-resource/{item_id}")
+async def hls_resource(widget_id: str, item_id: str, path: str):
+    plugin = _get_plugin(widget_id)
+    parsed = urlsplit(path)
+    try:
+        client, upstream = await jellyfin_client.open_hls_resource(
+            plugin.config["settings"], widget_id, parsed.path, parsed.query
+        )
+    except jellyfin_client.JellyfinError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    if upstream.status_code >= 400:
+        await upstream.aclose()
+        await client.aclose()
+        raise HTTPException(status_code=upstream.status_code, detail="Could not fetch HLS resource")
+
+    content_type = upstream.headers.get("content-type", "")
+    if "mpegurl" in content_type.lower() or parsed.path.endswith(".m3u8"):
+        # A nested variant playlist (rather than a media segment) — read it
+        # fully and rewrite its own URIs the same way the master playlist's
+        # were, resolved relative to *this* playlist's own upstream path.
+        raw = await upstream.aread()
+        await upstream.aclose()
+        await client.aclose()
+        rewritten = jellyfin_client.rewrite_hls_playlist(
+            raw.decode("utf-8", errors="replace"), widget_id, item_id, parsed.path
+        )
+        return Response(content=rewritten, media_type="application/vnd.apple.mpegurl")
+
+    async def body():
+        try:
+            async for chunk in upstream.aiter_bytes():
+                yield chunk
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+
+    headers = {k: v for k, v in upstream.headers.items() if k.lower() in _FORWARDED_STREAM_HEADERS}
+    return StreamingResponse(body(), status_code=upstream.status_code, headers=headers)
+
+
+@router.post("/{widget_id}/playback-started/{item_id}")
+async def playback_started(widget_id: str, item_id: str, play_session_id: str):
+    plugin = _get_plugin(widget_id)
+    await jellyfin_client.report_playback_start(plugin.config["settings"], widget_id, item_id, play_session_id)
+    return {"status": "ok"}
+
+
+@router.post("/{widget_id}/playback-progress/{item_id}")
+async def playback_progress(
+    widget_id: str, item_id: str, play_session_id: str, position_seconds: float, is_paused: bool = False
+):
+    plugin = _get_plugin(widget_id)
+    await jellyfin_client.report_playback_progress(
+        plugin.config["settings"], widget_id, item_id, play_session_id, position_seconds, is_paused=is_paused
+    )
+    return {"status": "ok"}
+
+
+@router.post("/{widget_id}/playback-stopped/{item_id}")
+async def playback_stopped(widget_id: str, item_id: str, play_session_id: str, position_seconds: float = 0):
+    plugin = _get_plugin(widget_id)
+    await jellyfin_client.stop_playback_session(
+        plugin.config["settings"], widget_id, item_id, play_session_id, position_seconds
+    )
+    return {"status": "ok"}
