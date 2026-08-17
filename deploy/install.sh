@@ -370,9 +370,8 @@ PY
 }
 
 wait_for_health() {
-  local attempt
   info "Waiting for the backend health check"
-  for attempt in $(seq 1 30); do
+  for _ in $(seq 1 30); do
     if curl -fsS http://127.0.0.1:8000/api/health >/dev/null; then
       return
     fi
@@ -452,6 +451,6 @@ main() {
   print_completion
 }
 
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+if [[ "${BASH_SOURCE[0]:-}" == "${0:-}" || "${#BASH_SOURCE[@]}" -eq 0 ]]; then
   main "$@"
 fi

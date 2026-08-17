@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2032,SC2034,SC2329
 # Lightweight, dependency-free tests for deploy/install.sh.
 set -euo pipefail
 
-readonly TEST_ROOT="$(mktemp -d)"
+TEST_ROOT="$(mktemp -d)"
+readonly TEST_ROOT
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
-# shellcheck source=install.sh
+# shellcheck source=deploy/install.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/install.sh"
 
 pass() { printf 'ok - %s\n' "$1"; }
@@ -174,9 +176,19 @@ test_health_failure() {
   pass "reports failed health checks"
 }
 
+test_piped_execution() {
+  local install_script
+  install_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/install.sh"
+  local help_output
+  help_output="$(cat "$install_script" | bash -s -- --help)"
+  printf '%s\n' "$help_output" | grep -Fq "Tilora Linux Installer" || fail_test "piped execution failed to run --help"
+  pass "supports piped execution (curl | bash) under set -u"
+}
+
 test_platform_validation
 test_kiosk_arg_parsing
 test_kiosk_configuration
+test_piped_execution
 test_mocked_dependencies_and_upgrade
 test_service_rendering
 test_health_failure
