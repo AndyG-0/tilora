@@ -180,7 +180,7 @@ test_piped_execution() {
   local install_script
   install_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/install.sh"
   local help_output
-  help_output="$(cat "$install_script" | bash -s -- --help)"
+  help_output="$(bash -s -- --help < "$install_script")"
   printf '%s\n' "$help_output" | grep -Fq "Tilora Linux Installer" || fail_test "piped execution failed to run --help"
   pass "supports piped execution (curl | bash) under set -u"
 }
