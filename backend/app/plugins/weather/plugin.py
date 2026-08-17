@@ -279,20 +279,39 @@ class WeatherPlugin(Plugin):
         async def get_weather_summary() -> dict[str, Any]:
             return await self.get_summary()
 
-        tool_name = (
-            "get_weather_summary" if self.id == "weather" else f"get_weather_summary_{self.id.replace('-', '_')}"
-        )
+        async def show_weather_detail() -> dict[str, Any]:
+            return {"widget_id": self.id, "panel": None}
+
+        suffix = "" if self.id == "weather" else f"_{self.id.replace('-', '_')}"
         location_name = self.config["settings"].get("location_name")
         desc = (
             f"Get the current temperature and weather condition for {location_name}."
             if location_name
             else "Get the current temperature and weather condition for the dashboard's configured location."
         )
+        detail_desc = (
+            f"Bring up the Weather tile's detail page for {location_name} on the user's screen, in "
+            "addition to answering in words. Call this whenever the user asks about the weather, "
+            "forecast, or air quality for this location. Do not call this if the user names a different "
+            "city or place."
+            if location_name
+            else (
+                "Bring up the Weather tile's detail page on the user's screen whenever the user asks "
+                "about the weather, forecast, or air quality, in addition to answering in words."
+            )
+        )
         return [
             ToolDef(
-                name=tool_name,
+                name=f"get_weather_summary{suffix}",
                 description=desc,
                 parameters={"type": "object", "properties": {}},
                 handler=get_weather_summary,
-            )
+            ),
+            ToolDef(
+                name=f"show_weather_detail{suffix}",
+                description=detail_desc,
+                parameters={"type": "object", "properties": {}},
+                handler=show_weather_detail,
+                is_navigation=True,
+            ),
         ]

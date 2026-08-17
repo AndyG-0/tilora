@@ -32,6 +32,7 @@ const SAMPLE_DATA = {
 	count: 2,
 	flights: [
 		{
+			hex: 'a835an',
 			callsign: 'AAL100',
 			airline_code: 'AAL',
 			airline_name: 'American Airlines',
@@ -47,8 +48,11 @@ const SAMPLE_DATA = {
 			longitude: -97.1,
 			origin: { iata: 'DFW', icao: 'KDFW', city: 'Dallas-Fort Worth' },
 			destination: { iata: 'LHR', icao: 'EGLL', city: 'London' },
+			photo_thumbnail_url: 'https://example.com/aal100.jpg',
+			photo_photographer: 'John Doe',
 		},
 		{
+			hex: 'a12345',
 			callsign: 'N12345',
 			airline_code: null,
 			airline_name: null,
@@ -64,6 +68,7 @@ const SAMPLE_DATA = {
 			longitude: -97.0,
 			origin: null,
 			destination: null,
+			photo_thumbnail_url: null,
 		},
 	],
 };
@@ -157,6 +162,44 @@ describe('FlightsDetail', () => {
 		const row = screen.getByText('TEST99', { selector: '.dots' }).closest('.table-row');
 		const speedCell = row?.querySelector('.speed-cell');
 		expect(speedCell?.querySelector('.cell-popover')).toBeNull();
+	});
+
+	it('toggles selection when a flight row is clicked', async () => {
+		render(FlightsDetail, { props: { data: SAMPLE_DATA } });
+
+		const row = screen.getByText('AAL100', { selector: '.dots' }).closest('.table-row');
+		expect(row).not.toHaveClass('selected');
+		expect(row).toHaveAttribute('aria-pressed', 'false');
+
+		await fireEvent.click(row!);
+		expect(row).toHaveClass('selected');
+		expect(row).toHaveAttribute('aria-pressed', 'true');
+
+		await fireEvent.click(row!);
+		expect(row).not.toHaveClass('selected');
+		expect(row).toHaveAttribute('aria-pressed', 'false');
+	});
+
+	it('switches flight selection when clicking on the flight number cell or another flight', async () => {
+		render(FlightsDetail, { props: { data: SAMPLE_DATA } });
+
+		const aalCallsign = screen.getByText('AAL100', { selector: '.dots' });
+		const aalRow = aalCallsign.closest('.table-row');
+		const n12345Callsign = screen.getByText('N12345', { selector: '.dots' });
+		const n12345Row = n12345Callsign.closest('.table-row');
+
+		expect(aalRow).not.toHaveClass('selected');
+		expect(n12345Row).not.toHaveClass('selected');
+
+		// Click directly on the flight number in the first column
+		await fireEvent.click(aalCallsign);
+		expect(aalRow).toHaveClass('selected');
+		expect(n12345Row).not.toHaveClass('selected');
+
+		// Click on the other aircraft's flight number to switch selection
+		await fireEvent.click(n12345Callsign);
+		expect(aalRow).not.toHaveClass('selected');
+		expect(n12345Row).toHaveClass('selected');
 	});
 
 	it('shows edit controls for non-admin members', () => {

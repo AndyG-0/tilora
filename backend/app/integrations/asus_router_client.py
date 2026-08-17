@@ -611,12 +611,15 @@ def lookup_vendor(mac: str, existing_vendor: str | None = None) -> str | None:
 
 async def _connect(settings: dict[str, Any]) -> asyncssh.SSHClientConnection:
     host = settings.get("host") or ""
+    port = _ssh_port(settings)
+    username = settings.get("username") or ""
+    _LOGGER.debug("Connecting to Asus router at %s:%d via SSH (user=%s)", host, port, username)
     try:
         return await asyncio.wait_for(
             asyncssh.connect(
                 host,
-                port=_ssh_port(settings),
-                username=settings.get("username") or "",
+                port=port,
+                username=username,
                 password=settings.get("password") or "",
                 known_hosts=None,
             ),
@@ -1318,6 +1321,13 @@ async def _fetch_status(settings: dict[str, Any], widget_id: str, *, use_cache: 
         ),
         rx_bytes=rx_bytes,
         tx_bytes=tx_bytes,
+    )
+    _LOGGER.debug(
+        "Fetched Asus router status (widget=%s): wan_connected=%s, clients=%d, product=%s",
+        widget_id,
+        status.wan_connected,
+        len(status.clients),
+        status.product_id,
     )
     if use_cache:
         cache.set(cache_key, status, _STATUS_TTL_SECONDS)

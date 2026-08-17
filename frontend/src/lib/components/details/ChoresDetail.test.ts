@@ -76,6 +76,19 @@ describe('ChoresDetail', () => {
 		await vi.waitFor(() => expect(widgetDetail).toHaveBeenCalled());
 	});
 
+	it('uncompletes an item via its checkbox and refetches', async () => {
+		const completedItem = { ...item1, completed: true };
+		completeChore.mockResolvedValue({ ...item1, completed: false });
+		widgetDetail.mockResolvedValue({ title: 'To-Do', chores: [item1], open_count: 1 });
+
+		render(ChoresDetail, { props: { data: { title: 'To-Do', chores: [completedItem], open_count: 0 } } });
+
+		await fireEvent.click(screen.getByRole('checkbox'));
+
+		await vi.waitFor(() => expect(completeChore).toHaveBeenCalledWith(1));
+		await vi.waitFor(() => expect(widgetDetail).toHaveBeenCalled());
+	});
+
 	it('removes an item and refetches', async () => {
 		removeChore.mockResolvedValue({ status: 'ok' });
 		widgetDetail.mockResolvedValue({ title: 'To-Do', chores: [], open_count: 0 });

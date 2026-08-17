@@ -42,6 +42,18 @@ def test_check_shopping_item_marks_checked_and_sets_checked_by(tmp_db):
     assert checked["checked_at"] is not None
 
 
+def test_check_shopping_item_unchecks_already_checked_item(tmp_db):
+    item = db.add_shopping_item("shopping", "Eggs", "Alice")
+    checked = db.check_shopping_item(item["id"], "Bob")
+    assert checked["checked"] is True
+
+    unchecked = db.check_shopping_item(item["id"], "Bob")
+
+    assert unchecked["checked"] is False
+    assert unchecked["checked_by"] is None
+    assert unchecked["checked_at"] is None
+
+
 def test_check_shopping_item_returns_none_for_unknown_id(tmp_db):
     assert db.check_shopping_item(9999, "Bob") is None
 

@@ -61,4 +61,19 @@ describe('PiholeTile', () => {
 
 		expect(await screen.findByText('⏸ Paused')).toBeInTheDocument();
 	});
+
+	it('shows an error state when summary.error is present', async () => {
+		widgetSummary.mockResolvedValue({
+			connected: true,
+			host: 'pi.local',
+			port: 80,
+			use_https: false,
+			has_password: true,
+			error: 'Pi-hole request failed (HTTP 401).',
+		});
+
+		render(PiholeTile, { props: { widgetId: 'pihole', refreshIntervalSeconds: 60 } });
+
+		expect(await screen.findByText('Pi-hole request failed (HTTP 401).')).toBeInTheDocument();
+	});
 });

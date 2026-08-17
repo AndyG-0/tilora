@@ -101,7 +101,9 @@
 			"preview": "Aperçu de la voix",
 			"preview_text": "Ceci est un aperçu de la voix sélectionnée.",
 			"save": "Enregistrer la voix",
-			"save_error": "Impossible d'enregistrer votre sélection de voix."
+			"save_error": "Impossible d'enregistrer votre sélection de voix.",
+			"always_on_mic_label": "Microphone toujours actif",
+			"always_on_mic_hint": "Écouter en continu sur le tableau de bord le mot d'activation (\"{agentName}\") sans avoir à cliquer sur le bouton du micro."
 		},
 		"location": {
 			"heading": "Localisation",
@@ -262,7 +264,9 @@
 			"column_route": "Itinéraire",
 			"column_altitude": "Altitude",
 			"column_speed": "Vitesse",
-			"column_distance": "Distance"
+			"column_distance": "Distance",
+			"no_photo": "Photo non disponible",
+			"photo_by": "Photo par {name}"
 		},
 		"screensaver": {
 			"no_aircraft": "AUCUN AVION À PROXIMITÉ"
@@ -888,15 +892,6 @@
 			"content_played": "Reprendre la lecture",
 			"content_both": "Les deux",
 			"resume_unavailable_hint": "« Reprendre la lecture » nécessite une authentification par nom d'utilisateur/mot de passe — changez le mode d'authentification ci-dessus pour l'activer.",
-			"playback_heading": "Lecture (cet appareil)",
-			"playback_compatible": "Audio compatible",
-			"playback_compatible_video": "Forcer le transcodage",
-			"playback_direct": "Lecture directe",
-			"override_active_hint": "Cet appareil a son propre mode de lecture, qui remplace la valeur par défaut du foyer.",
-			"override_inactive_hint": "Cet appareil utilise le mode de lecture par défaut du foyer. Choisissez un mode ci-dessus pour le remplacer uniquement sur cet appareil.",
-			"use_household_default": "Utiliser la valeur par défaut du foyer",
-			"save_device_override_error": "Impossible d'enregistrer le remplacement de lecture pour cet appareil.",
-			"reset_device_override_error": "Impossible de réinitialiser le remplacement de lecture pour cet appareil.",
 			"save_content_mode_error": "Impossible d'enregistrer le paramètre de contenu de la tuile.",
 			"libraries_root": "Bibliothèques",
 			"load_items_error": "Impossible de charger les éléments de la bibliothèque.",
@@ -1000,7 +995,12 @@
 		"subtitle": "Sous-titre",
 		"container": "Conteneur",
 		"resolution": "Résolution",
-		"playback_mode": "Mode de lecture"
+		"playback_mode": "Mode de lecture",
+		"playback_method_direct": "Lecture directe",
+		"playback_method_hls": "Transcodage (HLS)",
+		"playback_cache_active": "Cet appareil a précédemment échoué en lecture directe et utilise désormais le transcodage.",
+		"playback_failed": "Échec de la lecture. Réessayez ou choisissez un autre élément.",
+		"transcoding": "Transcodage…"
 	},
 	"clock": {
 		"aria_analog": "Cadran d'horloge analogique",
@@ -1030,7 +1030,9 @@
 		"resize_widget": "Redimensionner le widget",
 		"add_widget": "+ Ajouter un widget",
 		"mic_no_match": "Je n'ai pas compris.",
-		"assistant_error": "Impossible d'obtenir une réponse."
+		"assistant_error": "Une erreur s'est produite. Réessayez, ou demandez à votre administrateur de vérifier les journaux si cela persiste.",
+		"always_on_standby": "En attente de « {agentName} »…",
+		"always_on_standby_label": "Microphone toujours actif : en attente de « {agentName} »"
 	},
 	"widget_detail": {
 		"unknown_widget": "Widget inconnu",

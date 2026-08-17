@@ -101,7 +101,9 @@
 			"preview": "Previsualizar voz",
 			"preview_text": "Esta es una vista previa de la voz seleccionada.",
 			"save": "Guardar voz",
-			"save_error": "No se pudo guardar tu selección de voz."
+			"save_error": "No se pudo guardar tu selección de voz.",
+			"always_on_mic_label": "Micrófono siempre activo",
+			"always_on_mic_hint": "Escuchar continuamente en el panel de control la palabra de activación (\"{agentName}\") sin tener que hacer clic en el micrófono."
 		},
 		"location": {
 			"heading": "Ubicación",
@@ -262,7 +264,9 @@
 			"column_route": "Ruta",
 			"column_altitude": "Altitud",
 			"column_speed": "Velocidad",
-			"column_distance": "Distancia"
+			"column_distance": "Distancia",
+			"no_photo": "Foto no disponible",
+			"photo_by": "Foto por {name}"
 		},
 		"screensaver": {
 			"no_aircraft": "SIN AERONAVES CERCA"
@@ -888,15 +892,6 @@
 			"content_played": "Continuar viendo",
 			"content_both": "Ambos",
 			"resume_unavailable_hint": "Continuar viendo necesita autenticación de usuario/contraseña — cambia el modo de autenticación arriba para activarlo.",
-			"playback_heading": "Reproducción (este dispositivo)",
-			"playback_compatible": "Audio compatible",
-			"playback_compatible_video": "Forzar transcodificación",
-			"playback_direct": "Reproducción directa",
-			"override_active_hint": "Este dispositivo tiene su propio modo de reproducción, anulando el valor predeterminado del hogar.",
-			"override_inactive_hint": "Este dispositivo está usando el modo de reproducción predeterminado del hogar. Elige un modo arriba para anularlo solo para este dispositivo.",
-			"use_household_default": "Usar el valor predeterminado del hogar",
-			"save_device_override_error": "No se pudo guardar la anulación de reproducción para este dispositivo.",
-			"reset_device_override_error": "No se pudo restablecer la anulación de reproducción para este dispositivo.",
 			"save_content_mode_error": "No se pudo guardar el ajuste de contenido del widget.",
 			"libraries_root": "Bibliotecas",
 			"load_items_error": "No se pudieron cargar los elementos de la biblioteca.",
@@ -1000,7 +995,12 @@
 		"subtitle": "Subtítulo",
 		"container": "Contenedor",
 		"resolution": "Resolución",
-		"playback_mode": "Modo de reproducción"
+		"playback_mode": "Modo de reproducción",
+		"playback_method_direct": "Reproducción directa",
+		"playback_method_hls": "Transcodificación (HLS)",
+		"playback_cache_active": "Este dispositivo falló previamente en reproducción directa y ahora usa transcodificación.",
+		"playback_failed": "Error en la reproducción. Inténtalo de nuevo o elige otro elemento.",
+		"transcoding": "Transcodificando…"
 	},
 	"clock": {
 		"aria_analog": "Esfera de reloj analógico",
@@ -1030,7 +1030,9 @@
 		"resize_widget": "Redimensionar widget",
 		"add_widget": "+ Añadir widget",
 		"mic_no_match": "No se entendió eso.",
-		"assistant_error": "No se pudo obtener una respuesta."
+		"assistant_error": "Algo salió mal. Inténtalo de nuevo o pide a tu administrador que revise los registros si esto continúa.",
+		"always_on_standby": "Escuchando \"{agentName}\"…",
+		"always_on_standby_label": "Micrófono siempre activo: escuchando \"{agentName}\""
 	},
 	"widget_detail": {
 		"unknown_widget": "Widget desconocido",

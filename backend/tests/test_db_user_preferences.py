@@ -9,6 +9,7 @@ _DEFAULTS = {
     "voice_name": "",
     "locale": "en",
     "location": None,
+    "always_on_mic": False,
 }
 
 
@@ -51,3 +52,10 @@ def test_save_user_preferences_round_trips_location(tmp_db):
 
     assert result == {**_DEFAULTS, "location": location}
     assert db.get_user_preferences("alice") == {**_DEFAULTS, "location": location}
+
+
+def test_save_user_preferences_round_trips_always_on_mic(tmp_db):
+    result = db.save_user_preferences("alice", {"always_on_mic": True})
+
+    assert result == {**_DEFAULTS, "always_on_mic": True}
+    assert db.get_user_preferences("alice") == {**_DEFAULTS, "always_on_mic": True}

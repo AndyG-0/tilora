@@ -4,16 +4,26 @@ const { synthesizeSpeech } = vi.hoisted(() => ({ synthesizeSpeech: vi.fn() }));
 vi.mock('$lib/api', () => ({ api: { synthesizeSpeech } }));
 
 import {
+	ensureMicrophonePermission,
+	isSpeaking,
 	isSpeechRecognitionSupported,
 	isSpeechSynthesisSupported,
 	listBrowserVoices,
 	listenOnce,
+	matchWakeWord,
 	playChime,
 	speak,
+	startContinuousListening,
+	stopSpeaking,
 } from './speech';
 
 describe('speech', () => {
+	beforeEach(() => {
+		stopSpeaking();
+	});
+
 	afterEach(() => {
+		stopSpeaking();
 		vi.unstubAllGlobals();
 		synthesizeSpeech.mockReset();
 		// @ts-expect-error -- test-only cleanup of a property speech.ts adds
@@ -269,6 +279,162 @@ describe('speech', () => {
 		it('does nothing when AudioContext is unsupported', () => {
 			vi.unstubAllGlobals();
 			expect(() => playChime()).not.toThrow();
+		});
+	});
+
+	describe('matchWakeWord', () => {
+		it('returns matched: true with empty query when wake word is spoken alone', () => {
+			expect(matchWakeWord('Tilora', 'Tilora')).toEqual({ matched: true, query: '' });
+			expect(matchWakeWord('tilora', 'Tilora')).toEqual({ matched: true, query: '' });
+			expect(matchWakeWord('Hey Tilora', 'Tilora')).toEqual({ matched: true, query: '' });
+			expect(matchWakeWord('ok tilora', 'Tilora')).toEqual({ matched: true, query: '' });
+			expect(matchWakeWord('Hello Tilora!', 'Tilora')).toEqual({ matched: true, query: '' });
+		});
+
+		it('returns matched: true and extracts command query', () => {
+			expect(matchWakeWord('Tilora what is the weather', 'Tilora')).toEqual({
+				matched: true,
+				query: 'what is the weather',
+			});
+			expect(matchWakeWord('Hey Tilora, turn on the lights!', 'Tilora')).toEqual({
+				matched: true,
+				query: 'turn on the lights!',
+			});
+			expect(matchWakeWord('Friday, play some music', 'Friday')).toEqual({
+				matched: true,
+				query: 'play some music',
+			});
+		});
+
+		it('matches phonetic variants of Tilora that Web Speech engines generate', () => {
+			expect(matchWakeWord('Tell Laura what is the weather', 'Tilora')).toEqual({
+				matched: true,
+				query: 'what is the weather',
+			});
+			expect(matchWakeWord('To Laura what time is it', 'Tilora')).toEqual({
+				matched: true,
+				query: 'what time is it',
+			});
+			expect(matchWakeWord('Hey Taylor how are you', 'Tilora')).toEqual({
+				matched: true,
+				query: 'how are you',
+			});
+			expect(matchWakeWord('OK T-Lora turn off the lights', 'Tilora')).toEqual({
+				matched: true,
+				query: 'turn off the lights',
+			});
+			expect(matchWakeWord('Hey Flora what is new', 'Tilora')).toEqual({
+				matched: true,
+				query: 'what is new',
+			});
+			expect(matchWakeWord('Um hey Tilora what is on the schedule', 'Tilora')).toEqual({
+				matched: true,
+				query: 'what is on the schedule',
+			});
+		});
+
+		it('supports fuzzy matching for custom agent names', () => {
+			expect(matchWakeWord('Hey Jarviss turn on the lamp', 'Jarvis')).toEqual({
+				matched: true,
+				query: 'turn on the lamp',
+			});
+		});
+
+		it('returns matched: false when wake word is not present', () => {
+			expect(matchWakeWord('what is the weather', 'Tilora')).toEqual({ matched: false, query: '' });
+			expect(matchWakeWord('good morning everyone', 'Tilora')).toEqual({ matched: false, query: '' });
+			expect(matchWakeWord('', 'Tilora')).toEqual({ matched: false, query: '' });
+		});
+	});
+
+	describe('ensureMicrophonePermission', () => {
+		it('calls getUserMedia and releases tracks', async () => {
+			const stopTrack = vi.fn();
+			const getUserMedia = vi.fn().mockResolvedValue({
+				getTracks: () => [{ stop: stopTrack }],
+			});
+			vi.stubGlobal('navigator', { mediaDevices: { getUserMedia } });
+
+			const granted = await ensureMicrophonePermission();
+			expect(granted).toBe(true);
+			expect(getUserMedia).toHaveBeenCalledWith({ audio: true });
+			expect(stopTrack).toHaveBeenCalled();
+		});
+	});
+
+	describe('speaking state and stopSpeaking', () => {
+		it('tracks speaking state and resets on stopSpeaking', () => {
+			expect(isSpeaking()).toBe(false);
+			const cancel = vi.fn();
+			vi.stubGlobal('speechSynthesis', { cancel, speak: vi.fn(), getVoices: () => [] });
+			stopSpeaking();
+			expect(cancel).toHaveBeenCalled();
+			expect(isSpeaking()).toBe(false);
+		});
+	});
+
+	describe('startContinuousListening', () => {
+		it('calls onError when speech recognition is unsupported', () => {
+			const onError = vi.fn();
+			const onWakeWordDetected = vi.fn();
+			const handle = startContinuousListening({
+				getAgentName: () => 'Tilora',
+				onWakeWordDetected,
+				onError,
+			});
+
+			expect(onError).toHaveBeenCalledWith(expect.any(Error));
+			expect(typeof handle.stop).toBe('function');
+		});
+
+		it('detects wake word in continuous stream and calls onWakeWordDetected', () => {
+			const onWakeWordDetected = vi.fn();
+			let capturedResultHandler: ((event: unknown) => void) | undefined;
+			let started = false;
+			let stopped = false;
+
+			class FakeContinuousRecognition {
+				continuous = false;
+				interimResults = false;
+				maxAlternatives = 1;
+				lang = '';
+				set onresult(fn: ((event: unknown) => void) | null) {
+					capturedResultHandler = fn ?? undefined;
+				}
+				onerror: (() => void) | null = null;
+				onend: (() => void) | null = null;
+				start() {
+					started = true;
+				}
+				stop() {
+					stopped = true;
+				}
+				abort() {
+					stopped = true;
+				}
+			}
+			// @ts-expect-error -- test stub
+			window.SpeechRecognition = FakeContinuousRecognition;
+
+			const handle = startContinuousListening({
+				getAgentName: () => 'Tilora',
+				onWakeWordDetected,
+			});
+
+			expect(started).toBe(true);
+
+			// Simulate speech event with wake word
+			if (capturedResultHandler) {
+				capturedResultHandler({
+					resultIndex: 0,
+					results: [{ 0: { transcript: 'Hey Tilora what time is it' } }],
+				});
+			}
+
+			expect(onWakeWordDetected).toHaveBeenCalledWith('what time is it');
+
+			handle.stop();
+			expect(stopped).toBe(true);
 		});
 	});
 });

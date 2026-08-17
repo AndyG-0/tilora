@@ -14,6 +14,7 @@
 	import { needsSetup, setupStatusLoaded, setupStatusError, loadSetupStatus } from '$lib/stores/setup';
 	import { screensaverSettings, loadScreensaverSettings, forceScreensaverPreview } from '$lib/stores/screensaver';
 	import { loadVoiceSelectionFromServer } from '$lib/stores/voice';
+	import { loadAssistantConfigFromServer, loadAlwaysOnMicFromServer } from '$lib/stores/assistant';
 	import Screensaver from '$lib/components/Screensaver.svelte';
 
 	let { children } = $props();
@@ -107,6 +108,8 @@
 			loadLocaleFromServer();
 			loadScreensaverSettings();
 			loadVoiceSelectionFromServer();
+			loadAssistantConfigFromServer();
+			loadAlwaysOnMicFromServer();
 		}
 	});
 

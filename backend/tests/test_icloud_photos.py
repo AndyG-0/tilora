@@ -1,6 +1,4 @@
-from __future__ import annotations
-
-from icloudpy.exceptions import ICloudPyFailedLoginException
+from icloudpy.exceptions import ICloudPyAPIResponseException, ICloudPyFailedLoginException
 
 from app.integrations import icloud_photos
 from app.storage.cache import cache
@@ -114,7 +112,24 @@ async def test_start_auth_handles_failed_login(monkeypatch):
 
     result = await icloud_photos.start_auth(USER_ID, "user@example.com", "wrong")
 
-    assert result == {"connected": False, "requires_2fa": False}
+    assert result["connected"] is False
+    assert result["requires_2fa"] is False
+    assert "error" in result
+
+
+async def test_start_auth_handles_503_throttling(monkeypatch):
+    def _fail(user_id, u, p):
+        raise ICloudPyFailedLoginException(
+            "Failed to initiate srp", ICloudPyAPIResponseException("Service Unavailable", 503)
+        )
+
+    monkeypatch.setattr(icloud_photos, "_build_service", _fail)
+
+    result = await icloud_photos.start_auth(USER_ID, "user@example.com", "hunter2")
+
+    assert result["connected"] is False
+    assert result["requires_2fa"] is False
+    assert "503" in result["error"]
 
 
 async def test_verify_2fa_with_no_pending_service_fails():
@@ -279,3 +294,119 @@ async def test_iter_photo_chunks_yields_nothing_for_missing_album(monkeypatch):
     seen = [chunk async for chunk in icloud_photos.iter_photo_chunks(USER_ID, "user@example.com", "hunter2")]
 
     assert seen == []
+
+
+async def test_start_auth_handles_api_response_exception(monkeypatch):
+    def _fail(user_id, u, p):
+        raise ICloudPyAPIResponseException("Authentication required for Account.", 421)
+
+    monkeypatch.setattr(icloud_photos, "_build_service", _fail)
+
+    result = await icloud_photos.start_auth(USER_ID, "user@example.com", "hunter2")
+
+    assert result["connected"] is False
+    assert result["requires_2fa"] is False
+    assert "error" in result
+
+
+async def test_verify_2fa_handles_api_exception(monkeypatch):
+    service = FakeService(requires_2fa=True)
+    monkeypatch.setattr(icloud_photos, "_build_service", lambda user_id, u, p: service)
+    await icloud_photos.start_auth(USER_ID, "user@example.com", "hunter2")
+
+    def _boom(code):
+        raise ICloudPyAPIResponseException("Server Error", 500)
+
+    monkeypatch.setattr(service, "validate_2fa_code", _boom)
+
+    assert await icloud_photos.verify_2fa(USER_ID, "123456") is False
+
+
+async def test_list_photos_handles_421_auth_error_and_invalidates_cache(monkeypatch):
+    class ExplodingAlbum:
+        @property
+        def photos(self):
+            raise ICloudPyAPIResponseException("Authentication required for Account.", 421)
+
+    service = FakeService(albums={"All Photos": ExplodingAlbum()})
+    monkeypatch.setattr(icloud_photos, "_build_service", lambda user_id, u, p: service)
+    cache.set(icloud_photos._service_cache_key(USER_ID), service, 60)
+
+    photos = await icloud_photos.list_photos(USER_ID, "user@example.com", "hunter2")
+
+    assert photos == []
+    # Cache should be invalidated because 421 is an auth error
+    assert cache.get(icloud_photos._service_cache_key(USER_ID)) is None
+
+
+async def test_list_photos_handles_general_exception(monkeypatch):
+    class ExplodingAlbum:
+        @property
+        def photos(self):
+            raise RuntimeError("unexpected network failure")
+
+    service = FakeService(albums={"All Photos": ExplodingAlbum()})
+    monkeypatch.setattr(icloud_photos, "_build_service", lambda user_id, u, p: service)
+
+    photos = await icloud_photos.list_photos(USER_ID, "user@example.com", "hunter2")
+
+    assert photos == []
+
+
+async def test_fetch_photo_bytes_handles_421_on_download_and_invalidates_cache(monkeypatch):
+    class ExplodingAsset(FakeAsset):
+        def download(self, version: str = "original"):
+            raise ICloudPyAPIResponseException("Authentication required for Account.", 421)
+
+    asset = ExplodingAsset("id-1", "photo.jpg")
+    service = FakeService(albums={"All Photos": FakeAlbum([asset])})
+    monkeypatch.setattr(icloud_photos, "_build_service", lambda user_id, u, p: service)
+    cache.set(icloud_photos._service_cache_key(USER_ID), service, 60)
+
+    result = await icloud_photos.fetch_photo_bytes(USER_ID, "user@example.com", "hunter2", "id-1")
+
+    assert result is None
+    assert cache.get(icloud_photos._service_cache_key(USER_ID)) is None
+
+
+async def test_fetch_photo_bytes_handles_general_download_exception(monkeypatch):
+    class ExplodingAsset(FakeAsset):
+        def download(self, version: str = "original"):
+            raise RuntimeError("connection reset")
+
+    asset = ExplodingAsset("id-1", "photo.jpg")
+    service = FakeService(albums={"All Photos": FakeAlbum([asset])})
+    monkeypatch.setattr(icloud_photos, "_build_service", lambda user_id, u, p: service)
+
+    result = await icloud_photos.fetch_photo_bytes(USER_ID, "user@example.com", "hunter2", "id-1")
+
+    assert result is None
+
+
+async def test_iter_photo_chunks_handles_421_and_invalidates_cache(monkeypatch):
+    class ExplodingAlbum:
+        def iter_chunks(self, chunk_size: int):
+            raise ICloudPyAPIResponseException("Authentication required for Account.", 421)
+            yield []  # pragma: no cover
+
+    service = FakeService(albums={"All Photos": ExplodingAlbum()})
+    monkeypatch.setattr(icloud_photos, "_build_service", lambda user_id, u, p: service)
+    cache.set(icloud_photos._service_cache_key(USER_ID), service, 60)
+
+    seen = [chunk async for chunk in icloud_photos.iter_photo_chunks(USER_ID, "user@example.com", "hunter2")]
+
+    assert seen == []
+    assert cache.get(icloud_photos._service_cache_key(USER_ID)) is None
+
+
+async def test_get_or_build_service_handles_api_response_exception(monkeypatch):
+    def _fail(user_id, u, p):
+        raise ICloudPyAPIResponseException("Unauthorized", 401)
+
+    monkeypatch.setattr(icloud_photos, "_build_service", _fail)
+
+    service, err = await icloud_photos._get_or_build_service(USER_ID, "user@example.com", "hunter2")
+
+    assert service is None
+    assert err is not None
+    assert cache.get(icloud_photos._service_cache_key(USER_ID)) is None

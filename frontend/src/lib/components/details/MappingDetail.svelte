@@ -63,9 +63,10 @@
 	let selectedPlace = $state<MapSearchResult | null>(null);
 	let searchTimeout: ReturnType<typeof setTimeout>;
 
-	// Directions
-	let destinationInput = $state('');
-	let originInput = $state('');
+	// Directions -- destination/origin may arrive pre-filled from the AI
+	// assistant's show_mapping_detail navigation tool (see MappingPlugin).
+	let destinationInput = $state(page.url.searchParams.get('destination') ?? '');
+	let originInput = $state(page.url.searchParams.get('origin') ?? '');
 	let mode = $state<(typeof TRAVEL_MODES)[number]>('driving');
 	let directionsLoading = $state(false);
 	let directionsError = $state<string | null>(null);
@@ -198,6 +199,13 @@
 		} finally {
 			directionsLoading = false;
 		}
+	}
+
+	// Fetch immediately if the directions panel was opened with a destination
+	// already filled in (see destinationInput's initializer above) -- runs
+	// once at mount, not on every panel switch.
+	if (panel === 'directions' && destinationInput) {
+		void getDirections();
 	}
 
 	function getDirectionsToPlace(place: NearbyPlace) {

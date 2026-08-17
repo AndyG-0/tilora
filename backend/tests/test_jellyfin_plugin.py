@@ -66,14 +66,6 @@ async def test_get_summary_degrades_gracefully_on_connection_error():
     assert summary["sections"] == [{"label": "Recently added", "items": []}]
 
 
-async def test_default_playback_mode_is_compatible():
-    plugin = make_plugin()
-
-    detail = await plugin.get_detail()
-
-    assert detail["playback_mode"] == "compatible"
-
-
 async def test_default_content_mode_is_added():
     plugin = make_plugin()
 

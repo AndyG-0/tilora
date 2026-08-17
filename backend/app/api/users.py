@@ -73,6 +73,7 @@ class UpdatePreferencesRequest(BaseModel):
     voice_name: str | None = None
     locale: str | None = None
     location: LocationPreference | None = None
+    always_on_mic: bool | None = None
 
 
 def _profile_shape(user: dict[str, Any]) -> dict[str, Any]:

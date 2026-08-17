@@ -14,6 +14,7 @@ as `app/api/jellyfin.py` and `app/api/pihole.py`.
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -24,6 +25,8 @@ from app.integrations import icloud_photos, icloud_shared_album, immich_client
 from app.plugins.base import registry
 from app.plugins.photos.plugin import IMAGE_EXTENSIONS, PhotosPlugin
 from app.storage import db
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/photos", tags=["photos"], dependencies=[Depends(get_current_user)])
 
@@ -71,12 +74,22 @@ async def _get_icloud_photo(settings: dict, guid: str) -> RedirectResponse:
         raise HTTPException(status_code=404, detail="Photo not found")
     token = icloud_shared_album.parse_token(raw_token)
 
-    photos = await icloud_shared_album.fetch_photos(token)
+    try:
+        photos = await icloud_shared_album.fetch_photos(token)
+    except Exception:
+        logger.warning("Failed to fetch iCloud shared album photos", exc_info=True)
+        raise HTTPException(status_code=404, detail="Photo not found") from None
+
     photo = next((p for p in photos if p["guid"] == guid), None)
     if photo is None:
         raise HTTPException(status_code=404, detail="Photo not found")
 
-    asset_url = await icloud_shared_album.fetch_asset_url(token, guid, photo["checksum"])
+    try:
+        asset_url = await icloud_shared_album.fetch_asset_url(token, guid, photo["checksum"])
+    except Exception:
+        logger.warning("Failed to fetch iCloud shared album asset URL", exc_info=True)
+        raise HTTPException(status_code=404, detail="Photo not found") from None
+
     if asset_url is None:
         raise HTTPException(status_code=404, detail="Photo not found")
 
@@ -97,7 +110,12 @@ async def _get_icloud_private_photo(user_id: str, settings: dict, photo_id: str)
     # Private-library asset URLs require the authenticated session's cookies,
     # unlike the Shared Album's public CDN links, so bytes must be proxied
     # through the backend rather than redirected to.
-    result = await icloud_photos.fetch_photo_bytes(user_id, username, password, photo_id, album_name)
+    try:
+        result = await icloud_photos.fetch_photo_bytes(user_id, username, password, photo_id, album_name)
+    except Exception:
+        logger.warning("Failed to fetch iCloud private photo '%s' for user '%s'", photo_id, user_id, exc_info=True)
+        raise HTTPException(status_code=404, detail="Photo not found") from None
+
     if result is None:
         raise HTTPException(status_code=404, detail="Photo not found")
 

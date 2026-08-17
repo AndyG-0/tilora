@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from app.integrations import nominatim_client, osrm_client, overpass_client
+from app.integrations import geocode, nominatim_client, osrm_client, overpass_client
 from app.integrations.overpass_client import CATEGORY_TAGS
 from app.plugins.base import Plugin, ToolDef
 from app.storage.db import get_user_preferences
@@ -74,30 +74,33 @@ class MappingPlugin(Plugin):
                 }
         return None
 
-    async def _resolve_point(self, place: str | None) -> dict[str, Any] | None:
+    async def _resolve_point(self, place: str | None, near: tuple[float, float] | None = None) -> dict[str, Any] | None:
         """Resolve a free-text place to a point, falling back to the default
-        origin when `place` is omitted."""
+        origin when `place` is omitted.
+
+        `near`, when given, biases the resolution towards that point -- see
+        app.integrations.geocode.resolve_near.
+        """
         if not place:
             return self._default_origin()
-        matches = await nominatim_client.search(place, limit=1)
-        if not matches:
-            return None
-        return {"latitude": matches[0]["latitude"], "longitude": matches[0]["longitude"], "name": matches[0]["name"]}
+        return await geocode.resolve_near(place, near=near)
 
     def get_ai_tools(self) -> list[ToolDef]:
         async def search_location(query: str) -> dict[str, Any]:
-            matches = await nominatim_client.search(query, limit=5)
+            near_origin = self._default_origin()
+            near = (near_origin["latitude"], near_origin["longitude"]) if near_origin else None
+            matches = await nominatim_client.search(query, limit=5, near=near)
             if not matches:
                 return {"error": f"Could not find a location for '{query}'."}
             return {"matches": matches}
 
         async def get_directions(destination: str, origin: str | None = None, mode: str = "driving") -> dict[str, Any]:
-            dest = await self._resolve_point(destination)
-            if dest is None:
-                return {"error": f"Could not find a location for '{destination}'."}
             orig = await self._resolve_point(origin)
             if orig is None:
                 return {"error": _NO_LOCATION_ERROR if not origin else f"Could not find a location for '{origin}'."}
+            dest = await self._resolve_point(destination, near=(orig["latitude"], orig["longitude"]))
+            if dest is None:
+                return {"error": f"Could not find a location for '{destination}'."}
             try:
                 result = await osrm_client.route(
                     (orig["latitude"], orig["longitude"]), (dest["latitude"], dest["longitude"]), mode
@@ -105,6 +108,16 @@ class MappingPlugin(Plugin):
             except osrm_client.OSRMError as exc:
                 return {"error": str(exc)}
             return {"origin": orig["name"], "destination": dest["name"], "mode": mode, **result}
+
+        async def show_mapping_detail(
+            panel: str | None = None, destination: str | None = None, origin: str | None = None
+        ) -> dict[str, Any]:
+            result: dict[str, Any] = {"widget_id": self.id, "panel": panel}
+            if destination:
+                result["destination"] = destination
+            if origin:
+                result["origin"] = origin
+            return result
 
         async def find_nearby_places(category: str, near: str | None = None, radius_m: int = 40234) -> dict[str, Any]:
             point = await self._resolve_point(near)
@@ -182,5 +195,40 @@ class MappingPlugin(Plugin):
                     "required": ["category"],
                 },
                 handler=find_nearby_places,
+            ),
+            ToolDef(
+                name=f"show_mapping_detail{suffix}",
+                description=(
+                    "Bring up the Mapping tile's detail page on the user's screen, in addition to "
+                    "answering in words. Pass panel='directions' when the user asks for directions or "
+                    "navigation to a place, panel='nearby' when they ask for nearby restaurants, gas "
+                    "stations, or other points of interest, or omit panel for a general map question. "
+                    "When panel='directions', also pass destination (and origin, only if the user named a "
+                    "starting point other than home) so the page opens with the same trip already filled in "
+                    "-- use the same place names you passed to get_directions."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "panel": {
+                            "type": "string",
+                            "enum": ["directions", "nearby"],
+                            "description": "Which panel to open. Omit for the tile's plain detail view.",
+                        },
+                        "destination": {
+                            "type": "string",
+                            "description": "Destination place name, when panel='directions'.",
+                        },
+                        "origin": {
+                            "type": "string",
+                            "description": (
+                                "Starting place name, only if the user specified one other than home, "
+                                "when panel='directions'."
+                            ),
+                        },
+                    },
+                },
+                handler=show_mapping_detail,
+                is_navigation=True,
             ),
         ]

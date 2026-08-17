@@ -57,6 +57,23 @@ def test_check_item_marks_checked_by_the_requesting_user(client, tmp_db):
     assert body["checked_by"] == "Alice"
 
 
+def test_check_item_toggles_checked_off_item_back_to_open(client, tmp_db):
+    item = db.add_shopping_item("shopping", "Eggs", "Bob")
+    db.check_shopping_item(item["id"], "Alice")
+    cache.set("summary:shopping:en", {"stale": True}, ttl_seconds=60)
+    cache.set("detail:shopping:en", {"stale": True}, ttl_seconds=60)
+
+    response = client.post(f"/api/shopping/{item['id']}/check")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["checked"] is False
+    assert body["checked_by"] is None
+    assert body["checked_at"] is None
+    assert cache.get("summary:shopping:en") is None
+    assert cache.get("detail:shopping:en") is None
+
+
 def test_check_item_returns_404_for_unknown_id(client, tmp_db):
     response = client.post("/api/shopping/9999/check")
 

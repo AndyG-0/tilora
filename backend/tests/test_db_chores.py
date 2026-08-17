@@ -41,6 +41,17 @@ def test_complete_chore_marks_done_and_sets_completed_at(tmp_db):
     assert completed["completed_at"] is not None
 
 
+def test_complete_chore_uncompletes_already_completed_chore(tmp_db):
+    chore = db.add_chore("chores", "user-1", "Do it")
+    completed = db.complete_chore(chore["id"], "user-1")
+    assert completed["completed"] is True
+
+    uncompleted = db.complete_chore(chore["id"], "user-1")
+
+    assert uncompleted["completed"] is False
+    assert uncompleted["completed_at"] is None
+
+
 def test_complete_chore_returns_none_for_wrong_user(tmp_db):
     chore = db.add_chore("chores", "user-1", "Mine")
 

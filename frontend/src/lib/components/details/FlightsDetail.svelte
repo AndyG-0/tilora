@@ -5,6 +5,7 @@
 	import { formatAircraftTooltip, formatAirlineTooltip, formatSpeedTooltip } from '$lib/aircraftTypes';
 	import LedText from '$lib/components/LedText.svelte';
 	import AircraftIcon from '$lib/components/AircraftIcon.svelte';
+	import AircraftPhoto from '$lib/components/AircraftPhoto.svelte';
 	import FlightsMap from '$lib/components/FlightsMap.svelte';
 	import { _ } from 'svelte-i18n';
 	import { get } from 'svelte/store';
@@ -16,6 +17,7 @@
 	}
 
 	interface FlightItem {
+		hex?: string | null;
 		callsign: string;
 		airline_code: string | null;
 		airline_name: string | null;
@@ -31,6 +33,10 @@
 		longitude: number | null;
 		origin: AirportRef | null;
 		destination: AirportRef | null;
+		photo_thumbnail_url?: string | null;
+		photo_url?: string | null;
+		photo_photographer?: string | null;
+		photo_link?: string | null;
 	}
 
 	const LED_COLOR = '#ff8a00';
@@ -60,6 +66,9 @@
 	// svelte-ignore state_referenced_locally -- seed local state from the
 	// initial load once; subsequent updates come from selectCity/saveRadius/selectSpeedUnit.
 	let flightsData = $state(initialData);
+
+	let selectedCallsign = $state<string | null>(null);
+	let rowElements = $state<Record<string, HTMLElement | null>>({});
 
 	let editingLocation = $state(false);
 	let query = $state('');
@@ -153,6 +162,17 @@
 			savingSpeedUnit = false;
 		}
 	}
+
+	function toggleSelectFlight(callsign: string) {
+		selectedCallsign = selectedCallsign === callsign ? null : callsign;
+	}
+
+	$effect(() => {
+		const cs = selectedCallsign;
+		if (cs && rowElements[cs] && typeof rowElements[cs].scrollIntoView === 'function') {
+			rowElements[cs].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+		}
+	});
 </script>
 
 <div class="header">
@@ -162,7 +182,7 @@
 	</button>
 </div>
 
-<FlightsMap data={flightsData} />
+<FlightsMap data={flightsData} {selectedCallsign} onselectflight={(cs) => (selectedCallsign = cs)} />
 
 {#if editingLocation}
 	<div class="location-search">
@@ -236,6 +256,7 @@
 			<span>{$_('flights.detail.column_distance')}</span>
 		</div>
 		{#each flightsData.flights as flight (flight.callsign)}
+			{@const isSelected = selectedCallsign === flight.callsign}
 			{@const logo = airlineLogoSrc(flight.airline_code)}
 			{@const airlineTitle = formatAirlineTooltip(flight)}
 			{@const aircraftTitle = formatAircraftTooltip(
@@ -244,15 +265,23 @@
 				$_('flights.detail.tail_label'),
 			)}
 			{@const speedTitle = formatSpeedTooltip(flight.speed_kts, speedUnit)}
-			<div class="table-row">
+			<div
+				class="table-row"
+				class:selected={isSelected}
+				onclick={() => toggleSelectFlight(flight.callsign)}
+				onkeydown={(e) => {
+					if (e.key === 'Enter' || e.key === ' ') {
+						e.preventDefault();
+						toggleSelectFlight(flight.callsign);
+					}
+				}}
+				tabindex="0"
+				role="button"
+				aria-pressed={isSelected}
+				bind:this={rowElements[flight.callsign]}
+			>
 				{#if airlineTitle}
-					<span
-						class="flight-cell hover-cell"
-						tabindex="0"
-						role="button"
-						aria-haspopup="true"
-						aria-label={airlineTitle}
-					>
+					<span class="flight-cell hover-cell" aria-label={airlineTitle}>
 						<span class="hover-underline">
 							{#if logo}
 								<img class="logo" src={logo} alt={flight.airline_name ?? flight.airline_code} />
@@ -274,7 +303,7 @@
 					</span>
 				{/if}
 				{#if aircraftTitle}
-					<span class="type-cell hover-cell" tabindex="0" role="button" aria-haspopup="true" aria-label={aircraftTitle}>
+					<span class="type-cell hover-cell" aria-label={aircraftTitle}>
 						<span class="hover-underline">
 							<span class="icon">
 								<AircraftIcon
@@ -285,7 +314,19 @@
 							</span>
 							<LedText text={flight.aircraft_type ?? '—'} color={LED_COLOR} />
 						</span>
-						<div class="cell-popover" role="tooltip">{aircraftTitle}</div>
+						<div class="cell-popover aircraft-popover" role="tooltip">
+							<div class="aircraft-popover-photo">
+								<AircraftPhoto
+									src={flight.photo_thumbnail_url}
+									alt={flight.aircraft_name ?? flight.aircraft_type ?? flight.callsign}
+									kind={flight.aircraft_kind}
+									size="md"
+									photographer={flight.photo_photographer}
+									link={flight.photo_link}
+								/>
+							</div>
+							<div class="aircraft-popover-text">{aircraftTitle}</div>
+						</div>
 					</span>
 				{:else}
 					<span class="type-cell">
@@ -305,7 +346,7 @@
 					color={LED_COLOR}
 				/>
 				{#if speedTitle}
-					<span class="speed-cell hover-cell" tabindex="0" role="button" aria-haspopup="true" aria-label={speedTitle}>
+					<span class="speed-cell hover-cell" aria-label={speedTitle}>
 						<span class="hover-underline">
 							<LedText text={`${Math.round(flight.speed_kts ?? 0)} KTS`} color={LED_COLOR} />
 						</span>
@@ -463,7 +504,7 @@
 		margin-top: 1.5rem;
 		display: flex;
 		flex-direction: column;
-		gap: 0.25rem;
+		gap: 0.35rem;
 	}
 
 	.table-header,
@@ -486,6 +527,30 @@
 		background: #0a0a0a;
 		border: 1px solid var(--color-border);
 		border-radius: 0.75rem;
+		cursor: pointer;
+		outline: none;
+		transition:
+			border-color 0.15s ease,
+			box-shadow 0.15s ease,
+			background-color 0.15s ease;
+	}
+
+	.table-row:hover {
+		border-color: rgba(255, 138, 0, 0.4);
+		background: #121212;
+	}
+
+	.table-row:focus-visible {
+		border-color: #ff8a00;
+		box-shadow: 0 0 0 2px rgba(255, 138, 0, 0.3);
+	}
+
+	.table-row.selected {
+		border-color: #ff8a00;
+		background: rgba(255, 138, 0, 0.06);
+		box-shadow:
+			0 0 14px rgba(255, 138, 0, 0.25),
+			inset 0 0 0 1px #ff8a00;
 	}
 
 	.flight-cell {
@@ -519,10 +584,6 @@
 		outline: none;
 	}
 
-	.hover-cell[role='button'] {
-		cursor: pointer;
-	}
-
 	.hover-underline {
 		display: inline-flex;
 		align-items: center;
@@ -530,14 +591,14 @@
 		min-width: 0;
 	}
 
-	.hover-cell[role='button'] .hover-underline {
+	.hover-cell .hover-underline {
 		border-bottom: 1px dashed var(--color-text-muted);
 		transition: border-color 0.15s ease;
 	}
 
-	.hover-cell[role='button']:hover .hover-underline,
-	.hover-cell[role='button']:focus .hover-underline,
-	.hover-cell[role='button']:focus-within .hover-underline {
+	.hover-cell:hover .hover-underline,
+	.hover-cell:focus .hover-underline,
+	.hover-cell:focus-within .hover-underline {
 		border-color: var(--color-accent);
 	}
 
@@ -545,10 +606,10 @@
 		position: absolute;
 		top: calc(100% + 0.4rem);
 		left: 0;
-		z-index: 10;
-		max-width: 16rem;
+		z-index: 20;
+		max-width: 18rem;
 		width: max-content;
-		background: var(--color-surface);
+		background: var(--color-surface, #141414);
 		border: 1px solid var(--color-border);
 		border-radius: 0.5rem;
 		padding: 0.45rem 0.65rem;
@@ -558,7 +619,7 @@
 		color: var(--color-text);
 		text-transform: none;
 		letter-spacing: normal;
-		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
 		opacity: 0;
 		visibility: hidden;
 		transform: translateY(4px);
@@ -567,6 +628,25 @@
 			opacity 0.15s ease,
 			transform 0.15s ease,
 			visibility 0.15s;
+	}
+
+	.aircraft-popover {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		padding: 0.5rem;
+		max-width: 16rem;
+	}
+
+	.aircraft-popover-photo {
+		width: 100%;
+		display: flex;
+		justify-content: center;
+	}
+
+	.aircraft-popover-text {
+		font-size: 0.78rem;
+		line-height: 1.3;
 	}
 
 	.hover-cell:hover .cell-popover,

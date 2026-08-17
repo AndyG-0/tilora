@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 
@@ -1206,4 +1207,29 @@ def test_migration_017_migrates_weather_flights_to_personal_settings(tmp_path):
         "SELECT settings FROM widget_user_settings WHERE user_id = 'bob' AND widget_id = 'flights-custom'"
     ).fetchone()
     assert json.loads(bob_flights[0])["location_name"] == "London, UK"
+    conn.close()
+
+
+def test_migration_018_clean_photos_widget_user_settings(tmp_path):
+    db_path = tmp_path / "migration18.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.executescript(db._SCHEMA)
+    conn.execute("INSERT INTO custom_widgets (id, type, layout, tab) VALUES ('photos-custom', 'photos', '{}', 'home')")
+    conn.executemany(
+        "INSERT INTO widget_user_settings (user_id, widget_id, settings) VALUES (?, ?, ?)",
+        [
+            ("alice", "photos", json.dumps({"provider": "local"})),
+            ("alice", "photos-custom", json.dumps({"provider": "local"})),
+            ("alice", "rss", json.dumps({"feed": "news"})),
+        ],
+    )
+    conn.commit()
+
+    db._migration_018_clean_photos_widget_user_settings(conn)
+    conn.commit()
+
+    rows = conn.execute("SELECT user_id, widget_id FROM widget_user_settings").fetchall()
+    remaining = {(r["user_id"], r["widget_id"]) for r in rows}
+    assert remaining == {("alice", "rss")}
     conn.close()

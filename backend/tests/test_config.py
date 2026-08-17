@@ -136,3 +136,29 @@ def test_list_widget_configs_still_includes_removed_custom_widget(dashboard_yaml
     widgets = config.list_widget_configs(parsed)
 
     assert "weather-abc123" in [w["id"] for w in widgets]
+
+
+def test_cors_origins_splits_comma_separated_list():
+    cfg = config.Settings(cors_origin="http://localhost:5173, http://192.168.1.50:3000 ,  ")
+    assert cfg.cors_origins == ["http://localhost:5173", "http://192.168.1.50:3000"]
+
+
+def test_cors_origin_regex_matches_lan_origins():
+    import re
+
+    regex = re.compile(config.settings.cors_origin_regex)
+    # Localhost and loopback
+    assert regex.fullmatch("http://localhost:5173")
+    assert regex.fullmatch("http://127.0.0.1:8000")
+    assert regex.fullmatch("http://0.0.0.0:5173")
+    # Private RFC 1918 networks
+    assert regex.fullmatch("http://192.168.1.50:5173")
+    assert regex.fullmatch("http://192.168.0.1:3000")
+    assert regex.fullmatch("http://10.0.0.15:5173")
+    assert regex.fullmatch("http://172.20.10.5:5173")
+    # mDNS local domains
+    assert regex.fullmatch("http://andys-macbook.local:5173")
+    assert regex.fullmatch("https://tilora.local")
+    # Disallow non-LAN public origins
+    assert not regex.fullmatch("http://malicious.example.com")
+    assert not regex.fullmatch("http://8.8.8.8:5173")

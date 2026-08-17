@@ -28,12 +28,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
 from icloudpy import ICloudPyService
-from icloudpy.exceptions import ICloudPyFailedLoginException
+from icloudpy.exceptions import ICloudPyAPIResponseException, ICloudPyException, ICloudPyFailedLoginException
 
 from app.config import ICLOUD_SESSION_DIR
 from app.storage.cache import cache
@@ -66,38 +67,72 @@ def is_configured(username: str | None, password: str | None) -> bool:
     return bool(username and password)
 
 
+def _is_auth_error(exc: Exception) -> bool:
+    if isinstance(exc, ICloudPyAPIResponseException):
+        return exc.code in (421, 450, 500) or "Authentication required" in str(exc)
+    return False
+
+
+def _format_auth_error(exc: Exception) -> str:
+    msg = str(exc)
+    if "503" in msg or "Service Unavailable" in msg:
+        return (
+            "Apple authentication server is temporarily throttling or unavailable (HTTP 503). "
+            "Please wait 15–30 minutes before trying again."
+        )
+    if "Invalid email/password" in msg:
+        return "Invalid Apple ID or password."
+    return "Could not connect to Apple ID."
+
+
 def _build_service(user_id: str, username: str, password: str) -> ICloudPyService:
     session_dir = _session_dir(user_id)
     session_dir.mkdir(parents=True, exist_ok=True)
     return ICloudPyService(username, password, cookie_directory=str(session_dir))
 
 
-async def _get_or_build_service(user_id: str, username: str, password: str) -> ICloudPyService | None:
+async def _get_or_build_service(
+    user_id: str, username: str, password: str
+) -> tuple[ICloudPyService | None, str | None]:
     cache_key = _service_cache_key(user_id)
     cached = cache.get(cache_key)
     if cached is not None:
-        return cached
+        return cached, None
 
     try:
         service = await asyncio.to_thread(_build_service, user_id, username, password)
-    except ICloudPyFailedLoginException:
-        logger.warning("iCloud login failed for account '%s'", username, exc_info=True)
-        return None
+    except ICloudPyFailedLoginException as exc:
+        logger.warning("iCloud login failed for account '%s': %s", username, exc)
+        return None, _format_auth_error(exc)
+    except ICloudPyAPIResponseException as exc:
+        logger.warning("iCloud API error initializing service for account '%s': %s", username, exc)
+        return None, _format_auth_error(exc)
+    except (ICloudPyException, Exception) as exc:
+        logger.warning("iCloud service initialization failed for account '%s'", username, exc_info=True)
+        return None, _format_auth_error(exc)
 
     if not service.requires_2fa:
         cache.set(cache_key, service, _SERVICE_CACHE_TTL_SECONDS)
-    return service
+    return service, None
 
 
 async def start_auth(user_id: str, username: str, password: str) -> dict[str, Any]:
     """Authenticates (or resumes a trusted session); reports whether 2FA is needed."""
-    service = await _get_or_build_service(user_id, username, password)
+    try:
+        service, error_msg = await _get_or_build_service(user_id, username, password)
+    except Exception as exc:
+        logger.warning("iCloud start_auth failed for user %s", user_id, exc_info=True)
+        return {"connected": False, "requires_2fa": False, "error": _format_auth_error(exc)}
+
     if service is None:
-        return {"connected": False, "requires_2fa": False}
+        return {"connected": False, "requires_2fa": False, "error": error_msg}
     if service.requires_2fa:
-        pushed = await asyncio.to_thread(service.trigger_2fa_push_notification)
-        if not pushed:
-            logger.warning("iCloud 2FA push notification trigger failed for account '%s'", username)
+        try:
+            pushed = await asyncio.to_thread(service.trigger_2fa_push_notification)
+            if not pushed:
+                logger.warning("iCloud 2FA push notification trigger failed for account '%s'", username)
+        except Exception:
+            logger.warning("iCloud 2FA push notification failed for account '%s'", username, exc_info=True)
         cache.set(_pending_service_cache_key(user_id), service, _PENDING_SERVICE_TTL_SECONDS)
         return {"connected": False, "requires_2fa": True}
     return {"connected": True, "requires_2fa": False}
@@ -115,14 +150,25 @@ async def verify_2fa(user_id: str, code: str) -> bool:
             service.trust_session()
         return True
 
-    verified = await asyncio.to_thread(_verify)
+    try:
+        verified = await asyncio.to_thread(_verify)
+    except Exception:
+        logger.warning("iCloud 2FA verification failed for user %s", user_id, exc_info=True)
+        return False
+
     if verified:
         cache.delete(_pending_service_cache_key(user_id))
         cache.set(_service_cache_key(user_id), service, _SERVICE_CACHE_TTL_SECONDS)
     return verified
 
 
-def invalidate_service_cache(user_id: str) -> None:
+def clear_session_dir(user_id: str) -> None:
+    session_dir = _session_dir(user_id)
+    if session_dir.exists():
+        shutil.rmtree(session_dir, ignore_errors=True)
+
+
+def invalidate_service_cache(user_id: str, clear_disk: bool = False) -> None:
     """Drops any cached authenticated service/photo-list state for a user.
 
     `_get_or_build_service` only rebuilds when the cache is empty, so it has
@@ -135,6 +181,8 @@ def invalidate_service_cache(user_id: str) -> None:
     cache.delete(_service_cache_key(user_id))
     cache.delete(_pending_service_cache_key(user_id))
     cache.delete(_photo_list_cache_key(user_id))
+    if clear_disk:
+        clear_session_dir(user_id)
 
 
 def is_connected_cached(user_id: str) -> bool:
@@ -159,7 +207,7 @@ async def list_photos(
     if cached is not None:
         return [_photo_dict(asset) for asset in cached]
 
-    service = await _get_or_build_service(user_id, username, password)
+    service, _ = await _get_or_build_service(user_id, username, password)
     if service is None or service.requires_2fa:
         return []
 
@@ -169,7 +217,17 @@ async def list_photos(
             return []
         return list(album.photos)
 
-    assets = await asyncio.to_thread(_list)
+    try:
+        assets = await asyncio.to_thread(_list)
+    except ICloudPyAPIResponseException as exc:
+        logger.warning("iCloud API error in list_photos for user %s: %s", user_id, exc)
+        if _is_auth_error(exc):
+            invalidate_service_cache(user_id)
+        return []
+    except Exception as exc:
+        logger.warning("iCloud list_photos failed for user %s: %s", user_id, exc, exc_info=True)
+        return []
+
     cache.set(cache_key, assets, _PHOTO_LIST_CACHE_TTL_SECONDS)
     return [_photo_dict(asset) for asset in assets]
 
@@ -188,7 +246,7 @@ async def iter_photo_chunks(
     small bounded queue, so at most a couple of chunks are ever in memory
     regardless of album size.
     """
-    service = await _get_or_build_service(user_id, username, password)
+    service, _ = await _get_or_build_service(user_id, username, password)
     if service is None or service.requires_2fa:
         return
 
@@ -203,6 +261,12 @@ async def iter_photo_chunks(
                 for chunk in album.iter_chunks(chunk_size=chunk_size):
                     dicts = [_photo_dict(asset) for asset in chunk]
                     asyncio.run_coroutine_threadsafe(queue.put(dicts), loop).result()
+        except ICloudPyAPIResponseException as exc:
+            logger.warning("iCloud API error in iter_photo_chunks for user %s: %s", user_id, exc)
+            if _is_auth_error(exc):
+                invalidate_service_cache(user_id)
+        except Exception as exc:
+            logger.warning("iCloud iter_photo_chunks failed for user %s: %s", user_id, exc, exc_info=True)
         finally:
             asyncio.run_coroutine_threadsafe(queue.put(sentinel), loop).result()
 
@@ -224,7 +288,10 @@ async def fetch_photo_bytes(
     cache_key = _photo_list_cache_key(user_id)
     cached = cache.get(cache_key)
     if cached is None:
-        await list_photos(user_id, username, password, album_name)
+        try:
+            await list_photos(user_id, username, password, album_name)
+        except Exception:
+            logger.warning("iCloud failed listing photos during fetch_photo_bytes for user %s", user_id, exc_info=True)
         cached = cache.get(cache_key) or []
 
     asset = next((a for a in cached if a.id == photo_id), None)
@@ -237,4 +304,13 @@ async def fetch_photo_bytes(
             return None
         return response.content, response.headers.get("content-type", "image/jpeg")
 
-    return await asyncio.to_thread(_download)
+    try:
+        return await asyncio.to_thread(_download)
+    except ICloudPyAPIResponseException as exc:
+        logger.warning("iCloud API error downloading photo %s for user %s: %s", photo_id, user_id, exc)
+        if _is_auth_error(exc):
+            invalidate_service_cache(user_id)
+        return None
+    except Exception as exc:
+        logger.warning("iCloud download failed for photo %s (user %s): %s", photo_id, user_id, exc, exc_info=True)
+        return None

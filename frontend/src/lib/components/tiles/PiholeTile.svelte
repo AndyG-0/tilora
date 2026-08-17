@@ -25,6 +25,9 @@
 	{:else if !summary.connected}
 		<div class="title">Pi-hole</div>
 		<div class="status">{$_('common.not_connected')}</div>
+	{:else if summary.error}
+		<div class="title">Pi-hole</div>
+		<div class="status error">{summary.error}</div>
 	{:else}
 		<div class="header">
 			<div class="title">Pi-hole</div>
@@ -80,5 +83,9 @@
 
 	.status {
 		color: var(--color-text-muted);
+	}
+
+	.status.error {
+		color: var(--color-error);
 	}
 </style>

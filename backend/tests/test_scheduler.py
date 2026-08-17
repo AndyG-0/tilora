@@ -6,6 +6,7 @@ import pytest
 
 import app.scheduler as scheduler_module
 from app import config
+from app.ai.provider import PromptResult
 from app.plugins.ai_insights.plugin import AIInsightsPlugin
 from app.plugins.base import registry
 from app.plugins.packages.plugin import PackagesPlugin
@@ -56,7 +57,7 @@ async def test_run_ai_widget_records_successful_run(tmp_db, dashboard_yaml, monk
     registry.register(plugin)
 
     async def fake_run_prompt(self, prompt, max_tool_rounds=4, system_prompt=None):
-        return "Sunny and 75."
+        return PromptResult("Sunny and 75.")
 
     monkeypatch.setattr("app.ai.provider.AIProvider.run_prompt", fake_run_prompt)
 
@@ -78,7 +79,7 @@ async def test_run_ai_widget_passes_topics_as_allowed_widget_ids(tmp_db, dashboa
 
     async def fake_ask(text, system_prompt=None, user=None, device=None, allowed_widget_ids=None):
         captured["allowed_widget_ids"] = allowed_widget_ids
-        return "Sunny and 75."
+        return PromptResult("Sunny and 75.")
 
     monkeypatch.setattr(scheduler_module.assistant, "ask", fake_ask)
 
@@ -94,7 +95,7 @@ async def test_run_ai_widget_passes_none_when_no_topics_selected(tmp_db, dashboa
 
     async def fake_ask(text, system_prompt=None, user=None, device=None, allowed_widget_ids=None):
         captured["allowed_widget_ids"] = allowed_widget_ids
-        return "Sunny and 75."
+        return PromptResult("Sunny and 75.")
 
     monkeypatch.setattr(scheduler_module.assistant, "ask", fake_ask)
 
@@ -110,7 +111,7 @@ async def test_run_ai_widget_passes_no_system_prompt_for_default_language(tmp_db
 
     async def fake_ask(text, system_prompt=None, user=None, device=None, allowed_widget_ids=None):
         captured["system_prompt"] = system_prompt
-        return "Sunny and 75."
+        return PromptResult("Sunny and 75.")
 
     monkeypatch.setattr(scheduler_module.assistant, "ask", fake_ask)
 
@@ -131,7 +132,7 @@ async def test_run_ai_widget_passes_locale_instruction_for_configured_language(t
 
     async def fake_ask(text, system_prompt=None, user=None, device=None, allowed_widget_ids=None):
         captured["system_prompt"] = system_prompt
-        return "Sunny and 75."
+        return PromptResult("Sunny and 75.")
 
     monkeypatch.setattr(scheduler_module.assistant, "ask", fake_ask)
 
@@ -163,7 +164,7 @@ async def test_run_ai_widget_resolves_owner_or_admin_user(tmp_db, dashboard_yaml
     async def fake_ask(text, system_prompt=None, user=None, device=None, allowed_widget_ids=None):
         captured["user"] = user
         captured["device"] = device
-        return "Sunny and 75."
+        return PromptResult("Sunny and 75.")
 
     monkeypatch.setattr(scheduler_module.assistant, "ask", fake_ask)
 

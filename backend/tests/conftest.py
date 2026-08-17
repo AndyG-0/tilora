@@ -4,6 +4,7 @@ import pytest
 
 from app import auth, config, crypto
 from app.plugins.base import registry
+from app.scheduler import scheduler
 from app.storage import db
 from app.storage.cache import cache
 
@@ -16,10 +17,12 @@ def _reset_shared_state():
     registry._plugins.clear()
     cache._store.clear()
     auth._failed_attempts.clear()
+    scheduler.remove_all_jobs()
     yield
     registry._plugins.clear()
     cache._store.clear()
     auth._failed_attempts.clear()
+    scheduler.remove_all_jobs()
 
 
 @pytest.fixture(autouse=True)

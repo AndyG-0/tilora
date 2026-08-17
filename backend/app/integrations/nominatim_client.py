@@ -33,9 +33,30 @@ def _normalize(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def search(query: str, limit: int = 8) -> list[dict[str, Any]]:
-    """Look up `query` (an address, place name, or POI) via Nominatim."""
-    params = {"q": query, "format": "jsonv2", "addressdetails": 1, "limit": limit}
+#: Half-width, in degrees, of the soft-bias viewbox drawn around `near`. ~1
+#: degree is a loose regional box (varies with latitude, but roughly
+#: 80-111km) -- wide enough to still find a chain location in a nearby
+#: suburb, without being so tight that a genuinely sparse area (e.g. the only
+#: airport within 100mi) falls outside it and gets dropped.
+_NEAR_BIAS_DEGREES = 1.0
+
+
+async def search(query: str, limit: int = 8, near: tuple[float, float] | None = None) -> list[dict[str, Any]]:
+    """Look up `query` (an address, place name, or POI) via Nominatim.
+
+    `near`, when given, is a (latitude, longitude) point Nominatim should
+    prefer results around -- e.g. a chain name like "Taco Bell" has matches
+    worldwide, and without a bias Nominatim's global ranking can return one
+    nowhere near the user. This is a soft preference (no `bounded=1`), so an
+    unambiguous or genuinely distant match (an address, a specific city) is
+    still returned even if it falls outside the box.
+    """
+    params: dict[str, Any] = {"q": query, "format": "jsonv2", "addressdetails": 1, "limit": limit}
+    if near is not None:
+        lat, lon = near
+        d = _NEAR_BIAS_DEGREES
+        # Rounded to avoid float noise (e.g. 31.755499999999998) in the URL.
+        params["viewbox"] = f"{round(lon - d, 4)},{round(lat + d, 4)},{round(lon + d, 4)},{round(lat - d, 4)}"
     try:
         async with httpx.AsyncClient(timeout=10, headers=_HEADERS) as client:
             response = await client.get(SEARCH_URL, params=params)

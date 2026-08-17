@@ -64,7 +64,7 @@ async def _authenticate(base_url: str, widget_id: str, password: str) -> PiholeS
     if not session.get("valid"):
         raise PiholeError(session.get("message") or "Pi-hole rejected that password.")
 
-    result = PiholeSession(sid=session["sid"], csrf=session["csrf"])
+    result = PiholeSession(sid=session["sid"], csrf=session.get("csrf", ""))
     ttl = max(int(session.get("validity", 1800)) - _SESSION_TTL_SAFETY_MARGIN_SECONDS, _MIN_SESSION_TTL_SECONDS)
     cache.set(f"pihole_sid:{widget_id}", result, ttl)
     return result
@@ -93,7 +93,12 @@ async def _request(
 
     async def send(session: PiholeSession) -> httpx.Response:
         query = {**(params or {}), "sid": session.sid}
-        headers = {"X-FTL-CSRF": session.csrf} if method != "GET" else {}
+        headers = {
+            "X-FTL-SID": session.sid,
+            "sid": session.sid,
+        }
+        if session.csrf:
+            headers["X-FTL-CSRF"] = session.csrf
         return await _client.request(method, f"{base_url}{path}", params=query, headers=headers, json=json)
 
     try:

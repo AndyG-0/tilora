@@ -29,6 +29,11 @@ class ToolDef:
     description: str
     parameters: dict[str, Any]
     handler: Callable[..., Awaitable[Any]]
+    #: True marks this as a "navigate to my own detail page" tool rather than
+    #: an ordinary data tool -- its successful result is captured by
+    #: ToolBridge as the frontend navigation action, in addition to being fed
+    #: back to the model like any other tool result. See ToolBridge.call.
+    is_navigation: bool = False
 
 
 class Plugin(ABC):

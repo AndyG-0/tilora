@@ -1,23 +1,29 @@
 <script lang="ts">
+	import type Hls from 'hls.js';
 	import { onMount } from 'svelte';
 	import { _ } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 	import { api, type JellyfinMediaDetail } from '$lib/api';
+	import { markDirectPlayFailed, shouldForceTranscode } from '$lib/jellyfinPlaybackCache';
 
 	interface Props {
-		widgetId?: string;
-		itemId?: string;
-		src: string;
+		widgetId: string;
+		itemId: string;
 		title: string;
 		onClose: () => void;
 	}
 
-	let { widgetId, itemId, src, title, onClose }: Props = $props();
+	let { widgetId, itemId, title, onClose }: Props = $props();
+
+	// Only containers a browser's native <video> element can demux without
+	// help. Everything else (MKV, AVI, TS, ...) always falls back to HLS.
+	const DIRECT_PLAY_CONTAINERS = new Set(['mp4', 'm4v', 'mov']);
+	const VIDEO_CODEC_MAP: Record<string, string> = { h264: 'avc1.640028', hevc: 'hvc1.1.6.L93.B0' };
+	const AUDIO_CODEC_MAP: Record<string, string> = { aac: 'mp4a.40.2' };
 
 	let videoElement = $state<HTMLVideoElement | null>(null);
 	let mediaDetail = $state<JellyfinMediaDetail | null>(null);
 
-	// svelte-ignore state_referenced_locally
-	let currentStreamUrl = $state(src);
 	let selectedAudioIndex = $state<number | null>(null);
 	let selectedSubtitleIndex = $state<number | null>(null);
 
@@ -30,6 +36,19 @@
 	let showPlaybackInfo = $state(false);
 
 	let pendingSeekTime = $state<number | null>(null);
+
+	let playbackMethod = $state<'direct' | 'hls' | null>(null);
+	let usedCachedFallback = $state(false);
+	let errorMessage = $state<string | null>(null);
+	// Starting a fresh HLS transcode can take a few seconds before Jellyfin
+	// has a first segment ready — without this, the player just sits on a
+	// black frame with no indication anything is happening.
+	let isBuffering = $state(true);
+
+	let hlsPlayer: Hls | undefined;
+	let playSessionId: string | null = null;
+	let destroyed = false;
+	let progressIntervalId: ReturnType<typeof setInterval> | undefined;
 
 	function portal(node: HTMLElement) {
 		document.body.appendChild(node);
@@ -61,11 +80,168 @@
 		}
 	}
 
+	function isDirectPlayEligible(node: HTMLVideoElement, detail: JellyfinMediaDetail): boolean {
+		const container = detail.container?.toLowerCase();
+		if (!container || !DIRECT_PLAY_CONTAINERS.has(container)) return false;
+
+		const videoCodec = detail.video_stream?.codec?.toLowerCase();
+		const mappedVideo = videoCodec ? VIDEO_CODEC_MAP[videoCodec] : undefined;
+		if (!mappedVideo) return false;
+
+		const audioCodec =
+			detail.audio_streams?.find((s) => s.index === selectedAudioIndex)?.codec?.toLowerCase() ??
+			detail.audio_streams?.[0]?.codec?.toLowerCase();
+		const mappedAudio = audioCodec ? AUDIO_CODEC_MAP[audioCodec] : undefined;
+
+		const codecs = mappedAudio ? `${mappedVideo}, ${mappedAudio}` : mappedVideo;
+		const support = node.canPlayType(`video/mp4; codecs="${codecs}"`);
+		return support === 'probably' || support === 'maybe';
+	}
+
+	function teardownHls() {
+		hlsPlayer?.destroy();
+		hlsPlayer = undefined;
+		stopProgressReporting();
+	}
+
+	// Heartbeat so Jellyfin's own "continue watching" resume position stays
+	// current while transcoding, rather than only updating once the session
+	// ends (which is what made it feel stuck/stale before this).
+	function startProgressReporting() {
+		stopProgressReporting();
+		progressIntervalId = setInterval(() => {
+			if (!playSessionId || !videoElement) return;
+			api
+				.jellyfinReportPlaybackProgress(widgetId, itemId, playSessionId, videoElement.currentTime, videoElement.paused)
+				.catch(() => {});
+		}, 10000);
+	}
+
+	function stopProgressReporting() {
+		if (progressIntervalId !== undefined) {
+			clearInterval(progressIntervalId);
+			progressIntervalId = undefined;
+		}
+	}
+
+	// `crypto.randomUUID()` is spec'd as secure-context-only, so it's missing
+	// on iPhones hitting the dev server over `http://<lan-ip>` — that made
+	// this throw before any HLS request went out. `getRandomValues` has no
+	// such restriction, so build the UUID from that instead.
+	function generateSessionId(): string {
+		const bytes = new Uint8Array(16);
+		crypto.getRandomValues(bytes);
+		bytes[6] = (bytes[6] & 0x0f) | 0x40;
+		bytes[8] = (bytes[8] & 0x3f) | 0x80;
+		const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0'));
+		return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`;
+	}
+
+	function attachDirectPlay(node: HTMLVideoElement) {
+		teardownHls();
+		errorMessage = null;
+		isBuffering = true;
+		playbackMethod = 'direct';
+		node.src = api.jellyfinStreamUrl(widgetId, itemId);
+	}
+
+	async function attachHlsPlayer(node: HTMLVideoElement) {
+		teardownHls();
+		errorMessage = null;
+		isBuffering = true;
+		playbackMethod = 'hls';
+		playSessionId = generateSessionId();
+		const url = api.jellyfinHlsMasterUrl(widgetId, itemId, {
+			playSessionId,
+			...(selectedAudioIndex !== null && { audioStreamIndex: selectedAudioIndex }),
+		});
+
+		api.jellyfinReportPlaybackStart(widgetId, itemId, playSessionId).catch(() => {});
+		startProgressReporting();
+
+		if (node.canPlayType('application/vnd.apple.mpegurl')) {
+			// Native HLS (Safari/iOS) — no extra JS needed, same lesson as
+			// HDHomeRun leaning on the browser's own decoder.
+			node.src = url;
+			return;
+		}
+
+		const { default: HlsCtor } = await import('hls.js');
+		if (destroyed) return;
+		if (!HlsCtor.isSupported()) {
+			errorMessage = get(_)('player.playback_failed');
+			return;
+		}
+		hlsPlayer = new HlsCtor();
+		hlsPlayer.on(HlsCtor.Events.ERROR, (_event, data) => {
+			if (!data.fatal) return;
+			errorMessage = get(_)('player.playback_failed');
+		});
+		hlsPlayer.loadSource(url);
+		hlsPlayer.attachMedia(node);
+	}
+
+	function handleVideoError() {
+		if (playbackMethod === 'direct' && videoElement) {
+			markDirectPlayFailed();
+			usedCachedFallback = true;
+			pendingSeekTime = currentTime;
+			attachHlsPlayer(videoElement).catch(() => {
+				errorMessage = get(_)('player.playback_failed');
+			});
+			return;
+		}
+		errorMessage = get(_)('player.playback_failed');
+	}
+
+	function attachPlayer(node: HTMLVideoElement) {
+		videoElement = node;
+
+		(async () => {
+			try {
+				await loadMediaDetail();
+				if (destroyed) return;
+
+				if (shouldForceTranscode()) {
+					usedCachedFallback = true;
+					await attachHlsPlayer(node);
+					return;
+				}
+
+				if (mediaDetail && isDirectPlayEligible(node, mediaDetail)) {
+					attachDirectPlay(node);
+				} else {
+					await attachHlsPlayer(node);
+				}
+			} catch {
+				if (!destroyed) errorMessage = get(_)('player.playback_failed');
+			}
+		})();
+
+		return {
+			destroy() {
+				destroyed = true;
+				const stoppedPlaySessionId = playSessionId;
+				const stoppedPosition = currentTime;
+				teardownHls();
+				if (playbackMethod === 'hls' && stoppedPlaySessionId) {
+					api.jellyfinStopPlayback(widgetId, itemId, stoppedPlaySessionId, stoppedPosition).catch(() => {});
+				}
+				videoElement = null;
+			},
+		};
+	}
+
 	function selectAudioTrack(index: number) {
-		if (!widgetId || !itemId || index === selectedAudioIndex) return;
+		if (!widgetId || !itemId || index === selectedAudioIndex || !videoElement) return;
 		pendingSeekTime = currentTime;
 		selectedAudioIndex = index;
-		currentStreamUrl = api.jellyfinStreamUrl(widgetId, itemId, { audioStreamIndex: index });
+		// Direct Play can't remux to a different embedded audio track — any
+		// track switch always routes through the HLS transcode, which honors
+		// AudioStreamIndex.
+		attachHlsPlayer(videoElement).catch(() => {
+			errorMessage = get(_)('player.playback_failed');
+		});
 		showAudioMenu = false;
 	}
 
@@ -180,6 +356,14 @@
 		}
 	}
 
+	function handleWaiting() {
+		isBuffering = true;
+	}
+
+	function handlePlaying() {
+		isBuffering = false;
+	}
+
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
 			if (showPlaybackInfo) {
@@ -218,7 +402,6 @@
 	});
 
 	onMount(() => {
-		loadMediaDetail();
 		window.addEventListener('keydown', handleKeydown);
 		return () => window.removeEventListener('keydown', handleKeydown);
 	});
@@ -247,19 +430,24 @@
 			<button class="close" onclick={onClose} aria-label={$_('player.close')}>✕</button>
 		</div>
 	</div>
+	{#if errorMessage}
+		<p class="error">{errorMessage}</p>
+	{/if}
 
 	<div class="video-container">
 		<!-- svelte-ignore a11y_media_has_caption -->
 		<video
-			bind:this={videoElement}
+			use:attachPlayer
 			controls
 			autoplay
 			playsinline
 			class="video"
-			src={currentStreamUrl}
 			bind:currentTime
 			bind:duration
 			onloadeddata={handleLoadedData}
+			onerror={handleVideoError}
+			onwaiting={handleWaiting}
+			onplaying={handlePlaying}
 		>
 			{#if widgetId && itemId && selectedSubtitleIndex !== null}
 				<track
@@ -271,6 +459,15 @@
 				/>
 			{/if}
 		</video>
+
+		{#if isBuffering && !errorMessage}
+			<div class="buffering-overlay" aria-live="polite">
+				<div class="spinner"></div>
+				<span class="buffering-label">
+					{playbackMethod === 'hls' ? $_('player.transcoding') : $_('common.loading')}
+				</span>
+			</div>
+		{/if}
 
 		{#if mediaDetail}
 			<div class="custom-toolbar">
@@ -435,6 +632,21 @@
 						</div>
 					{/if}
 
+					<div class="info-section-heading">{$_('player.playback_mode')}</div>
+					<div class="info-row">
+						<span class="label">{$_('player.playback_mode')}:</span>
+						<span class="value"
+							>{playbackMethod === 'direct'
+								? $_('player.playback_method_direct')
+								: $_('player.playback_method_hls')}</span
+						>
+					</div>
+					{#if usedCachedFallback}
+						<div class="info-row">
+							<span class="value">{$_('player.playback_cache_active')}</span>
+						</div>
+					{/if}
+
 					{#if mediaDetail.video_stream}
 						<div class="info-section-heading">{$_('player.video')}</div>
 						<div class="info-row">
@@ -577,6 +789,13 @@
 		cursor: pointer;
 	}
 
+	.error {
+		margin: 0;
+		padding: 0.75rem 1rem;
+		color: #ffb4b4;
+		background: rgba(224, 90, 90, 0.15);
+	}
+
 	.video-container {
 		position: relative;
 		flex: 1;
@@ -592,6 +811,38 @@
 		min-height: 0;
 		object-fit: contain;
 		background: #000;
+	}
+
+	.buffering-overlay {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 0.75rem;
+		pointer-events: none;
+		background: rgba(0, 0, 0, 0.25);
+	}
+
+	.spinner {
+		width: 2.5rem;
+		height: 2.5rem;
+		border: 3px solid rgba(255, 255, 255, 0.25);
+		border-top-color: #38bdf8;
+		border-radius: 50%;
+		animation: spin 0.8s linear infinite;
+	}
+
+	.buffering-label {
+		color: rgba(255, 255, 255, 0.85);
+		font-size: 0.85rem;
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 
 	.custom-toolbar {

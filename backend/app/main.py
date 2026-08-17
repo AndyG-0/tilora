@@ -150,6 +150,7 @@ app = FastAPI(title="Tilora API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    allow_origin_regex=settings.cors_origin_regex,
     allow_credentials=True,  # required for the device/session cookies (app/auth.py)
     allow_methods=["*"],
     allow_headers=["*"],
@@ -170,7 +171,10 @@ async def add_request_id(request: Request, call_next):
     response = await call_next(request)
     elapsed_ms = (time.monotonic() - start) * 1000
     response.headers["X-Request-ID"] = request_id
-    logger.info("%s %s -> %d (%.1fms)", request.method, request.url.path, response.status_code, elapsed_ms)
+    if response.status_code >= 400 or request.method not in ("GET", "HEAD"):
+        logger.info("%s %s -> %d (%.1fms)", request.method, request.url.path, response.status_code, elapsed_ms)
+    else:
+        logger.debug("%s %s -> %d (%.1fms)", request.method, request.url.path, response.status_code, elapsed_ms)
     return response
 
 
