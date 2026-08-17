@@ -33,26 +33,52 @@ docker compose up --build -d
 
 ## One-line installation
 
-On Debian, Ubuntu, or Raspberry Pi OS, sign in as the non-root account that
-should run Tilora and run:
+On Debian, Ubuntu, Raspberry Pi OS, or other Debian-based distributions
+(Pop!_OS, Linux Mint, Armbian, DietPi, etc.), sign in as the non-root
+account that should run Tilora and run:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AndyG-0/tilora/main/deploy/install.sh | bash
 ```
 
-The installer requests `sudo`, installs the apt-based runtime dependencies,
-checks out `main` to `~/tilora`, builds both services, and enables them at
-boot. On its first run it asks for timezone, weather location, and optionally
-an AI provider and API key. API-key input is hidden; `backend/.env` is created
-with owner-only permissions.
+The installer requests `sudo`, installs apt-based dependencies, checks out
+`main` to `~/tilora`, builds both backend and frontend services, and enables
+them at boot via systemd.
 
-Rerun the same command to fast-forward the checkout, rebuild, and restart the
+On first run, the installer interactively prompts for:
+- Timezone and weather location coordinates
+- Optional AI provider and API key (input is masked; `.env` is created owner-only `0600`)
+- **Kiosk display configuration**: Whether to configure a local fullscreen Chromium kiosk display on this machine or install in server-only (headless) mode.
+
+### Installation modes
+
+1. **Server / Headless mode (connect from other devices)**:
+   Installs backend and frontend services only without installing browser or GUI dependencies. Access the dashboard from any smartphone, tablet, laptop, or wall display on your local network at `http://<host-ip>:5173`.
+   
+   To install non-interactively or enforce server-only mode:
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/AndyG-0/tilora/main/deploy/install.sh | bash -s -- --no-kiosk
+   # or with environment variable
+   TILORA_KIOSK=0 curl -fsSL https://raw.githubusercontent.com/AndyG-0/tilora/main/deploy/install.sh | bash
+   ```
+
+2. **Kiosk mode (dedicated touchscreen / local smart display)**:
+   Installs Chromium, mouse-hiding utilities (`unclutter`), Wayland display sleep management (`wlopm`), configures microphone capture policies for voice commands without browser permission popups, and creates desktop autostart entries.
+   
+   To install non-interactively or enforce kiosk mode:
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/AndyG-0/tilora/main/deploy/install.sh | bash -s -- --kiosk
+   # or with environment variable
+   TILORA_KIOSK=1 curl -fsSL https://raw.githubusercontent.com/AndyG-0/tilora/main/deploy/install.sh | bash
+   ```
+
+Rerun the installer later to fast-forward the checkout, rebuild, and restart the
 services. It preserves `backend/.env`, `backend/config/dashboard.yaml`, and
 the SQLite database. If you have made Git changes in `~/tilora`, the safe
 fast-forward stops rather than overwriting them.
 
-The dashboard is available at `http://localhost:5173`. On a trusted LAN, use
-the host's IP address with port `5173`. Manage it with:
+The dashboard is available locally at `http://localhost:5173`. On a trusted LAN, use
+the host's IP address with port `5173` (e.g. `http://192.168.1.100:5173`). Manage services with:
 
 ```bash
 sudo systemctl status tilora-backend tilora-frontend
@@ -102,10 +128,9 @@ every preset. Note the render node isn't always `renderD128` — a second DRM
 device shifts the iGPU to `renderD129`; the diagnostics list what's present,
 and the widget's **Render device** setting selects it.
 
-To use a non-default install location, download `install.sh` and invoke it
-with `TILORA_INSTALL_DIR=/your/path bash install.sh`. The one-line command
-uses the invoking user's home directory. First installation must run from an
-interactive terminal so its setup prompts can read from the terminal.
+To use a non-default install location, invoke the script with `TILORA_INSTALL_DIR=/your/path`.
+First installation must run from an interactive terminal (or pass pre-configured `.env` and flags)
+so its setup prompts can configure initial settings.
 
 ## Manual setup
 

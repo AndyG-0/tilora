@@ -15,9 +15,9 @@ usage() {
 	cat <<'EOF'
 Usage: scripts/ci-check.sh
 
-Runs the backend and frontend CI jobs locally, in the same order as
-.github/workflows/ci.yml:
+Runs the CI jobs locally, in the same order as .github/workflows/ci.yml:
 
+  shell:    shellcheck, deploy/test-install.sh
   backend:  uv sync, ruff check, ruff format --check, pytest
   frontend: npm ci, lint, format:check, check (svelte-check), test,
             playwright install, test:e2e
@@ -40,6 +40,16 @@ esac
 
 require_command uv
 require_command npm
+
+info "Shell scripts: shellcheck"
+if command -v shellcheck >/dev/null 2>&1; then
+	shellcheck "$ROOT_DIR"/deploy/*.sh "$ROOT_DIR"/dev.sh "$ROOT_DIR"/scripts/*.sh "$ROOT_DIR"/backend/docker-entrypoint.sh
+else
+	npx --yes shellcheck "$ROOT_DIR"/deploy/*.sh "$ROOT_DIR"/dev.sh "$ROOT_DIR"/scripts/*.sh "$ROOT_DIR"/backend/docker-entrypoint.sh
+fi
+
+info "Shell scripts: deploy/test-install.sh"
+bash "$ROOT_DIR/deploy/test-install.sh"
 
 cd "$ROOT_DIR/backend"
 

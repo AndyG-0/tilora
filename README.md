@@ -1,7 +1,9 @@
 # Tilora
 
-A touchscreen smart-display dashboard for a Raspberry Pi, run as a web app
-in Chromium kiosk mode. Widgets are plugins; tap any tile to drill into
+A customizable smart-display dashboard and home server for Raspberry Pi, Debian,
+Ubuntu, and other Linux devices. Run it as a dedicated fullscreen touchscreen
+kiosk or as a lightweight home server accessible from any phone, tablet, or
+browser on your network. Widgets are plugins; tap any tile to drill into
 detail. Ships with several dozen reference plugins — Weather, an
 AI-generated daily briefing, a local Photos slideshow, Movies & Shows (TMDB
 popular movies and TV shows with JustWatch-sourced availability), Jellyfin,
@@ -24,8 +26,8 @@ widget's config `type` to its plugin class.
 - **Frontend:** SvelteKit, touch-first styling, CSS-variable theming
   (light/dark/sepia/high-contrast), REST polling per widget, a Settings
   page (gear icon) for AI provider keys and the dashboard's timezone.
-- **Deployment:** one-line native Linux installer, systemd units, and an
-  optional Chromium kiosk launch script — see `deploy/README.md`.
+- **Deployment:** one-line native installer for Debian-based Linux distros
+  (server or kiosk mode), systemd units, and Docker Compose — see `deploy/README.md`.
 
 ## Repository layout
 
@@ -215,10 +217,10 @@ The usual causes, in the order the diagnostics check them:
 logging** in the same settings panel if you need ffmpeg's own view of a
 failure in the backend log.
 
-For native Debian, Ubuntu, and Raspberry Pi OS installation, run
+For native Debian, Ubuntu, Raspberry Pi OS, and Debian-based distro installation, run
 `curl -fsSL https://raw.githubusercontent.com/AndyG-0/tilora/main/deploy/install.sh | bash`.
-See `deploy/README.md` for configuration, upgrades, and the optional Raspberry
-Pi kiosk path.
+See `deploy/README.md` for configuration, upgrades, server-only vs kiosk modes, and
+network access options.
 
 ## Network exposure
 
@@ -235,9 +237,10 @@ exposed directly to the internet. If you need remote access, put it behind
 a VPN (Tailscale, WireGuard) or an authenticating reverse proxy rather than
 port-forwarding it.
 
-## Raspberry Pi kiosk deployment
+## Linux & Raspberry Pi deployment
 
-See `deploy/README.md`.
+See `deploy/README.md` for full installation guides, server-only vs kiosk
+modes, systemd service management, and updates.
 
 ## License
 
