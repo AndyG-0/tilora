@@ -22,6 +22,14 @@ def client():
 
 
 @pytest.fixture(autouse=True)
+def _stub_dashboard_config(monkeypatch):
+    # Visible-topic resolution in POST /ask and GET /topics loads dashboard.yaml
+    # to find configured widgets. Default to empty widgets so tests don't depend
+    # on the deployment-specific (and gitignored) dashboard.yaml file existing on disk.
+    monkeypatch.setattr(assistant_api, "load_dashboard_config", lambda: {"widgets": []})
+
+
+@pytest.fixture(autouse=True)
 def _stub_router(monkeypatch):
     # POST /ask now runs a tool-selection router pass before assistant.ask --
     # stub it to "don't restrict" (today's pre-router behavior) by default so

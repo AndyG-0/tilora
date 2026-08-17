@@ -3,10 +3,16 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import litellm
+import pytest
 
 from app.ai import router
 
 TOPICS = [{"id": "weather", "name": "Weather"}, {"id": "mapping", "name": "Mapping"}]
+
+
+@pytest.fixture(autouse=True)
+def _setup_db(tmp_db):
+    pass
 
 
 def _fake_response(content: str):
