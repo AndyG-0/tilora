@@ -251,7 +251,7 @@ test_uninstall() {
   local mock_policy="$TEST_ROOT/uninst_policies"
   local mock_sudoers="$TEST_ROOT/uninst_sudoers/tilora-restart"
 
-  mkdir -p "$mock_home/.config/autostart" "$mock_home/.config/labwc" "$mock_install/backend" "$mock_sysdir" "$mock_policy" "$(dirname "$mock_sudoers")"
+  mkdir -p "$mock_home/.config/autostart" "$mock_home/.config/labwc" "$mock_install/backend" "$mock_install/.git" "$mock_sysdir" "$mock_policy" "$(dirname "$mock_sudoers")"
 
   touch "$mock_sysdir/tilora-backend.service" "$mock_sysdir/tilora-frontend.service"
   touch "$mock_sudoers"

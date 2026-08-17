@@ -50,8 +50,9 @@ parse_args() {
         shift
         ;;
       --api-url|--backend-url)
+        local api_url_flag="$1"
         shift
-        [[ $# -gt 0 ]] || fail "Missing argument for $1"
+        [[ $# -gt 0 ]] || fail "Missing argument for $api_url_flag"
         CUSTOM_API_URL="$1"
         shift
         ;;
@@ -60,13 +61,19 @@ parse_args() {
         shift
         ;;
       --uninstall)
-        local uninstall_script
-        uninstall_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/uninstall.sh"
-        if [[ -f "$uninstall_script" ]]; then
-          shift
+        shift
+        local script_source uninstall_script
+        script_source="${BASH_SOURCE[0]:-}"
+        uninstall_script=""
+        if [[ -n "$script_source" && "$script_source" != "bash" && "$script_source" != "-" && -f "$script_source" ]]; then
+          uninstall_script="$(cd "$(dirname "$script_source")" 2>/dev/null && pwd)/uninstall.sh"
+        fi
+        if [[ -n "$uninstall_script" && -f "$uninstall_script" ]]; then
           exec bash "$uninstall_script" "$@"
         else
-          fail "uninstall.sh not found. Run: curl -fsSL https://raw.githubusercontent.com/AndyG-0/tilora/main/deploy/uninstall.sh | bash"
+          require_command curl
+          curl -fsSL "https://raw.githubusercontent.com/AndyG-0/tilora/$REPOSITORY_REF/deploy/uninstall.sh" | bash -s -- "$@"
+          exit $?
         fi
         ;;
       -h|--help)
@@ -342,10 +349,11 @@ get_env_value() {
 }
 
 detect_primary_lan_ip() {
-  local addresses addr
+  local addresses addr addr_list
   addresses="$(hostname -I 2>/dev/null || true)"
   if [[ -n "$addresses" ]]; then
-    for addr in $addresses; do
+    IFS=' ' read -ra addr_list <<<"$addresses"
+    for addr in "${addr_list[@]}"; do
       if [[ "$addr" != *:* && "$addr" != 127.* ]]; then
         printf '%s' "$addr"
         return

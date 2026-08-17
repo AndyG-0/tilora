@@ -5,7 +5,9 @@ set -euo pipefail
 IFS=$'\n\t'
 
 SYSTEMD_DIR="${TILORA_SYSTEMD_DIR:-${SYSTEMD_DIR:-/etc/systemd/system}}"
-CHROME_POLICY_DIRS="${TILORA_CHROME_POLICY_DIRS:-${CHROME_POLICY_DIRS:-/etc/chromium/policies/managed /etc/opt/chrome/policies/managed /etc/chromium-browser/policies/managed}}"
+_CHROME_POLICY_DIRS_RAW="${TILORA_CHROME_POLICY_DIRS:-${CHROME_POLICY_DIRS:-/etc/chromium/policies/managed /etc/opt/chrome/policies/managed /etc/chromium-browser/policies/managed}}"
+IFS=' ' read -ra CHROME_POLICY_DIRS <<<"$_CHROME_POLICY_DIRS_RAW"
+unset _CHROME_POLICY_DIRS_RAW
 SUDOERS_FILE="${TILORA_SUDOERS_FILE:-${SUDOERS_FILE:-/etc/sudoers.d/tilora-restart}}"
 
 INSTALL_USER="${INSTALL_USER:-}"
@@ -127,23 +129,23 @@ confirm_uninstall() {
     return
   fi
 
-  if [[ -r /dev/tty ]]; then
-    printf 'This will remove Tilora services, autostart entries, and sudoers rules.\n'
-    if [[ "$KEEP_DATA" == true ]]; then
-      printf 'Installation directory (%s) will be KEPT.\n' "$INSTALL_DIR"
-    else
-      printf 'Installation directory (%s) and all data will be REMOVED.\n' "$INSTALL_DIR"
-    fi
-    local answer
-    read -r -p "Are you sure you want to uninstall Tilora? (y/N) [N]: " answer </dev/tty
-    case "$answer" in
-      [Yy]|[Yy][Ee][Ss]) ;;
-      *)
-        printf 'Uninstall cancelled.\n'
-        exit 0
-        ;;
-    esac
+  [[ -r /dev/tty ]] || fail "Uninstall confirmation needs an interactive terminal. Run with -y/--force, or from a terminal session."
+
+  printf 'This will remove Tilora services, autostart entries, and sudoers rules.\n'
+  if [[ "$KEEP_DATA" == true ]]; then
+    printf 'Installation directory (%s) will be KEPT.\n' "$INSTALL_DIR"
+  else
+    printf 'Installation directory (%s) and all data will be REMOVED.\n' "$INSTALL_DIR"
   fi
+  local answer
+  read -r -p "Are you sure you want to uninstall Tilora? (y/N) [N]: " answer </dev/tty
+  case "$answer" in
+    [Yy]|[Yy][Ee][Ss]) ;;
+    *)
+      printf 'Uninstall cancelled.\n'
+      exit 0
+      ;;
+  esac
 }
 
 stop_and_remove_services() {
@@ -196,7 +198,7 @@ remove_kiosk_configuration() {
     rm -f "$tmp_labwc"
   fi
 
-  for policy_dir in $CHROME_POLICY_DIRS; do
+  for policy_dir in "${CHROME_POLICY_DIRS[@]}"; do
     if [[ -f "$policy_dir/tilora.json" ]]; then
       sudo rm -f "$policy_dir/tilora.json"
     fi
@@ -210,6 +212,7 @@ remove_install_files() {
   fi
 
   if [[ -d "$INSTALL_DIR" ]]; then
+    [[ -d "$INSTALL_DIR/.git" ]] || fail "$INSTALL_DIR does not look like a Tilora installation (no .git directory found); refusing to delete it. Pass --install-dir to point at the correct location, or use --keep-data to skip file removal."
     info "Removing installation directory ($INSTALL_DIR)"
     rm -rf "$INSTALL_DIR"
   fi
