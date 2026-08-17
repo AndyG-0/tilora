@@ -6,6 +6,7 @@ set -euo pipefail
 TEST_ROOT="$(mktemp -d)"
 readonly TEST_ROOT
 trap 'rm -rf "$TEST_ROOT"' EXIT
+export TILORA_NONINTERACTIVE=true
 
 # shellcheck source=deploy/install.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/install.sh"
@@ -176,6 +177,57 @@ test_health_failure() {
   pass "reports failed health checks"
 }
 
+test_api_url_arg_parsing() {
+  CUSTOM_API_URL=""
+  TILORA_PUBLIC_API_BASE_URL=""
+  parse_args --api-url http://192.168.1.50:8000
+  [[ "$CUSTOM_API_URL" == "http://192.168.1.50:8000" ]] || fail_test "expected CUSTOM_API_URL for --api-url"
+
+  CUSTOM_API_URL=""
+  parse_args --backend-url=http://10.0.0.5:8000
+  [[ "$CUSTOM_API_URL" == "http://10.0.0.5:8000" ]] || fail_test "expected CUSTOM_API_URL for --backend-url="
+
+  CUSTOM_API_URL=""
+  TILORA_PUBLIC_API_BASE_URL="http://tilora.lan:8000"
+  parse_args
+  [[ "$(detect_default_api_url)" == "http://tilora.lan:8000" ]] || fail_test "expected TILORA_PUBLIC_API_BASE_URL in detect_default_api_url"
+
+  CUSTOM_API_URL=""
+  TILORA_PUBLIC_API_BASE_URL=""
+  INSTALL_KIOSK=true
+  [[ "$(detect_default_api_url)" == "http://localhost:8000" ]] || fail_test "expected localhost for kiosk mode"
+
+  CUSTOM_API_URL=""
+  TILORA_PUBLIC_API_BASE_URL=""
+  INSTALL_KIOSK=""
+  pass "parses API URL flags and environment variables"
+}
+
+test_frontend_env_configuration() {
+  local mock_install="$TEST_ROOT/mock_install"
+  mkdir -p "$mock_install/backend/config" "$mock_install/frontend"
+  printf 'KEY=backend_val\n' >"$mock_install/backend/.env.example"
+  printf 'widgets: []\n' >"$mock_install/backend/config/dashboard.example.yaml"
+  printf 'PUBLIC_API_BASE_URL=\n' >"$mock_install/frontend/.env.example"
+
+  BACKEND_DIR="$mock_install/backend"
+  FRONTEND_DIR="$mock_install/frontend"
+  CUSTOM_API_URL="http://192.168.1.100:8000"
+
+  prepare_configuration >/dev/null
+  [[ "$(get_env_value "$FRONTEND_DIR/.env" PUBLIC_API_BASE_URL)" == "http://192.168.1.100:8000" ]] || fail_test "prepare_configuration failed to set custom API url"
+
+  # Test kiosk default configuration
+  CUSTOM_API_URL=""
+  INSTALL_KIOSK=true
+  configure_frontend_api
+  [[ "$(get_env_value "$FRONTEND_DIR/.env" PUBLIC_API_BASE_URL)" == "http://localhost:8000" ]] || fail_test "configure_frontend_api failed to set kiosk localhost URL"
+
+  CUSTOM_API_URL=""
+  INSTALL_KIOSK=""
+  pass "configures frontend .env with appropriate backend API base URL"
+}
+
 test_piped_execution() {
   local install_script
   install_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/install.sh"
@@ -187,7 +239,9 @@ test_piped_execution() {
 
 test_platform_validation
 test_kiosk_arg_parsing
+test_api_url_arg_parsing
 test_kiosk_configuration
+test_frontend_env_configuration
 test_piped_execution
 test_mocked_dependencies_and_upgrade
 test_service_rendering

@@ -49,6 +49,7 @@ On first run, the installer interactively prompts for:
 - Timezone and weather location coordinates
 - Optional AI provider and API key (input is masked; `.env` is created owner-only `0600`)
 - **Kiosk display configuration**: Whether to configure a local fullscreen Chromium kiosk display on this machine or install in server-only (headless) mode.
+- **Frontend API URL**: Configures `PUBLIC_API_BASE_URL` in `frontend/.env` (defaults to `http://localhost:8000` for kiosk mode, or auto-detects the host's primary LAN IP for server-only mode).
 
 ### Installation modes
 
@@ -72,8 +73,16 @@ On first run, the installer interactively prompts for:
    TILORA_KIOSK=1 curl -fsSL https://raw.githubusercontent.com/AndyG-0/tilora/main/deploy/install.sh | bash
    ```
 
+3. **Custom Frontend API Base URL**:
+   Override the backend API endpoint accessed by browsers:
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/AndyG-0/tilora/main/deploy/install.sh | bash -s -- --api-url http://192.168.1.50:8000
+   # or with environment variable
+   TILORA_PUBLIC_API_BASE_URL=http://192.168.1.50:8000 curl -fsSL https://raw.githubusercontent.com/AndyG-0/tilora/main/deploy/install.sh | bash
+   ```
+
 Rerun the installer later to fast-forward the checkout, rebuild, and restart the
-services. It preserves `backend/.env`, `backend/config/dashboard.yaml`, and
+services. It preserves `backend/.env`, `frontend/.env`, `backend/config/dashboard.yaml`, and
 the SQLite database. If you have made Git changes in `~/tilora`, the safe
 fast-forward stops rather than overwriting them.
 

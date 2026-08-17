@@ -15,6 +15,7 @@ INSTALL_DIR=""
 BACKEND_DIR=""
 FRONTEND_DIR=""
 INSTALL_KIOSK=""
+CUSTOM_API_URL=""
 
 fail() {
   printf 'Tilora install failed: %s\n' "$*" >&2
@@ -48,6 +49,16 @@ parse_args() {
         INSTALL_KIOSK=false
         shift
         ;;
+      --api-url|--backend-url)
+        shift
+        [[ $# -gt 0 ]] || fail "Missing argument for $1"
+        CUSTOM_API_URL="$1"
+        shift
+        ;;
+      --api-url=*|--backend-url=*)
+        CUSTOM_API_URL="${1#*=}"
+        shift
+        ;;
       -h|--help)
         printf 'Tilora Linux Installer\n\n'
         printf 'Usage: install.sh [options]\n\n'
@@ -55,10 +66,12 @@ parse_args() {
         printf '  --kiosk           Install Chromium and configure kiosk display autostart\n'
         printf '  --no-kiosk        Install backend and frontend as server-only (headless)\n'
         printf '  --server-only     Alias for --no-kiosk\n'
+        printf '  --api-url URL     Set PUBLIC_API_BASE_URL for frontend (default: http://localhost:8000 for kiosk, http://<lan-ip>:8000 for server-only)\n'
         printf '  -h, --help        Show this help message\n\n'
         printf 'Environment variables:\n'
         printf '  TILORA_KIOSK      Set to 1/true for kiosk mode, 0/false for server-only\n'
         printf '  TILORA_INSTALL_DIR Custom install destination (default: ~/tilora)\n'
+        printf '  TILORA_PUBLIC_API_BASE_URL Custom frontend backend API URL\n'
         exit 0
         ;;
       *)
@@ -303,6 +316,62 @@ configure_ai() {
   set_env_value "$BACKEND_DIR/.env" "$env_key" "$api_key"
 }
 
+get_env_value() {
+  local file="$1" key="$2"
+  if [[ -f "$file" ]]; then
+    grep -E "^${key}=" "$file" 2>/dev/null | tail -n 1 | cut -d= -f2- || true
+  fi
+}
+
+detect_primary_lan_ip() {
+  local addresses addr
+  addresses="$(hostname -I 2>/dev/null || true)"
+  if [[ -n "$addresses" ]]; then
+    for addr in $addresses; do
+      if [[ "$addr" != *:* && "$addr" != 127.* ]]; then
+        printf '%s' "$addr"
+        return
+      fi
+    done
+  fi
+}
+
+detect_default_api_url() {
+  if [[ -n "${CUSTOM_API_URL:-}" ]]; then
+    printf '%s' "$CUSTOM_API_URL"
+    return
+  fi
+  if [[ -n "${TILORA_PUBLIC_API_BASE_URL:-}" ]]; then
+    printf '%s' "$TILORA_PUBLIC_API_BASE_URL"
+    return
+  fi
+  if [[ "$INSTALL_KIOSK" == true ]]; then
+    printf 'http://localhost:8000'
+    return
+  fi
+  local lan_ip
+  lan_ip="$(detect_primary_lan_ip)"
+  if [[ -n "$lan_ip" ]]; then
+    printf 'http://%s:8000' "$lan_ip"
+  else
+    printf 'http://localhost:8000'
+  fi
+}
+
+configure_frontend_api() {
+  local default_url api_url
+  default_url="$(detect_default_api_url)"
+  if [[ -n "${CUSTOM_API_URL:-}" || -n "${TILORA_PUBLIC_API_BASE_URL:-}" ]]; then
+    api_url="$default_url"
+  elif [[ -r /dev/tty && "${TILORA_NONINTERACTIVE:-}" != "true" ]]; then
+    read -r -p "Frontend API Base URL [$default_url]: " api_url </dev/tty
+    api_url="${api_url:-$default_url}"
+  else
+    api_url="$default_url"
+  fi
+  set_env_value "$FRONTEND_DIR/.env" PUBLIC_API_BASE_URL "$api_url"
+}
+
 prompt_kiosk_selection() {
   if [[ -n "$INSTALL_KIOSK" ]]; then
     return
@@ -335,6 +404,15 @@ prepare_configuration() {
   fi
   chmod 600 "$BACKEND_DIR/.env"
   set_env_value "$BACKEND_DIR/.env" TILORA_INSTALL_METHOD native
+
+  # Ensure PUBLIC_API_BASE_URL has a working value on upgrade or non-interactive installs
+  local current_api_url
+  current_api_url="$(get_env_value "$FRONTEND_DIR/.env" PUBLIC_API_BASE_URL)"
+  if [[ -n "${CUSTOM_API_URL:-}" || -n "${TILORA_PUBLIC_API_BASE_URL:-}" ]]; then
+    set_env_value "$FRONTEND_DIR/.env" PUBLIC_API_BASE_URL "$(detect_default_api_url)"
+  elif [[ -z "$current_api_url" && "$first_install" != true ]]; then
+    set_env_value "$FRONTEND_DIR/.env" PUBLIC_API_BASE_URL "$(detect_default_api_url)"
+  fi
 
   printf '%s' "$first_install"
 }
@@ -382,8 +460,9 @@ wait_for_health() {
 }
 
 print_completion() {
-  local addresses addr
+  local addresses addr api_base
   addresses="$(hostname -I 2>/dev/null || true)"
+  api_base="$(get_env_value "$FRONTEND_DIR/.env" PUBLIC_API_BASE_URL)"
   printf '\nTilora is running at http://localhost:5173\n'
   if [[ -n "$addresses" ]]; then
     for addr in $addresses; do
@@ -392,9 +471,12 @@ print_completion() {
       fi
     done
   fi
+  if [[ -n "$api_base" ]]; then
+    printf 'Frontend API:    %s\n' "$api_base"
+  fi
   printf 'Manage services: sudo systemctl status tilora-backend tilora-frontend\n'
   printf 'View logs:       journalctl -u tilora-backend -u tilora-frontend -f\n'
-  printf 'Configuration:   %s/backend/.env and %s/backend/config/dashboard.yaml\n' "$INSTALL_DIR" "$INSTALL_DIR"
+  printf 'Configuration:   %s/backend/.env, %s/frontend/.env, and %s/backend/config/dashboard.yaml\n' "$INSTALL_DIR" "$INSTALL_DIR" "$INSTALL_DIR"
   if [[ "$INSTALL_KIOSK" == true ]]; then
     printf 'Kiosk mode:      Enabled. Ensure desktop autologin is enabled and reboot (sudo reboot) to start fullscreen.\n'
   else
@@ -440,6 +522,7 @@ main() {
     configure_dashboard
     configure_ai
     prompt_kiosk_selection
+    configure_frontend_api
   fi
   if [[ "$INSTALL_KIOSK" == true ]]; then
     install_kiosk_dependencies
