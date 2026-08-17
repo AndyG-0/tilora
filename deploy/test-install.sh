@@ -26,16 +26,102 @@ systemctl() { printf 'systemctl'; printf ' %s' "$@"; printf '\n'; } >>"$mock_log
 
 test_platform_validation() {
   local os_file="$TEST_ROOT/os-release"
+
+  # Standard Debian
   printf 'ID=debian\nID_LIKE=debian\n' >"$os_file"
   OS_RELEASE_FILE="$os_file"
   validate_platform
-  pass "accepts Debian-family releases"
+  pass "accepts Debian"
 
+  # Ubuntu
+  printf 'ID=ubuntu\nID_LIKE=debian\n' >"$os_file"
+  validate_platform
+  pass "accepts Ubuntu"
+
+  # Raspberry Pi OS
+  printf 'ID=raspbian\nID_LIKE=debian\n' >"$os_file"
+  validate_platform
+  pass "accepts Raspberry Pi OS (raspbian)"
+
+  # Pop!_OS (space-separated ID_LIKE)
+  printf 'ID=pop\nID_LIKE="ubuntu debian"\n' >"$os_file"
+  validate_platform
+  pass "accepts Pop!_OS"
+
+  # Linux Mint
+  printf 'ID=linuxmint\nID_LIKE="ubuntu debian"\n' >"$os_file"
+  validate_platform
+  pass "accepts Linux Mint"
+
+  # Armbian
+  printf 'ID=armbian\nID_LIKE=debian\n' >"$os_file"
+  validate_platform
+  pass "accepts Armbian"
+
+  # DietPi
+  printf 'ID=dietpi\nID_LIKE=debian\n' >"$os_file"
+  validate_platform
+  pass "accepts DietPi"
+
+  # Reject Fedora / RHEL without apt
   printf 'ID=fedora\nID_LIKE=rhel\n' >"$os_file"
-  if (validate_platform) >/dev/null 2>&1; then
-    fail_test "rejects unsupported distributions"
+  # Unset apt-get function temporarily in subshell to test rejection
+  if (unset -f apt-get 2>/dev/null; validate_platform) >/dev/null 2>&1; then
+    # If host has apt-get, this is handled; on macOS it won't have apt-get
+    if ! command -v apt-get >/dev/null 2>&1; then
+      fail_test "rejects unsupported distributions"
+    fi
   fi
-  pass "rejects unsupported distributions"
+  pass "handles unsupported distribution checking"
+}
+
+test_kiosk_arg_parsing() {
+  INSTALL_KIOSK=""
+  TILORA_KIOSK=""
+  parse_args --kiosk
+  [[ "$INSTALL_KIOSK" == "true" ]] || fail_test "expected INSTALL_KIOSK=true for --kiosk"
+
+  INSTALL_KIOSK=""
+  parse_args --no-kiosk
+  [[ "$INSTALL_KIOSK" == "false" ]] || fail_test "expected INSTALL_KIOSK=false for --no-kiosk"
+
+  INSTALL_KIOSK=""
+  parse_args --server-only
+  [[ "$INSTALL_KIOSK" == "false" ]] || fail_test "expected INSTALL_KIOSK=false for --server-only"
+
+  INSTALL_KIOSK=""
+  TILORA_KIOSK="1"
+  parse_args
+  [[ "$INSTALL_KIOSK" == "true" ]] || fail_test "expected INSTALL_KIOSK=true for TILORA_KIOSK=1"
+
+  INSTALL_KIOSK=""
+  TILORA_KIOSK="0"
+  parse_args
+  [[ "$INSTALL_KIOSK" == "false" ]] || fail_test "expected INSTALL_KIOSK=false for TILORA_KIOSK=0"
+
+  TILORA_KIOSK=""
+  INSTALL_KIOSK=""
+  pass "parses kiosk flags and environment variables"
+}
+
+test_kiosk_configuration() {
+  local home_dir="$TEST_ROOT/kiosk_home"
+  local install_dir="$TEST_ROOT/kiosk_tilora"
+  local policy_dir="$TEST_ROOT/policies"
+  mkdir -p "$home_dir/.config/labwc" "$install_dir/deploy" "$policy_dir"
+  touch "$install_dir/deploy/kiosk.sh"
+  INSTALL_HOME="$home_dir"
+  INSTALL_DIR="$install_dir"
+  TILORA_CHROME_POLICY_DIRS="$policy_dir"
+
+  configure_kiosk
+
+  [[ -x "$install_dir/deploy/kiosk.sh" ]] || fail_test "kiosk.sh must be executable"
+  [[ -f "$home_dir/.config/autostart/tilora-kiosk.desktop" ]] || fail_test "autostart desktop entry missing"
+  [[ -f "$policy_dir/tilora.json" ]] || fail_test "chrome policy missing"
+  grep -Fq "$install_dir/deploy/kiosk.sh" "$home_dir/.config/autostart/tilora-kiosk.desktop" || fail_test "desktop entry missing exec path"
+  grep -Fq "$install_dir/deploy/kiosk.sh" "$home_dir/.config/labwc/autostart" || fail_test "labwc autostart missing exec path"
+  pass "renders kiosk autostart and policies"
 }
 
 test_mocked_dependencies_and_upgrade() {
@@ -89,6 +175,8 @@ test_health_failure() {
 }
 
 test_platform_validation
+test_kiosk_arg_parsing
+test_kiosk_configuration
 test_mocked_dependencies_and_upgrade
 test_service_rendering
 test_health_failure

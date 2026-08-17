@@ -7,12 +7,22 @@ DASHBOARD_URL="${DASHBOARD_URL:-http://localhost:5173}"
 
 # Keep the screen from blanking/sleeping (Wayland/labwc; swap for `xset`
 # equivalents if running on X11).
-wlopm --off '*' >/dev/null 2>&1 || true
+if command -v wlopm >/dev/null 2>&1; then
+  wlopm --off '*' >/dev/null 2>&1 || true
+fi
 
 # Hide the mouse cursor after inactivity, since this is a touchscreen.
-unclutter --idle 0.5 --root &
+if command -v unclutter >/dev/null 2>&1; then
+  unclutter --idle 0.5 --root >/dev/null 2>&1 &
+fi
 
-exec chromium-browser \
+CHROMIUM_BIN="$(command -v chromium-browser || command -v chromium || true)"
+if [[ -z "$CHROMIUM_BIN" ]]; then
+  printf 'Tilora kiosk error: neither chromium-browser nor chromium was found in PATH.\n' >&2
+  exit 1
+fi
+
+exec "$CHROMIUM_BIN" \
   --kiosk \
   --incognito \
   --noerrdialogs \

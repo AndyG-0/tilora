@@ -14,6 +14,7 @@ INSTALL_HOME=""
 INSTALL_DIR=""
 BACKEND_DIR=""
 FRONTEND_DIR=""
+INSTALL_KIOSK=""
 
 fail() {
   printf 'Tilora install failed: %s\n' "$*" >&2
@@ -26,6 +27,45 @@ info() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"
+}
+
+parse_args() {
+  if [[ -n "${TILORA_KIOSK:-}" ]]; then
+    case "$TILORA_KIOSK" in
+      1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|[Yy]) INSTALL_KIOSK=true ;;
+      0|[Ff][Aa][Ll][Ss][Ee]|[Nn][Oo]|[Nn]|skip) INSTALL_KIOSK=false ;;
+      *) fail "Invalid TILORA_KIOSK value '$TILORA_KIOSK'. Use 'true' or 'false'." ;;
+    esac
+  fi
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --kiosk)
+        INSTALL_KIOSK=true
+        shift
+        ;;
+      --no-kiosk|--server-only|--headless)
+        INSTALL_KIOSK=false
+        shift
+        ;;
+      -h|--help)
+        printf 'Tilora Linux Installer\n\n'
+        printf 'Usage: install.sh [options]\n\n'
+        printf 'Options:\n'
+        printf '  --kiosk           Install Chromium and configure kiosk display autostart\n'
+        printf '  --no-kiosk        Install backend and frontend as server-only (headless)\n'
+        printf '  --server-only     Alias for --no-kiosk\n'
+        printf '  -h, --help        Show this help message\n\n'
+        printf 'Environment variables:\n'
+        printf '  TILORA_KIOSK      Set to 1/true for kiosk mode, 0/false for server-only\n'
+        printf '  TILORA_INSTALL_DIR Custom install destination (default: ~/tilora)\n'
+        exit 0
+        ;;
+      *)
+        fail "Unknown option '$1'. Use --help for usage."
+        ;;
+    esac
+  done
 }
 
 detect_install_user() {
@@ -46,14 +86,29 @@ validate_platform() {
   [[ -r "$OS_RELEASE_FILE" ]] || fail "Cannot read $OS_RELEASE_FILE to identify this Linux distribution."
   # shellcheck disable=SC1090
   source "$OS_RELEASE_FILE"
+
+  local is_debian_like=false
   case "${ID:-}" in
-    debian|ubuntu|raspbian) ;;
+    debian|ubuntu|raspbian|pop|linuxmint|elementary|zorin|armbian|dietpi|devuan|kali|pureos|tuxedo|neon)
+      is_debian_like=true
+      ;;
     *)
-      if [[ ",${ID_LIKE:-}," != *",debian,"* ]]; then
-        fail "Unsupported distribution '${ID:-unknown}'. Tilora's installer supports Debian, Ubuntu, and Raspberry Pi OS."
-      fi
+      for like in ${ID_LIKE:-}; do
+        if [[ "$like" == "debian" || "$like" == "ubuntu" ]]; then
+          is_debian_like=true
+          break
+        fi
+      done
       ;;
   esac
+
+  if [[ "$is_debian_like" != true ]] && command -v apt-get >/dev/null 2>&1; then
+    is_debian_like=true
+  fi
+
+  if [[ "$is_debian_like" != true ]]; then
+    fail "Unsupported distribution '${ID:-unknown}'. Tilora's installer supports Debian, Ubuntu, Raspberry Pi OS, and other Debian-based distributions."
+  fi
 
   case "$(uname -m)" in
     x86_64|aarch64|arm64|armv7l) ;;
@@ -70,6 +125,71 @@ install_system_dependencies() {
     info "Installing Node.js 24"
     curl -fsSL "$NODE_SETUP_URL" | sudo -E bash -
     sudo apt-get install -y nodejs
+  fi
+}
+
+install_kiosk_dependencies() {
+  info "Installing Chromium and kiosk display dependencies"
+  local packages=()
+  if apt-cache show chromium-browser >/dev/null 2>&1; then
+    packages+=(chromium-browser)
+  elif apt-cache show chromium >/dev/null 2>&1; then
+    packages+=(chromium)
+  fi
+
+  if apt-cache show unclutter >/dev/null 2>&1; then
+    packages+=(unclutter)
+  fi
+
+  if apt-cache show wlopm >/dev/null 2>&1; then
+    packages+=(wlopm)
+  fi
+
+  if [[ ${#packages[@]} -gt 0 ]]; then
+    sudo apt-get install -y "${packages[@]}"
+  else
+    info "No chromium or chromium-browser package found in apt repositories. Please install Chromium manually."
+  fi
+}
+
+configure_kiosk() {
+  info "Configuring Chromium kiosk mode"
+  local kiosk_script="$INSTALL_DIR/deploy/kiosk.sh"
+  chmod 755 "$kiosk_script"
+
+  local policy_dir
+  local policy_dirs="${TILORA_CHROME_POLICY_DIRS:-/etc/chromium/policies/managed /etc/opt/chrome/policies/managed /etc/chromium-browser/policies/managed}"
+  for policy_dir in $policy_dirs; do
+    sudo mkdir -p "$policy_dir"
+    local tmp_policy
+    tmp_policy="$(mktemp)"
+    cat >"$tmp_policy" <<'EOF'
+{
+  "AudioCaptureAllowedUrls": ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173", "http://127.0.0.1:3000"]
+}
+EOF
+    sudo install -m 644 "$tmp_policy" "$policy_dir/tilora.json"
+    rm -f "$tmp_policy"
+  done
+
+  local autostart_dir="$INSTALL_HOME/.config/autostart"
+  mkdir -p "$autostart_dir"
+  cat >"$autostart_dir/tilora-kiosk.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Tilora Kiosk
+Comment=Start Tilora smart display in kiosk mode
+Exec=$kiosk_script
+Terminal=false
+X-GNOME-Autostart-enabled=true
+EOF
+
+  local labwc_dir="$INSTALL_HOME/.config/labwc"
+  if [[ -d "$labwc_dir" ]]; then
+    local labwc_autostart="$labwc_dir/autostart"
+    if [[ ! -f "$labwc_autostart" ]] || ! grep -Fq "$kiosk_script" "$labwc_autostart"; then
+      printf '\n# Tilora kiosk display\n%s &\n' "$kiosk_script" >>"$labwc_autostart"
+    fi
   fi
 }
 
@@ -120,13 +240,28 @@ path.write_text("\n".join(lines) + "\n")
 PY
 }
 
+detect_system_timezone() {
+  local tz=""
+  if command -v timedatectl >/dev/null 2>&1; then
+    tz="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
+  fi
+  if [[ -z "$tz" && -f /etc/timezone ]]; then
+    tz="$(cat /etc/timezone 2>/dev/null || true)"
+  fi
+  if [[ -z "$tz" && -L /etc/localtime ]]; then
+    tz="$(readlink /etc/localtime 2>/dev/null | sed 's#.*/zoneinfo/##' || true)"
+  fi
+  printf '%s' "${tz:-UTC}"
+}
+
 configure_dashboard() {
   local config_file="$BACKEND_DIR/config/dashboard.yaml"
-  local timezone latitude longitude location_name
+  local timezone latitude longitude location_name default_tz
 
   [[ -r /dev/tty ]] || fail "First-run configuration needs an interactive terminal. Run the installer from a terminal session."
-  read -r -p "Timezone [$(cat /etc/timezone 2>/dev/null || printf UTC)]: " timezone </dev/tty
-  timezone="${timezone:-$(cat /etc/timezone 2>/dev/null || printf UTC)}"
+  default_tz="$(detect_system_timezone)"
+  read -r -p "Timezone [$default_tz]: " timezone </dev/tty
+  timezone="${timezone:-$default_tz}"
   read -r -p "Weather latitude: " latitude </dev/tty
   read -r -p "Weather longitude: " longitude </dev/tty
   read -r -p "Weather location name: " location_name </dev/tty
@@ -166,6 +301,22 @@ configure_ai() {
   [[ -n "$api_key" ]] || fail "An API key is required when an AI provider is selected."
   set_env_value "$BACKEND_DIR/.env" AI_MODEL "$model"
   set_env_value "$BACKEND_DIR/.env" "$env_key" "$api_key"
+}
+
+prompt_kiosk_selection() {
+  if [[ -n "$INSTALL_KIOSK" ]]; then
+    return
+  fi
+  if [[ -r /dev/tty ]]; then
+    local choice
+    read -r -p "Configure local Chromium kiosk display on this machine? (y/N) [N]: " choice </dev/tty
+    case "$choice" in
+      [Yy]|[Yy][Ee][Ss]) INSTALL_KIOSK=true ;;
+      *) INSTALL_KIOSK=false ;;
+    esac
+  else
+    INSTALL_KIOSK=false
+  fi
 }
 
 prepare_configuration() {
@@ -232,13 +383,24 @@ wait_for_health() {
 }
 
 print_completion() {
-  local addresses
+  local addresses addr
   addresses="$(hostname -I 2>/dev/null || true)"
   printf '\nTilora is running at http://localhost:5173\n'
-  [[ -n "$addresses" ]] && printf 'LAN access: http://%s:5173\n' "${addresses%% *}"
+  if [[ -n "$addresses" ]]; then
+    for addr in $addresses; do
+      if [[ "$addr" != *:* && "$addr" != 127.* ]]; then
+        printf 'LAN access:      http://%s:5173\n' "$addr"
+      fi
+    done
+  fi
   printf 'Manage services: sudo systemctl status tilora-backend tilora-frontend\n'
   printf 'View logs:       journalctl -u tilora-backend -u tilora-frontend -f\n'
   printf 'Configuration:   %s/backend/.env and %s/backend/config/dashboard.yaml\n' "$INSTALL_DIR" "$INSTALL_DIR"
+  if [[ "$INSTALL_KIOSK" == true ]]; then
+    printf 'Kiosk mode:      Enabled. Ensure desktop autologin is enabled and reboot (sudo reboot) to start fullscreen.\n'
+  else
+    printf 'Kiosk mode:      Disabled (server-only). Connect to the dashboard from any browser on your network.\n'
+  fi
   printf 'Rerun this installer later to fast-forward, rebuild, and restart Tilora.\n'
 }
 
@@ -263,6 +425,7 @@ install_sudoers_restart() {
 }
 
 main() {
+  parse_args "$@"
   require_command sudo
   sudo -v
   detect_install_user
@@ -277,6 +440,11 @@ main() {
     info "First-run configuration"
     configure_dashboard
     configure_ai
+    prompt_kiosk_selection
+  fi
+  if [[ "$INSTALL_KIOSK" == true ]]; then
+    install_kiosk_dependencies
+    configure_kiosk
   fi
   render_service_units
   install_sudoers_restart
