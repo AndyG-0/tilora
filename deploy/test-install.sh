@@ -265,9 +265,6 @@ test_uninstall() {
     TILORA_SYSTEMD_DIR="$mock_sysdir"
     TILORA_CHROME_POLICY_DIRS="$mock_policy"
     TILORA_SUDOERS_FILE="$mock_sudoers"
-    SYSTEMD_DIR="$mock_sysdir"
-    CHROME_POLICY_DIRS="$mock_policy"
-    SUDOERS_FILE="$mock_sudoers"
     INSTALL_DIR="$mock_install"
     INSTALL_HOME="$mock_home"
     # shellcheck source=deploy/uninstall.sh
@@ -290,9 +287,6 @@ test_uninstall() {
     TILORA_SYSTEMD_DIR="$mock_sysdir"
     TILORA_CHROME_POLICY_DIRS="$mock_policy"
     TILORA_SUDOERS_FILE="$mock_sudoers"
-    SYSTEMD_DIR="$mock_sysdir"
-    CHROME_POLICY_DIRS="$mock_policy"
-    SUDOERS_FILE="$mock_sudoers"
     INSTALL_DIR="$mock_install"
     INSTALL_HOME="$mock_home"
     # shellcheck source=deploy/uninstall.sh
