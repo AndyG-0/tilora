@@ -6,6 +6,7 @@ set -euo pipefail
 TEST_ROOT="$(mktemp -d)"
 readonly TEST_ROOT
 trap 'rm -rf "$TEST_ROOT"' EXIT
+export TILORA_NONINTERACTIVE=true
 
 # shellcheck source=deploy/install.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/install.sh"
@@ -19,7 +20,7 @@ assert_contains() {
 }
 
 mock_log="$TEST_ROOT/mock.log"
-sudo() { "$@"; }
+sudo() { if [[ "$1" == "-v" ]]; then return 0; fi; "$@"; }
 apt-get() { printf 'apt-get'; printf ' %s' "$@"; printf '\n'; } >>"$mock_log"
 curl() { printf 'exit 0\n'; }
 node() { printf 'v24.0.0\n'; }
@@ -176,6 +177,57 @@ test_health_failure() {
   pass "reports failed health checks"
 }
 
+test_api_url_arg_parsing() {
+  CUSTOM_API_URL=""
+  TILORA_PUBLIC_API_BASE_URL=""
+  parse_args --api-url http://192.168.1.50:8000
+  [[ "$CUSTOM_API_URL" == "http://192.168.1.50:8000" ]] || fail_test "expected CUSTOM_API_URL for --api-url"
+
+  CUSTOM_API_URL=""
+  parse_args --backend-url=http://10.0.0.5:8000
+  [[ "$CUSTOM_API_URL" == "http://10.0.0.5:8000" ]] || fail_test "expected CUSTOM_API_URL for --backend-url="
+
+  CUSTOM_API_URL=""
+  TILORA_PUBLIC_API_BASE_URL="http://tilora.lan:8000"
+  parse_args
+  [[ "$(detect_default_api_url)" == "http://tilora.lan:8000" ]] || fail_test "expected TILORA_PUBLIC_API_BASE_URL in detect_default_api_url"
+
+  CUSTOM_API_URL=""
+  TILORA_PUBLIC_API_BASE_URL=""
+  INSTALL_KIOSK=true
+  [[ "$(detect_default_api_url)" == "http://localhost:8000" ]] || fail_test "expected localhost for kiosk mode"
+
+  CUSTOM_API_URL=""
+  TILORA_PUBLIC_API_BASE_URL=""
+  INSTALL_KIOSK=""
+  pass "parses API URL flags and environment variables"
+}
+
+test_frontend_env_configuration() {
+  local mock_install="$TEST_ROOT/mock_install"
+  mkdir -p "$mock_install/backend/config" "$mock_install/frontend"
+  printf 'KEY=backend_val\n' >"$mock_install/backend/.env.example"
+  printf 'widgets: []\n' >"$mock_install/backend/config/dashboard.example.yaml"
+  printf 'PUBLIC_API_BASE_URL=\n' >"$mock_install/frontend/.env.example"
+
+  BACKEND_DIR="$mock_install/backend"
+  FRONTEND_DIR="$mock_install/frontend"
+  CUSTOM_API_URL="http://192.168.1.100:8000"
+
+  prepare_configuration >/dev/null
+  [[ "$(get_env_value "$FRONTEND_DIR/.env" PUBLIC_API_BASE_URL)" == "http://192.168.1.100:8000" ]] || fail_test "prepare_configuration failed to set custom API url"
+
+  # Test kiosk default configuration
+  CUSTOM_API_URL=""
+  INSTALL_KIOSK=true
+  configure_frontend_api
+  [[ "$(get_env_value "$FRONTEND_DIR/.env" PUBLIC_API_BASE_URL)" == "http://localhost:8000" ]] || fail_test "configure_frontend_api failed to set kiosk localhost URL"
+
+  CUSTOM_API_URL=""
+  INSTALL_KIOSK=""
+  pass "configures frontend .env with appropriate backend API base URL"
+}
+
 test_piped_execution() {
   local install_script
   install_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/install.sh"
@@ -185,10 +237,74 @@ test_piped_execution() {
   pass "supports piped execution (curl | bash) under set -u"
 }
 
+test_uninstall() {
+  local uninstall_script
+  uninstall_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/uninstall.sh"
+  local help_output
+  help_output="$(bash -s -- --help < "$uninstall_script")"
+  printf '%s\n' "$help_output" | grep -Fq "Tilora Linux Uninstaller" || fail_test "uninstall piped execution failed --help"
+
+  # Setup mock environment for uninstallation
+  local mock_home="$TEST_ROOT/uninst_home"
+  local mock_install="$TEST_ROOT/uninst_tilora"
+  local mock_sysdir="$TEST_ROOT/uninst_systemd"
+  local mock_policy="$TEST_ROOT/uninst_policies"
+  local mock_sudoers="$TEST_ROOT/uninst_sudoers/tilora-restart"
+
+  mkdir -p "$mock_home/.config/autostart" "$mock_home/.config/labwc" "$mock_install/backend" "$mock_install/.git" "$mock_sysdir" "$mock_policy" "$(dirname "$mock_sudoers")"
+
+  touch "$mock_sysdir/tilora-backend.service" "$mock_sysdir/tilora-frontend.service"
+  touch "$mock_sudoers"
+  touch "$mock_home/.config/autostart/tilora-kiosk.desktop"
+  printf 'other-app &\n# Tilora kiosk display\n/home/user/tilora/deploy/kiosk.sh &\n' >"$mock_home/.config/labwc/autostart"
+  touch "$mock_policy/tilora.json"
+  touch "$mock_install/backend/storage.db"
+
+  # Run uninstall in subshell with mock paths and --keep-data
+  (
+    TILORA_SYSTEMD_DIR="$mock_sysdir"
+    TILORA_CHROME_POLICY_DIRS="$mock_policy"
+    TILORA_SUDOERS_FILE="$mock_sudoers"
+    INSTALL_DIR="$mock_install"
+    INSTALL_HOME="$mock_home"
+    # shellcheck source=deploy/uninstall.sh
+    source "$uninstall_script"
+    main --keep-data -y --install-dir "$mock_install"
+  )
+
+  # Check services and configs were deleted
+  [[ ! -f "$mock_sysdir/tilora-backend.service" ]] || fail_test "backend service unit should be removed"
+  [[ ! -f "$mock_sysdir/tilora-frontend.service" ]] || fail_test "frontend service unit should be removed"
+  [[ ! -f "$mock_sudoers" ]] || fail_test "sudoers file should be removed"
+  [[ ! -f "$mock_home/.config/autostart/tilora-kiosk.desktop" ]] || fail_test "autostart desktop entry should be removed"
+  [[ ! -f "$mock_policy/tilora.json" ]] || fail_test "chrome policy should be removed"
+  grep -Fq "other-app &" "$mock_home/.config/labwc/autostart" || fail_test "labwc should keep other entries"
+  grep -Fq "kiosk.sh" "$mock_home/.config/labwc/autostart" && fail_test "labwc should remove kiosk entry"
+  [[ -f "$mock_install/backend/storage.db" ]] || fail_test "storage.db should be kept with --keep-data"
+
+  # Run uninstall with --purge
+  (
+    TILORA_SYSTEMD_DIR="$mock_sysdir"
+    TILORA_CHROME_POLICY_DIRS="$mock_policy"
+    TILORA_SUDOERS_FILE="$mock_sudoers"
+    INSTALL_DIR="$mock_install"
+    INSTALL_HOME="$mock_home"
+    # shellcheck source=deploy/uninstall.sh
+    source "$uninstall_script"
+    main --purge -y --install-dir "$mock_install"
+  )
+
+  [[ ! -d "$mock_install" ]] || fail_test "install directory should be removed with --purge"
+  pass "uninstaller cleans up services, sudoers, kiosk autostart, and install files"
+}
+
 test_platform_validation
 test_kiosk_arg_parsing
+test_api_url_arg_parsing
 test_kiosk_configuration
+test_frontend_env_configuration
 test_piped_execution
 test_mocked_dependencies_and_upgrade
 test_service_rendering
 test_health_failure
+test_uninstall
