@@ -10,7 +10,7 @@ WorkingDirectory=__TILORA_BACKEND_DIR__
 # start-up doesn't depend on `uv` being able to write to its own cache dir
 # under the read-only sandbox below — `uv sync` (build step) already
 # produced everything this needs.
-ExecStart=__TILORA_BACKEND_DIR__/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+ExecStart=__TILORA_BACKEND_DIR__/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 Restart=on-failure
 RestartSec=3
 EnvironmentFile=__TILORA_BACKEND_DIR__/.env
