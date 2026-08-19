@@ -38,7 +38,7 @@ def _describe_size(col_span: int, row_span: int) -> str:
     return known.get((col_span, row_span), f"{col_span} × {row_span}")
 
 
-def _build_tiles_report_sync(user_id: str, device_id: str) -> dict[str, Any]:
+def _build_tiles_report_sync(user_id: str, device_id: str, is_admin: bool) -> dict[str, Any]:
     config = load_dashboard_config()
     tabs = resolve_tabs(config)
     tab_names = {t["id"]: t["name"] for t in tabs}
@@ -74,6 +74,12 @@ def _build_tiles_report_sync(user_id: str, device_id: str) -> dict[str, Any]:
         custom_widget_row = custom_widget_map.get(widget_id, {})
         owner_user_id = custom_widget_row.get("owner_user_id") or w.get("owner_user_id")
         owner_device_id = custom_widget_row.get("owner_device_id") or w.get("owner_device_id")
+
+        if not is_admin and owner_user_id is not None and owner_user_id != user_id:
+            # Non-admins manage only their own tiles plus unowned/shared
+            # ones — a tile owned by someone else is scoped out server-side
+            # so it never reaches the response, not just hidden client-side.
+            continue
 
         owner_user_name = users_map.get(owner_user_id, owner_user_id) if owner_user_id else "System / Shared"
         owner_device_name = devices_map.get(owner_device_id, owner_device_id) if owner_device_id else "All Devices"
@@ -193,4 +199,5 @@ async def get_tiles_report(
     user: dict[str, Any] = Depends(get_current_user),
     device: dict[str, Any] = Depends(get_current_device),
 ):
-    return await asyncio.to_thread(_build_tiles_report_sync, user["id"], device["id"])
+    is_admin = user.get("role") == "admin"
+    return await asyncio.to_thread(_build_tiles_report_sync, user["id"], device["id"], is_admin)

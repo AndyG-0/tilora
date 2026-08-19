@@ -1171,6 +1171,19 @@
 		"stat_device_settings": "Geräteüberschreibungen aktiv",
 		"stat_user_settings": "Benutzereinstellungen gespeichert",
 		"stat_layout_overrides": "Layout angepasst",
-		"nav_report_button": "Kachel-Bericht"
+		"nav_report_button": "Kachel-Bericht",
+		"filter_all_users": "Alle Benutzer",
+		"filter_unowned": "Geteilt / Ohne Besitzer",
+		"action_add_tile": "Kachel hinzufügen",
+		"add_modal_title": "Kachel hinzufügen",
+		"add_type_label": "Kacheltyp",
+		"add_type_placeholder": "Kacheltyp wählen…",
+		"add_tab_label": "Tab",
+		"add_owner_label": "Zuweisen an",
+		"add_owner_self": "Mich selbst",
+		"add_cancel": "Abbrechen",
+		"add_confirm": "Kachel hinzufügen",
+		"add_saving": "Wird hinzugefügt…",
+		"add_error": "Kachel konnte nicht hinzugefügt werden."
 	}
 }

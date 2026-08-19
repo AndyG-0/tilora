@@ -1171,6 +1171,19 @@
 		"stat_device_settings": "Remplacements d'appareil actifs",
 		"stat_user_settings": "Préférences utilisateur enregistrées",
 		"stat_layout_overrides": "Agencement personnalisé",
-		"nav_report_button": "Rapport des tuiles"
+		"nav_report_button": "Rapport des tuiles",
+		"filter_all_users": "Tous les utilisateurs",
+		"filter_unowned": "Partagé / Sans propriétaire",
+		"action_add_tile": "Ajouter une tuile",
+		"add_modal_title": "Ajouter une tuile",
+		"add_type_label": "Type de tuile",
+		"add_type_placeholder": "Choisir un type de tuile…",
+		"add_tab_label": "Onglet",
+		"add_owner_label": "Attribuer à",
+		"add_owner_self": "Moi-même",
+		"add_cancel": "Annuler",
+		"add_confirm": "Ajouter une tuile",
+		"add_saving": "Ajout en cours…",
+		"add_error": "Impossible d'ajouter la tuile."
 	}
 }

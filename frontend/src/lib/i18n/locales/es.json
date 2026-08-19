@@ -1171,6 +1171,19 @@
 		"stat_device_settings": "Ajustes de dispositivo activos",
 		"stat_user_settings": "Preferencias de usuario guardadas",
 		"stat_layout_overrides": "Diseño modificado",
-		"nav_report_button": "Informe de mosaicos"
+		"nav_report_button": "Informe de mosaicos",
+		"filter_all_users": "Todos los usuarios",
+		"filter_unowned": "Compartido / Sin propietario",
+		"action_add_tile": "Añadir mosaico",
+		"add_modal_title": "Añadir mosaico",
+		"add_type_label": "Tipo de mosaico",
+		"add_type_placeholder": "Elige un tipo de mosaico…",
+		"add_tab_label": "Pestaña",
+		"add_owner_label": "Asignar a",
+		"add_owner_self": "A mí mismo",
+		"add_cancel": "Cancelar",
+		"add_confirm": "Añadir mosaico",
+		"add_saving": "Añadiendo…",
+		"add_error": "No se pudo añadir el mosaico."
 	}
 }

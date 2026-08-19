@@ -1341,8 +1341,13 @@ export const api = {
 		getJSON<{ type: string; name: string; default_layout: { colSpan: number; rowSpan: number } }[]>(
 			'/api/widgets/types',
 		),
-	addWidget: (type: string, layout: WidgetLayout, tab?: string) =>
-		postJSON<WidgetSummaryMeta>('/api/widgets', { type, layout, ...(tab !== undefined && { tab }) }),
+	addWidget: (type: string, layout: WidgetLayout, tab?: string, ownerUserId?: string) =>
+		postJSON<WidgetSummaryMeta>('/api/widgets', {
+			type,
+			layout,
+			...(tab !== undefined && { tab }),
+			...(ownerUserId !== undefined && { owner_user_id: ownerUserId }),
+		}),
 	removeWidget: (id: string) => deleteJSON<{ status: string }>(`/api/widgets/${id}`),
 	tilesReport: () => getJSON<TileReportResponse>('/api/reports/tiles'),
 	jellyfinChildren: (id: string, parentId?: string) =>

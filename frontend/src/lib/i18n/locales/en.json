@@ -1192,6 +1192,19 @@
 		"stat_device_settings": "Device overrides active",
 		"stat_user_settings": "User preferences stored",
 		"stat_layout_overrides": "Layout modified",
-		"nav_report_button": "Tile Report"
+		"nav_report_button": "Tile Report",
+		"filter_all_users": "All Users",
+		"filter_unowned": "Shared / Unowned",
+		"action_add_tile": "Add Tile",
+		"add_modal_title": "Add Tile",
+		"add_type_label": "Tile Type",
+		"add_type_placeholder": "Choose a tile type…",
+		"add_tab_label": "Tab",
+		"add_owner_label": "Assign To",
+		"add_owner_self": "Myself",
+		"add_cancel": "Cancel",
+		"add_confirm": "Add Tile",
+		"add_saving": "Adding…",
+		"add_error": "Could not add tile."
 	}
 }
