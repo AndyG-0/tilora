@@ -9,7 +9,10 @@ from app.plugins.movies.plugin import TMDB_BASE_URL, MoviesPlugin
 
 
 @pytest.fixture(autouse=True)
-def _set_tmdb_api_key(monkeypatch):
+def _set_tmdb_api_key(monkeypatch, tmp_db):
+    # `effective_settings()` (via `_is_configured`) now reads through to the
+    # db-persisted app_settings table, so every test needs an isolated db
+    # (`tmp_db`), not just the ones that already required it directly.
     monkeypatch.setattr(config.settings, "tmdb_api_key", "test-tmdb-key")
 
 

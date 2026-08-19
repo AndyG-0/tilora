@@ -14,7 +14,10 @@ CHANNEL_ID = "111111111111111111"
 
 
 @pytest.fixture(autouse=True)
-def _set_discord_bot_token(monkeypatch):
+def _set_discord_bot_token(monkeypatch, tmp_db):
+    # `effective_settings()` (via `_is_configured`) now reads through to the
+    # db-persisted app_settings table, so every test needs an isolated db
+    # (`tmp_db`), not just the ones that already required it directly.
     monkeypatch.setattr(config.settings, "discord_bot_token", "test-bot-token")
 
 
