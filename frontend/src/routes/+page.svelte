@@ -382,6 +382,32 @@
 	// speaking — the unmount is this page's own doing, not the user leaving.
 	let navigatingFromAssistant = false;
 
+	// Chromium (and other Chromium-based browsers) blocks HTMLMediaElement
+	// autoplay-with-sound — used for OpenAI/Piper TTS playback — until the
+	// document has received at least one real click/tap/keypress. Pressing
+	// the mic button satisfies that; always-on mode never does on a kiosk
+	// that boots straight into fullscreen Chromium with no interaction. Track
+	// the first such gesture ourselves (rather than depending on the
+	// Chromium-only navigator.userActivation API) so a one-time prompt can
+	// tell the user to tap once.
+	let audioUnlocked = $state(false);
+	const needsAudioUnlockPrompt = $derived(alwaysOnActive && !audioUnlocked && $voiceSelection.provider !== 'browser');
+
+	function handleFirstGesture() {
+		audioUnlocked = true;
+		window.removeEventListener('pointerdown', handleFirstGesture);
+		window.removeEventListener('keydown', handleFirstGesture);
+	}
+
+	onMount(() => {
+		window.addEventListener('pointerdown', handleFirstGesture);
+		window.addEventListener('keydown', handleFirstGesture);
+		return () => {
+			window.removeEventListener('pointerdown', handleFirstGesture);
+			window.removeEventListener('keydown', handleFirstGesture);
+		};
+	});
+
 	async function processAssistantQuery(query: string) {
 		assistantState = { status: 'thinking', query };
 		try {
@@ -467,6 +493,7 @@
 			if (!continuousListener) {
 				continuousListener = startContinuousListening({
 					getAgentName: () => get(agentName),
+					sttAvailable: $sttAvailable,
 					onWakeWordDetected: (query) => {
 						handleWakeWordDetected(query);
 					},
@@ -793,6 +820,13 @@
 	{/if}
 </div>
 
+{#if needsAudioUnlockPrompt}
+	<div class="audio-unlock-banner" role="status">
+		<span class="audio-unlock-dot" aria-hidden="true"></span>
+		<p>{$_('dashboard.enable_voice_playback_hint')}</p>
+	</div>
+{/if}
+
 {#if assistantState.status !== 'idle'}
 	<div class="assistant-overlay" role="status">
 		{#if assistantState.status === 'listening'}
@@ -1044,6 +1078,49 @@
 		border-radius: 50%;
 		background: var(--color-accent, #10b981);
 		border: 1px solid var(--color-surface);
+	}
+
+	.audio-unlock-banner {
+		position: fixed;
+		top: 4.5rem;
+		right: 1rem;
+		z-index: 10;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		max-width: 16rem;
+		padding: 0.5rem 0.75rem;
+		border-radius: 0.75rem;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface);
+		color: var(--color-text);
+		font-size: 0.8rem;
+		line-height: 1.3;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+		pointer-events: none;
+	}
+
+	.audio-unlock-banner p {
+		margin: 0;
+	}
+
+	.audio-unlock-dot {
+		flex: 0 0 auto;
+		width: 0.55rem;
+		height: 0.55rem;
+		border-radius: 50%;
+		background: var(--color-accent, #10b981);
+		animation: audio-unlock-pulse 1.6s ease-in-out infinite;
+	}
+
+	@keyframes audio-unlock-pulse {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.35;
+		}
 	}
 
 	.icon-button:active {

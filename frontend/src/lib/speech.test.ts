@@ -7,7 +7,9 @@ const { synthesizeSpeech, transcribeAudio } = vi.hoisted(() => ({
 vi.mock('$lib/api', () => ({ api: { synthesizeSpeech, transcribeAudio } }));
 
 import {
+	computeRms,
 	ensureMicrophonePermission,
+	INITIAL_VAD_STATE,
 	isSpeaking,
 	isSpeechRecognitionSupported,
 	isSpeechSynthesisSupported,
@@ -18,8 +20,13 @@ import {
 	SpeechError,
 	speak,
 	startContinuousListening,
+	stepVad,
 	stopSpeaking,
+	type VadConfig,
 } from './speech';
+
+const CHROME_UA =
+	'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 describe('speech', () => {
 	beforeEach(() => {
@@ -468,6 +475,7 @@ describe('speech', () => {
 			}
 			// @ts-expect-error -- test stub
 			window.SpeechRecognition = FakeContinuousRecognition;
+			vi.stubGlobal('navigator', { userAgent: CHROME_UA, language: 'en-US' });
 
 			const handle = startContinuousListening({
 				getAgentName: () => 'Tilora',
@@ -488,6 +496,272 @@ describe('speech', () => {
 
 			handle.stop();
 			expect(stopped).toBe(true);
+		});
+	});
+
+	describe('computeRms', () => {
+		it('is 0 for silence (all bytes at the 128 midpoint)', () => {
+			expect(computeRms(new Uint8Array(32).fill(128))).toBe(0);
+		});
+
+		it('is ~1 for a full-scale square wave', () => {
+			const data = new Uint8Array(32).fill(255);
+			expect(computeRms(data)).toBeCloseTo(0.992, 2);
+		});
+
+		it('scales with amplitude', () => {
+			const quiet = new Uint8Array(32).fill(128 + 13); // ~0.1 amplitude
+			const loud = new Uint8Array(32).fill(128 + 64); // ~0.5 amplitude
+			expect(computeRms(loud)).toBeGreaterThan(computeRms(quiet));
+		});
+	});
+
+	describe('stepVad', () => {
+		const cfg: VadConfig = {
+			tickMs: 100,
+			threshold: 0.1,
+			minUtteranceMs: 350,
+			silenceHangoverMs: 900,
+			maxUtteranceMs: 6000,
+		};
+
+		it('stays idle while rms is below threshold', () => {
+			const { state, action } = stepVad(INITIAL_VAD_STATE, 0.01, cfg);
+			expect(action).toBe('none');
+			expect(state).toBe(INITIAL_VAD_STATE);
+		});
+
+		it('starts recording once rms crosses threshold', () => {
+			const { state, action } = stepVad(INITIAL_VAD_STATE, 0.5, cfg);
+			expect(action).toBe('start');
+			expect(state).toEqual({ phase: 'recording', elapsedRecordingMs: 100, speechMs: 100, silenceMs: 0 });
+		});
+
+		it('discards a short blip that never reaches the minimum utterance length', () => {
+			let state = stepVad(INITIAL_VAD_STATE, 0.5, cfg).state; // 100ms speech
+			const step = stepVad(state, 0.0, cfg); // silence starts immediately
+			state = step.state;
+			// advance silence to the hangover threshold
+			let action = step.action;
+			for (let i = 0; i < 8; i++) {
+				const r = stepVad(state, 0.0, cfg);
+				state = r.state;
+				action = r.action;
+			}
+			expect(action).toBe('stop-discard');
+			expect(state).toBe(INITIAL_VAD_STATE);
+		});
+
+		it('transcribes an utterance that clears the minimum speech duration before trailing silence', () => {
+			let state = INITIAL_VAD_STATE;
+			let action = 'none' as ReturnType<typeof stepVad>['action'];
+			for (let i = 0; i < 4; i++) {
+				({ state, action } = stepVad(state, 0.5, cfg));
+			}
+			expect(state.speechMs).toBe(400);
+			for (let i = 0; i < 9; i++) {
+				({ state, action } = stepVad(state, 0.0, cfg));
+			}
+			expect(action).toBe('stop-transcribe');
+			expect(state).toBe(INITIAL_VAD_STATE);
+		});
+
+		it('force-stops at the max utterance duration even without trailing silence', () => {
+			let state = INITIAL_VAD_STATE;
+			let action = 'none' as ReturnType<typeof stepVad>['action'];
+			for (let i = 0; i < 60; i++) {
+				({ state, action } = stepVad(state, 0.5, cfg));
+			}
+			expect(action).toBe('stop-transcribe');
+		});
+	});
+
+	describe('startContinuousListening (cloud VAD path)', () => {
+		function makeFakeMediaRecorderClass() {
+			class FakeMediaRecorder {
+				static instances: FakeMediaRecorder[] = [];
+				state = 'inactive';
+				mimeType = 'audio/webm';
+				ondataavailable: ((e: { data: Blob }) => void) | null = null;
+				onstop: (() => void) | null = null;
+				onerror: (() => void) | null = null;
+				static isTypeSupported() {
+					return true;
+				}
+				constructor() {
+					FakeMediaRecorder.instances.push(this);
+				}
+				start() {
+					this.state = 'recording';
+					this.ondataavailable?.({ data: new Blob(['chunk'], { type: 'audio/webm' }) });
+				}
+				stop() {
+					this.state = 'inactive';
+					this.onstop?.();
+				}
+			}
+			return FakeMediaRecorder;
+		}
+
+		function stubCloudVadEnvironment(initialRms = 0) {
+			const audioState = { rms: initialRms };
+
+			class FakeAnalyserNode {
+				fftSize = 32;
+				getByteTimeDomainData(arr: Uint8Array) {
+					const val = Math.min(255, Math.max(0, Math.round(128 + audioState.rms * 128)));
+					arr.fill(val);
+				}
+			}
+			const analyser = new FakeAnalyserNode();
+
+			class FakeAudioContext {
+				state = 'running';
+				currentTime = 0;
+				destination = {};
+				createMediaStreamSource() {
+					return { connect: vi.fn() };
+				}
+				createAnalyser() {
+					return analyser;
+				}
+				resume() {
+					this.state = 'running';
+					return Promise.resolve();
+				}
+				close() {
+					return Promise.resolve();
+				}
+			}
+			vi.stubGlobal('AudioContext', FakeAudioContext);
+
+			const fakeTrack = { stop: vi.fn() };
+			const fakeStream = { getTracks: () => [fakeTrack] };
+			const getUserMedia = vi.fn().mockResolvedValue(fakeStream);
+			// No userAgent override here: jsdom's default UA is not chrome/edge/safari,
+			// so isNativeSpeechReliable() is false and (with no SpeechRecognition ctor
+			// stubbed) startContinuousListening dispatches to the cloud VAD path.
+			vi.stubGlobal('navigator', { mediaDevices: { getUserMedia } });
+
+			const FakeMediaRecorder = makeFakeMediaRecorderClass();
+			vi.stubGlobal('MediaRecorder', FakeMediaRecorder);
+
+			return { audioState, getUserMedia, FakeMediaRecorder };
+		}
+
+		beforeEach(() => {
+			vi.useFakeTimers();
+			transcribeAudio.mockReset();
+		});
+
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
+		it('records an utterance, transcribes it once, and fires onWakeWordDetected on a match', async () => {
+			const { audioState, FakeMediaRecorder } = stubCloudVadEnvironment(0);
+			transcribeAudio.mockResolvedValue({ text: 'Hey Tilora what time is it' });
+			const onWakeWordDetected = vi.fn();
+
+			const handle = startContinuousListening({
+				getAgentName: () => 'Tilora',
+				sttAvailable: true,
+				onWakeWordDetected,
+			});
+
+			// ~600ms silent calibration window
+			await vi.advanceTimersByTimeAsync(650);
+
+			// speech crosses the calibrated threshold and clears the 350ms minimum
+			audioState.rms = 0.5;
+			await vi.advanceTimersByTimeAsync(400);
+
+			// trailing silence past the 900ms hangover triggers stop + transcribe
+			audioState.rms = 0;
+			await vi.advanceTimersByTimeAsync(1200);
+
+			expect(FakeMediaRecorder.instances).toHaveLength(1);
+			expect(transcribeAudio).toHaveBeenCalledTimes(1);
+			expect(onWakeWordDetected).toHaveBeenCalledWith('what time is it');
+
+			handle.stop();
+		});
+
+		it('never starts recording (and never transcribes) while the assistant is speaking', async () => {
+			class FakeUtterance {
+				text: string;
+				voice: SpeechSynthesisVoice | undefined;
+				constructor(text: string) {
+					this.text = text;
+				}
+			}
+			vi.stubGlobal('SpeechSynthesisUtterance', FakeUtterance);
+			vi.stubGlobal('speechSynthesis', { cancel: vi.fn(), speak: vi.fn(), getVoices: () => [] });
+			speak('assistant is talking', { provider: 'browser', voiceId: '', voiceName: '' });
+
+			const { audioState, FakeMediaRecorder } = stubCloudVadEnvironment(0);
+
+			const handle = startContinuousListening({
+				getAgentName: () => 'Tilora',
+				sttAvailable: true,
+				onWakeWordDetected: vi.fn(),
+			});
+
+			await vi.advanceTimersByTimeAsync(650);
+			audioState.rms = 0.5;
+			await vi.advanceTimersByTimeAsync(1500);
+
+			expect(FakeMediaRecorder.instances).toHaveLength(0);
+			expect(transcribeAudio).not.toHaveBeenCalled();
+
+			handle.stop();
+			stopSpeaking();
+		});
+
+		it('pause() discards an in-flight recording, and resume() re-arms without recalibrating', async () => {
+			const { audioState } = stubCloudVadEnvironment(0);
+
+			const handle = startContinuousListening({
+				getAgentName: () => 'Tilora',
+				sttAvailable: true,
+				onWakeWordDetected: vi.fn(),
+			});
+
+			await vi.advanceTimersByTimeAsync(650);
+			audioState.rms = 0.5;
+			await vi.advanceTimersByTimeAsync(200);
+
+			handle.pause();
+			audioState.rms = 0;
+			await vi.advanceTimersByTimeAsync(1500);
+			expect(transcribeAudio).not.toHaveBeenCalled();
+
+			handle.resume();
+			audioState.rms = 0.5;
+			await vi.advanceTimersByTimeAsync(400);
+			audioState.rms = 0;
+			await vi.advanceTimersByTimeAsync(1200);
+
+			expect(transcribeAudio).toHaveBeenCalledTimes(1);
+
+			handle.stop();
+		});
+
+		it('routes Firefox/Chromium user agents with sttAvailable to the cloud path instead of onError', async () => {
+			stubCloudVadEnvironment(0);
+			const onError = vi.fn();
+
+			const handle = startContinuousListening({
+				getAgentName: () => 'Tilora',
+				sttAvailable: true,
+				onWakeWordDetected: vi.fn(),
+				onError,
+			});
+
+			await vi.advanceTimersByTimeAsync(650);
+
+			expect(onError).not.toHaveBeenCalled();
+			handle.stop();
 		});
 	});
 });

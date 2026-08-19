@@ -1569,6 +1569,16 @@
 						Controls which text-to-speech options household members can choose from in "Your settings". The browser's
 						built-in voice is always available and needs no setup.
 					</p>
+					<p class="hint">
+						OpenAI and Piper voices play through an audio element that Chromium-based browsers block from making sound
+						until the page has received a tap, click, or key press. For a normal mic-button press this happens
+						automatically, but on a client using "Always-on microphone" (see "Your settings") that boots straight into
+						the dashboard, playback stays silent until someone taps the screen once — the dashboard shows a one-time
+						prompt asking for that tap. To skip the prompt entirely on a client you control, launch that browser with
+						<code>--autoplay-policy=no-user-gesture-required</code>
+						(already set by <code>deploy/kiosk.sh</code> for barebones Pi installs) or apply the Chromium enterprise
+						<code>AutoplayAllowlist</code> policy.
+					</p>
 
 					<label class="checkbox-label">
 						<input type="checkbox" bind:checked={openaiTtsEnabledInput} />
