@@ -1039,7 +1039,8 @@
 		"mic_service_unavailable": "Reconocimiento de voz no disponible en este navegador. Habilita OpenAI Whisper en Configuración o usa Google Chrome / Edge.",
 		"assistant_error": "Algo salió mal. Inténtalo de nuevo o pide a tu administrador que revise los registros si esto continúa.",
 		"always_on_standby": "Escuchando \"{agentName}\"…",
-		"always_on_standby_label": "Micrófono siempre activo: escuchando \"{agentName}\""
+		"always_on_standby_label": "Micrófono siempre activo: escuchando \"{agentName}\"",
+		"enable_voice_playback_hint": "Toca en cualquier lugar para habilitar las respuestas habladas en el modo siempre activo."
 	},
 	"widget_detail": {
 		"unknown_widget": "Widget desconocido",

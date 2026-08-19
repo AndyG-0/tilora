@@ -1039,7 +1039,8 @@
 		"mic_service_unavailable": "Reconnaissance vocale non disponible dans ce navigateur. Activez OpenAI Whisper dans les paramètres ou utilisez Google Chrome / Edge.",
 		"assistant_error": "Une erreur s'est produite. Réessayez, ou demandez à votre administrateur de vérifier les journaux si cela persiste.",
 		"always_on_standby": "En attente de « {agentName} »…",
-		"always_on_standby_label": "Microphone toujours actif : en attente de « {agentName} »"
+		"always_on_standby_label": "Microphone toujours actif : en attente de « {agentName} »",
+		"enable_voice_playback_hint": "Touchez n'importe où pour activer les réponses vocales en mode toujours actif."
 	},
 	"widget_detail": {
 		"unknown_widget": "Widget inconnu",
