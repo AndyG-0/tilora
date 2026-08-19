@@ -255,6 +255,17 @@ Tilora includes an AI voice assistant accessible via the top-bar microphone butt
 | **Mozilla Firefox** | Cloud STT (OpenAI Whisper) | Firefox does not support native speech recognition. Enable **OpenAI Whisper STT** in Settings (Admin). |
 | **Brave** | Cloud STT (OpenAI Whisper) | Enable **OpenAI Whisper STT** in Settings (Admin) + `#unsafely-treat-insecure-origin-as-secure`. |
 
+### Always-on TTS playback on Chromium
+
+Chromium-based browsers (Chromium, Brave, Edge) block audio playback — including OpenAI/Piper text-to-speech — until the
+page has received a real click, tap, or key press. A normal mic-button press satisfies this automatically, but a client
+running "Always-on microphone" mode that boots straight into the dashboard (e.g. a kiosk) never generates that first
+gesture on its own, so spoken responses stay silent until the screen is touched once. Tilora shows a one-time on-screen
+prompt asking for that tap, so this resolves itself with no configuration. To skip the prompt entirely on a client you
+control, launch Chromium with `--autoplay-policy=no-user-gesture-required` (already set by `deploy/kiosk.sh` for
+barebones Raspberry Pi installs) or apply the Chromium enterprise `AutoplayAllowlist` policy for server + separate-client
+deployments where you don't control the launch flags directly.
+
 ## License
 
 MIT — see `LICENSE`.

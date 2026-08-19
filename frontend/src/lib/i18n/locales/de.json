@@ -1039,7 +1039,8 @@
 		"mic_service_unavailable": "Spracherkennung in diesem Browser nicht verfügbar. Aktiviere OpenAI Whisper in den Einstellungen oder nutze Google Chrome / Edge.",
 		"assistant_error": "Etwas ist schiefgelaufen. Versuchen Sie es erneut oder bitten Sie Ihren Administrator, die Protokolle zu prüfen, falls dies weiterhin auftritt.",
 		"always_on_standby": "Wartet auf „{agentName}“…",
-		"always_on_standby_label": "Dauermikrofon aktiv: wartet auf „{agentName}“"
+		"always_on_standby_label": "Dauermikrofon aktiv: wartet auf „{agentName}“",
+		"enable_voice_playback_hint": "Tippen Sie irgendwo, um gesprochene Antworten im Dauerbetrieb zu aktivieren."
 	},
 	"widget_detail": {
 		"unknown_widget": "Unbekanntes Widget",

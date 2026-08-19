@@ -5,8 +5,10 @@
 // so speak() also supports a specific admin-enabled cloud/Piper voice,
 // fetched as audio bytes from the backend (see app/api/tts.py) and played
 // back via the Audio element. Speech *recognition* (listenOnce and
-// continuous wake-word detection) has no server-side equivalent and stays
-// purely local either way.
+// continuous wake-word detection) prefers the browser's native
+// SpeechRecognition where it's reliable (isNativeSpeechReliable()), and
+// falls back to cloud STT (OpenAI Whisper, see app/api/assistant.py) where
+// it isn't — Chromium, Firefox, Brave.
 
 import { api } from '$lib/api';
 
@@ -277,6 +279,9 @@ export async function speak(text: string, selection?: VoiceSelection): Promise<v
 
 import { isNativeSpeechReliable } from '$lib/network';
 
+export const STT_UNAVAILABLE_MESSAGE =
+	'Speech recognition is unavailable in this browser. Enable OpenAI Whisper in Settings or use Google Chrome / Edge.';
+
 export type SpeechErrorCode =
 	'not-allowed' | 'audio-capture' | 'service-unavailable' | 'no-speech' | 'network' | 'unknown';
 
@@ -515,19 +520,13 @@ export async function listenOnce(options?: ListenOnceOptions): Promise<string> {
 			return await listenNative();
 		} catch (err) {
 			if (err instanceof SpeechError && (err.code === 'service-unavailable' || err.code === 'network')) {
-				throw new SpeechError(
-					'Speech recognition is unavailable in this browser. Enable OpenAI Whisper in Settings or use Google Chrome / Edge.',
-					'service-unavailable',
-				);
+				throw new SpeechError(STT_UNAVAILABLE_MESSAGE, 'service-unavailable');
 			}
 			throw err;
 		}
 	}
 
-	throw new SpeechError(
-		'Speech recognition is unavailable in this browser. Enable OpenAI Whisper in Settings or use Google Chrome / Edge.',
-		'service-unavailable',
-	);
+	throw new SpeechError(STT_UNAVAILABLE_MESSAGE, 'service-unavailable');
 }
 
 export interface ContinuousListenOptions {
@@ -535,6 +534,11 @@ export interface ContinuousListenOptions {
 	onWakeWordDetected: (query: string) => void;
 	onError?: (error: Error) => void;
 	lang?: string;
+	// Whether the server has cloud STT (OpenAI Whisper) configured. Mirrors
+	// ListenOnceOptions.sttAvailable — without it, browsers where native
+	// SpeechRecognition is unreliable (Chromium, Firefox, Brave; see
+	// isNativeSpeechReliable()) have no way to detect the wake word at all.
+	sttAvailable?: boolean;
 }
 
 export interface ContinuousListenHandle {
@@ -556,13 +560,28 @@ export async function ensureMicrophonePermission(): Promise<boolean> {
 	}
 }
 
+// Dispatches to native browser SpeechRecognition where it's reliable (Chrome,
+// Edge, Safari — see isNativeSpeechReliable()), otherwise to a cloud-STT/VAD
+// fallback (Chromium, Firefox, Brave) when the server has Whisper configured,
+// mirroring listenOnce()'s existing dispatch logic for the single-shot flow.
 export function startContinuousListening(options: ContinuousListenOptions): ContinuousListenHandle {
+	const isReliable = isNativeSpeechReliable();
 	const Ctor = getSpeechRecognitionCtor();
-	if (!Ctor) {
-		options.onError?.(new Error('Speech recognition is not supported'));
-		return { stop() {}, pause() {}, resume() {} };
-	}
 
+	if (isReliable && Ctor) {
+		return startNativeContinuousListening(options, Ctor);
+	}
+	if (options.sttAvailable) {
+		return startCloudVadContinuousListening(options);
+	}
+	options.onError?.(new Error(STT_UNAVAILABLE_MESSAGE));
+	return { stop() {}, pause() {}, resume() {} };
+}
+
+function startNativeContinuousListening(
+	options: ContinuousListenOptions,
+	Ctor: new () => SpeechRecognitionLike,
+): ContinuousListenHandle {
 	const RecognitionCtor = Ctor;
 	let active = true;
 	let paused = false;
@@ -681,6 +700,304 @@ export function startContinuousListening(options: ContinuousListenOptions): Cont
 			if (!active) return;
 			paused = false;
 			startRecognition();
+		},
+	};
+}
+
+// --- Cloud-STT continuous listening (VAD-gated) ---------------------------
+//
+// Used where native SpeechRecognition is unreliable (Chromium, Firefox,
+// Brave) but the server has cloud STT (Whisper) configured. Keeps a single
+// getUserMedia stream open for the whole session and runs a cheap local
+// amplitude-based voice-activity check on it, only sending audio to Whisper
+// when an actual utterance was detected — never on a fixed timer — since
+// transcription is billed per minute and this runs continuously in the
+// background on a kiosk.
+
+const VAD_TICK_MS = 100;
+const VAD_CALIBRATION_MS = 600;
+const VAD_MIN_UTTERANCE_MS = 350;
+const VAD_SILENCE_HANGOVER_MS = 900;
+const VAD_MAX_UTTERANCE_MS = 6000;
+const VAD_DEFAULT_THRESHOLD = 0.02;
+const VAD_THRESHOLD_MULTIPLIER = 2.5;
+const VAD_MAX_CONSECUTIVE_FAILURES = 3;
+
+export type VadPhase = 'idle' | 'recording';
+
+export interface VadRunningState {
+	phase: VadPhase;
+	elapsedRecordingMs: number;
+	speechMs: number;
+	silenceMs: number;
+}
+
+export const INITIAL_VAD_STATE: VadRunningState = { phase: 'idle', elapsedRecordingMs: 0, speechMs: 0, silenceMs: 0 };
+
+export interface VadConfig {
+	tickMs: number;
+	threshold: number;
+	minUtteranceMs: number;
+	silenceHangoverMs: number;
+	maxUtteranceMs: number;
+}
+
+export type VadAction = 'none' | 'start' | 'stop-transcribe' | 'stop-discard';
+
+// Pure amplitude RMS over a time-domain byte buffer (as returned by
+// AnalyserNode.getByteTimeDomainData) — no DOM/WebAudio dependency, so this
+// and stepVad() below are unit-testable without mocking the Web Audio API.
+export function computeRms(data: Uint8Array): number {
+	let sum = 0;
+	for (let i = 0; i < data.length; i++) {
+		const n = (data[i] - 128) / 128;
+		sum += n * n;
+	}
+	return Math.sqrt(sum / data.length);
+}
+
+// One VAD tick: idle -> recording once rms crosses threshold; recording ->
+// idle (transcribe) once trailing silence exceeds silenceHangoverMs, as long
+// as the accumulated in-utterance speech time cleared minUtteranceMs -
+// otherwise idle (discard), so short blips/taps never reach Whisper.
+export function stepVad(
+	state: VadRunningState,
+	rms: number,
+	cfg: VadConfig,
+): { state: VadRunningState; action: VadAction } {
+	const isSpeech = rms >= cfg.threshold;
+
+	if (state.phase === 'idle') {
+		if (!isSpeech) return { state, action: 'none' };
+		return {
+			state: { phase: 'recording', elapsedRecordingMs: cfg.tickMs, speechMs: cfg.tickMs, silenceMs: 0 },
+			action: 'start',
+		};
+	}
+
+	const elapsedRecordingMs = state.elapsedRecordingMs + cfg.tickMs;
+	const speechMs = isSpeech ? state.speechMs + cfg.tickMs : state.speechMs;
+	const silenceMs = isSpeech ? 0 : state.silenceMs + cfg.tickMs;
+	const shouldStop = elapsedRecordingMs >= cfg.maxUtteranceMs || silenceMs >= cfg.silenceHangoverMs;
+
+	if (shouldStop) {
+		return { state: INITIAL_VAD_STATE, action: speechMs >= cfg.minUtteranceMs ? 'stop-transcribe' : 'stop-discard' };
+	}
+
+	return { state: { phase: 'recording', elapsedRecordingMs, speechMs, silenceMs }, action: 'none' };
+}
+
+function startCloudVadContinuousListening(options: ContinuousListenOptions): ContinuousListenHandle {
+	let active = true;
+	let paused = false;
+	let stream: MediaStream | null = null;
+	let audioContext: AudioContext | null = null;
+	let analyser: AnalyserNode | null = null;
+	let dataArray: Uint8Array<ArrayBuffer> | null = null;
+	let tickInterval: ReturnType<typeof setInterval> | null = null;
+	let vadState: VadRunningState = INITIAL_VAD_STATE;
+	let threshold = VAD_DEFAULT_THRESHOLD;
+	let recorder: MediaRecorder | null = null;
+	let recorderChunks: Blob[] = [];
+	let transcribing = false;
+	let consecutiveFailures = 0;
+
+	function discardRecording() {
+		if (recorder && recorder.state === 'recording') {
+			try {
+				recorder.stop();
+			} catch {
+				// ignore
+			}
+		}
+		recorder = null;
+		recorderChunks = [];
+	}
+
+	function teardown() {
+		if (tickInterval !== null) {
+			clearInterval(tickInterval);
+			tickInterval = null;
+		}
+		discardRecording();
+		if (stream) {
+			try {
+				stream.getTracks().forEach((t) => t.stop());
+			} catch {
+				// ignore
+			}
+			stream = null;
+		}
+		if (audioContext) {
+			try {
+				void audioContext.close();
+			} catch {
+				// ignore
+			}
+			audioContext = null;
+		}
+		analyser = null;
+		dataArray = null;
+		vadState = INITIAL_VAD_STATE;
+	}
+
+	function startRecording() {
+		if (!stream) return;
+		recorderChunks = [];
+		const mimeType = getSupportedAudioMimeType();
+		try {
+			recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+		} catch {
+			recorder = new MediaRecorder(stream);
+		}
+		recorder.ondataavailable = (e) => {
+			if (e.data && e.data.size > 0) recorderChunks.push(e.data);
+		};
+		recorder.start(250);
+	}
+
+	async function handleUtterance(blob: Blob) {
+		try {
+			if (blob.size === 0) return;
+			const ext = blob.type.includes('ogg') ? 'ogg' : blob.type.includes('mp4') ? 'mp4' : 'webm';
+			const res = await api.transcribeAudio(blob, `wake.${ext}`);
+			consecutiveFailures = 0;
+			const text = (res.text || '').trim();
+			if (!text) return;
+			logger.debug('Continuous cloud STT heard:', text);
+			const match = matchWakeWord(text, options.getAgentName());
+			if (match.matched) {
+				logger.info('Wake word matched:', text, '-> query:', match.query);
+				paused = true;
+				options.onWakeWordDetected(match.query);
+			}
+		} catch (err) {
+			consecutiveFailures += 1;
+			logger.debug('Continuous cloud STT transcription failed:', err);
+			if (consecutiveFailures >= VAD_MAX_CONSECUTIVE_FAILURES) {
+				active = false;
+				teardown();
+				options.onError?.(new Error(STT_UNAVAILABLE_MESSAGE));
+			}
+		} finally {
+			transcribing = false;
+		}
+	}
+
+	function stopRecordingAndTranscribe() {
+		if (!recorder || recorder.state !== 'recording') return;
+		const activeRecorder = recorder;
+		const chunksRef = recorderChunks;
+		transcribing = true;
+		activeRecorder.onstop = () => {
+			const blob = new Blob(chunksRef, { type: activeRecorder.mimeType || 'audio/webm' });
+			void handleUtterance(blob);
+		};
+		try {
+			activeRecorder.stop();
+		} catch {
+			transcribing = false;
+		}
+		recorder = null;
+		recorderChunks = [];
+	}
+
+	function tick() {
+		// A fresh AudioContext stays 'suspended' until the page has received a
+		// user gesture (same Chromium policy that blocks TTS autoplay — see
+		// the dashboard's audio-unlock banner); until then this just no-ops
+		// rather than erroring, and starts working the moment that tap happens.
+		if (!active || paused || speaking || transcribing || !analyser || !dataArray) return;
+		if (audioContext && audioContext.state !== 'running') return;
+
+		analyser.getByteTimeDomainData(dataArray);
+		const rms = computeRms(dataArray);
+		const { state, action } = stepVad(vadState, rms, {
+			tickMs: VAD_TICK_MS,
+			threshold,
+			minUtteranceMs: VAD_MIN_UTTERANCE_MS,
+			silenceHangoverMs: VAD_SILENCE_HANGOVER_MS,
+			maxUtteranceMs: VAD_MAX_UTTERANCE_MS,
+		});
+		vadState = state;
+
+		if (action === 'start') {
+			startRecording();
+		} else if (action === 'stop-transcribe') {
+			stopRecordingAndTranscribe();
+		} else if (action === 'stop-discard') {
+			discardRecording();
+		}
+	}
+
+	async function calibrate() {
+		if (!analyser || !dataArray) return;
+		const sampleCount = Math.max(1, Math.round(VAD_CALIBRATION_MS / VAD_TICK_MS));
+		const samples: number[] = [];
+		for (let i = 0; i < sampleCount; i++) {
+			if (!active) return;
+			analyser.getByteTimeDomainData(dataArray);
+			samples.push(computeRms(dataArray));
+			await new Promise((resolve) => setTimeout(resolve, VAD_TICK_MS));
+		}
+		const avg = samples.reduce((a, b) => a + b, 0) / samples.length;
+		threshold = Math.max(VAD_DEFAULT_THRESHOLD, avg * VAD_THRESHOLD_MULTIPLIER);
+	}
+
+	async function init() {
+		try {
+			stream = await navigator.mediaDevices.getUserMedia({
+				audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+			});
+		} catch {
+			options.onError?.(new Error('Microphone access failed'));
+			return;
+		}
+		if (!active) {
+			stream.getTracks().forEach((t) => t.stop());
+			stream = null;
+			return;
+		}
+
+		const Ctor = (window as unknown as { AudioContext?: typeof AudioContext }).AudioContext;
+		if (!Ctor) {
+			options.onError?.(new Error(STT_UNAVAILABLE_MESSAGE));
+			return;
+		}
+		audioContext = new Ctor();
+		void audioContext.resume().catch(() => {
+			// Stays suspended until the page's first user gesture (see tick()) - not an error.
+		});
+		const source = audioContext.createMediaStreamSource(stream);
+		analyser = audioContext.createAnalyser();
+		source.connect(analyser);
+		dataArray = new Uint8Array(analyser.fftSize);
+
+		await calibrate();
+		if (!active) {
+			teardown();
+			return;
+		}
+
+		tickInterval = setInterval(tick, VAD_TICK_MS);
+	}
+
+	void init();
+
+	return {
+		stop() {
+			active = false;
+			paused = false;
+			teardown();
+		},
+		pause() {
+			paused = true;
+			discardRecording();
+			vadState = INITIAL_VAD_STATE;
+		},
+		resume() {
+			if (!active) return;
+			paused = false;
 		},
 	};
 }
