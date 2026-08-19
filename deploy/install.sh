@@ -39,6 +39,14 @@ parse_args() {
     esac
   fi
 
+  if [[ -n "${TILORA_STARTER_TILES:-}" ]]; then
+    case "$TILORA_STARTER_TILES" in
+      1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]) INSTALL_STARTER_TILES=true ;;
+      0|[Ff][Aa][Ll][Ss][Ee]|[Nn][Oo]) INSTALL_STARTER_TILES=false ;;
+      *) fail "Invalid TILORA_STARTER_TILES value '$TILORA_STARTER_TILES'. Use 1/true or 0/false." ;;
+    esac
+  fi
+
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --kiosk)
@@ -47,6 +55,14 @@ parse_args() {
         ;;
       --no-kiosk|--server-only|--headless)
         INSTALL_KIOSK=false
+        shift
+        ;;
+      --starter-tiles)
+        INSTALL_STARTER_TILES=true
+        shift
+        ;;
+      --no-starter-tiles|--empty-dashboard)
+        INSTALL_STARTER_TILES=false
         shift
         ;;
       --api-url|--backend-url)
@@ -83,11 +99,15 @@ parse_args() {
         printf '  --kiosk           Install Chromium and configure kiosk display autostart\n'
         printf '  --no-kiosk        Install backend and frontend as server-only (headless)\n'
         printf '  --server-only     Alias for --no-kiosk\n'
+        printf '  --starter-tiles   Install zero-config starter dashboard tiles (weather, flights, to-do list, etc.) (default)\n'
+        printf '  --no-starter-tiles Start with an empty dashboard\n'
+        printf '  --empty-dashboard Alias for --no-starter-tiles\n'
         printf '  --api-url URL     Set PUBLIC_API_BASE_URL for frontend (default: http://localhost:8000 for kiosk, http://<lan-ip>:8000 for server-only)\n'
         printf '  --uninstall       Uninstall Tilora services and cleanup files (delegates to uninstall.sh)\n'
         printf '  -h, --help        Show this help message\n\n'
         printf 'Environment variables:\n'
         printf '  TILORA_KIOSK      Set to 1/true for kiosk mode, 0/false for server-only\n'
+        printf '  TILORA_STARTER_TILES Set to 1/true for starter tiles, 0/false for empty dashboard\n'
         printf '  TILORA_INSTALL_DIR Custom install destination (default: ~/tilora)\n'
         printf '  TILORA_PUBLIC_API_BASE_URL Custom frontend backend API URL\n'
         exit 0
@@ -157,7 +177,7 @@ validate_platform() {
 install_system_dependencies() {
   info "Installing system dependencies"
   sudo apt-get update
-  sudo apt-get install -y ca-certificates curl git build-essential python3
+  sudo apt-get install -y ca-certificates curl git build-essential python3 fonts-noto-color-emoji fonts-noto-core || sudo apt-get install -y ca-certificates curl git build-essential python3
 
   if ! command -v node >/dev/null 2>&1 || [[ "$(node --version | sed 's/^v//' | cut -d. -f1)" -lt 24 ]]; then
     info "Installing Node.js 24"
@@ -292,6 +312,22 @@ detect_system_timezone() {
   printf '%s' "${tz:-UTC}"
 }
 
+prompt_starter_tiles() {
+  if [[ -n "${INSTALL_STARTER_TILES:-}" ]]; then
+    return
+  fi
+  if [[ -r /dev/tty ]]; then
+    local choice
+    read -r -p "Install starter dashboard tiles (weather, flights, to-do list, etc.)? (Y/n) [Y]: " choice </dev/tty
+    case "$choice" in
+      [Nn]|[Nn][Oo]) INSTALL_STARTER_TILES=false ;;
+      *) INSTALL_STARTER_TILES=true ;;
+    esac
+  else
+    INSTALL_STARTER_TILES=true
+  fi
+}
+
 configure_dashboard() {
   local config_file="$BACKEND_DIR/config/dashboard.yaml"
   local timezone latitude longitude location_name default_tz
@@ -300,9 +336,28 @@ configure_dashboard() {
   default_tz="$(detect_system_timezone)"
   read -r -p "Timezone [$default_tz]: " timezone </dev/tty
   timezone="${timezone:-$default_tz}"
-  read -r -p "Weather latitude: " latitude </dev/tty
-  read -r -p "Weather longitude: " longitude </dev/tty
-  read -r -p "Weather location name: " location_name </dev/tty
+  set_env_value "$BACKEND_DIR/.env" TIMEZONE "$timezone"
+
+  prompt_starter_tiles
+
+  if [[ "$INSTALL_STARTER_TILES" == false ]]; then
+    "$BACKEND_DIR/.venv/bin/python" - "$config_file" <<'PY'
+from pathlib import Path
+import sys
+import yaml
+
+path = Path(sys.argv[1])
+path.write_text(yaml.safe_dump({"widgets": []}, sort_keys=False))
+PY
+    return
+  fi
+
+  read -r -p "Weather latitude [32.7555]: " latitude </dev/tty
+  latitude="${latitude:-32.7555}"
+  read -r -p "Weather longitude [-97.3308]: " longitude </dev/tty
+  longitude="${longitude:--97.3308}"
+  read -r -p "Weather location name [Fort Worth, TX]: " location_name </dev/tty
+  location_name="${location_name:-Fort Worth, TX}"
 
   "$BACKEND_DIR/.venv/bin/python" - "$config_file" "$latitude" "$longitude" "$location_name" <<'PY'
 from pathlib import Path
@@ -311,13 +366,14 @@ import yaml
 
 path = Path(sys.argv[1])
 config = yaml.safe_load(path.read_text())
-weather = next(widget for widget in config["widgets"] if widget["id"] == "weather")
-weather["settings"].update(
-    latitude=float(sys.argv[2]), longitude=float(sys.argv[3]), location_name=sys.argv[4]
-)
+for widget in config.get("widgets", []):
+    if widget.get("id") in ("weather", "flights"):
+        widget.setdefault("settings", {})
+        widget["settings"].update(
+            latitude=float(sys.argv[2]), longitude=float(sys.argv[3]), location_name=sys.argv[4]
+        )
 path.write_text(yaml.safe_dump(config, sort_keys=False, allow_unicode=True))
 PY
-  set_env_value "$BACKEND_DIR/.env" TIMEZONE "$timezone"
 }
 
 configure_ai() {
@@ -422,7 +478,11 @@ prepare_configuration() {
     first_install=true
   fi
   if [[ ! -f "$BACKEND_DIR/config/dashboard.yaml" ]]; then
-    cp "$BACKEND_DIR/config/dashboard.example.yaml" "$BACKEND_DIR/config/dashboard.yaml"
+    if [[ "${INSTALL_STARTER_TILES:-}" == false ]]; then
+      printf 'widgets: []\n' > "$BACKEND_DIR/config/dashboard.yaml"
+    else
+      cp "$BACKEND_DIR/config/dashboard.example.yaml" "$BACKEND_DIR/config/dashboard.yaml"
+    fi
     first_install=true
   fi
   if [[ ! -f "$FRONTEND_DIR/.env" ]]; then
@@ -450,20 +510,30 @@ build_application() {
 }
 
 render_service_units() {
-  local service template temporary
+  local service template temporary api_base_url
+  api_base_url="$(get_env_value "$FRONTEND_DIR/.env" PUBLIC_API_BASE_URL)"
+  api_base_url="${api_base_url:-$(detect_default_api_url)}"
+
   for service in tilora-backend tilora-frontend; do
     template="$INSTALL_DIR/deploy/$service.service"
     temporary="$(mktemp)"
-    python3 - "$template" "$temporary" "$INSTALL_USER" "$BACKEND_DIR" "$FRONTEND_DIR" <<'PY'
+    python3 - "$template" "$temporary" "$INSTALL_USER" "$BACKEND_DIR" "$FRONTEND_DIR" "$api_base_url" <<'PY'
 from pathlib import Path
 import sys
 
-template, destination, user, backend, frontend = map(Path, sys.argv[1:])
+template = Path(sys.argv[1])
+destination = Path(sys.argv[2])
+user = sys.argv[3]
+backend = sys.argv[4]
+frontend = sys.argv[5]
+api_base_url = sys.argv[6]
+
 content = template.read_text()
-content = content.replace("__TILORA_USER__", str(user))
-content = content.replace("__TILORA_BACKEND_DIR__", str(backend))
-content = content.replace("__TILORA_FRONTEND_DIR__", str(frontend))
-Path(destination).write_text(content)
+content = content.replace("__TILORA_USER__", user)
+content = content.replace("__TILORA_BACKEND_DIR__", backend)
+content = content.replace("__TILORA_FRONTEND_DIR__", frontend)
+content = content.replace("__TILORA_PUBLIC_API_BASE_URL__", api_base_url)
+destination.write_text(content)
 PY
     sudo install -m 644 "$temporary" "$SYSTEMD_DIR/$service.service"
     rm -f "$temporary"

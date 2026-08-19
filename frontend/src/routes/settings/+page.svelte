@@ -32,7 +32,13 @@
 		persistVoiceSelection,
 		type VoiceProvider,
 	} from '$lib/stores/voice';
-	import { agentName, alwaysOnMic, loadAlwaysOnMicFromServer, persistAlwaysOnMic } from '$lib/stores/assistant';
+	import {
+		agentName,
+		alwaysOnMic,
+		loadAlwaysOnMicFromServer,
+		persistAlwaysOnMic,
+		loadAssistantConfigFromServer,
+	} from '$lib/stores/assistant';
 	import { userLocation, loadLocationFromServer, persistLocation } from '$lib/stores/location';
 	import { listBrowserVoices, speak, ensureMicrophonePermission } from '$lib/speech';
 	import { getInsecureOriginInfo, type InsecureOriginInfo } from '$lib/network';
@@ -63,9 +69,13 @@
 	let caldavUrlInput = $state('');
 	let caldavUsernameInput = $state('');
 	let caldavPasswordInput = $state('');
+	let tmdbKeyInput = $state('');
+	let discordTokenInput = $state('');
 	let icloudCredentials = $state<IcloudCredentials>({ username: '', has_password: false });
 	let icloudUsernameInput = $state('');
 	let icloudPasswordInput = $state('');
+	let openaiSttEnabledInput = $state(false);
+	let openaiSttModelInput = $state('whisper-1');
 	let openaiTtsEnabledInput = $state(false);
 	let openaiTtsModelInput = $state('');
 	let piperTtsEnabledInput = $state(false);
@@ -74,7 +84,7 @@
 	let timezoneOptions = $state<string[]>(['UTC']);
 	let error = $state<string | null>(null);
 
-	// Each admin-settings section below (AI provider, voice output, Google/MS
+	// Each admin-settings section below (AI provider, voice input, voice output, TMDB, Discord, Google/MS
 	// calendar, CalDAV, timezone) saves independently — see save*() functions
 	// below — rather than sharing one big PATCH, so editing one doesn't
 	// silently resubmit unrelated fields (e.g. API keys) from another. iCloud
@@ -85,9 +95,21 @@
 	let aiProviderSaved = $state(false);
 	let aiProviderError = $state<string | null>(null);
 
+	let voiceInputSaving = $state(false);
+	let voiceInputSaved = $state(false);
+	let voiceInputError = $state<string | null>(null);
+
 	let voiceOutputSaving = $state(false);
 	let voiceOutputSaved = $state(false);
 	let voiceOutputError = $state<string | null>(null);
+
+	let tmdbSaving = $state(false);
+	let tmdbSaved = $state(false);
+	let tmdbError = $state<string | null>(null);
+
+	let discordSaving = $state(false);
+	let discordSaved = $state(false);
+	let discordError = $state<string | null>(null);
 
 	let googleCalendarSaving = $state(false);
 	let googleCalendarSaved = $state(false);
@@ -185,6 +207,8 @@
 			timezoneInput = settings.timezone;
 			caldavUrlInput = settings.caldav_url;
 			caldavUsernameInput = settings.caldav_username;
+			openaiSttEnabledInput = settings.openai_stt_enabled === 'true';
+			openaiSttModelInput = settings.openai_stt_model || 'whisper-1';
 			openaiTtsEnabledInput = settings.openai_tts_enabled === 'true';
 			openaiTtsModelInput = settings.openai_tts_model;
 			piperTtsEnabledInput = settings.piper_tts_enabled === 'true';
@@ -1009,6 +1033,24 @@
 		}
 	}
 
+	async function saveVoiceInput() {
+		voiceInputSaving = true;
+		voiceInputSaved = false;
+		voiceInputError = null;
+		try {
+			settings = await api.updateSettings({
+				openai_stt_enabled: openaiSttEnabledInput ? 'true' : '',
+				openai_stt_model: openaiSttModelInput,
+			});
+			voiceInputSaved = true;
+			await loadAssistantConfigFromServer();
+		} catch {
+			voiceInputError = 'Could not save voice input settings.';
+		} finally {
+			voiceInputSaving = false;
+		}
+	}
+
 	async function saveVoiceOutput() {
 		voiceOutputSaving = true;
 		voiceOutputSaved = false;
@@ -1026,6 +1068,40 @@
 			voiceOutputError = 'Could not save voice output settings.';
 		} finally {
 			voiceOutputSaving = false;
+		}
+	}
+
+	async function saveTmdb() {
+		tmdbSaving = true;
+		tmdbSaved = false;
+		tmdbError = null;
+		try {
+			const partial: Record<string, string> = {};
+			if (tmdbKeyInput) partial.tmdb_api_key = tmdbKeyInput;
+			settings = await api.updateSettings(partial);
+			tmdbKeyInput = '';
+			tmdbSaved = true;
+		} catch {
+			tmdbError = 'Could not save TMDB settings.';
+		} finally {
+			tmdbSaving = false;
+		}
+	}
+
+	async function saveDiscord() {
+		discordSaving = true;
+		discordSaved = false;
+		discordError = null;
+		try {
+			const partial: Record<string, string> = {};
+			if (discordTokenInput) partial.discord_bot_token = discordTokenInput;
+			settings = await api.updateSettings(partial);
+			discordTokenInput = '';
+			discordSaved = true;
+		} catch {
+			discordError = 'Could not save Discord settings.';
+		} finally {
+			discordSaving = false;
 		}
 	}
 
@@ -1133,6 +1209,8 @@
 			| 'anthropic_api_key'
 			| 'openai_api_key'
 			| 'gemini_api_key'
+			| 'tmdb_api_key'
+			| 'discord_bot_token'
 			| 'google_calendar_client_id'
 			| 'google_calendar_client_secret'
 			| 'microsoft_calendar_client_id'
@@ -1455,6 +1533,37 @@
 				</section>
 
 				<section>
+					<h3>Voice input (Speech recognition)</h3>
+					<p class="hint">
+						Open-source Chromium (e.g. Raspberry Pi kiosk, Chromium on Mac/Linux), Firefox, and Brave lack built-in
+						Google Speech recognition API keys. Enable OpenAI Whisper to allow these browsers to record and transcribe
+						speech via Cloud STT.
+					</p>
+
+					<label class="checkbox-label">
+						<input type="checkbox" bind:checked={openaiSttEnabledInput} />
+						Enable OpenAI Whisper speech-to-text (Cloud STT)
+					</label>
+					{#if openaiSttEnabledInput}
+						<label>
+							Whisper model
+							<input type="text" bind:value={openaiSttModelInput} placeholder="whisper-1" />
+						</label>
+						<p class="hint">Uses the OpenAI API key configured above (~$0.006/min of recorded speech).</p>
+					{/if}
+
+					{#if voiceInputError}
+						<p class="hint error">{voiceInputError}</p>
+					{/if}
+					{#if voiceInputSaved}
+						<p class="hint">Saved.</p>
+					{/if}
+					<button class="save" disabled={voiceInputSaving} onclick={saveVoiceInput}>
+						{voiceInputSaving ? 'Saving…' : 'Save voice input'}
+					</button>
+				</section>
+
+				<section>
 					<h3>Voice output</h3>
 					<p class="hint">
 						Controls which text-to-speech options household members can choose from in "Your settings". The browser's
@@ -1654,6 +1763,67 @@
 					{/if}
 					<button class="save" disabled={caldavSaving} onclick={saveCaldav}>
 						{caldavSaving ? 'Saving…' : 'Save CalDAV'}
+					</button>
+				</section>
+
+				<section>
+					<h3>The Movie Database (TMDB)</h3>
+					<label>
+						API key
+						<input
+							type="password"
+							bind:value={tmdbKeyInput}
+							placeholder={settings.has_tmdb_api_key ? 'Set — enter a new value to replace it' : 'Not set'}
+						/>
+					</label>
+					{#if settings.has_tmdb_api_key}
+						<button class="clear" onclick={() => clearKey('tmdb_api_key', (m) => (tmdbError = m))}>
+							Clear API key
+						</button>
+					{/if}
+					<p class="hint">
+						Used by the Movies &amp; Shows widget (themoviedb.org/settings/api). Enter your TMDB v3 API key.
+					</p>
+
+					{#if tmdbError}
+						<p class="hint error">{tmdbError}</p>
+					{/if}
+					{#if tmdbSaved}
+						<p class="hint">Saved.</p>
+					{/if}
+					<button class="save" disabled={tmdbSaving} onclick={saveTmdb}>
+						{tmdbSaving ? 'Saving…' : 'Save TMDB'}
+					</button>
+				</section>
+
+				<section>
+					<h3>Discord</h3>
+					<label>
+						Bot token
+						<input
+							type="password"
+							bind:value={discordTokenInput}
+							placeholder={settings.has_discord_bot_token ? 'Set — enter a new value to replace it' : 'Not set'}
+						/>
+					</label>
+					{#if settings.has_discord_bot_token}
+						<button class="clear" onclick={() => clearKey('discord_bot_token', (m) => (discordError = m))}>
+							Clear bot token
+						</button>
+					{/if}
+					<p class="hint">
+						Used by the Discord widget (discord.com/developers/applications). Requires a bot token for a bot invited to
+						your server.
+					</p>
+
+					{#if discordError}
+						<p class="hint error">{discordError}</p>
+					{/if}
+					{#if discordSaved}
+						<p class="hint">Saved.</p>
+					{/if}
+					<button class="save" disabled={discordSaving} onclick={saveDiscord}>
+						{discordSaving ? 'Saving…' : 'Save Discord'}
 					</button>
 				</section>
 
@@ -2449,8 +2619,23 @@
 		<section>
 			<h3>{$_('reports.title')}</h3>
 			<p class="hint">{$_('reports.subtitle')}</p>
-			<button class="clear" onclick={() => goto('/reports')}>
-				📊 {$_('reports.nav_report_button')}
+			<button class="clear reports-nav-btn" onclick={() => goto('/reports')}>
+				<svg
+					viewBox="0 0 24 24"
+					width="16"
+					height="16"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<line x1="18" y1="20" x2="18" y2="10" />
+					<line x1="12" y1="20" x2="12" y2="4" />
+					<line x1="6" y1="20" x2="6" y2="14" />
+				</svg>
+				<span>{$_('reports.nav_report_button')}</span>
 			</button>
 		</section>
 
@@ -2460,6 +2645,17 @@
 				{#if insecureOriginInfo.browser === 'chrome'}
 					<p class="hint">
 						{$_('settings.microphone.chrome_intro', { values: { origin: insecureOriginInfo.origin } })}
+					</p>
+					<p class="hint">
+						{$_('settings.microphone.open_prefix')}
+						<a href="chrome://flags/#unsafely-treat-insecure-origin-as-secure" target="_blank" rel="noreferrer"
+							>chrome://flags/#unsafely-treat-insecure-origin-as-secure</a
+						>{$_('settings.microphone.after_link')} <code>{insecureOriginInfo.origin}</code>
+						{$_('settings.microphone.chrome_list_suffix')}
+					</p>
+				{:else if insecureOriginInfo.browser === 'chromium'}
+					<p class="hint">
+						{$_('settings.microphone.chromium_intro', { values: { origin: insecureOriginInfo.origin } })}
 					</p>
 					<p class="hint">
 						{$_('settings.microphone.open_prefix')}
@@ -2489,6 +2685,10 @@
 							>brave://flags/#unsafely-treat-insecure-origin-as-secure</a
 						>{$_('settings.microphone.after_link')} <code>{insecureOriginInfo.origin}</code>
 						{$_('settings.microphone.brave_list_suffix')}
+					</p>
+				{:else if insecureOriginInfo.browser === 'firefox'}
+					<p class="hint">
+						{$_('settings.microphone.firefox_intro')}
 					</p>
 				{:else if insecureOriginInfo.browser === 'safari'}
 					<p class="hint">
@@ -3012,5 +3212,11 @@
 
 	.cert-tips-list li {
 		margin-bottom: 0.25rem;
+	}
+
+	.reports-nav-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
 	}
 </style>

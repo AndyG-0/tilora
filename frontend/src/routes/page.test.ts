@@ -61,16 +61,27 @@ vi.mock('$lib/api', () => ({
 		askAssistant,
 	},
 }));
-vi.mock('$lib/speech', () => ({
-	isSpeechRecognitionSupported,
-	isSpeechSynthesisSupported,
-	speak,
-	listenOnce,
-	playChime,
-	startContinuousListening,
-	stopSpeaking,
-	ensureMicrophonePermission,
-}));
+vi.mock('$lib/speech', () => {
+	class SpeechError extends Error {
+		code: string;
+		constructor(message: string, code = 'unknown') {
+			super(message);
+			this.name = 'SpeechError';
+			this.code = code;
+		}
+	}
+	return {
+		SpeechError,
+		isSpeechRecognitionSupported,
+		isSpeechSynthesisSupported,
+		speak,
+		listenOnce,
+		playChime,
+		startContinuousListening,
+		stopSpeaking,
+		ensureMicrophonePermission,
+	};
+});
 // Tile content isn't under test here — an empty map means `{#if Tile}` never
 // renders anything inside a `.cell`, leaving the grid/drag/resize scaffolding
 // (which is what these tests exercise) intact without needing real tiles.
@@ -334,5 +345,39 @@ describe('+page.svelte', () => {
 		expect(await screen.findByText('what is tomorrow weather')).toBeInTheDocument();
 		expect(await screen.findByText('Tomorrow will be rainy.')).toBeInTheDocument();
 		expect(speak).toHaveBeenCalledWith('Tomorrow will be rainy.', expect.anything());
+	});
+
+	it('displays permission denied message when SpeechError code is not-allowed', async () => {
+		isSpeechRecognitionSupported.mockReturnValue(true);
+		alwaysOnMic.set(false);
+		const { SpeechError } = await import('$lib/speech');
+		listenOnce.mockRejectedValue(new SpeechError('Permission denied', 'not-allowed'));
+
+		render(Page);
+
+		const micButton = screen.getByRole('button', { name: 'Ask a question' });
+		await fireEvent.click(micButton);
+
+		expect(
+			await screen.findByText('Microphone permission was denied. Check your browser permissions.'),
+		).toBeInTheDocument();
+	});
+
+	it('displays service unavailable message when SpeechError code is service-unavailable', async () => {
+		isSpeechRecognitionSupported.mockReturnValue(true);
+		alwaysOnMic.set(false);
+		const { SpeechError } = await import('$lib/speech');
+		listenOnce.mockRejectedValue(new SpeechError('Service unavailable', 'service-unavailable'));
+
+		render(Page);
+
+		const micButton = screen.getByRole('button', { name: 'Ask a question' });
+		await fireEvent.click(micButton);
+
+		expect(
+			await screen.findByText(
+				'Speech recognition is unavailable in this browser. Enable OpenAI Whisper in Settings or use Google Chrome / Edge.',
+			),
+		).toBeInTheDocument();
 	});
 });

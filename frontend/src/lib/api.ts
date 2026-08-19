@@ -152,9 +152,13 @@ export interface AppSettings {
 	has_gemini_api_key: boolean;
 	openai_tts_enabled: string;
 	openai_tts_model: string;
+	openai_stt_enabled: string;
+	openai_stt_model: string;
 	piper_tts_enabled: string;
 	piper_server_url: string;
 	piper_voices: string;
+	has_tmdb_api_key: boolean;
+	has_discord_bot_token: boolean;
 	has_google_calendar_client_id: boolean;
 	has_google_calendar_client_secret: boolean;
 	has_microsoft_calendar_client_id: boolean;
@@ -1053,6 +1057,8 @@ export interface UserPreferences {
 
 export interface AssistantConfig {
 	agent_name: string;
+	stt_available?: boolean;
+	stt_provider?: string | null;
 }
 
 export interface TTSVoice {
@@ -1173,6 +1179,20 @@ async function postJSON<T>(path: string, body?: Record<string, unknown>): Promis
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(body),
 		}),
+	});
+	if (!response.ok) {
+		const message = await _errorMessage(path, response);
+		logger.warn(`Request to ${path} failed: ${response.status}`);
+		throw new Error(message);
+	}
+	return response.json();
+}
+
+async function postFormData<T>(path: string, formData: FormData): Promise<T> {
+	const response = await fetch(apiUrl(path), {
+		method: 'POST',
+		credentials: 'include',
+		body: formData,
 	});
 	if (!response.ok) {
 		const message = await _errorMessage(path, response);
@@ -1310,14 +1330,24 @@ export const api = {
 			text: string;
 			action: { widget_id: string; panel: string | null; destination?: string; origin?: string } | null;
 		}>('/api/assistant/ask', { text }),
+	transcribeAudio: (audioBlob: Blob, filename = 'audio.webm') => {
+		const fd = new FormData();
+		fd.append('file', audioBlob, filename);
+		return postFormData<{ text: string }>('/api/assistant/transcribe', fd);
+	},
 	assistantConfig: () => getJSON<AssistantConfig>('/api/assistant/config'),
 	assistantTopics: () => getJSON<{ id: string; name: string }[]>('/api/assistant/topics'),
 	widgetTypes: () =>
 		getJSON<{ type: string; name: string; default_layout: { colSpan: number; rowSpan: number } }[]>(
 			'/api/widgets/types',
 		),
-	addWidget: (type: string, layout: WidgetLayout, tab?: string) =>
-		postJSON<WidgetSummaryMeta>('/api/widgets', { type, layout, ...(tab !== undefined && { tab }) }),
+	addWidget: (type: string, layout: WidgetLayout, tab?: string, ownerUserId?: string) =>
+		postJSON<WidgetSummaryMeta>('/api/widgets', {
+			type,
+			layout,
+			...(tab !== undefined && { tab }),
+			...(ownerUserId !== undefined && { owner_user_id: ownerUserId }),
+		}),
 	removeWidget: (id: string) => deleteJSON<{ status: string }>(`/api/widgets/${id}`),
 	tilesReport: () => getJSON<TileReportResponse>('/api/reports/tiles'),
 	jellyfinChildren: (id: string, parentId?: string) =>
@@ -1514,11 +1544,12 @@ export const api = {
 	synthesizeSpeech: (provider: 'openai' | 'piper', voiceId: string, text: string) =>
 		postForBlob('/api/tts/synthesize', { provider, voice_id: voiceId, text }),
 	setupStatus: () => getJSON<SetupStatus>('/api/setup/status'),
-	createSetupAdmin: (name: string, avatar?: string, pin?: string) =>
+	createSetupAdmin: (name: string, avatar?: string, pin?: string, includeStarterTiles: boolean = true) =>
 		postJSON<CurrentUser>('/api/setup/admin', {
 			name,
 			...(avatar !== undefined && { avatar }),
 			...(pin !== undefined && { pin }),
+			include_starter_tiles: includeStarterTiles,
 		}),
 	listHouseholdUsers: () => getJSON<HouseholdUser[]>('/api/admin/users'),
 	updateUserRole: (id: string, role: UserRole) => patchJSON<HouseholdUser>(`/api/admin/users/${id}/role`, { role }),

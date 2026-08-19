@@ -1,12 +1,22 @@
 from __future__ import annotations
 
 import httpx
+import pytest
 import respx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app import config
 from app.api import movies
 from app.api.movies import TMDB_BASE_URL
+
+
+@pytest.fixture(autouse=True)
+def _set_tmdb_api_key(monkeypatch, tmp_db):
+    # `effective_settings()` (used by the /movies endpoint) now reads through
+    # to the db-persisted app_settings table, so every test needs an isolated
+    # db (`tmp_db`) rather than hitting the real ambient one.
+    monkeypatch.setattr(config.settings, "tmdb_api_key", "test-tmdb-key")
 
 
 def make_client() -> TestClient:
@@ -136,3 +146,22 @@ def test_list_providers_passes_custom_region():
     client.get("/api/movies/providers", params={"region": "GB"})
 
     assert movie_route.calls.last.request.url.params["watch_region"] == "GB"
+
+
+@respx.mock
+def test_list_providers_returns_empty_when_unconfigured(monkeypatch):
+    monkeypatch.setattr(config.settings, "tmdb_api_key", None)
+    client = make_client()
+    response = client.get("/api/movies/providers")
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+@respx.mock
+def test_list_providers_handles_tmdb_http_error():
+    respx.get(f"{TMDB_BASE_URL}/watch/providers/movie").mock(return_value=httpx.Response(500))
+    respx.get(f"{TMDB_BASE_URL}/watch/providers/tv").mock(return_value=httpx.Response(500))
+    client = make_client()
+    response = client.get("/api/movies/providers")
+    assert response.status_code == 200
+    assert response.json() == []

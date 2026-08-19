@@ -5,14 +5,17 @@ ID, so no separate code path is needed to support threads).
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
 
-from app.config import effective_settings, resolve_timezone, settings
+from app.config import effective_settings, resolve_timezone
 from app.i18n import t
 from app.plugins.base import Plugin, ToolDef
+
+logger = logging.getLogger(__name__)
 
 DISCORD_API_BASE = "https://discord.com/api/v10"
 
@@ -27,8 +30,12 @@ class DiscordPlugin(Plugin):
     refresh_interval_seconds = 60
 
     @property
+    def _is_configured(self) -> bool:
+        return bool(effective_settings().get("discord_bot_token"))
+
+    @property
     def _headers(self) -> dict[str, str]:
-        return {"Authorization": f"Bot {settings.discord_bot_token or ''}"}
+        return {"Authorization": f"Bot {effective_settings().get('discord_bot_token') or ''}"}
 
     @property
     def _channel_id(self) -> str | None:
@@ -55,18 +62,26 @@ class DiscordPlugin(Plugin):
         return self.config["settings"].get("fade_interval_seconds", 6)
 
     async def _fetch_channel_name(self, client: httpx.AsyncClient) -> str:
-        response = await client.get(f"{DISCORD_API_BASE}/channels/{self._channel_id}", headers=self._headers)
-        response.raise_for_status()
-        return response.json().get("name") or t("discord.unknown_channel", self.locale)
+        try:
+            response = await client.get(f"{DISCORD_API_BASE}/channels/{self._channel_id}", headers=self._headers)
+            response.raise_for_status()
+            return response.json().get("name") or t("discord.unknown_channel", self.locale)
+        except httpx.HTTPError as exc:
+            logger.warning("Could not fetch Discord channel name for widget '%s': %s", self.id, exc)
+            return t("discord.unknown_channel", self.locale)
 
     async def _fetch_messages(self, client: httpx.AsyncClient, limit: int) -> list[dict[str, Any]]:
-        response = await client.get(
-            f"{DISCORD_API_BASE}/channels/{self._channel_id}/messages",
-            headers=self._headers,
-            params={"limit": limit},
-        )
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = await client.get(
+                f"{DISCORD_API_BASE}/channels/{self._channel_id}/messages",
+                headers=self._headers,
+                params={"limit": limit},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as exc:
+            logger.warning("Could not fetch Discord messages for widget '%s': %s", self.id, exc)
+            return []
 
     def _message_view(self, message: dict[str, Any]) -> dict[str, Any]:
         author = message["author"]
@@ -109,6 +124,8 @@ class DiscordPlugin(Plugin):
 
     def _payload(self, channel_name: str, messages: list[dict[str, Any]]) -> dict[str, Any]:
         return {
+            "configured": self._is_configured,
+            "channel_id": self._channel_id or "",
             "channel_name": channel_name,
             "display_mode": self._display_mode,
             "message_limit": self._message_limit,
@@ -120,15 +137,15 @@ class DiscordPlugin(Plugin):
 
     async def get_summary(self) -> dict[str, Any]:
         # A UI-added Discord widget has no channel_id until it's configured
-        # separately (dashboard.yaml or a future settings editor) — show an
-        # empty channel rather than raising.
-        if not self._channel_id:
+        # separately (dashboard.yaml or settings editor) — show an empty channel
+        # rather than raising.
+        if not self._is_configured or not self._channel_id:
             return self._payload("", [])
         channel_name, messages = await self._fetch()
         return self._payload(channel_name, messages[-_SUMMARY_MESSAGE_COUNT:])
 
     async def get_detail(self) -> dict[str, Any]:
-        if not self._channel_id:
+        if not self._is_configured or not self._channel_id:
             return self._payload("", [])
         channel_name, messages = await self._fetch()
         return self._payload(channel_name, messages)
@@ -138,7 +155,7 @@ class DiscordPlugin(Plugin):
             return await self.get_summary()
 
         async def get_todays_discord_messages() -> dict[str, Any]:
-            if not self._channel_id:
+            if not self._is_configured or not self._channel_id:
                 return self._payload("", [])
             tz = resolve_timezone(effective_settings()["timezone"])
             midnight_local = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)

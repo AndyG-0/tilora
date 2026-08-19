@@ -16,13 +16,14 @@
 		isSpeechRecognitionSupported,
 		listenOnce,
 		playChime,
+		SpeechError,
 		speak,
 		startContinuousListening,
 		stopSpeaking,
 		type ContinuousListenHandle,
 	} from '$lib/speech';
 	import { voiceSelection } from '$lib/stores/voice';
-	import { agentName, alwaysOnMic } from '$lib/stores/assistant';
+	import { agentName, alwaysOnMic, sttAvailable } from '$lib/stores/assistant';
 	import { TILE_COMPONENTS } from '$lib/widgetComponents';
 	import { _ } from 'svelte-i18n';
 	import { get } from 'svelte/store';
@@ -42,15 +43,6 @@
 	function narrowRowHeight(rowSpan: number): string {
 		return rowSpan > 1 ? `min-height: calc(${rowSpan} * 13rem - 1rem);` : '';
 	}
-
-	const THEME_ICONS: Record<string, string> = {
-		light: '🌙',
-		dark: '☀️',
-		sepia: '◐',
-		contrast: '◑',
-		forest: '🌿',
-		ocean: '🌊',
-	};
 
 	// Fallback matches the backend's default set; refreshed from /api/theme
 	// on mount so new themes show up without a frontend redeploy.
@@ -375,13 +367,14 @@
 	// needs it.
 	type AssistantState =
 		| { status: 'idle' }
-		| { status: 'listening' }
+		| { status: 'listening'; mode?: 'native' | 'cloud_stt' }
+		| { status: 'transcribing' }
 		| { status: 'thinking'; query: string }
 		| { status: 'answered'; query: string; answer: string }
 		| { status: 'error'; message: string };
 
 	let assistantState = $state<AssistantState>({ status: 'idle' });
-	const micSupported = isSpeechRecognitionSupported();
+	const micSupported = $derived(isSpeechRecognitionSupported($sttAvailable));
 	let continuousListener: ContinuousListenHandle | null = null;
 	const alwaysOnActive = $derived(micSupported && $alwaysOnMic);
 	// Set right before navigating to a widget the assistant itself launched,
@@ -416,12 +409,32 @@
 
 	async function startListening() {
 		continuousListener?.pause();
-		assistantState = { status: 'listening' };
+		assistantState = { status: 'listening', mode: 'native' };
 		let query: string;
 		try {
-			query = await listenOnce();
-		} catch {
-			assistantState = { status: 'error', message: get(_)('dashboard.mic_no_match') };
+			query = await listenOnce({
+				sttAvailable: $sttAvailable,
+				onListeningMode: (mode) => {
+					assistantState = { status: 'listening', mode };
+				},
+				onTranscribing: () => {
+					assistantState = { status: 'transcribing' };
+				},
+			});
+		} catch (err: unknown) {
+			let message = get(_)('dashboard.mic_no_match');
+			if (err instanceof SpeechError) {
+				if (err.code === 'not-allowed') {
+					message = get(_)('dashboard.mic_permission_denied');
+				} else if (err.code === 'audio-capture') {
+					message = get(_)('dashboard.mic_not_found');
+				} else if (err.code === 'service-unavailable') {
+					message = get(_)('dashboard.mic_service_unavailable');
+				} else if (err.code === 'no-speech') {
+					message = get(_)('dashboard.mic_no_match');
+				}
+			}
+			assistantState = { status: 'error', message };
 			if (alwaysOnActive) {
 				continuousListener?.resume();
 			}
@@ -533,29 +546,193 @@
 	{#if micSupported}
 		<button
 			class="icon-button"
-			class:active={assistantState.status === 'listening'}
+			class:active={assistantState.status === 'listening' || assistantState.status === 'transcribing'}
 			class:standby={alwaysOnActive && assistantState.status === 'idle'}
 			onclick={startListening}
-			disabled={assistantState.status === 'listening' || assistantState.status === 'thinking'}
+			disabled={assistantState.status === 'listening' ||
+				assistantState.status === 'transcribing' ||
+				assistantState.status === 'thinking'}
 			aria-label={alwaysOnActive && assistantState.status === 'idle'
 				? $_('dashboard.always_on_standby_label', { values: { agentName: $agentName } })
 				: $_('dashboard.ask_question')}
 		>
-			🎙
+			<svg
+				viewBox="0 0 24 24"
+				width="20"
+				height="20"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				aria-hidden="true"
+			>
+				<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+				<path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+				<line x1="12" y1="19" x2="12" y2="22" />
+			</svg>
 			{#if alwaysOnActive && assistantState.status === 'idle'}
 				<span class="standby-badge" aria-hidden="true"></span>
 			{/if}
 		</button>
 	{/if}
 	<button class="icon-button" onclick={() => goto('/settings')} aria-label={$_('settings.page.title')}>
-		⚙
+		<svg
+			viewBox="0 0 24 24"
+			width="20"
+			height="20"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+			aria-hidden="true"
+		>
+			<circle cx="12" cy="12" r="3" />
+			<path
+				d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"
+			/>
+		</svg>
 		{#if updateAvailable}
 			<span class="update-badge" aria-label={$_('dashboard.update_available')}></span>
 		{/if}
 	</button>
-	<button class="icon-button" onclick={() => goto('/reports')} aria-label={$_('reports.title')}> 📊 </button>
+	<button class="icon-button" onclick={() => goto('/reports')} aria-label={$_('reports.title')}>
+		<svg
+			viewBox="0 0 24 24"
+			width="20"
+			height="20"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+			aria-hidden="true"
+		>
+			<line x1="18" y1="20" x2="18" y2="10" />
+			<line x1="12" y1="20" x2="12" y2="4" />
+			<line x1="6" y1="20" x2="6" y2="14" />
+		</svg>
+	</button>
 	<button class="icon-button" onclick={cycleTheme} aria-label={$_('dashboard.change_theme')}>
-		{THEME_ICONS[$theme] ?? '🎨'}
+		{#if $theme === 'dark'}
+			<svg
+				viewBox="0 0 24 24"
+				width="20"
+				height="20"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				aria-hidden="true"
+			>
+				<circle cx="12" cy="12" r="4" />
+				<line x1="12" y1="2" x2="12" y2="4" />
+				<line x1="12" y1="20" x2="12" y2="22" />
+				<line x1="4.93" y1="4.93" x2="6.34" y2="6.34" />
+				<line x1="17.66" y1="17.66" x2="19.07" y2="19.07" />
+				<line x1="2" y1="12" x2="4" y2="12" />
+				<line x1="20" y1="12" x2="22" y2="12" />
+				<line x1="4.93" y1="19.07" x2="6.34" y2="17.66" />
+				<line x1="17.66" y1="6.34" x2="19.07" y2="4.93" />
+			</svg>
+		{:else if $theme === 'light'}
+			<svg
+				viewBox="0 0 24 24"
+				width="20"
+				height="20"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				aria-hidden="true"
+			>
+				<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+			</svg>
+		{:else if $theme === 'contrast'}
+			<svg
+				viewBox="0 0 24 24"
+				width="20"
+				height="20"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				aria-hidden="true"
+			>
+				<circle cx="12" cy="12" r="9" />
+				<path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" />
+			</svg>
+		{:else if $theme === 'sepia'}
+			<svg
+				viewBox="0 0 24 24"
+				width="20"
+				height="20"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				aria-hidden="true"
+			>
+				<circle cx="12" cy="12" r="9" />
+				<path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" />
+			</svg>
+		{:else if $theme === 'forest'}
+			<svg
+				viewBox="0 0 24 24"
+				width="20"
+				height="20"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				aria-hidden="true"
+			>
+				<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z" />
+				<path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12" />
+			</svg>
+		{:else if $theme === 'ocean'}
+			<svg
+				viewBox="0 0 24 24"
+				width="20"
+				height="20"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				aria-hidden="true"
+			>
+				<path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" />
+				<path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" />
+				<path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1" />
+			</svg>
+		{:else}
+			<svg
+				viewBox="0 0 24 24"
+				width="20"
+				height="20"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				aria-hidden="true"
+			>
+				<circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
+				<circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
+				<circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
+				<circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
+				<path
+					d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"
+				/>
+			</svg>
+		{/if}
 	</button>
 	<button
 		class="icon-button"
@@ -563,7 +740,35 @@
 		onclick={toggleEditMode}
 		aria-label={editMode ? $_('dashboard.done_rearranging') : $_('dashboard.rearrange_widgets')}
 	>
-		{editMode ? '✓' : '✎'}
+		{#if editMode}
+			<svg
+				viewBox="0 0 24 24"
+				width="20"
+				height="20"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2.5"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				aria-hidden="true"
+			>
+				<polyline points="20 6 9 17 4 12" />
+			</svg>
+		{:else}
+			<svg
+				viewBox="0 0 24 24"
+				width="18"
+				height="18"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				aria-hidden="true"
+			>
+				<path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+			</svg>
+		{/if}
 	</button>
 	{#if $user}
 		<div class="profile-menu-wrap">
@@ -591,7 +796,9 @@
 {#if assistantState.status !== 'idle'}
 	<div class="assistant-overlay" role="status">
 		{#if assistantState.status === 'listening'}
-			<p>{$_('dashboard.listening')}</p>
+			<p>{assistantState.mode === 'cloud_stt' ? $_('dashboard.listening_cloud_stt') : $_('dashboard.listening')}</p>
+		{:else if assistantState.status === 'transcribing'}
+			<p>{$_('dashboard.transcribing')}</p>
 		{:else if assistantState.status === 'thinking'}
 			<p class="query">{assistantState.query}</p>
 			<p>{$_('dashboard.thinking')}</p>
@@ -804,11 +1011,15 @@
 
 	.icon-button {
 		position: relative;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
 		width: 3rem;
 		height: 3rem;
 		border-radius: 50%;
 		border: 1px solid var(--color-border);
 		background: var(--color-surface);
+		color: var(--color-text);
 		font-size: 1.3rem;
 		cursor: pointer;
 	}

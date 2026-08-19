@@ -37,6 +37,7 @@ from app.storage.db import (
     delete_widget_device_settings_for_widget,
     delete_widget_layout_for_widget,
     delete_widget_user_settings_for_widget,
+    get_user,
     get_user_preferences,
     get_widget_device_settings,
     get_widget_user_settings,
@@ -93,6 +94,7 @@ class AddWidgetRequest(BaseModel):
     type: str
     layout: WidgetLayout
     tab: str | None = None
+    owner_user_id: str | None = None
 
 
 logger = logging.getLogger(__name__)
@@ -104,9 +106,16 @@ def _widget_is_visible(widget: dict[str, Any], user_id: str, device_id: str, hid
     owner_user_id = widget.get("owner_user_id")
     owner_device_id = widget.get("owner_device_id")
     if owner_user_id is not None or owner_device_id is not None:
-        # A UI-added widget created after ownership tracking existed:
-        # private to the (user, device) pair that created it.
-        return owner_user_id == user_id and owner_device_id == device_id
+        # A UI-added widget created after ownership tracking existed: each
+        # owner_* field constrains its own axis only if set, so an
+        # admin-assigned widget (owner_user_id set, owner_device_id left
+        # None) is visible to that user on any of their devices rather than
+        # matching no device at all.
+        if owner_user_id is not None and owner_user_id != user_id:
+            return False
+        if owner_device_id is not None and owner_device_id != device_id:
+            return False
+        return True
     # A dashboard.yaml widget, or a legacy pre-ownership custom widget:
     # visible to everyone by default, opt-out per (user, device).
     return widget["id"] not in hidden
@@ -204,6 +213,19 @@ async def add_widget(
     if throwaway.settings_scope == "network" and user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
+    target_user_id = user["id"]
+    target_device_id = device["id"]
+    if payload.owner_user_id is not None and payload.owner_user_id != user["id"]:
+        if user.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Admin access required to add a tile for another user")
+        target = await asyncio.to_thread(get_user, payload.owner_user_id)
+        if target is None:
+            raise HTTPException(status_code=404, detail=f"Unknown user '{payload.owner_user_id}'")
+        target_user_id = target["id"]
+        # None = visible to that user on any of their devices, not just the
+        # one the admin happened to be using — see _widget_is_visible.
+        target_device_id = None
+
     widget_id = f"{payload.type}-{uuid4().hex[:8]}"
     while registry.get(widget_id) is not None:
         widget_id = f"{payload.type}-{uuid4().hex[:8]}"
@@ -212,7 +234,7 @@ async def add_widget(
     tab = payload.tab
     settings = dict(plugin_cls.default_settings)
 
-    await asyncio.to_thread(save_custom_widget, widget_id, payload.type, layout, tab, user["id"], device["id"])
+    await asyncio.to_thread(save_custom_widget, widget_id, payload.type, layout, tab, target_user_id, target_device_id)
     # A UI-added widget has no dashboard.yaml entry to source settings from —
     # persist the plugin's starter settings the same way a runtime settings
     # edit would, so they survive a backend restart.
@@ -545,8 +567,13 @@ async def remove_widget(
     custom_widgets = {w["id"]: w for w in await asyncio.to_thread(list_custom_widgets)}
     custom = custom_widgets.get(widget_id)
     owned = custom is not None and custom["owner_user_id"] == user["id"] and custom["owner_device_id"] == device["id"]
+    # An admin may force-delete any *custom* tile regardless of who owns it
+    # (full tile management from the reports page) — but a builtin
+    # (dashboard.yaml, `custom is None`) has no DB row to delete, so it stays
+    # hide-only even for admins.
+    admin_override = custom is not None and not owned and user.get("role") == "admin"
 
-    if not owned:
+    if not owned and not admin_override:
         # A shared default (dashboard.yaml or legacy-global custom widget),
         # or a widget owned by a different (user, device) pair — can't be
         # deleted outright. Just hide it from this (user, device)'s own

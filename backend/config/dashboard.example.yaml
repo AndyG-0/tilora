@@ -25,6 +25,7 @@ mcp_servers: []
 widgets:
   - id: weather
     type: weather
+    # Enabled by default — works out of the box with Open-Meteo.
     enabled: true
     layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 }
     settings:
@@ -34,10 +35,87 @@ widgets:
       location_name: "Fort Worth, TX"
       units: fahrenheit
 
-  - id: ai-insights
-    type: ai
+  - id: flights
+    type: flights
+    # Enabled by default — works out of the box with OpenSky / ADS-B data.
+    # Swap in your own coordinates (or configure during install).
     enabled: true
     layout: { col: 2, row: 1, colSpan: 2, rowSpan: 1 }
+    settings:
+      # Fort Worth, TX by default — swap for your own coordinates.
+      latitude: 32.7555
+      longitude: -97.3308
+      location_name: "Fort Worth, TX"
+      radius_nm: 15
+
+  - id: clock
+    type: clock
+    # Enabled by default — client-side clock, no configuration needed.
+    enabled: true
+    layout: { col: 4, row: 1, colSpan: 1, rowSpan: 1 }
+    settings:
+      # One of: digital, analog, binary, word, matrix
+      style: digital
+
+  - id: date
+    type: date
+    # Enabled by default — client-side date, no configuration needed.
+    enabled: true
+    layout: { col: 1, row: 2, colSpan: 1, rowSpan: 1 }
+    settings: {}
+
+  - id: chores
+    type: chores
+    # Enabled by default. Each logged-in user has their own to-do list, added
+    # via this widget's detail view. Works out of the box via local database.
+    enabled: true
+    layout: { col: 2, row: 2, colSpan: 1, rowSpan: 2 }
+    settings:
+      title: "To-Do"
+
+  - id: shopping
+    type: shopping
+    # Enabled by default. One shared list for the whole household, added
+    # via this widget's detail view. Works out of the box via local database.
+    enabled: true
+    layout: { col: 3, row: 2, colSpan: 1, rowSpan: 2 }
+    settings:
+      title: "Shopping List"
+
+  - id: system-monitor
+    type: system_monitor
+    # Enabled by default. Reports CPU/RAM/disk/network usage for the host
+    # running the backend via `psutil` — no external service, auth, or
+    # settings to configure.
+    enabled: true
+    layout: { col: 4, row: 2, colSpan: 1, rowSpan: 1 }
+    settings: {}
+
+  - id: nasa_apod
+    type: nasa_apod
+    # Enabled by default. Works out of the box with NASA's shared
+    # "DEMO_KEY" (low rate limit); set `NASA_API_KEY` in the backend's
+    # .env (api.nasa.gov) for a personal, higher-limit key.
+    enabled: true
+    layout: { col: 1, row: 3, colSpan: 1, rowSpan: 1 }
+    settings:
+      title: "Astronomy Picture of the Day"
+
+  - id: game2048
+    type: game2048
+    # Enabled by default. The whole game (board, moves, best score) runs
+    # client-side in the browser via localStorage — nothing to configure
+    # here. Tap the tile to open the full board and play.
+    enabled: true
+    layout: { col: 4, row: 3, colSpan: 1, rowSpan: 1 }
+    settings: {}
+
+  - id: ai-insights
+    type: ai
+    # Disabled by default — requires an AI API key (Anthropic, OpenAI, or
+    # Gemini) configured in Settings or backend/.env.
+    enabled: false
+    layout: { col: 1, row: 4, colSpan: 2, rowSpan: 1 }
     settings:
       title: "Daily Briefing"
       # Standard cron expression (minute hour day month day_of_week).
@@ -75,8 +153,8 @@ widgets:
     # folder path, album link, or connecting iCloud from this widget's
     # detail view always triggers an immediate re-scan regardless of this
     # interval.
-    enabled: true
-    layout: { col: 4, row: 1, colSpan: 1, rowSpan: 1 }
+    enabled: false
+    layout: { col: 3, row: 4, colSpan: 2, rowSpan: 1 }
     settings:
       provider: local
       directory: "/Volumes/Pictures/"
@@ -87,20 +165,20 @@ widgets:
 
   - id: movies
     type: movies
-    # Requires TMDB_API_KEY in backend/.env. `categories` controls which
-    # sections appear on the tile/detail view; omit it (or leave commented
-    # below) to show all five: popular_movies, popular_tv, trending_movies,
-    # trending_tv, and on_streaming (movies+shows currently available via a
-    # flatrate subscription in `region`). `providers` is a list of TMDB
-    # provider IDs (see GET /api/movies/providers) that narrows on_streaming
-    # to just those services — left empty (default), on_streaming shows
-    # anything available on any flatrate service. Both are also editable
-    # from this widget's detail view ("Edit settings"). Note the voice
-    # assistant can always answer popular/trending/on-streaming questions
-    # regardless of which categories are enabled here — categories only
-    # affects the dashboard tile/detail display.
-    enabled: true
-    layout: { col: 1, row: 2, colSpan: 3, rowSpan: 1 }
+    # Disabled by default — requires TMDB_API_KEY in backend/.env or Settings.
+    # `categories` controls which sections appear on the tile/detail view; omit
+    # it (or leave commented below) to show all five: popular_movies, popular_tv,
+    # trending_movies, trending_tv, and on_streaming (movies+shows currently
+    # available via a flatrate subscription in `region`). `providers` is a list
+    # of TMDB provider IDs (see GET /api/movies/providers) that narrows
+    # on_streaming to just those services — left empty (default), on_streaming
+    # shows anything available on any flatrate service. Both are also editable
+    # from this widget's detail view ("Edit settings"). Note the voice assistant
+    # can always answer popular/trending/on-streaming questions regardless of
+    # which categories are enabled here — categories only affects the dashboard
+    # tile/detail display.
+    enabled: false
+    layout: { col: 1, row: 5, colSpan: 3, rowSpan: 1 }
     settings:
       region: US
       # categories: [popular_movies, popular_tv, trending_movies, trending_tv, on_streaming]
@@ -108,10 +186,11 @@ widgets:
 
   - id: discord
     type: discord
-    # Disabled by default — requires DISCORD_BOT_TOKEN in backend/.env and a
-    # channel_id the bot has been invited to (a thread ID also works).
-    enabled: true
-    layout: { col: 4, row: 2, colSpan: 1, rowSpan: 1 }
+    # Disabled by default — requires DISCORD_BOT_TOKEN in backend/.env (or
+    # Settings) and a channel_id the bot has been invited to (a thread ID also
+    # works).
+    enabled: false
+    layout: { col: 4, row: 5, colSpan: 1, rowSpan: 1 }
     settings:
       channel_id: "123456789012345678"
       message_limit: 20
@@ -123,26 +202,12 @@ widgets:
       marquee_speed_seconds: 40
       fade_interval_seconds: 6
 
-  - id: clock
-    type: clock
-    enabled: true
-    layout: { col: 1, row: 3, colSpan: 1, rowSpan: 1 }
-    settings:
-      # One of: digital, analog, binary, word, matrix
-      style: digital
-
-  - id: date
-    type: date
-    enabled: true
-    layout: { col: 2, row: 3, colSpan: 1, rowSpan: 1 }
-    settings: {}
-
   - id: message
     type: message
     # Disabled by default — needs a title/text of your own; edit from the
     # widget's detail view once enabled.
     enabled: false
-    layout: { col: 3, row: 3, colSpan: 2, rowSpan: 1 }
+    layout: { col: 1, row: 6, colSpan: 2, rowSpan: 1 }
     settings:
       title: "Note"
       text: "Tap to edit this message."
@@ -152,7 +217,7 @@ widgets:
     # Disabled by default — swap in your own feeds, or flip this on to try
     # it with the sample below.
     enabled: false
-    layout: { col: 1, row: 4, colSpan: 4, rowSpan: 2 }
+    layout: { col: 3, row: 6, colSpan: 2, rowSpan: 2 }
     settings:
       title: "Headlines"
       feeds:
@@ -160,23 +225,11 @@ widgets:
           name: "Hacker News"
       item_limit: 5
 
-  - id: flights
-    type: flights
-    # Disabled by default — swap in your own coordinates before enabling.
-    enabled: false
-    layout: { col: 1, row: 6, colSpan: 2, rowSpan: 1 }
-    settings:
-      # Fort Worth, TX by default — swap for your own coordinates.
-      latitude: 32.7555
-      longitude: -97.3308
-      location_name: "Fort Worth, TX"
-      radius_nm: 15
-
   - id: mapping
     type: mapping
     # Disabled by default — swap in your own coordinates before enabling.
     enabled: false
-    layout: { col: 1, row: 7, colSpan: 1, rowSpan: 1 }
+    layout: { col: 1, row: 7, colSpan: 2, rowSpan: 1 }
     settings:
       # Fort Worth, TX by default — swap for your own coordinates.
       latitude: 32.7555
@@ -188,7 +241,7 @@ widgets:
     # Disabled by default — position it once you want alerts (raised manually
     # via POST /api/alerts, or by an AI widget's create_alert tool) to show up.
     enabled: false
-    layout: { col: 1, row: 6, colSpan: 4, rowSpan: 1 }
+    layout: { col: 1, row: 8, colSpan: 4, rowSpan: 1 }
     settings: {}
 
   - id: calendar
@@ -207,7 +260,7 @@ widgets:
     #   "Manage calendars" picker (stored as `calendar_colors`, a map of
     #   calendar id -> hex color — also not meant to be hand-typed here).
     enabled: false
-    layout: { col: 1, row: 7, colSpan: 2, rowSpan: 1 }
+    layout: { col: 1, row: 9, colSpan: 2, rowSpan: 1 }
     settings:
       provider: google
       calendar_id: primary
@@ -228,7 +281,7 @@ widgets:
     # Play vs. HLS transcode) is auto-detected per device, not configured
     # here.
     enabled: false
-    layout: { col: 1, row: 8, colSpan: 2, rowSpan: 1 }
+    layout: { col: 3, row: 9, colSpan: 2, rowSpan: 1 }
     settings:
       host: ""
       port: 8096
@@ -244,30 +297,12 @@ widgets:
     # widget's detail view (not here, so it isn't committed to this
     # git-tracked file — stored in the backend's local database instead,
     # same as the Jellyfin widget's api_key/password).
-    enabled: true
-    layout: { col: 3, row: 8, colSpan: 1, rowSpan: 1 }
+    enabled: false
+    layout: { col: 1, row: 10, colSpan: 1, rowSpan: 1 }
     settings:
       host: "pi.hole"
       port: 80
       use_https: false
-
-  - id: game2048
-    type: game2048
-    # Disabled by default. The whole game (board, moves, best score) runs
-    # client-side in the browser via localStorage — nothing to configure
-    # here. Tap the tile to open the full board and play.
-    enabled: true
-    layout: { col: 4, row: 8, colSpan: 1, rowSpan: 1 }
-    settings: {}
-
-  - id: system-monitor
-    type: system_monitor
-    # Disabled by default. Reports CPU/RAM/disk/network usage for the host
-    # running the backend via `psutil` — no external service, auth, or
-    # settings to configure.
-    enabled: true
-    layout: { col: 3, row: 9, colSpan: 2, rowSpan: 1 }
-    settings: {}
 
   - id: hdhomerun
     type: hdhomerun
@@ -313,8 +348,8 @@ widgets:
     # you can confirm what's actually running after changing this. Running
     # in Docker? qsv/vaapi additionally need the commented /dev/dri block
     # under the backend service in docker-compose.yml — see README.md.
-    enabled: true
-    layout: { col: 1, row: 9, colSpan: 2, rowSpan: 1 }
+    enabled: false
+    layout: { col: 2, row: 10, colSpan: 2, rowSpan: 1 }
     settings:
       tuner_host: "192.168.1.20"
       tuner_port: 80
@@ -356,7 +391,7 @@ widgets:
     #    read access to that socket is root-equivalent on the host, so
     #    only use this if you're fine granting that.
     enabled: false
-    layout: { col: 1, row: 10, colSpan: 2, rowSpan: 1 }
+    layout: { col: 1, row: 11, colSpan: 2, rowSpan: 1 }
     settings:
       engine: docker
       connection: tcp
@@ -373,8 +408,8 @@ widgets:
     # needed — uses ESPN's free public site API. Shows each team's next
     # upcoming/in-progress game and which network or streaming service is
     # broadcasting it.
-    enabled: true
-    layout: { col: 3, row: 10, colSpan: 2, rowSpan: 1 }
+    enabled: false
+    layout: { col: 3, row: 11, colSpan: 2, rowSpan: 1 }
     settings:
       teams:
         - league: nfl
@@ -401,8 +436,8 @@ widgets:
     # calls need the profile's "Game details"/friends list privacy set to
     # Public on Steam — otherwise they fail gracefully with an error string
     # rather than breaking the widget.
-    enabled: true
-    layout: { col: 1, row: 11, colSpan: 2, rowSpan: 1 }
+    enabled: false
+    layout: { col: 1, row: 12, colSpan: 2, rowSpan: 1 }
     settings:
       steamid: ""
       api_key: ""
@@ -419,7 +454,7 @@ widgets:
     # ea, epic, xbox, xboxone, xboxseries, psn, ps4, ps5) — a mismatch
     # surfaces as "player not found" rather than a hard error.
     enabled: false
-    layout: { col: 3, row: 11, colSpan: 2, rowSpan: 1 }
+    layout: { col: 3, row: 12, colSpan: 2, rowSpan: 1 }
     settings:
       server_name: ""
       player_name: "|||0N3|||"
@@ -434,8 +469,8 @@ widgets:
     # backend's local database instead, same as the Pi-hole/Jellyfin
     # widgets). Shows per-volume storage usage/health, plus model/uptime/
     # CPU temperature in the detail view.
-    enabled: true
-    layout: { col: 1, row: 12, colSpan: 2, rowSpan: 1 }
+    enabled: false
+    layout: { col: 1, row: 13, colSpan: 2, rowSpan: 1 }
     settings:
       host: "synology.local"
       port: 5000
@@ -444,17 +479,17 @@ widgets:
 
   - id: asus_router
     type: asus_router
-    # Connects over SSH (not the router's web admin UI, which only allows
-    # one active session — logging in from a second device/backend would
-    # kick the others). Enable SSH access with password auth on the router
-    # first. `ssh_port` defaults to 22; change it here if you've moved SSH
-    # to a non-standard port. Set the username/password from this widget's
-    # detail view (not here, so they aren't committed to this git-tracked
+    # Disabled by default. Connects over SSH (not the router's web admin UI,
+    # which only allows one active session — logging in from a second
+    # device/backend would kick the others). Enable SSH access with password auth
+    # on the router first. `ssh_port` defaults to 22; change it here if you've
+    # moved SSH to a non-standard port. Set the username/password from this
+    # widget's detail view (not here, so they aren't committed to this git-tracked
     # file — stored in the backend's local database instead, same as the
-    # Synology/Pi-hole widgets). Shows WAN status and connected-client
-    # count, plus a per-client list and traffic counters in the detail view.
-    enabled: true
-    layout: { col: 3, row: 12, colSpan: 2, rowSpan: 1 }
+    # Synology/Pi-hole widgets). Shows WAN status and connected-client count,
+    # plus a per-client list and traffic counters in the detail view.
+    enabled: false
+    layout: { col: 3, row: 13, colSpan: 2, rowSpan: 1 }
     settings:
       host: "192.168.50.1"
       ssh_port: 22
@@ -470,7 +505,7 @@ widgets:
     # widgets). Shows active/downloading/seeding torrent counts and total
     # download/upload speed, plus a per-torrent list in the detail view.
     enabled: false
-    layout: { col: 3, row: 13, colSpan: 2, rowSpan: 1 }
+    layout: { col: 1, row: 14, colSpan: 2, rowSpan: 1 }
     settings:
       host: ""
       port: 8080
@@ -498,8 +533,8 @@ widgets:
     # shelf URL (e.g. "currently-reading", "read", "to-read", or a custom
     # shelf's slug). Reads Goodreads' public shelf RSS feed — no account
     # login needed, but the shelf must be public.
-    enabled: true
-    layout: { col: 1, row: 13, colSpan: 1, rowSpan: 2 }
+    enabled: false
+    layout: { col: 1, row: 15, colSpan: 1, rowSpan: 2 }
     settings:
       user_id: "12345678"
       shelf: "currently-reading"
@@ -512,34 +547,12 @@ widgets:
     # hand-typed here. Icons are auto-derived from each link's domain
     # favicon; `icon` below is optional and only needed to override that.
     enabled: false
-    layout: { col: 2, row: 13, colSpan: 1, rowSpan: 2 }
+    layout: { col: 2, row: 15, colSpan: 1, rowSpan: 2 }
     settings:
       title: "Bookmarks"
       bookmarks:
         - name: "GitHub"
           url: "https://github.com"
-
-  - id: chores
-    type: chores
-    # Disabled by default. Each logged-in user has their own list, added via
-    # this widget's detail view (not here — there's nothing to hand-type,
-    # since items are per-user DB rows, not settings). Shows open item count
-    # on the tile, full checkable list in the detail view.
-    enabled: false
-    layout: { col: 1, row: 15, colSpan: 1, rowSpan: 2 }
-    settings:
-      title: "To-Do"
-
-  - id: shopping
-    type: shopping
-    # Disabled by default. One shared list for the whole household — unlike
-    # Chores, items aren't owned by whoever added them, so any logged-in
-    # user can check off or remove any item. Added via this widget's detail
-    # view, same reasoning as Chores above.
-    enabled: false
-    layout: { col: 2, row: 15, colSpan: 1, rowSpan: 2 }
-    settings:
-      title: "Shopping List"
 
   - id: packages
     type: packages
@@ -554,13 +567,3 @@ widgets:
     layout: { col: 3, row: 15, colSpan: 1, rowSpan: 2 }
     settings:
       title: "Packages"
-
-  - id: nasa_apod
-    type: nasa_apod
-    # Disabled by default. Works out of the box with NASA's shared
-    # "DEMO_KEY" (low rate limit); set `NASA_API_KEY` in the backend's
-    # .env (api.nasa.gov) for a personal, higher-limit key.
-    enabled: false
-    layout: { col: 4, row: 15, colSpan: 1, rowSpan: 2 }
-    settings:
-      title: "Astronomy Picture of the Day"

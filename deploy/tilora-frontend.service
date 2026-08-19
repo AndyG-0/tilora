@@ -9,6 +9,8 @@ User=__TILORA_USER__
 WorkingDirectory=__TILORA_FRONTEND_DIR__
 Environment=PORT=5173
 Environment=NODE_ENV=production
+Environment=PUBLIC_API_BASE_URL=__TILORA_PUBLIC_API_BASE_URL__
+EnvironmentFile=-__TILORA_FRONTEND_DIR__/.env
 ExecStart=/usr/bin/node build/index.js
 Restart=on-failure
 RestartSec=3

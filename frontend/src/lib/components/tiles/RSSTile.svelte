@@ -20,16 +20,32 @@
 	pollWidget(refresh, refreshIntervalSeconds * 1000);
 
 	let groups = $derived(summary?.feed_groups ?? []);
-	let hasItems = $derived(groups.some((group) => group.items.length > 0));
+	let erroredGroups = $derived(groups.filter((group) => !!group.error));
+	let validGroups = $derived(groups.filter((group) => !group.error && group.items.length > 0));
+	let hasItems = $derived(validGroups.length > 0);
 </script>
 
 <TileCard {widgetId}>
 	<div class="widget">
 		<div class="title">{summary?.title ?? 'Headlines'}</div>
-		{#if hasItems}
-			<div class="groups">
-				{#each groups as group (group.feed_id)}
-					{#if group.items.length}
+		{#if !summary}
+			<div class="empty">{$_('rss.tile.loading')}</div>
+		{:else}
+			{#if erroredGroups.length > 0}
+				<div class="errors">
+					{#each erroredGroups as group (group.feed_id)}
+						<div class="error-notice">
+							{#if groups.length > 1}
+								<span class="error-feed-name">{group.name}:</span>
+							{/if}
+							<span class="error-text">{group.error}</span>
+						</div>
+					{/each}
+				</div>
+			{/if}
+			{#if hasItems}
+				<div class="groups">
+					{#each validGroups as group (group.feed_id)}
 						{#if groups.length > 1}
 							<div class="group-label">{group.name}</div>
 						{/if}
@@ -38,11 +54,15 @@
 								<li>{item.title}</li>
 							{/each}
 						</ul>
-					{/if}
-				{/each}
-			</div>
-		{:else}
-			<div class="empty">{$_('rss.tile.loading')}</div>
+					{/each}
+				</div>
+			{:else if erroredGroups.length === 0}
+				{#if groups.length === 0}
+					<div class="empty">{$_('rss.detail.no_feeds_selected_hint')}</div>
+				{:else}
+					<div class="empty">{$_('rss.detail.no_items')}</div>
+				{/if}
+			{/if}
 		{/if}
 	</div>
 </TileCard>
@@ -61,6 +81,35 @@
 		color: var(--color-text-muted);
 		margin-bottom: 0.5rem;
 		flex-shrink: 0;
+	}
+
+	.errors {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		margin-bottom: 0.5rem;
+		flex-shrink: 0;
+	}
+
+	.error-notice {
+		display: flex;
+		align-items: baseline;
+		gap: 0.35rem;
+		font-size: 0.85rem;
+		line-height: 1.3;
+		color: var(--color-error);
+		overflow: hidden;
+	}
+
+	.error-feed-name {
+		font-weight: 600;
+		flex-shrink: 0;
+	}
+
+	.error-text {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.groups {

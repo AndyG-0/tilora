@@ -15,6 +15,7 @@
 	}
 
 	interface MoviesDetailData {
+		configured?: boolean;
 		popular_movies?: Movie[];
 		popular_tv_shows?: Movie[];
 		trending_movies?: Movie[];
@@ -64,6 +65,8 @@
 	let loadingProviders = $state(false);
 	let saving = $state(false);
 	let error = $state<string | null>(null);
+
+	const hasAnyItems = $derived(SECTIONS.some((section) => data[section.key]?.length));
 
 	async function openEditor() {
 		categoriesInput = [...data.categories];
@@ -207,6 +210,10 @@
 	</div>
 {:else if error}
 	<p class="hint error">{error}</p>
+{:else if data.configured === false && !hasAnyItems}
+	<p class="hint">{$_('common.not_configured')}</p>
+{:else if !hasAnyItems}
+	<p class="hint">{$_('common.no_data')}</p>
 {/if}
 
 {#each SECTIONS as section (section.key)}

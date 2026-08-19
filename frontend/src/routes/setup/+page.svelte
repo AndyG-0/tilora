@@ -9,6 +9,7 @@
 	let name = $state('');
 	let avatar = $state('');
 	let pin = $state('');
+	let includeStarterTiles = $state(true);
 	let error = $state<string | null>(null);
 	let creating = $state(false);
 
@@ -21,7 +22,12 @@
 		creating = true;
 		error = null;
 		try {
-			const me = await api.createSetupAdmin(name.trim(), avatar.trim() || undefined, pin || undefined);
+			const me = await api.createSetupAdmin(
+				name.trim(),
+				avatar.trim() || undefined,
+				pin || undefined,
+				includeStarterTiles,
+			);
 			user.set(me);
 			needsSetup.set(false);
 			goto('/');
@@ -56,6 +62,11 @@
 				maxlength="8"
 			/>
 		</label>
+		<label class="checkbox-label">
+			<input type="checkbox" bind:checked={includeStarterTiles} />
+			<span>{$_('setup.starter_tiles_label')}</span>
+		</label>
+		<p class="checkbox-hint">{$_('setup.starter_tiles_hint')}</p>
 		{#if error}
 			<p class="hint error">{error}</p>
 		{/if}
@@ -111,6 +122,29 @@
 		font-size: 0.9rem;
 		color: var(--color-text-muted);
 		text-align: left;
+	}
+
+	.setup-form label.checkbox-label {
+		flex-direction: row;
+		align-items: center;
+		gap: 0.5rem;
+		cursor: pointer;
+		font-size: 0.9rem;
+		color: var(--color-text);
+	}
+
+	.setup-form label.checkbox-label input[type='checkbox'] {
+		width: auto;
+		cursor: pointer;
+	}
+
+	.checkbox-hint {
+		font-size: 0.8rem;
+		color: var(--color-text-muted);
+		margin: -0.5rem 0 0 0;
+		text-align: left;
+		line-height: 1.3;
+		width: 100%;
 	}
 
 	.setup-form input {
