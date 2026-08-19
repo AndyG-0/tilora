@@ -157,6 +157,8 @@ export interface AppSettings {
 	piper_tts_enabled: string;
 	piper_server_url: string;
 	piper_voices: string;
+	has_tmdb_api_key: boolean;
+	has_discord_bot_token: boolean;
 	has_google_calendar_client_id: boolean;
 	has_google_calendar_client_secret: boolean;
 	has_microsoft_calendar_client_id: boolean;

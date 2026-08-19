@@ -6,10 +6,17 @@ import httpx
 import pytest
 import respx
 
+from app import config
 from app.plugins.discord import plugin as discord_plugin_module
 from app.plugins.discord.plugin import DISCORD_API_BASE, DiscordPlugin
 
 CHANNEL_ID = "111111111111111111"
+
+
+@pytest.fixture(autouse=True)
+def _set_discord_bot_token(monkeypatch):
+    monkeypatch.setattr(config.settings, "discord_bot_token", "test-bot-token")
+
 
 CHANNEL_RESPONSE = {"id": CHANNEL_ID, "name": "general"}
 
@@ -167,3 +174,28 @@ async def test_get_todays_messages_returns_empty_when_no_channel_configured(tmp_
     result = await tools[1].handler()
 
     assert result["messages"] == []
+
+
+async def test_unconfigured_discord_plugin_returns_empty_and_not_configured(monkeypatch):
+    monkeypatch.setattr(config.settings, "discord_bot_token", None)
+    plugin = make_plugin()
+
+    summary = await plugin.get_summary()
+    assert summary["configured"] is False
+    assert summary["messages"] == []
+
+    detail = await plugin.get_detail()
+    assert detail["configured"] is False
+    assert detail["messages"] == []
+
+
+@respx.mock
+async def test_discord_plugin_handles_http_errors_gracefully():
+    respx.get(f"{DISCORD_API_BASE}/channels/{CHANNEL_ID}").mock(return_value=httpx.Response(401))
+    respx.get(f"{DISCORD_API_BASE}/channels/{CHANNEL_ID}/messages").mock(return_value=httpx.Response(500))
+
+    plugin = make_plugin()
+    summary = await plugin.get_summary()
+    assert summary["configured"] is True
+    assert summary["messages"] == []
+    assert summary["channel_name"] == "unknown-channel"

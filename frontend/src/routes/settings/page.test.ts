@@ -116,6 +116,8 @@ const BASE_SETTINGS = {
 	caldav_url: '',
 	caldav_username: '',
 	has_caldav_password: false,
+	has_tmdb_api_key: false,
+	has_discord_bot_token: false,
 };
 
 const DEFAULT_PREFERENCES = { theme: 'dark', voice_provider: 'browser', voice_id: '', voice_name: '' };
@@ -987,5 +989,81 @@ describe('settings +page.svelte — Software update section', () => {
 
 		await screen.findByRole('button', { name: 'Check for updates' });
 		expect(screen.queryByRole('button', { name: 'Update now' })).not.toBeInTheDocument();
+	});
+});
+
+describe('settings +page.svelte — TMDB and Discord sections', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		user.set({ id: 'admin1', name: 'Admin', avatar: null, role: 'admin' });
+		settings.mockResolvedValue({ ...BASE_SETTINGS });
+		updateSettings.mockResolvedValue({ ...BASE_SETTINGS });
+		version.mockResolvedValue({
+			current_version: '0.1.0',
+			latest_version: null,
+			update_available: false,
+			release_url: null,
+			install_method: '',
+			update_running: false,
+		});
+		widgetTypes.mockResolvedValue([]);
+		listDevices.mockResolvedValue([]);
+		listUsers.mockResolvedValue([]);
+		listHouseholdUsers.mockResolvedValue([]);
+		getPreferences.mockResolvedValue({ ...DEFAULT_PREFERENCES });
+		updatePreferences.mockResolvedValue({ ...DEFAULT_PREFERENCES });
+		listWidgets.mockResolvedValue([]);
+		ttsVoices.mockResolvedValue([]);
+		listBrowserVoices.mockResolvedValue([]);
+		listNetworkIntegrations.mockResolvedValue([]);
+		icloudCredentials.mockResolvedValue({ username: '', has_password: false });
+		health.mockResolvedValue({ status: 'ok' });
+	});
+
+	it('saves TMDB API key when submitted', async () => {
+		render(Page);
+
+		const saveBtn = await screen.findByRole('button', { name: 'Save TMDB' });
+		// TMDB API key input is inside the TMDB section
+		const tmdbSection = saveBtn.closest('section')!;
+		const input = tmdbSection.querySelector('input')!;
+
+		await fireEvent.input(input, { target: { value: 'my-tmdb-key' } });
+		await fireEvent.click(saveBtn);
+
+		expect(updateSettings).toHaveBeenCalledWith({ tmdb_api_key: 'my-tmdb-key' });
+	});
+
+	it('clears TMDB API key when Clear button is clicked', async () => {
+		settings.mockResolvedValue({ ...BASE_SETTINGS, has_tmdb_api_key: true });
+		render(Page);
+
+		const clearBtn = await screen.findByRole('button', { name: 'Clear API key' });
+		await fireEvent.click(clearBtn);
+
+		expect(updateSettings).toHaveBeenCalledWith({ tmdb_api_key: '' });
+	});
+
+	it('saves Discord bot token when submitted', async () => {
+		render(Page);
+
+		const saveBtn = await screen.findByRole('button', { name: 'Save Discord' });
+		const discordSection = saveBtn.closest('section')!;
+		const input = discordSection.querySelector('input')!;
+
+		await fireEvent.input(input, { target: { value: 'my-discord-token' } });
+		await fireEvent.click(saveBtn);
+
+		expect(updateSettings).toHaveBeenCalledWith({ discord_bot_token: 'my-discord-token' });
+	});
+
+	it('clears Discord bot token when Clear button is clicked', async () => {
+		settings.mockResolvedValue({ ...BASE_SETTINGS, has_discord_bot_token: true });
+		render(Page);
+
+		const clearBtn = await screen.findByRole('button', { name: 'Clear bot token' });
+		await fireEvent.click(clearBtn);
+
+		expect(updateSettings).toHaveBeenCalledWith({ discord_bot_token: '' });
 	});
 });

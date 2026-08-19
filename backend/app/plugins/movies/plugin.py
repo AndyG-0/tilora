@@ -14,13 +14,16 @@ regardless of what's currently visible on the dashboard.
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 import httpx
 
-from app.config import settings
+from app.config import effective_settings
 from app.plugins.base import Plugin, ToolDef
 from app.storage.cache import cached_call
+
+logger = logging.getLogger(__name__)
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 POSTER_BASE_URL = "https://image.tmdb.org/t/p/w342"
@@ -125,8 +128,12 @@ class MoviesPlugin(Plugin):
         return [int(p) for p in self.config["settings"].get("providers", [])]
 
     @property
+    def _is_configured(self) -> bool:
+        return bool(effective_settings().get("tmdb_api_key"))
+
+    @property
     def _params(self) -> dict[str, str]:
-        return {"api_key": settings.tmdb_api_key or "", "language": "en-US"}
+        return {"api_key": effective_settings().get("tmdb_api_key") or "", "language": "en-US"}
 
     def _list_request(self, response_key: str) -> tuple[str, dict[str, str]]:
         if response_key == "popular_movies":
@@ -155,9 +162,15 @@ class MoviesPlugin(Plugin):
     async def _fetch_path(
         self, client: httpx.AsyncClient, path: str, extra_params: dict[str, str] | None = None
     ) -> list[dict[str, Any]]:
-        response = await client.get(f"{TMDB_BASE_URL}/{path}", params={**self._params, **(extra_params or {})})
-        response.raise_for_status()
-        return response.json()["results"]
+        if not self._is_configured:
+            return []
+        try:
+            response = await client.get(f"{TMDB_BASE_URL}/{path}", params={**self._params, **(extra_params or {})})
+            response.raise_for_status()
+            return response.json().get("results", [])
+        except httpx.HTTPError as exc:
+            logger.warning("Could not fetch TMDB path '%s' for widget '%s': %s", path, self.id, exc)
+            return []
 
     async def _fetch_response_list(self, client: httpx.AsyncClient, response_key: str) -> list[dict[str, Any]]:
         path, extra_params = self._list_request(response_key)
@@ -166,11 +179,23 @@ class MoviesPlugin(Plugin):
     async def _fetch_providers_uncached(
         self, client: httpx.AsyncClient, media_type: str, item_id: int
     ) -> list[dict[str, Any]]:
-        response = await client.get(
-            f"{TMDB_BASE_URL}/{media_type}/{item_id}/watch/providers",
-            params={"api_key": settings.tmdb_api_key or ""},
-        )
-        response.raise_for_status()
+        if not self._is_configured:
+            return []
+        try:
+            response = await client.get(
+                f"{TMDB_BASE_URL}/{media_type}/{item_id}/watch/providers",
+                params={"api_key": effective_settings().get("tmdb_api_key") or ""},
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "Could not fetch TMDB watch providers for item %s/%s in widget '%s': %s",
+                media_type,
+                item_id,
+                self.id,
+                exc,
+            )
+            return []
         region_data = response.json().get("results", {}).get(self.region, {})
         return [
             {
@@ -202,15 +227,33 @@ class MoviesPlugin(Plugin):
 
     async def get_summary(self) -> dict[str, Any]:
         keys = self._enabled_response_keys()
+        if not self._is_configured:
+            return {
+                "configured": False,
+                **{key: [] for key in keys},
+            }
         async with httpx.AsyncClient(timeout=10) as client:
             lists = await asyncio.gather(*(self._fetch_response_list(client, key) for key in keys))
         return {
-            key: [self._media_summary(item, _MEDIA_TYPE_BY_RESPONSE_KEY[key]) for item in items[:_SUMMARY_ITEM_COUNT]]
-            for key, items in zip(keys, lists, strict=True)
+            "configured": True,
+            **{
+                key: [
+                    self._media_summary(item, _MEDIA_TYPE_BY_RESPONSE_KEY[key]) for item in items[:_SUMMARY_ITEM_COUNT]
+                ]
+                for key, items in zip(keys, lists, strict=True)
+            },
         }
 
     async def get_detail(self) -> dict[str, Any]:
         keys = self._enabled_response_keys()
+        if not self._is_configured:
+            return {
+                "configured": False,
+                "region": self.region,
+                "categories": self.categories,
+                "providers": self.providers,
+                **{key: [] for key in keys},
+            }
         async with httpx.AsyncClient(timeout=10) as client:
             lists = await asyncio.gather(*(self._fetch_response_list(client, key) for key in keys))
             top_items = {key: items[:_DETAIL_ITEM_COUNT] for key, items in zip(keys, lists, strict=True)}
@@ -223,7 +266,12 @@ class MoviesPlugin(Plugin):
                 )
             )
 
-        result: dict[str, Any] = {"region": self.region, "categories": self.categories, "providers": self.providers}
+        result: dict[str, Any] = {
+            "configured": True,
+            "region": self.region,
+            "categories": self.categories,
+            "providers": self.providers,
+        }
         for key, item_providers in zip(top_items.keys(), provider_lists, strict=True):
             media_type = _MEDIA_TYPE_BY_RESPONSE_KEY[key]
             result[key] = [

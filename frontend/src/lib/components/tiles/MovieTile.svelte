@@ -12,6 +12,7 @@
 	}
 
 	interface MoviesSummary {
+		configured?: boolean;
 		popular_movies?: Movie[];
 		popular_tv_shows?: Movie[];
 		trending_movies?: Movie[];
@@ -20,7 +21,15 @@
 		on_streaming_tv_shows?: Movie[];
 	}
 
-	const SECTIONS: { key: keyof MoviesSummary; titleKey: string }[] = [
+	type SectionKey =
+		| 'popular_movies'
+		| 'popular_tv_shows'
+		| 'trending_movies'
+		| 'trending_tv_shows'
+		| 'on_streaming_movies'
+		| 'on_streaming_tv_shows';
+
+	const SECTIONS: { key: SectionKey; titleKey: string }[] = [
 		{ key: 'popular_movies', titleKey: 'movies.section.popular_movies' },
 		{ key: 'trending_movies', titleKey: 'movies.section.trending_movies' },
 		{ key: 'popular_tv_shows', titleKey: 'movies.section.popular_tv_shows' },
@@ -32,6 +41,7 @@
 	let { widgetId, refreshIntervalSeconds }: { widgetId: string; refreshIntervalSeconds: number } = $props();
 
 	let summary = $state<MoviesSummary | null>(null);
+	const hasItems = $derived(Boolean(summary && SECTIONS.some((section) => summary?.[section.key]?.length)));
 
 	async function refresh() {
 		try {
@@ -46,7 +56,7 @@
 
 <TileCard {widgetId}>
 	<div class="widget">
-		{#if summary}
+		{#if summary && hasItems}
 			<div class="scroll-wrap">
 				<div class="list" use:scrollFade={summary}>
 					{#each SECTIONS as section (section.key)}
@@ -66,6 +76,12 @@
 					{/each}
 				</div>
 			</div>
+		{:else if summary && summary.configured === false}
+			<div class="title">Movies & Shows</div>
+			<div class="condition">{$_('common.not_configured')}</div>
+		{:else if summary}
+			<div class="title">Movies & Shows</div>
+			<div class="condition">{$_('common.no_data')}</div>
 		{:else}
 			<div class="title">Movies & Shows</div>
 			<div class="condition">{$_('common.loading')}</div>

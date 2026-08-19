@@ -1,9 +1,17 @@
 from __future__ import annotations
 
 import httpx
+import pytest
 import respx
 
+from app import config
 from app.plugins.movies.plugin import TMDB_BASE_URL, MoviesPlugin
+
+
+@pytest.fixture(autouse=True)
+def _set_tmdb_api_key(monkeypatch):
+    monkeypatch.setattr(config.settings, "tmdb_api_key", "test-tmdb-key")
+
 
 POPULAR_RESPONSE = {
     "results": [
@@ -170,7 +178,7 @@ async def test_get_summary_respects_categories_setting():
 
     summary = await plugin.get_summary()
 
-    assert list(summary.keys()) == ["popular_movies"]
+    assert [k for k in summary.keys() if k != "configured"] == ["popular_movies"]
     assert popular_route.called
     assert not tv_route.called
     assert not trending_movie_route.called
@@ -186,7 +194,7 @@ async def test_get_summary_ignores_unknown_category_values():
 
     summary = await plugin.get_summary()
 
-    assert list(summary.keys()) == ["popular_movies"]
+    assert [k for k in summary.keys() if k != "configured"] == ["popular_movies"]
 
 
 @respx.mock
@@ -362,3 +370,39 @@ def test_get_ai_tools_on_streaming_description_mentions_provider_count_when_set(
 
     assert "2 streaming service" in tools["get_on_streaming_movies"].description
     assert "2 streaming service" in tools["get_on_streaming_tv_shows"].description
+
+
+@respx.mock
+async def test_unconfigured_movies_plugin_returns_empty_and_not_configured(monkeypatch):
+    monkeypatch.setattr(config.settings, "tmdb_api_key", None)
+    plugin = make_plugin()
+
+    summary = await plugin.get_summary()
+    assert summary["configured"] is False
+    assert summary["popular_movies"] == []
+    assert summary["popular_tv_shows"] == []
+
+    detail = await plugin.get_detail()
+    assert detail["configured"] is False
+    assert detail["popular_movies"] == []
+    assert detail["popular_tv_shows"] == []
+
+
+@respx.mock
+async def test_movies_plugin_handles_tmdb_http_error_gracefully():
+    respx.get(f"{TMDB_BASE_URL}/movie/popular").mock(return_value=httpx.Response(500))
+    respx.get(f"{TMDB_BASE_URL}/tv/popular").mock(return_value=httpx.Response(401))
+    respx.get(f"{TMDB_BASE_URL}/trending/movie/week").mock(return_value=httpx.Response(500))
+    respx.get(f"{TMDB_BASE_URL}/trending/tv/week").mock(return_value=httpx.Response(500))
+    respx.get(f"{TMDB_BASE_URL}/discover/movie").mock(return_value=httpx.Response(500))
+    respx.get(f"{TMDB_BASE_URL}/discover/tv").mock(return_value=httpx.Response(500))
+
+    plugin = make_plugin()
+    summary = await plugin.get_summary()
+    assert summary["configured"] is True
+    assert summary["popular_movies"] == []
+    assert summary["popular_tv_shows"] == []
+
+    detail = await plugin.get_detail()
+    assert detail["configured"] is True
+    assert detail["popular_movies"] == []

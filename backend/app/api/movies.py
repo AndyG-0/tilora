@@ -8,12 +8,15 @@ regardless of whether a service is flagged for movies, TV, or both.
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 import httpx
 from fastapi import APIRouter, Query
 
-from app.config import settings
+from app.config import effective_settings
+
+logger = logging.getLogger(__name__)
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 PROVIDER_LOGO_BASE_URL = "https://image.tmdb.org/t/p/w45"
@@ -22,12 +25,19 @@ router = APIRouter(prefix="/api/movies", tags=["movies"])
 
 
 async def _fetch_providers(client: httpx.AsyncClient, media_type: str, region: str) -> list[dict[str, Any]]:
-    response = await client.get(
-        f"{TMDB_BASE_URL}/watch/providers/{media_type}",
-        params={"api_key": settings.tmdb_api_key or "", "watch_region": region},
-    )
-    response.raise_for_status()
-    return response.json().get("results", [])
+    api_key = effective_settings().get("tmdb_api_key")
+    if not api_key:
+        return []
+    try:
+        response = await client.get(
+            f"{TMDB_BASE_URL}/watch/providers/{media_type}",
+            params={"api_key": api_key, "watch_region": region},
+        )
+        response.raise_for_status()
+        return response.json().get("results", [])
+    except httpx.HTTPError as exc:
+        logger.warning("Could not fetch TMDB watch providers for %s (region %s): %s", media_type, region, exc)
+        return []
 
 
 @router.get("/providers")

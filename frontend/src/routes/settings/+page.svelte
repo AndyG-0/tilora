@@ -69,6 +69,8 @@
 	let caldavUrlInput = $state('');
 	let caldavUsernameInput = $state('');
 	let caldavPasswordInput = $state('');
+	let tmdbKeyInput = $state('');
+	let discordTokenInput = $state('');
 	let icloudCredentials = $state<IcloudCredentials>({ username: '', has_password: false });
 	let icloudUsernameInput = $state('');
 	let icloudPasswordInput = $state('');
@@ -82,7 +84,7 @@
 	let timezoneOptions = $state<string[]>(['UTC']);
 	let error = $state<string | null>(null);
 
-	// Each admin-settings section below (AI provider, voice input, voice output, Google/MS
+	// Each admin-settings section below (AI provider, voice input, voice output, TMDB, Discord, Google/MS
 	// calendar, CalDAV, timezone) saves independently — see save*() functions
 	// below — rather than sharing one big PATCH, so editing one doesn't
 	// silently resubmit unrelated fields (e.g. API keys) from another. iCloud
@@ -100,6 +102,14 @@
 	let voiceOutputSaving = $state(false);
 	let voiceOutputSaved = $state(false);
 	let voiceOutputError = $state<string | null>(null);
+
+	let tmdbSaving = $state(false);
+	let tmdbSaved = $state(false);
+	let tmdbError = $state<string | null>(null);
+
+	let discordSaving = $state(false);
+	let discordSaved = $state(false);
+	let discordError = $state<string | null>(null);
 
 	let googleCalendarSaving = $state(false);
 	let googleCalendarSaved = $state(false);
@@ -1061,6 +1071,40 @@
 		}
 	}
 
+	async function saveTmdb() {
+		tmdbSaving = true;
+		tmdbSaved = false;
+		tmdbError = null;
+		try {
+			const partial: Record<string, string> = {};
+			if (tmdbKeyInput) partial.tmdb_api_key = tmdbKeyInput;
+			settings = await api.updateSettings(partial);
+			tmdbKeyInput = '';
+			tmdbSaved = true;
+		} catch {
+			tmdbError = 'Could not save TMDB settings.';
+		} finally {
+			tmdbSaving = false;
+		}
+	}
+
+	async function saveDiscord() {
+		discordSaving = true;
+		discordSaved = false;
+		discordError = null;
+		try {
+			const partial: Record<string, string> = {};
+			if (discordTokenInput) partial.discord_bot_token = discordTokenInput;
+			settings = await api.updateSettings(partial);
+			discordTokenInput = '';
+			discordSaved = true;
+		} catch {
+			discordError = 'Could not save Discord settings.';
+		} finally {
+			discordSaving = false;
+		}
+	}
+
 	async function saveGoogleCalendar() {
 		googleCalendarSaving = true;
 		googleCalendarSaved = false;
@@ -1165,6 +1209,8 @@
 			| 'anthropic_api_key'
 			| 'openai_api_key'
 			| 'gemini_api_key'
+			| 'tmdb_api_key'
+			| 'discord_bot_token'
 			| 'google_calendar_client_id'
 			| 'google_calendar_client_secret'
 			| 'microsoft_calendar_client_id'
@@ -1717,6 +1763,67 @@
 					{/if}
 					<button class="save" disabled={caldavSaving} onclick={saveCaldav}>
 						{caldavSaving ? 'Saving…' : 'Save CalDAV'}
+					</button>
+				</section>
+
+				<section>
+					<h3>The Movie Database (TMDB)</h3>
+					<label>
+						API key
+						<input
+							type="password"
+							bind:value={tmdbKeyInput}
+							placeholder={settings.has_tmdb_api_key ? 'Set — enter a new value to replace it' : 'Not set'}
+						/>
+					</label>
+					{#if settings.has_tmdb_api_key}
+						<button class="clear" onclick={() => clearKey('tmdb_api_key', (m) => (tmdbError = m))}>
+							Clear API key
+						</button>
+					{/if}
+					<p class="hint">
+						Used by the Movies &amp; Shows widget (themoviedb.org/settings/api). Enter your TMDB v3 API key.
+					</p>
+
+					{#if tmdbError}
+						<p class="hint error">{tmdbError}</p>
+					{/if}
+					{#if tmdbSaved}
+						<p class="hint">Saved.</p>
+					{/if}
+					<button class="save" disabled={tmdbSaving} onclick={saveTmdb}>
+						{tmdbSaving ? 'Saving…' : 'Save TMDB'}
+					</button>
+				</section>
+
+				<section>
+					<h3>Discord</h3>
+					<label>
+						Bot token
+						<input
+							type="password"
+							bind:value={discordTokenInput}
+							placeholder={settings.has_discord_bot_token ? 'Set — enter a new value to replace it' : 'Not set'}
+						/>
+					</label>
+					{#if settings.has_discord_bot_token}
+						<button class="clear" onclick={() => clearKey('discord_bot_token', (m) => (discordError = m))}>
+							Clear bot token
+						</button>
+					{/if}
+					<p class="hint">
+						Used by the Discord widget (discord.com/developers/applications). Requires a bot token for a bot invited to
+						your server.
+					</p>
+
+					{#if discordError}
+						<p class="hint error">{discordError}</p>
+					{/if}
+					{#if discordSaved}
+						<p class="hint">Saved.</p>
+					{/if}
+					<button class="save" disabled={discordSaving} onclick={saveDiscord}>
+						{discordSaving ? 'Saving…' : 'Save Discord'}
 					</button>
 				</section>
 

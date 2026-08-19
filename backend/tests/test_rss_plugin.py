@@ -135,6 +135,23 @@ async def test_get_detail_degrades_a_failing_feed_to_an_error_without_dropping_o
 
 
 @respx.mock
+async def test_get_summary_degrades_a_failing_feed_to_an_error_without_dropping_others(tmp_db):
+    respx.get("https://example.com/broken.xml").mock(return_value=httpx.Response(404))
+    respx.get("https://example.com/two.xml").mock(return_value=httpx.Response(200, content=FEED_TWO))
+    broken = db.add_rss_feed("user-1", "https://example.com/broken.xml", "Broken")
+    two = db.add_rss_feed("user-1", "https://example.com/two.xml", "Custom")
+    plugin = make_plugin(feed_ids=[broken["id"], two["id"]])
+
+    summary = await plugin.get_summary()
+
+    groups = {group["name"]: group for group in summary["feed_groups"]}
+    assert groups["Broken"]["items"] == []
+    assert groups["Broken"]["error"]
+    assert groups["Custom"]["items"][0]["title"] == "Newer Item"
+    assert "error" not in groups["Custom"]
+
+
+@respx.mock
 async def test_get_detail_degrades_a_feed_that_times_out(tmp_db):
     respx.get("https://example.com/slow.xml").mock(side_effect=httpx.ConnectTimeout("timed out"))
     feed = db.add_rss_feed("user-1", "https://example.com/slow.xml", "Slow")
