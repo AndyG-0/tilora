@@ -1052,6 +1052,8 @@
 		"intro": "Vamos a crear tu cuenta. Como primer perfil, serás el administrador del hogar.",
 		"pin_label": "PIN (opcional)",
 		"pin_placeholder": "4-8 dígitos",
+		"starter_tiles_label": "Incluir mosaicos iniciales",
+		"starter_tiles_hint": "Añade mosaicos básicos (clima, vuelos, lista de tareas) listos para usar. Desmarca para empezar con un panel vacío.",
 		"creating": "Creando…",
 		"create_account": "Crear cuenta",
 		"create_error": "No se pudo crear tu cuenta. Inténtalo de nuevo."

@@ -19,6 +19,7 @@ class CreateAdminRequest(BaseModel):
     name: str
     avatar: str | None = None
     pin: str | None = Field(default=None, pattern=PIN_PATTERN)
+    include_starter_tiles: bool = True
 
 
 @router.get("/status")
@@ -35,6 +36,14 @@ async def create_admin(
     # admin" backdoor — once any profile exists, onboarding is over.
     if await asyncio.to_thread(list_users):
         raise HTTPException(status_code=409, detail="Setup has already been completed")
+
+    if not payload.include_starter_tiles:
+        import yaml
+
+        from app.config import DASHBOARD_CONFIG_PATH
+
+        DASHBOARD_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        DASHBOARD_CONFIG_PATH.write_text(yaml.safe_dump({"widgets": []}))
 
     pin_hash = pin_salt = None
     pin_iterations = None

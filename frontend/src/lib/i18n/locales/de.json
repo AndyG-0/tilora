@@ -1052,6 +1052,8 @@
 		"intro": "Lass uns dein Konto erstellen. Als erstes Profil bist du der Haushaltsadministrator.",
 		"pin_label": "PIN (optional)",
 		"pin_placeholder": "4-8 Ziffern",
+		"starter_tiles_label": "Start-Kacheln einbinden",
+		"starter_tiles_hint": "Standard-Kacheln (Wetter, Flüge, Aufgabenliste) hinzufügen, die sofort funktionieren. Deaktivieren für ein leeres Dashboard.",
 		"creating": "Wird erstellt…",
 		"create_account": "Konto erstellen",
 		"create_error": "Dein Konto konnte nicht erstellt werden. Bitte versuche es erneut."

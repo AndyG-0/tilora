@@ -1539,11 +1539,12 @@ export const api = {
 	synthesizeSpeech: (provider: 'openai' | 'piper', voiceId: string, text: string) =>
 		postForBlob('/api/tts/synthesize', { provider, voice_id: voiceId, text }),
 	setupStatus: () => getJSON<SetupStatus>('/api/setup/status'),
-	createSetupAdmin: (name: string, avatar?: string, pin?: string) =>
+	createSetupAdmin: (name: string, avatar?: string, pin?: string, includeStarterTiles: boolean = true) =>
 		postJSON<CurrentUser>('/api/setup/admin', {
 			name,
 			...(avatar !== undefined && { avatar }),
 			...(pin !== undefined && { pin }),
+			include_starter_tiles: includeStarterTiles,
 		}),
 	listHouseholdUsers: () => getJSON<HouseholdUser[]>('/api/admin/users'),
 	updateUserRole: (id: string, role: UserRole) => patchJSON<HouseholdUser>(`/api/admin/users/${id}/role`, { role }),

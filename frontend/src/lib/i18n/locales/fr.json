@@ -1052,6 +1052,8 @@
 		"intro": "Créons votre compte. En tant que premier profil, vous serez administrateur du foyer.",
 		"pin_label": "PIN (facultatif)",
 		"pin_placeholder": "4 à 8 chiffres",
+		"starter_tiles_label": "Inclure les tuiles de départ",
+		"starter_tiles_hint": "Ajouter des tuiles prêtes à l'emploi (météo, vols, liste de tâches). Décochez pour démarrer avec un tableau de bord vide.",
 		"creating": "Création…",
 		"create_account": "Créer le compte",
 		"create_error": "Impossible de créer votre compte. Veuillez réessayer."

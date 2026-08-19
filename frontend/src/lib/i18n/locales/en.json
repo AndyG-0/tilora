@@ -1073,6 +1073,8 @@
 		"intro": "Let's create your account. As the first profile, you'll be the household admin.",
 		"pin_label": "PIN (optional)",
 		"pin_placeholder": "4-8 digits",
+		"starter_tiles_label": "Include starter tiles",
+		"starter_tiles_hint": "Add base tiles (weather, flights, to-do list) that work out of the box. Uncheck to start with an empty dashboard.",
 		"creating": "Creating…",
 		"create_account": "Create account",
 		"create_error": "Could not create your account. Please try again."
