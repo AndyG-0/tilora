@@ -139,7 +139,7 @@ test_mocked_dependencies_and_upgrade() {
   install_system_dependencies
   sync_repository
   assert_contains "$mock_log" "apt-get update"
-  assert_contains "$mock_log" "apt-get install -y ca-certificates curl git build-essential python3"
+  assert_contains "$mock_log" "apt-get install -y ca-certificates curl git build-essential python3 fonts-noto-color-emoji fonts-noto-core"
   assert_contains "$mock_log" "git -C $INSTALL_DIR fetch --quiet origin main"
   assert_contains "$mock_log" "git -C $INSTALL_DIR checkout main"
   assert_contains "$mock_log" "git -C $INSTALL_DIR merge --ff-only origin/main"
@@ -162,6 +162,8 @@ test_service_rendering() {
   grep -F 'WorkingDirectory=/srv/tilora/backend' "$SYSTEMD_DIR/tilora-backend.service" >/dev/null || fail_test "renders backend path"
   grep -F 'ReadWritePaths=/srv/tilora/backend' "$SYSTEMD_DIR/tilora-backend.service" >/dev/null || fail_test "keeps backend write path"
   grep -F 'WorkingDirectory=/srv/tilora/frontend' "$SYSTEMD_DIR/tilora-frontend.service" >/dev/null || fail_test "renders frontend path"
+  grep -F 'Environment=PUBLIC_API_BASE_URL=' "$SYSTEMD_DIR/tilora-frontend.service" >/dev/null || fail_test "renders frontend PUBLIC_API_BASE_URL environment variable"
+  grep -F 'EnvironmentFile=-/srv/tilora/frontend/.env' "$SYSTEMD_DIR/tilora-frontend.service" >/dev/null || fail_test "renders frontend env file path"
   assert_contains "$mock_log" 'systemctl daemon-reload'
   pass "renders hardened systemd units and invokes mocked systemctl"
 }

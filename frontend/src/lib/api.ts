@@ -152,6 +152,8 @@ export interface AppSettings {
 	has_gemini_api_key: boolean;
 	openai_tts_enabled: string;
 	openai_tts_model: string;
+	openai_stt_enabled: string;
+	openai_stt_model: string;
 	piper_tts_enabled: string;
 	piper_server_url: string;
 	piper_voices: string;
@@ -1053,6 +1055,8 @@ export interface UserPreferences {
 
 export interface AssistantConfig {
 	agent_name: string;
+	stt_available?: boolean;
+	stt_provider?: string | null;
 }
 
 export interface TTSVoice {
@@ -1173,6 +1177,20 @@ async function postJSON<T>(path: string, body?: Record<string, unknown>): Promis
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(body),
 		}),
+	});
+	if (!response.ok) {
+		const message = await _errorMessage(path, response);
+		logger.warn(`Request to ${path} failed: ${response.status}`);
+		throw new Error(message);
+	}
+	return response.json();
+}
+
+async function postFormData<T>(path: string, formData: FormData): Promise<T> {
+	const response = await fetch(apiUrl(path), {
+		method: 'POST',
+		credentials: 'include',
+		body: formData,
 	});
 	if (!response.ok) {
 		const message = await _errorMessage(path, response);
@@ -1310,6 +1328,11 @@ export const api = {
 			text: string;
 			action: { widget_id: string; panel: string | null; destination?: string; origin?: string } | null;
 		}>('/api/assistant/ask', { text }),
+	transcribeAudio: (audioBlob: Blob, filename = 'audio.webm') => {
+		const fd = new FormData();
+		fd.append('file', audioBlob, filename);
+		return postFormData<{ text: string }>('/api/assistant/transcribe', fd);
+	},
 	assistantConfig: () => getJSON<AssistantConfig>('/api/assistant/config'),
 	assistantTopics: () => getJSON<{ id: string; name: string }[]>('/api/assistant/topics'),
 	widgetTypes: () =>

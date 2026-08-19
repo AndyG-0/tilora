@@ -102,6 +102,8 @@ const BASE_SETTINGS = {
 	has_anthropic_api_key: false,
 	has_openai_api_key: false,
 	has_gemini_api_key: false,
+	openai_stt_enabled: '',
+	openai_stt_model: 'whisper-1',
 	openai_tts_enabled: '',
 	openai_tts_model: 'gpt-4o-mini-tts',
 	piper_tts_enabled: '',
@@ -171,6 +173,24 @@ describe('settings +page.svelte — voice sections', () => {
 			piper_tts_enabled: 'true',
 			piper_server_url: 'http://piper.local:5000',
 			piper_voices: 'en_US-amy-medium|Amy',
+		});
+	});
+
+	it('lets an admin enable OpenAI Whisper STT and saves the voice input fields', async () => {
+		user.set({ id: 'admin1', name: 'Admin', avatar: null, role: 'admin' });
+		render(Page);
+
+		await screen.findByText('Voice input (Speech recognition)');
+
+		await fireEvent.click(screen.getByLabelText('Enable OpenAI Whisper speech-to-text (Cloud STT)'));
+		expect(screen.getByPlaceholderText('whisper-1')).toBeInTheDocument();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Save voice input' }));
+
+		await waitFor(() => expect(updateSettings).toHaveBeenCalled());
+		expect(updateSettings).toHaveBeenCalledWith({
+			openai_stt_enabled: 'true',
+			openai_stt_model: 'whisper-1',
 		});
 	});
 
@@ -639,10 +659,43 @@ describe('settings +page.svelte — microphone guidance on insecure origins', ()
 		expect(screen.getByText(/In Keychain Access/)).toBeInTheDocument();
 	});
 
-	it('shows general HTTPS requirement for other browsers on HTTP private IP', async () => {
+	it('shows Chromium-specific flag instructions when on HTTP private IP in Chromium', async () => {
+		getInsecureOriginInfo.mockReturnValue({
+			needsInsecureOriginFlag: true,
+			browser: 'chromium',
+			isChrome: false,
+			isChromium: true,
+			origin: 'http://192.168.1.50:8080',
+		});
+
+		render(Page);
+
+		expect(await screen.findByText('Microphone access')).toBeInTheDocument();
+		expect(screen.getByText(/Open-source Chromium lacks built-in Google Speech keys/)).toBeInTheDocument();
+		expect(
+			screen.getByRole('link', { name: 'chrome://flags/#unsafely-treat-insecure-origin-as-secure' }),
+		).toHaveAttribute('href', 'chrome://flags/#unsafely-treat-insecure-origin-as-secure');
+	});
+
+	it('shows Firefox-specific requirement when on HTTP private IP in Firefox', async () => {
 		getInsecureOriginInfo.mockReturnValue({
 			needsInsecureOriginFlag: true,
 			browser: 'firefox',
+			isChrome: false,
+			isChromium: false,
+			origin: 'http://192.168.1.50:8080',
+		});
+
+		render(Page);
+
+		expect(await screen.findByText('Microphone access')).toBeInTheDocument();
+		expect(screen.getByText(/Firefox requires enabling Cloud Speech-to-Text/)).toBeInTheDocument();
+	});
+
+	it('shows general HTTPS requirement for other browsers on HTTP private IP', async () => {
+		getInsecureOriginInfo.mockReturnValue({
+			needsInsecureOriginFlag: true,
+			browser: 'other',
 			isChrome: false,
 			isChromium: false,
 			origin: 'http://192.168.1.50:8080',

@@ -23,13 +23,19 @@ describe('assistant store', () => {
 		expect(get(alwaysOnMic)).toBe(false);
 	});
 
-	it('loadAssistantConfigFromServer sets agentName', async () => {
-		assistantConfig.mockResolvedValue({ agent_name: 'Jarvis' });
+	it('loadAssistantConfigFromServer sets agentName and STT availability', async () => {
+		assistantConfig.mockResolvedValue({
+			agent_name: 'Jarvis',
+			stt_available: true,
+			stt_provider: 'openai',
+		});
 
-		const { agentName, loadAssistantConfigFromServer } = await import('./assistant');
+		const { agentName, sttAvailable, sttProvider, loadAssistantConfigFromServer } = await import('./assistant');
 		await loadAssistantConfigFromServer();
 
 		expect(get(agentName)).toBe('Jarvis');
+		expect(get(sttAvailable)).toBe(true);
+		expect(get(sttProvider)).toBe('openai');
 	});
 
 	it('loadAssistantConfigFromServer leaves agentName unchanged when failing', async () => {

@@ -10,7 +10,7 @@ export function isPrivateIpHostname(hostname: string): boolean {
 	return PRIVATE_IPV4_PATTERN.test(hostname);
 }
 
-export type BrowserType = 'chrome' | 'edge' | 'brave' | 'safari' | 'firefox' | 'other';
+export type BrowserType = 'chrome' | 'chromium' | 'edge' | 'brave' | 'safari' | 'firefox' | 'other';
 
 export function detectBrowser(customUserAgent?: string): BrowserType {
 	const ua = customUserAgent ?? (typeof navigator !== 'undefined' ? navigator.userAgent : '');
@@ -32,7 +32,10 @@ export function detectBrowser(customUserAgent?: string): BrowserType {
 	if (/OPR\//i.test(ua) || /Opera\//i.test(ua)) {
 		return 'other';
 	}
-	if (/Chrome\//i.test(ua) || /CriOS\//i.test(ua) || /Chromium\//i.test(ua)) {
+	if (/Chromium\//i.test(ua)) {
+		return 'chromium';
+	}
+	if (/Chrome\//i.test(ua) || /CriOS\//i.test(ua)) {
 		return 'chrome';
 	}
 	if (/Safari\//i.test(ua) && !/Android/i.test(ua)) {
@@ -43,6 +46,11 @@ export function detectBrowser(customUserAgent?: string): BrowserType {
 
 export function isChromeBrowser(): boolean {
 	return detectBrowser() === 'chrome';
+}
+
+export function isNativeSpeechReliable(customUserAgent?: string): boolean {
+	const b = detectBrowser(customUserAgent);
+	return b === 'chrome' || b === 'edge' || b === 'safari';
 }
 
 export interface InsecureOriginInfo {
@@ -58,7 +66,7 @@ export function getInsecureOriginInfo(): InsecureOriginInfo | null {
 	const { protocol, hostname, origin } = window.location;
 	const isSecure = typeof window.isSecureContext === 'boolean' ? window.isSecureContext : protocol === 'https:';
 	const browser = detectBrowser();
-	const isChromium = browser === 'chrome' || browser === 'edge' || browser === 'brave';
+	const isChromium = browser === 'chrome' || browser === 'chromium' || browser === 'edge' || browser === 'brave';
 
 	return {
 		needsInsecureOriginFlag: !isSecure && protocol === 'http:' && isPrivateIpHostname(hostname),

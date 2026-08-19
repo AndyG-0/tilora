@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { detectBrowser, getInsecureOriginInfo, isChromeBrowser, isPrivateIpHostname } from './network';
+import {
+	detectBrowser,
+	getInsecureOriginInfo,
+	isChromeBrowser,
+	isNativeSpeechReliable,
+	isPrivateIpHostname,
+} from './network';
 
 describe('network', () => {
 	afterEach(() => {
@@ -29,6 +35,14 @@ describe('network', () => {
 					'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 				),
 			).toBe('chrome');
+		});
+
+		it('detects Chromium on Raspberry Pi OS / Linux / Mac', () => {
+			expect(
+				detectBrowser(
+					'Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Chromium/120.0.0.0',
+				),
+			).toBe('chromium');
 		});
 
 		it('detects Chrome on iOS (CriOS)', () => {
@@ -204,6 +218,37 @@ describe('network', () => {
 			});
 
 			expect(getInsecureOriginInfo()?.needsInsecureOriginFlag).toBe(false);
+		});
+	});
+
+	describe('isNativeSpeechReliable', () => {
+		it('returns true for Chrome and Edge', () => {
+			expect(
+				isNativeSpeechReliable(
+					'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+				),
+			).toBe(true);
+			expect(
+				isNativeSpeechReliable(
+					'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+				),
+			).toBe(true);
+		});
+
+		it('returns false for Chromium, Firefox, Brave', () => {
+			expect(
+				isNativeSpeechReliable(
+					'Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Chromium/120.0.0.0',
+				),
+			).toBe(false);
+			expect(
+				isNativeSpeechReliable('Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0'),
+			).toBe(false);
+			expect(
+				isNativeSpeechReliable(
+					'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Brave/120.0.0.0',
+				),
+			).toBe(false);
 		});
 	});
 });

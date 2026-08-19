@@ -5,8 +5,9 @@ import logging
 import re
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 
+from app import stt
 from app.ai import assistant
 from app.ai.router import select_relevant_topics
 from app.api.widgets import _widget_is_visible
@@ -94,6 +95,43 @@ async def ask(
     return {"text": result.text, "action": result.navigation}
 
 
+@router.post("/transcribe")
+async def transcribe(
+    file: UploadFile,
+    user: dict[str, Any] = Depends(get_current_user),
+    device: dict[str, Any] = Depends(get_current_device),
+):
+    """Transcribe audio recorded from the client via configured STT."""
+    settings_dict = await asyncio.to_thread(effective_settings)
+    if not stt.is_stt_available(settings_dict):
+        raise HTTPException(
+            status_code=400,
+            detail="Speech-to-Text is not enabled. Configure an OpenAI API key and enable Speech-to-Text in Settings.",
+        )
+
+    audio_bytes = await file.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Audio payload is empty")
+    if len(audio_bytes) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Audio file too large (max 15MB)")
+
+    try:
+        transcript = await stt.transcribe(
+            audio_bytes=audio_bytes,
+            filename=file.filename or "audio.webm",
+            content_type=file.content_type or "audio/webm",
+            settings=settings_dict,
+        )
+    except stt.STTError as exc:
+        logger.exception("STT transcription error")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Unexpected error during STT transcription")
+        raise HTTPException(status_code=502, detail="Audio transcription failed") from exc
+
+    return {"text": transcript}
+
+
 async def _visible_topic_plugins(user: dict[str, Any], device: dict[str, Any]) -> list[Plugin]:
     """Plugins that have AI tools and are visible to this (user, device).
 
@@ -125,7 +163,13 @@ async def config(
 ):
     settings_dict = await asyncio.to_thread(effective_settings)
     agent_name = (settings_dict.get("ai_agent_name") or "").strip() or "Tilora"
-    return {"agent_name": agent_name}
+    stt_available = stt.is_stt_available(settings_dict)
+    stt_provider = stt.get_active_provider(settings_dict)
+    return {
+        "agent_name": agent_name,
+        "stt_available": stt_available,
+        "stt_provider": stt_provider,
+    }
 
 
 @router.get("/topics")

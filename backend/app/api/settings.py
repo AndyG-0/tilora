@@ -25,6 +25,8 @@ _PLAIN_KEYS = (
     "caldav_username",
     "openai_tts_enabled",
     "openai_tts_model",
+    "openai_stt_enabled",
+    "openai_stt_model",
     "piper_tts_enabled",
     "piper_server_url",
     "piper_voices",
@@ -51,6 +53,8 @@ class UpdateSettingsRequest(BaseModel):
     gemini_api_key: str | None = None
     openai_tts_enabled: str | None = None
     openai_tts_model: str | None = None
+    openai_stt_enabled: str | None = None
+    openai_stt_model: str | None = None
     piper_tts_enabled: str | None = None
     piper_server_url: str | None = None
     piper_voices: str | None = None

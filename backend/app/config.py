@@ -63,6 +63,12 @@ class Settings(BaseSettings):
     openai_tts_enabled: str = ""
     openai_tts_model: str = "gpt-4o-mini-tts"
 
+    # Cloud speech-to-text (OpenAI Whisper), via litellm or OpenAI API.
+    # Reuses openai_api_key above. Modeled as a string ("" | "true"), not bool,
+    # so it round-trips through the app_settings TEXT store.
+    openai_stt_enabled: str = ""
+    openai_stt_model: str = "whisper-1"
+
     # Self-hosted Piper (https://github.com/rhasspy/piper) neural TTS. No
     # universal voice-discovery API exists across Piper server variants, so
     # rather than guessing at one, the admin lists the voice ids their server
@@ -200,6 +206,8 @@ APP_SETTINGS_KEYS = (
     "gemini_api_key",
     "openai_tts_enabled",
     "openai_tts_model",
+    "openai_stt_enabled",
+    "openai_stt_model",
     "piper_tts_enabled",
     "piper_server_url",
     "piper_voices",

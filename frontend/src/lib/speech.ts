@@ -48,8 +48,11 @@ function getSpeechRecognitionCtor(): (new () => SpeechRecognitionLike) | undefin
 	return w.SpeechRecognition ?? w.webkitSpeechRecognition;
 }
 
-export function isSpeechRecognitionSupported(): boolean {
-	return typeof window !== 'undefined' && getSpeechRecognitionCtor() !== undefined;
+export function isSpeechRecognitionSupported(sttAvailable = false): boolean {
+	if (typeof window === 'undefined') return false;
+	if (getSpeechRecognitionCtor() !== undefined) return true;
+	if (sttAvailable && typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia)) return true;
+	return false;
 }
 
 export function isSpeechSynthesisSupported(): boolean {
@@ -272,9 +275,148 @@ export async function speak(text: string, selection?: VoiceSelection): Promise<v
 	}
 }
 
-export function listenOnce(): Promise<string> {
+import { isNativeSpeechReliable } from '$lib/network';
+
+export type SpeechErrorCode =
+	'not-allowed' | 'audio-capture' | 'service-unavailable' | 'no-speech' | 'network' | 'unknown';
+
+export class SpeechError extends Error {
+	code: SpeechErrorCode;
+	constructor(message: string, code: SpeechErrorCode = 'unknown') {
+		super(message);
+		this.name = 'SpeechError';
+		this.code = code;
+	}
+}
+
+export interface ListenOnceOptions {
+	sttAvailable?: boolean;
+	onListeningMode?: (mode: 'native' | 'cloud_stt') => void;
+	onTranscribing?: () => void;
+}
+
+function getSupportedAudioMimeType(): string {
+	if (typeof MediaRecorder === 'undefined') return '';
+	const types = [
+		'audio/webm;codecs=opus',
+		'audio/webm',
+		'audio/ogg;codecs=opus',
+		'audio/ogg',
+		'audio/mp4',
+		'audio/wav',
+	];
+	for (const t of types) {
+		if (typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported(t)) {
+			return t;
+		}
+	}
+	return '';
+}
+
+export function recordAudioClip(maxDurationMs = 8000): {
+	promise: Promise<Blob>;
+	stop: () => void;
+} {
+	if (
+		typeof navigator === 'undefined' ||
+		!navigator.mediaDevices?.getUserMedia ||
+		typeof MediaRecorder === 'undefined'
+	) {
+		return {
+			promise: Promise.reject(
+				new SpeechError('Media recording is not supported on this device', 'service-unavailable'),
+			),
+			stop() {},
+		};
+	}
+
+	let stopFn: () => void = () => {};
+
+	const promise = new Promise<Blob>((resolve, reject) => {
+		navigator.mediaDevices
+			.getUserMedia({ audio: true })
+			.then((stream) => {
+				const mimeType = getSupportedAudioMimeType();
+				let recorder: MediaRecorder;
+				try {
+					recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+				} catch {
+					recorder = new MediaRecorder(stream);
+				}
+
+				const chunks: Blob[] = [];
+				recorder.ondataavailable = (e) => {
+					if (e.data && e.data.size > 0) {
+						chunks.push(e.data);
+					}
+				};
+
+				let cleanedUp = false;
+				const cleanup = () => {
+					if (cleanedUp) return;
+					cleanedUp = true;
+					try {
+						stream.getTracks().forEach((t) => t.stop());
+					} catch {
+						// ignore
+					}
+				};
+
+				recorder.onstop = () => {
+					cleanup();
+					const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+					resolve(blob);
+				};
+
+				recorder.onerror = () => {
+					cleanup();
+					reject(new SpeechError('Audio recording failed', 'audio-capture'));
+				};
+
+				recorder.start(250);
+
+				const timer = setTimeout(() => {
+					if (recorder.state === 'recording') {
+						try {
+							recorder.stop();
+						} catch {
+							cleanup();
+						}
+					}
+				}, maxDurationMs);
+
+				stopFn = () => {
+					clearTimeout(timer);
+					if (recorder.state === 'recording') {
+						try {
+							recorder.stop();
+						} catch {
+							cleanup();
+						}
+					}
+				};
+			})
+			.catch((err: unknown) => {
+				const errName = err instanceof Error ? err.name : '';
+				if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
+					reject(new SpeechError('Microphone permission denied', 'not-allowed'));
+				} else if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') {
+					reject(new SpeechError('No microphone detected', 'audio-capture'));
+				} else {
+					reject(new SpeechError('Microphone access failed', 'audio-capture'));
+				}
+			});
+	});
+
+	return {
+		promise,
+		stop: () => stopFn(),
+	};
+}
+
+function listenNative(): Promise<string> {
 	const Ctor = getSpeechRecognitionCtor();
-	if (!Ctor) return Promise.reject(new Error('Speech recognition is not supported'));
+	if (!Ctor) return Promise.reject(new SpeechError('Speech recognition is not supported', 'service-unavailable'));
 
 	return new Promise((resolve, reject) => {
 		const recognition = new Ctor();
@@ -282,15 +424,110 @@ export function listenOnce(): Promise<string> {
 		recognition.interimResults = false;
 		recognition.maxAlternatives = 1;
 
+		let hasResult = false;
+
 		recognition.onresult = (event) => {
 			const transcript = event.results[0]?.[0]?.transcript ?? '';
-			resolve(transcript);
+			if (transcript.trim()) {
+				hasResult = true;
+				resolve(transcript.trim());
+			}
 		};
-		recognition.onerror = () => reject(new Error('Speech recognition failed'));
-		recognition.onend = () => reject(new Error('No speech detected'));
 
-		recognition.start();
+		recognition.onerror = (event) => {
+			const errCode = event.error;
+			if (errCode === 'not-allowed') {
+				reject(new SpeechError('Microphone permission denied', 'not-allowed'));
+			} else if (errCode === 'audio-capture') {
+				reject(new SpeechError('No microphone detected', 'audio-capture'));
+			} else if (errCode === 'service-not-allowed' || errCode === 'network') {
+				reject(new SpeechError('Speech recognition service unavailable', 'service-unavailable'));
+			} else if (errCode === 'no-speech') {
+				reject(new SpeechError('No speech detected', 'no-speech'));
+			} else {
+				reject(new SpeechError(`Speech recognition error: ${errCode}`, 'unknown'));
+			}
+		};
+
+		recognition.onend = () => {
+			if (!hasResult) {
+				reject(new SpeechError('No speech detected', 'no-speech'));
+			}
+		};
+
+		try {
+			recognition.start();
+		} catch {
+			reject(new SpeechError('Could not start speech recognition', 'service-unavailable'));
+		}
 	});
+}
+
+export async function listenOnce(options?: ListenOnceOptions): Promise<string> {
+	const sttAvailable = options?.sttAvailable ?? false;
+	const isReliable = isNativeSpeechReliable();
+
+	// In Chrome, Edge, or Safari, try native SpeechRecognition first.
+	if (isReliable && getSpeechRecognitionCtor() !== undefined) {
+		options?.onListeningMode?.('native');
+		try {
+			return await listenNative();
+		} catch (err) {
+			if (err instanceof SpeechError) {
+				if (err.code === 'not-allowed' || err.code === 'audio-capture' || err.code === 'no-speech') {
+					throw err;
+				}
+			}
+			if (!sttAvailable) {
+				throw err;
+			}
+		}
+	}
+
+	// Cloud STT path (Chromium, Firefox, Brave, or native fallback)
+	if (sttAvailable) {
+		options?.onListeningMode?.('cloud_stt');
+		const recorder = recordAudioClip();
+		const audioBlob = await recorder.promise;
+		if (!audioBlob || audioBlob.size === 0) {
+			throw new SpeechError('No speech detected', 'no-speech');
+		}
+		options?.onTranscribing?.();
+		try {
+			const ext = audioBlob.type.includes('ogg') ? 'ogg' : audioBlob.type.includes('mp4') ? 'mp4' : 'webm';
+			const res = await api.transcribeAudio(audioBlob, `speech.${ext}`);
+			const text = (res.text || '').trim();
+			if (!text) {
+				throw new SpeechError('No speech detected', 'no-speech');
+			}
+			return text;
+		} catch (err) {
+			if (err instanceof SpeechError) throw err;
+			const msg = err instanceof Error ? err.message : 'Transcription failed';
+			throw new SpeechError(msg, 'service-unavailable');
+		}
+	}
+
+	// If native is present but unreliable (Chromium/Firefox) and no STT configured:
+	if (getSpeechRecognitionCtor() !== undefined) {
+		options?.onListeningMode?.('native');
+		try {
+			return await listenNative();
+		} catch (err) {
+			if (err instanceof SpeechError && (err.code === 'service-unavailable' || err.code === 'network')) {
+				throw new SpeechError(
+					'Speech recognition is unavailable in this browser. Enable OpenAI Whisper in Settings or use Google Chrome / Edge.',
+					'service-unavailable',
+				);
+			}
+			throw err;
+		}
+	}
+
+	throw new SpeechError(
+		'Speech recognition is unavailable in this browser. Enable OpenAI Whisper in Settings or use Google Chrome / Edge.',
+		'service-unavailable',
+	);
 }
 
 export interface ContinuousListenOptions {

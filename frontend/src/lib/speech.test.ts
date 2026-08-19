@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { synthesizeSpeech } = vi.hoisted(() => ({ synthesizeSpeech: vi.fn() }));
-vi.mock('$lib/api', () => ({ api: { synthesizeSpeech } }));
+const { synthesizeSpeech, transcribeAudio } = vi.hoisted(() => ({
+	synthesizeSpeech: vi.fn(),
+	transcribeAudio: vi.fn(),
+}));
+vi.mock('$lib/api', () => ({ api: { synthesizeSpeech, transcribeAudio } }));
 
 import {
 	ensureMicrophonePermission,
@@ -12,6 +15,7 @@ import {
 	listenOnce,
 	matchWakeWord,
 	playChime,
+	SpeechError,
 	speak,
 	startContinuousListening,
 	stopSpeaking,
@@ -194,7 +198,7 @@ describe('speech', () => {
 
 	describe('listenOnce', () => {
 		it('rejects when speech recognition is unsupported', async () => {
-			await expect(listenOnce()).rejects.toThrow('not supported');
+			await expect(listenOnce()).rejects.toThrow(SpeechError);
 		});
 
 		it('resolves with the first final transcript', async () => {
@@ -215,7 +219,7 @@ describe('speech', () => {
 			await expect(listenOnce()).resolves.toBe('what is the weather');
 		});
 
-		it('rejects when recognition errors out', async () => {
+		it('rejects when recognition errors out with not-allowed', async () => {
 			class FakeRecognition {
 				lang = '';
 				interimResults = true;
@@ -224,13 +228,62 @@ describe('speech', () => {
 				onerror: ((event: unknown) => void) | null = null;
 				onend: (() => void) | null = null;
 				start() {
-					this.onerror?.(new Event('error'));
+					this.onerror?.({ error: 'not-allowed' });
 				}
 			}
 			// @ts-expect-error -- minimal stub, not a full SpeechRecognition impl
 			window.SpeechRecognition = FakeRecognition;
 
-			await expect(listenOnce()).rejects.toThrow('failed');
+			await expect(listenOnce()).rejects.toMatchObject({ code: 'not-allowed' });
+		});
+
+		it('transcribes via Cloud STT when sttAvailable is true and MediaRecorder is present', async () => {
+			const fakeTrack = { stop: vi.fn() };
+			const fakeStream = { getTracks: () => [fakeTrack] };
+			const mockGetUserMedia = vi.fn().mockResolvedValue(fakeStream);
+			vi.stubGlobal('navigator', {
+				mediaDevices: { getUserMedia: mockGetUserMedia },
+			});
+
+			class FakeMediaRecorder {
+				state = 'inactive';
+				mimeType = 'audio/webm';
+				ondataavailable: ((event: { data: Blob }) => void) | null = null;
+				onstop: (() => void) | null = null;
+				onerror: (() => void) | null = null;
+				static isTypeSupported() {
+					return true;
+				}
+				start() {
+					this.state = 'recording';
+					setTimeout(() => {
+						this.ondataavailable?.({ data: new Blob(['audio-data-chunk-here-1234567890'], { type: 'audio/webm' }) });
+						this.state = 'inactive';
+						this.onstop?.();
+					}, 10);
+				}
+				stop() {
+					this.state = 'inactive';
+					this.onstop?.();
+				}
+			}
+			vi.stubGlobal('MediaRecorder', FakeMediaRecorder);
+
+			transcribeAudio.mockResolvedValue({ text: 'transcribed from whisper' });
+
+			const onListeningMode = vi.fn();
+			const onTranscribing = vi.fn();
+
+			const result = await listenOnce({
+				sttAvailable: true,
+				onListeningMode,
+				onTranscribing,
+			});
+
+			expect(result).toBe('transcribed from whisper');
+			expect(onListeningMode).toHaveBeenCalledWith('cloud_stt');
+			expect(onTranscribing).toHaveBeenCalled();
+			expect(transcribeAudio).toHaveBeenCalled();
 		});
 	});
 

@@ -157,7 +157,7 @@ validate_platform() {
 install_system_dependencies() {
   info "Installing system dependencies"
   sudo apt-get update
-  sudo apt-get install -y ca-certificates curl git build-essential python3
+  sudo apt-get install -y ca-certificates curl git build-essential python3 fonts-noto-color-emoji fonts-noto-core || sudo apt-get install -y ca-certificates curl git build-essential python3
 
   if ! command -v node >/dev/null 2>&1 || [[ "$(node --version | sed 's/^v//' | cut -d. -f1)" -lt 24 ]]; then
     info "Installing Node.js 24"
@@ -450,20 +450,30 @@ build_application() {
 }
 
 render_service_units() {
-  local service template temporary
+  local service template temporary api_base_url
+  api_base_url="$(get_env_value "$FRONTEND_DIR/.env" PUBLIC_API_BASE_URL)"
+  api_base_url="${api_base_url:-$(detect_default_api_url)}"
+
   for service in tilora-backend tilora-frontend; do
     template="$INSTALL_DIR/deploy/$service.service"
     temporary="$(mktemp)"
-    python3 - "$template" "$temporary" "$INSTALL_USER" "$BACKEND_DIR" "$FRONTEND_DIR" <<'PY'
+    python3 - "$template" "$temporary" "$INSTALL_USER" "$BACKEND_DIR" "$FRONTEND_DIR" "$api_base_url" <<'PY'
 from pathlib import Path
 import sys
 
-template, destination, user, backend, frontend = map(Path, sys.argv[1:])
+template = Path(sys.argv[1])
+destination = Path(sys.argv[2])
+user = sys.argv[3]
+backend = sys.argv[4]
+frontend = sys.argv[5]
+api_base_url = sys.argv[6]
+
 content = template.read_text()
-content = content.replace("__TILORA_USER__", str(user))
-content = content.replace("__TILORA_BACKEND_DIR__", str(backend))
-content = content.replace("__TILORA_FRONTEND_DIR__", str(frontend))
-Path(destination).write_text(content)
+content = content.replace("__TILORA_USER__", user)
+content = content.replace("__TILORA_BACKEND_DIR__", backend)
+content = content.replace("__TILORA_FRONTEND_DIR__", frontend)
+content = content.replace("__TILORA_PUBLIC_API_BASE_URL__", api_base_url)
+destination.write_text(content)
 PY
     sudo install -m 644 "$temporary" "$SYSTEMD_DIR/$service.service"
     rm -f "$temporary"

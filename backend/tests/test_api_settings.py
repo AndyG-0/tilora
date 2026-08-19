@@ -107,6 +107,21 @@ def test_patch_settings_persists_tts_provider_fields(client, tmp_db):
     assert body["piper_voices"] == "en_US-amy-medium|Amy"
 
 
+def test_patch_settings_persists_stt_provider_fields(client, tmp_db):
+    response = client.patch(
+        "/api/settings",
+        json={
+            "openai_stt_enabled": "true",
+            "openai_stt_model": "whisper-1",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["openai_stt_enabled"] == "true"
+    assert body["openai_stt_model"] == "whisper-1"
+
+
 def test_patch_settings_invalidates_clock_and_date_widget_cache(client, tmp_db):
     from app.storage.cache import cache
 
