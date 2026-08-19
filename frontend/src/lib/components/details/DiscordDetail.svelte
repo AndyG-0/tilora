@@ -16,6 +16,8 @@
 	type DisplayMode = 'static' | 'marquee' | 'fade';
 
 	interface DiscordDetailData {
+		configured?: boolean;
+		channel_id?: string;
 		channel_name: string;
 		display_mode: DisplayMode;
 		message_limit: number;
@@ -32,6 +34,7 @@
 	let discord = $state(initialData);
 
 	let editingSettings = $state(false);
+	let channelIdInput = $state('');
 	let displayMode = $state<DisplayMode>('static');
 	let messageLimitInput = $state('20');
 	let timeWindowInput = $state('');
@@ -41,6 +44,7 @@
 	let error = $state<string | null>(null);
 
 	function openEditor() {
+		channelIdInput = discord.channel_id ?? '';
 		displayMode = discord.display_mode;
 		messageLimitInput = String(discord.message_limit);
 		timeWindowInput = discord.time_window_minutes ? String(discord.time_window_minutes) : '';
@@ -54,6 +58,7 @@
 		error = null;
 		try {
 			const settings: Record<string, unknown> = {
+				channel_id: channelIdInput.trim(),
 				display_mode: displayMode,
 				marquee_speed_seconds: Number(marqueeSpeedInput) || 40,
 				fade_interval_seconds: Number(fadeIntervalInput) || 6,
@@ -75,7 +80,7 @@
 </script>
 
 <div class="header">
-	<h1>#{discord.channel_name}</h1>
+	<h1>{discord.channel_name ? `#${discord.channel_name}` : 'Discord'}</h1>
 	<button class="edit-settings" onclick={() => (editingSettings ? (editingSettings = false) : openEditor())}>
 		{editingSettings ? $_('common.cancel') : $_('common.edit_settings')}
 	</button>
@@ -83,6 +88,11 @@
 
 {#if editingSettings}
 	<div class="settings-form">
+		<label>
+			Channel ID
+			<input type="text" bind:value={channelIdInput} placeholder="123456789012345678" />
+		</label>
+
 		<label>
 			{$_('discord.detail.display_mode_label')}
 			<select bind:value={displayMode}>
@@ -127,6 +137,10 @@
 			{saving ? $_('common.saving') : $_('common.save')}
 		</button>
 	</div>
+{:else if error}
+	<p class="hint error">{error}</p>
+{:else if discord.configured === false || !discord.channel_name}
+	<p class="hint">{$_('common.not_configured')}</p>
 {/if}
 
 <div class="messages">

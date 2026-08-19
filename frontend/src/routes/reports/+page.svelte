@@ -1,7 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { api, type TileReportResponse, type TileReportItem } from '$lib/api';
+	import {
+		api,
+		type TileReportResponse,
+		type TileReportItem,
+		type HouseholdUser,
+		type TabMeta,
+		type WidgetLayout,
+	} from '$lib/api';
+	import { user } from '$lib/stores/user';
 	import { _ } from 'svelte-i18n';
 
 	const TYPE_ICONS: Record<string, string> = {
@@ -50,6 +58,23 @@
 	let selectedTab = $state('all');
 	let selectedSource = $state('all');
 	let selectedScope = $state('all');
+	let selectedOwner = $state('all');
+
+	// Admin-only data
+	let householdUsers = $state<HouseholdUser[]>([]);
+	let householdUsersInitialized = false;
+
+	// Add Tile Modal State (admin-only)
+	let addModalOpen = $state(false);
+	let addWidgetTypeOptions = $state<
+		{ type: string; name: string; default_layout: { colSpan: number; rowSpan: number } }[]
+	>([]);
+	let addTabOptions = $state<TabMeta[]>([]);
+	let addSelectedType = $state('');
+	let addSelectedTab = $state('');
+	let addSelectedOwner = $state('');
+	let addSaving = $state(false);
+	let addError = $state<string | null>(null);
 
 	// Rename Modal State
 	let renameModalOpen = $state(false);
@@ -80,6 +105,17 @@
 		loadReport();
 	});
 
+	// $user loads asynchronously (see +layout.svelte's gate), so fetch this
+	// the first time it's actually available rather than in onMount, which
+	// can otherwise race ahead of the layout's loadCurrentUser() and see
+	// $user still null on a hard navigation straight to /reports.
+	$effect(() => {
+		if ($user?.role === 'admin' && !householdUsersInitialized) {
+			householdUsersInitialized = true;
+			api.listHouseholdUsers().then((users) => (householdUsers = users));
+		}
+	});
+
 	// Derived filtered tiles
 	let filteredTiles = $derived.by(() => {
 		if (!report) return [];
@@ -87,6 +123,8 @@
 			if (selectedTab !== 'all' && tile.tab_id !== selectedTab) return false;
 			if (selectedSource !== 'all' && tile.source !== selectedSource) return false;
 			if (selectedScope !== 'all' && tile.settings_scope !== selectedScope) return false;
+			if (selectedOwner === 'unowned' && tile.owner_user_id !== null) return false;
+			if (selectedOwner !== 'all' && selectedOwner !== 'unowned' && tile.owner_user_id !== selectedOwner) return false;
 			if (searchQuery.trim()) {
 				const query = searchQuery.trim().toLowerCase();
 				const matchName = tile.name.toLowerCase().includes(query);
@@ -238,6 +276,50 @@
 		selectedTab = 'all';
 		selectedSource = 'all';
 		selectedScope = 'all';
+		selectedOwner = 'all';
+	}
+
+	async function openAddModal() {
+		addError = null;
+		addSelectedType = '';
+		addSelectedOwner = $user?.id ?? '';
+		addModalOpen = true;
+		const [types, tabs] = await Promise.all([api.widgetTypes(), api.tabs()]);
+		addWidgetTypeOptions = types;
+		addTabOptions = tabs;
+		addSelectedTab = tabs[0]?.id ?? '';
+	}
+
+	function closeAddModal() {
+		addModalOpen = false;
+	}
+
+	async function handleAddTile() {
+		if (!addSelectedType || !addSelectedTab) return;
+		addSaving = true;
+		addError = null;
+
+		try {
+			const option = addWidgetTypeOptions.find((o) => o.type === addSelectedType);
+			if (!option) throw new Error('Unknown widget type');
+			const tabTiles = (report?.tiles ?? []).filter((t) => t.tab_id === addSelectedTab);
+			// Best-effort default placement (appended below existing tiles in
+			// this tab) — not authoritative; the grid can be repositioned
+			// afterward from the main dashboard's drag-to-rearrange.
+			const maxRow = Math.max(0, ...tabTiles.map((t) => t.layout.row + t.layout.rowSpan - 1));
+			const layout: WidgetLayout = { col: 1, row: maxRow + 1, ...option.default_layout };
+			const ownerParam = addSelectedOwner && addSelectedOwner !== $user?.id ? addSelectedOwner : undefined;
+			await api.addWidget(addSelectedType, layout, addSelectedTab, ownerParam);
+			closeAddModal();
+			// Refetch rather than local-patch: the server derives type_name,
+			// size_description, owner labels, and stats that aren't cheap to
+			// reconstruct client-side.
+			await loadReport();
+		} catch (err) {
+			addError = err instanceof Error ? err.message : String(err);
+		} finally {
+			addSaving = false;
+		}
 	}
 </script>
 
@@ -259,6 +341,12 @@
 			</div>
 		</div>
 		<div class="header-right">
+			{#if $user?.role === 'admin'}
+				<button class="add-tile-button" onclick={openAddModal} aria-label={$_('reports.action_add_tile')}>
+					<span class="btn-icon">+</span>
+					<span>{$_('reports.action_add_tile')}</span>
+				</button>
+			{/if}
 			<button class="refresh-button" onclick={loadReport} disabled={loading} aria-label={$_('reports.refresh')}>
 				<span class="refresh-icon" class:spin={loading}>↻</span>
 				<span class="refresh-label">{$_('reports.refresh')}</span>
@@ -340,6 +428,16 @@
 					<option value="network">{$_('reports.scope_network')}</option>
 					<option value="personal">{$_('reports.scope_personal')}</option>
 				</select>
+
+				{#if $user?.role === 'admin'}
+					<select bind:value={selectedOwner} aria-label="Filter by user">
+						<option value="all">{$_('reports.filter_all_users')}</option>
+						<option value="unowned">{$_('reports.filter_unowned')}</option>
+						{#each householdUsers as u (u.id)}
+							<option value={u.id}>{u.name}</option>
+						{/each}
+					</select>
+				{/if}
 			</div>
 		</section>
 
@@ -590,6 +688,70 @@
 	</div>
 {/if}
 
+<!-- Add Tile Modal (admin-only) -->
+{#if addModalOpen}
+	<div class="modal-backdrop" role="presentation" onclick={closeAddModal}>
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<div
+			class="modal-box"
+			role="dialog"
+			tabindex="-1"
+			aria-modal="true"
+			aria-labelledby="add-title"
+			onclick={(e) => e.stopPropagation()}
+		>
+			<h3 id="add-title">{$_('reports.add_modal_title')}</h3>
+
+			{#if addError}
+				<div class="modal-error" role="alert">{addError}</div>
+			{/if}
+
+			<div class="form-group">
+				<label for="add-type">{$_('reports.add_type_label')}</label>
+				<select id="add-type" bind:value={addSelectedType}>
+					<option value="" disabled>{$_('reports.add_type_placeholder')}</option>
+					{#each addWidgetTypeOptions as opt (opt.type)}
+						<option value={opt.type}>{opt.name}</option>
+					{/each}
+				</select>
+			</div>
+
+			<div class="form-group">
+				<label for="add-tab">{$_('reports.add_tab_label')}</label>
+				<select id="add-tab" bind:value={addSelectedTab}>
+					{#each addTabOptions as tab (tab.id)}
+						<option value={tab.id}>{tab.name}</option>
+					{/each}
+				</select>
+			</div>
+
+			<div class="form-group">
+				<label for="add-owner">{$_('reports.add_owner_label')}</label>
+				<select id="add-owner" bind:value={addSelectedOwner}>
+					<option value={$user?.id}>{$_('reports.add_owner_self')}</option>
+					{#each householdUsers.filter((u) => u.id !== $user?.id) as u (u.id)}
+						<option value={u.id}>{u.name}</option>
+					{/each}
+				</select>
+			</div>
+
+			<div class="modal-buttons modal-right-only">
+				<button type="button" class="btn cancel-btn" onclick={closeAddModal} disabled={addSaving}>
+					{$_('reports.add_cancel')}
+				</button>
+				<button
+					type="button"
+					class="btn confirm-btn"
+					onclick={handleAddTile}
+					disabled={addSaving || !addSelectedType || !addSelectedTab}
+				>
+					{addSaving ? $_('reports.add_saving') : $_('reports.add_confirm')}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
 <style>
 	.report-container {
 		max-width: 1200px;
@@ -615,6 +777,13 @@
 		display: flex;
 		align-items: center;
 		gap: 1.25rem;
+		flex-wrap: wrap;
+	}
+
+	.header-right {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
 		flex-wrap: wrap;
 	}
 
@@ -666,6 +835,25 @@
 
 	.refresh-button:hover:not(:disabled) {
 		background: var(--color-surface-hover);
+	}
+
+	.add-tile-button {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		background: var(--color-accent);
+		color: var(--color-on-accent);
+		border: none;
+		border-radius: 0.5rem;
+		padding: 0.5rem 0.85rem;
+		font-size: 0.9rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: opacity 0.15s ease;
+	}
+
+	.add-tile-button:hover {
+		opacity: 0.9;
 	}
 
 	.refresh-icon.spin {

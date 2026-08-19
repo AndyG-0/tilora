@@ -22,6 +22,15 @@ def client():
 
 
 @pytest.fixture
+def member_client():
+    app = FastAPI()
+    app.include_router(reports.router)
+    app.dependency_overrides[get_current_user] = lambda: {"id": TEST_USER_ID, "name": "Test User", "role": "member"}
+    app.dependency_overrides[get_current_device] = lambda: {"id": TEST_DEVICE_ID, "name": "Test Device"}
+    return TestClient(app)
+
+
+@pytest.fixture
 def unauthenticated_client():
     app = FastAPI()
     app.include_router(reports.router)
@@ -178,3 +187,70 @@ tabs:
     assert photos_tile["type"] == "photos"
     assert photos_tile["settings_scope"] in ("network", "personal")
     assert isinstance(photos_tile["settings_scope"], str)
+
+
+def test_get_tiles_report_scopes_out_other_users_tiles_for_member(tmp_db, dashboard_yaml, member_client):
+    other_user_id = "test-user-2"
+    other_device_id = "test-device-2"
+    db.create_user(TEST_USER_ID, "Alice", None, "pin_hash", "pin_salt", 1000, "2026-01-01T00:00:00")
+    db.create_user(other_user_id, "Bob", None, "pin_hash", "pin_salt", 1000, "2026-01-01T00:00:00")
+    db.create_device(TEST_DEVICE_ID, "Alice's Tablet", "2026-01-01T00:00:00", "2026-01-01T00:00:00")
+    db.create_device(other_device_id, "Bob's Tablet", "2026-01-01T00:00:00", "2026-01-01T00:00:00")
+
+    db.save_custom_widget(
+        "chores-mine", "chores", {"col": 1, "row": 2, "colSpan": 4, "rowSpan": 1}, "home", TEST_USER_ID, TEST_DEVICE_ID
+    )
+    db.save_custom_widget(
+        "chores-bobs",
+        "chores",
+        {"col": 1, "row": 3, "colSpan": 4, "rowSpan": 1},
+        "home",
+        other_user_id,
+        other_device_id,
+    )
+
+    response = member_client.get("/api/reports/tiles")
+    assert response.status_code == 200
+    data = response.json()
+
+    tile_ids = {t["id"] for t in data["tiles"]}
+    assert "chores-mine" in tile_ids
+    assert "chores-bobs" not in tile_ids
+    # Unowned builtins from dashboard.yaml remain visible.
+    assert "weather" in tile_ids
+    assert "date" in tile_ids
+
+    # Summary counts reflect only the scoped subset, not the full system.
+    assert data["summary"]["total_tiles"] == 3
+    assert data["summary"]["custom_tiles"] == 1
+
+
+def test_get_tiles_report_admin_sees_all_owners(tmp_db, dashboard_yaml, client):
+    other_user_id = "test-user-2"
+    other_device_id = "test-device-2"
+    db.create_user(TEST_USER_ID, "Alice", None, "pin_hash", "pin_salt", 1000, "2026-01-01T00:00:00")
+    db.create_user(other_user_id, "Bob", None, "pin_hash", "pin_salt", 1000, "2026-01-01T00:00:00")
+    db.create_device(TEST_DEVICE_ID, "Alice's Tablet", "2026-01-01T00:00:00", "2026-01-01T00:00:00")
+    db.create_device(other_device_id, "Bob's Tablet", "2026-01-01T00:00:00", "2026-01-01T00:00:00")
+
+    db.save_custom_widget(
+        "chores-mine", "chores", {"col": 1, "row": 2, "colSpan": 4, "rowSpan": 1}, "home", TEST_USER_ID, TEST_DEVICE_ID
+    )
+    db.save_custom_widget(
+        "chores-bobs",
+        "chores",
+        {"col": 1, "row": 3, "colSpan": 4, "rowSpan": 1},
+        "home",
+        other_user_id,
+        other_device_id,
+    )
+
+    response = client.get("/api/reports/tiles")
+    assert response.status_code == 200
+    data = response.json()
+
+    tile_ids = {t["id"] for t in data["tiles"]}
+    assert "chores-mine" in tile_ids
+    assert "chores-bobs" in tile_ids
+    assert data["summary"]["total_tiles"] == 4
+    assert data["summary"]["custom_tiles"] == 2

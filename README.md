@@ -242,6 +242,19 @@ port-forwarding it.
 See `deploy/README.md` for full installation guides, server-only vs kiosk
 modes, systemd service management, and updates.
 
+## Voice assistant & browser compatibility
+
+Tilora includes an AI voice assistant accessible via the top-bar microphone button or continuous wake-word detection.
+
+| Browser / Client | Speech recognition (Speech-to-Text) | Setup & requirements |
+|---|---|---|
+| **Google Chrome** | Native Web Speech API (Free) | Built-in Google Speech API keys. On local HTTP IP, enable `#unsafely-treat-insecure-origin-as-secure`. |
+| **Microsoft Edge** | Native Web Speech API (Free) | Built-in Azure Speech API keys. On local HTTP IP, enable `#unsafely-treat-insecure-origin-as-secure`. |
+| **Apple Safari** | Native Speech Recognition (Free) | Requires HTTPS or `localhost` (Safari blocks microphone access on plain HTTP). |
+| **Chromium / Raspberry Pi Kiosk** | Cloud STT (OpenAI Whisper) | Open-source Chromium lacks built-in Google Speech keys. Enable **OpenAI Whisper STT** in Settings (Admin) + `#unsafely-treat-insecure-origin-as-secure`. |
+| **Mozilla Firefox** | Cloud STT (OpenAI Whisper) | Firefox does not support native speech recognition. Enable **OpenAI Whisper STT** in Settings (Admin). |
+| **Brave** | Cloud STT (OpenAI Whisper) | Enable **OpenAI Whisper STT** in Settings (Admin) + `#unsafely-treat-insecure-origin-as-secure`. |
+
 ## License
 
 MIT — see `LICENSE`.

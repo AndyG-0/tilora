@@ -69,3 +69,37 @@ def test_create_admin_rejects_a_malformed_pin(client, tmp_db):
     response = client.post("/api/setup/admin", json={"name": "Alice", "pin": "abc"})
 
     assert response.status_code == 422
+
+
+def test_create_admin_with_starter_tiles_preserves_dashboard_yaml(client, tmp_db, tmp_path, monkeypatch):
+    import yaml
+
+    from app import config
+
+    config_path = tmp_path / "dashboard.yaml"
+    config_path.write_text(yaml.safe_dump({"widgets": [{"id": "weather", "type": "weather", "layout": {}}]}))
+    monkeypatch.setattr(config, "DASHBOARD_CONFIG_PATH", config_path)
+
+    client.post("/api/devices/register")
+    response = client.post("/api/setup/admin", json={"name": "Alice", "include_starter_tiles": True})
+
+    assert response.status_code == 200
+    saved = yaml.safe_load(config_path.read_text())
+    assert len(saved["widgets"]) == 1
+
+
+def test_create_admin_without_starter_tiles_clears_dashboard_yaml(client, tmp_db, tmp_path, monkeypatch):
+    import yaml
+
+    from app import config
+
+    config_path = tmp_path / "dashboard.yaml"
+    config_path.write_text(yaml.safe_dump({"widgets": [{"id": "weather", "type": "weather", "layout": {}}]}))
+    monkeypatch.setattr(config, "DASHBOARD_CONFIG_PATH", config_path)
+
+    client.post("/api/devices/register")
+    response = client.post("/api/setup/admin", json={"name": "Alice", "include_starter_tiles": False})
+
+    assert response.status_code == 200
+    saved = yaml.safe_load(config_path.read_text())
+    assert saved == {"widgets": []}

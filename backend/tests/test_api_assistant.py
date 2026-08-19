@@ -320,14 +320,56 @@ def test_topics_uses_custom_name_override(client, tmp_db, monkeypatch):
 def test_config_returns_default_agent_name(client, tmp_db):
     response = client.get("/api/assistant/config")
     assert response.status_code == 200
-    assert response.json() == {"agent_name": "Tilora"}
+    assert response.json() == {"agent_name": "Tilora", "stt_available": False, "stt_provider": None}
 
 
-def test_config_returns_custom_agent_name(client, tmp_db):
+def test_config_returns_custom_agent_name_and_stt_status(client, tmp_db):
     from app.storage import db
 
-    db.save_app_settings({"ai_agent_name": "Jarvis"})
+    db.save_app_settings({"ai_agent_name": "Jarvis", "openai_stt_enabled": "true", "openai_api_key": "sk-test"})
 
     response = client.get("/api/assistant/config")
     assert response.status_code == 200
-    assert response.json() == {"agent_name": "Jarvis"}
+    assert response.json() == {"agent_name": "Jarvis", "stt_available": True, "stt_provider": "openai"}
+
+
+def test_transcribe_rejects_when_stt_not_enabled(client, tmp_db):
+    response = client.post(
+        "/api/assistant/transcribe",
+        files={"file": ("speech.webm", b"audio-bytes", "audio/webm")},
+    )
+    assert response.status_code == 400
+    assert "Speech-to-Text is not enabled" in response.json()["detail"]
+
+
+def test_transcribe_returns_transcription_when_enabled(client, tmp_db, monkeypatch):
+    from app.storage import db
+
+    db.save_app_settings({"openai_stt_enabled": "true", "openai_api_key": "sk-test"})
+
+    async def fake_transcribe(audio_bytes, filename="audio.webm", content_type="audio/webm", settings=None):
+        assert audio_bytes == b"audio-data"
+        assert filename == "speech.webm"
+        return "What is the weather today?"
+
+    monkeypatch.setattr(assistant_api.stt, "transcribe", fake_transcribe)
+
+    response = client.post(
+        "/api/assistant/transcribe",
+        files={"file": ("speech.webm", b"audio-data", "audio/webm")},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"text": "What is the weather today?"}
+
+
+def test_transcribe_rejects_empty_audio_payload(client, tmp_db):
+    from app.storage import db
+
+    db.save_app_settings({"openai_stt_enabled": "true", "openai_api_key": "sk-test"})
+
+    response = client.post(
+        "/api/assistant/transcribe",
+        files={"file": ("speech.webm", b"", "audio/webm")},
+    )
+    assert response.status_code == 400
+    assert "empty" in response.json()["detail"]

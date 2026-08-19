@@ -1,25 +1,41 @@
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, within } from '@testing-library/svelte';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { TileReportResponse } from '$lib/api';
+import { user } from '$lib/stores/user';
 
-const { tilesReport, renameWidget, removeWidget, goto } = vi.hoisted(() => ({
-	tilesReport: vi.fn(),
-	renameWidget: vi.fn(),
-	removeWidget: vi.fn(),
-	goto: vi.fn(),
-}));
+const { tilesReport, renameWidget, removeWidget, widgetTypes, tabs, listHouseholdUsers, addWidget, goto } = vi.hoisted(
+	() => ({
+		tilesReport: vi.fn(),
+		renameWidget: vi.fn(),
+		removeWidget: vi.fn(),
+		widgetTypes: vi.fn(),
+		tabs: vi.fn(),
+		listHouseholdUsers: vi.fn(),
+		addWidget: vi.fn(),
+		goto: vi.fn(),
+	}),
+);
 
 vi.mock('$lib/api', () => ({
 	api: {
 		tilesReport,
 		renameWidget,
 		removeWidget,
+		widgetTypes,
+		tabs,
+		listHouseholdUsers,
+		addWidget,
 	},
 }));
 
 vi.mock('$app/navigation', () => ({ goto }));
 
 import Page from './+page.svelte';
+
+const mockHouseholdUsers = [
+	{ id: 'admin1', name: 'Admin', avatar: null, has_pin: true, role: 'admin' as const, created_at: '2026-01-01' },
+	{ id: 'user-1', name: 'Alice', avatar: null, has_pin: false, role: 'member' as const, created_at: '2026-01-01' },
+];
 
 const mockReportData: TileReportResponse = {
 	summary: {
@@ -145,7 +161,15 @@ const mockReportData: TileReportResponse = {
 describe('Tile Reporting Page', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		user.set({ id: 'admin1', name: 'Admin', avatar: null, role: 'admin' });
 		tilesReport.mockResolvedValue(mockReportData);
+		widgetTypes.mockResolvedValue([{ type: 'clock', name: 'Clock', default_layout: { colSpan: 1, rowSpan: 1 } }]);
+		tabs.mockResolvedValue([
+			{ id: 'home', name: 'Home' },
+			{ id: 'media', name: 'Media' },
+		]);
+		listHouseholdUsers.mockResolvedValue(mockHouseholdUsers);
+		addWidget.mockResolvedValue({ id: 'clock-1' });
 	});
 
 	it('renders summary statistics and tile inventory', async () => {
@@ -240,5 +264,70 @@ describe('Tile Reporting Page', () => {
 		await fireEvent.click(backBtn);
 
 		expect(goto).toHaveBeenCalledWith('/');
+	});
+
+	it('shows the add-tile button and owner filter for admins', async () => {
+		render(Page);
+
+		await screen.findByRole('heading', { name: 'Home Weather' });
+		expect(screen.getByLabelText('Add Tile')).toBeInTheDocument();
+		expect(screen.getByLabelText('Filter by user')).toBeInTheDocument();
+	});
+
+	it('hides the add-tile button and owner filter for non-admins', async () => {
+		user.set({ id: 'user-1', name: 'Alice', avatar: null, role: 'member' });
+		render(Page);
+
+		await screen.findByRole('heading', { name: 'Home Weather' });
+		expect(screen.queryByLabelText('Add Tile')).not.toBeInTheDocument();
+		expect(screen.queryByLabelText('Filter by user')).not.toBeInTheDocument();
+		expect(listHouseholdUsers).not.toHaveBeenCalled();
+	});
+
+	it('filters tiles by owner dropdown', async () => {
+		render(Page);
+
+		await screen.findByRole('heading', { name: 'Home Weather' });
+		const ownerSelect = await screen.findByLabelText('Filter by user');
+
+		await fireEvent.change(ownerSelect, { target: { value: 'user-1' } });
+		expect(screen.getByRole('heading', { name: 'Chores' })).toBeInTheDocument();
+		expect(screen.queryByRole('heading', { name: 'Home Weather' })).not.toBeInTheDocument();
+		expect(screen.queryByRole('heading', { name: 'Date' })).not.toBeInTheDocument();
+
+		await fireEvent.change(ownerSelect, { target: { value: 'unowned' } });
+		expect(screen.getByRole('heading', { name: 'Home Weather' })).toBeInTheDocument();
+		expect(screen.getByRole('heading', { name: 'Date' })).toBeInTheDocument();
+		expect(screen.queryByRole('heading', { name: 'Chores' })).not.toBeInTheDocument();
+	});
+
+	it('adds a tile assigned to another user and refetches the report', async () => {
+		render(Page);
+
+		await screen.findByRole('heading', { name: 'Home Weather' });
+		await fireEvent.click(screen.getByLabelText('Add Tile'));
+
+		const dialog = await screen.findByRole('dialog');
+		const typeSelect = within(dialog).getByLabelText('Tile Type');
+		await fireEvent.change(typeSelect, { target: { value: 'clock' } });
+		const tabSelect = within(dialog).getByLabelText('Tab');
+		await fireEvent.change(tabSelect, { target: { value: 'media' } });
+		const ownerSelect = within(dialog).getByLabelText('Assign To');
+		await fireEvent.change(ownerSelect, { target: { value: 'user-1' } });
+
+		tilesReport.mockClear();
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Add Tile' }));
+
+		await vi.waitFor(() => {
+			expect(addWidget).toHaveBeenCalledWith(
+				'clock',
+				expect.objectContaining({ col: 1, colSpan: 1, rowSpan: 1 }),
+				'media',
+				'user-1',
+			);
+		});
+		await vi.waitFor(() => {
+			expect(tilesReport).toHaveBeenCalled();
+		});
 	});
 });

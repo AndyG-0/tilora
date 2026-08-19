@@ -428,6 +428,21 @@ describe('api', () => {
 		expect(result).toEqual(config);
 	});
 
+	it('createSetupAdmin POSTs to /api/setup/admin including include_starter_tiles', async () => {
+		const user = { id: 'u1', name: 'Alice', role: 'admin' };
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => user }));
+
+		const result = await api.createSetupAdmin('Alice', 'cat.png', '1234', false);
+
+		expect(fetch).toHaveBeenCalledWith('http://api.test/api/setup/admin', {
+			method: 'POST',
+			credentials: 'include',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ name: 'Alice', avatar: 'cat.png', pin: '1234', include_starter_tiles: false }),
+		});
+		expect(result).toEqual(user);
+	});
+
 	it('apiUrl prepends configured base URL or falls back to relative path', () => {
 		expect(apiUrl('/api/widgets')).toBe('http://api.test/api/widgets');
 	});

@@ -36,6 +36,15 @@ describe('DiscordTile', () => {
 		expect(screen.getByText('No recent messages.')).toBeInTheDocument();
 	});
 
+	it('shows not configured state when configured is false or channel_name is empty', async () => {
+		widgetSummary.mockResolvedValue(baseSummary({ configured: false, channel_name: '' }));
+
+		render(DiscordTile, { props: { widgetId: 'discord', refreshIntervalSeconds: 60 } });
+
+		expect(await screen.findByText('Not configured')).toBeInTheDocument();
+		expect(screen.queryByText('#')).not.toBeInTheDocument();
+	});
+
 	it('renders messages in static mode', async () => {
 		widgetSummary.mockResolvedValue(
 			baseSummary({

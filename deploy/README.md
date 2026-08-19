@@ -225,6 +225,7 @@ sed \
   -e "s|__TILORA_USER__|$USER|g" \
   -e "s|__TILORA_BACKEND_DIR__|$HOME/tilora/backend|g" \
   -e "s|__TILORA_FRONTEND_DIR__|$HOME/tilora/frontend|g" \
+  -e "s|__TILORA_PUBLIC_API_BASE_URL__|http://localhost:8000|g" \
   deploy/tilora-frontend.service | sudo tee /etc/systemd/system/tilora-frontend.service >/dev/null
 sudo systemctl daemon-reload
 sudo systemctl enable --now tilora-backend tilora-frontend

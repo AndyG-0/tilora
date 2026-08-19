@@ -53,4 +53,26 @@ describe('MovieTile', () => {
 		expect(screen.getByAltText('Trending Show')).toBeInTheDocument();
 		expect(screen.getByAltText('Streaming Movie')).toBeInTheDocument();
 	});
+
+	it('shows not configured state when configured is false', async () => {
+		widgetSummary.mockResolvedValue({
+			configured: false,
+			popular_movies: [],
+		});
+
+		render(MovieTile, { props: { widgetId: 'movies', refreshIntervalSeconds: 60 } });
+
+		expect(await screen.findByText('Not configured')).toBeInTheDocument();
+	});
+
+	it('shows no data yet state when summary has no items', async () => {
+		widgetSummary.mockResolvedValue({
+			configured: true,
+			popular_movies: [],
+		});
+
+		render(MovieTile, { props: { widgetId: 'movies', refreshIntervalSeconds: 60 } });
+
+		expect(await screen.findByText(/No data yet/)).toBeInTheDocument();
+	});
 });

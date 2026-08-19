@@ -15,6 +15,7 @@
 	}
 
 	interface DiscordSummary {
+		configured?: boolean;
 		channel_name: string;
 		display_mode: 'static' | 'marquee' | 'fade';
 		marquee_speed_seconds: number;
@@ -82,11 +83,13 @@
 
 <TileCard {widgetId}>
 	<div class="widget">
-		{#if summary}
+		{#if summary?.channel_name}
 			<div class="channel">#{summary.channel_name}</div>
 		{/if}
 		{#if !summary}
 			<div class="empty">{$_('discord.tile.loading')}</div>
+		{:else if summary.configured === false || !summary.channel_name}
+			<div class="empty">{$_('common.not_configured')}</div>
 		{:else if summary.messages.length === 0}
 			<div class="empty">{$_('discord.no_messages')}</div>
 		{:else if summary.display_mode === 'marquee'}

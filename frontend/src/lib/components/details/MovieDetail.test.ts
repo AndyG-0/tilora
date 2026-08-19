@@ -157,4 +157,16 @@ describe('MovieDetail', () => {
 
 		expect(await screen.findByText('Could not update settings.')).toBeInTheDocument();
 	});
+
+	it('shows not configured state when configured is false and no items', () => {
+		render(MovieDetail, { props: { data: { ...baseData, configured: false } } });
+
+		expect(screen.getByText('Not configured')).toBeInTheDocument();
+	});
+
+	it('shows no data yet state when configured is true and no items', () => {
+		render(MovieDetail, { props: { data: { ...baseData, configured: true } } });
+
+		expect(screen.getByText(/No data yet/)).toBeInTheDocument();
+	});
 });

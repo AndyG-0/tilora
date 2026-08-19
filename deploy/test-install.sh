@@ -107,6 +107,60 @@ test_kiosk_arg_parsing() {
   pass "parses kiosk flags and environment variables"
 }
 
+test_starter_tiles_arg_parsing() {
+  INSTALL_STARTER_TILES=""
+  TILORA_STARTER_TILES=""
+  parse_args --starter-tiles
+  [[ "$INSTALL_STARTER_TILES" == "true" ]] || fail_test "expected INSTALL_STARTER_TILES=true for --starter-tiles"
+
+  INSTALL_STARTER_TILES=""
+  parse_args --no-starter-tiles
+  [[ "$INSTALL_STARTER_TILES" == "false" ]] || fail_test "expected INSTALL_STARTER_TILES=false for --no-starter-tiles"
+
+  INSTALL_STARTER_TILES=""
+  parse_args --empty-dashboard
+  [[ "$INSTALL_STARTER_TILES" == "false" ]] || fail_test "expected INSTALL_STARTER_TILES=false for --empty-dashboard"
+
+  INSTALL_STARTER_TILES=""
+  TILORA_STARTER_TILES="1"
+  parse_args
+  [[ "$INSTALL_STARTER_TILES" == "true" ]] || fail_test "expected INSTALL_STARTER_TILES=true for TILORA_STARTER_TILES=1"
+
+  INSTALL_STARTER_TILES=""
+  TILORA_STARTER_TILES="0"
+  parse_args
+  [[ "$INSTALL_STARTER_TILES" == "false" ]] || fail_test "expected INSTALL_STARTER_TILES=false for TILORA_STARTER_TILES=0"
+
+  TILORA_STARTER_TILES=""
+  INSTALL_STARTER_TILES=""
+  pass "parses starter tiles flags and environment variables"
+}
+
+test_starter_tiles_dashboard_configuration() {
+  local mock_install="$TEST_ROOT/mock_starter_tiles"
+  mkdir -p "$mock_install/backend/config" "$mock_install/frontend"
+  printf 'KEY=backend_val\n' >"$mock_install/backend/.env.example"
+  printf 'widgets:\n  - id: weather\n    type: weather\n' >"$mock_install/backend/config/dashboard.example.yaml"
+  printf 'PUBLIC_API_BASE_URL=\n' >"$mock_install/frontend/.env.example"
+
+  BACKEND_DIR="$mock_install/backend"
+  FRONTEND_DIR="$mock_install/frontend"
+
+  # Test default creates from example
+  INSTALL_STARTER_TILES=""
+  prepare_configuration >/dev/null
+  grep -Fq "id: weather" "$mock_install/backend/config/dashboard.yaml" || fail_test "prepare_configuration failed to copy starter dashboard.example.yaml"
+
+  # Test --no-starter-tiles creates empty widgets
+  rm -f "$mock_install/backend/config/dashboard.yaml"
+  INSTALL_STARTER_TILES=false
+  prepare_configuration >/dev/null
+  assert_contains "$mock_install/backend/config/dashboard.yaml" "widgets: []"
+
+  INSTALL_STARTER_TILES=""
+  pass "configures starter dashboard or empty dashboard based on starter tiles setting"
+}
+
 test_kiosk_configuration() {
   local home_dir="$TEST_ROOT/kiosk_home"
   local install_dir="$TEST_ROOT/kiosk_tilora"
@@ -139,7 +193,7 @@ test_mocked_dependencies_and_upgrade() {
   install_system_dependencies
   sync_repository
   assert_contains "$mock_log" "apt-get update"
-  assert_contains "$mock_log" "apt-get install -y ca-certificates curl git build-essential python3"
+  assert_contains "$mock_log" "apt-get install -y ca-certificates curl git build-essential python3 fonts-noto-color-emoji fonts-noto-core"
   assert_contains "$mock_log" "git -C $INSTALL_DIR fetch --quiet origin main"
   assert_contains "$mock_log" "git -C $INSTALL_DIR checkout main"
   assert_contains "$mock_log" "git -C $INSTALL_DIR merge --ff-only origin/main"
@@ -162,6 +216,8 @@ test_service_rendering() {
   grep -F 'WorkingDirectory=/srv/tilora/backend' "$SYSTEMD_DIR/tilora-backend.service" >/dev/null || fail_test "renders backend path"
   grep -F 'ReadWritePaths=/srv/tilora/backend' "$SYSTEMD_DIR/tilora-backend.service" >/dev/null || fail_test "keeps backend write path"
   grep -F 'WorkingDirectory=/srv/tilora/frontend' "$SYSTEMD_DIR/tilora-frontend.service" >/dev/null || fail_test "renders frontend path"
+  grep -F 'Environment=PUBLIC_API_BASE_URL=' "$SYSTEMD_DIR/tilora-frontend.service" >/dev/null || fail_test "renders frontend PUBLIC_API_BASE_URL environment variable"
+  grep -F 'EnvironmentFile=-/srv/tilora/frontend/.env' "$SYSTEMD_DIR/tilora-frontend.service" >/dev/null || fail_test "renders frontend env file path"
   assert_contains "$mock_log" 'systemctl daemon-reload'
   pass "renders hardened systemd units and invokes mocked systemctl"
 }
@@ -300,6 +356,8 @@ test_uninstall() {
 
 test_platform_validation
 test_kiosk_arg_parsing
+test_starter_tiles_arg_parsing
+test_starter_tiles_dashboard_configuration
 test_api_url_arg_parsing
 test_kiosk_configuration
 test_frontend_env_configuration
@@ -308,3 +366,4 @@ test_mocked_dependencies_and_upgrade
 test_service_rendering
 test_health_failure
 test_uninstall
+

@@ -110,6 +110,7 @@ describe('DiscordDetail', () => {
 
 		await vi.waitFor(() =>
 			expect(updateWidgetSettings).toHaveBeenCalledWith('discord', {
+				channel_id: '',
 				display_mode: 'static',
 				marquee_speed_seconds: 40,
 				fade_interval_seconds: 6,
@@ -130,5 +131,33 @@ describe('DiscordDetail', () => {
 		await fireEvent.click(screen.getByText('Save'));
 
 		expect(await screen.findByText('Could not update the settings.')).toBeInTheDocument();
+	});
+
+	it('shows generic header and not configured message when unconfigured', () => {
+		render(DiscordDetail, { props: { data: { ...baseData, configured: false, channel_name: '' } } });
+
+		expect(screen.getByRole('heading', { level: 1, name: 'Discord' })).toBeInTheDocument();
+		expect(screen.getByText('Not configured')).toBeInTheDocument();
+	});
+
+	it('allows entering and saving channel_id', async () => {
+		updateWidgetSettings.mockResolvedValue({ status: 'ok' });
+		widgetDetail.mockResolvedValue({ ...baseData, channel_id: '999999999', channel_name: 'new-channel' });
+
+		render(DiscordDetail, { props: { data: baseData } });
+
+		await fireEvent.click(screen.getByText('Edit settings'));
+		const channelInput = screen.getByLabelText('Channel ID');
+		await fireEvent.input(channelInput, { target: { value: '999999999' } });
+		await fireEvent.click(screen.getByText('Save'));
+
+		await vi.waitFor(() =>
+			expect(updateWidgetSettings).toHaveBeenCalledWith(
+				'discord',
+				expect.objectContaining({
+					channel_id: '999999999',
+				}),
+			),
+		);
 	});
 });

@@ -32,9 +32,23 @@ describe('/setup +page.svelte', () => {
 		await Promise.resolve();
 		await Promise.resolve();
 
-		expect(createSetupAdmin).toHaveBeenCalledWith('Alice', undefined, undefined);
+		expect(createSetupAdmin).toHaveBeenCalledWith('Alice', undefined, undefined, true);
 		expect(get(user)).toEqual({ id: 'u1', name: 'Alice', avatar: null, role: 'admin' });
 		expect(get(needsSetup)).toBe(false);
+		expect(goto).toHaveBeenCalledWith('/');
+	});
+
+	it('allows opting out of starter tiles during setup', async () => {
+		createSetupAdmin.mockResolvedValue({ id: 'u1', name: 'Alice', avatar: null, role: 'admin' });
+		render(Page);
+
+		await fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'Alice' } });
+		await fireEvent.click(screen.getByLabelText('Include starter tiles'));
+		await fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect(createSetupAdmin).toHaveBeenCalledWith('Alice', undefined, undefined, false);
 		expect(goto).toHaveBeenCalledWith('/');
 	});
 

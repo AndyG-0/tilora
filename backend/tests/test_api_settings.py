@@ -107,6 +107,21 @@ def test_patch_settings_persists_tts_provider_fields(client, tmp_db):
     assert body["piper_voices"] == "en_US-amy-medium|Amy"
 
 
+def test_patch_settings_persists_stt_provider_fields(client, tmp_db):
+    response = client.patch(
+        "/api/settings",
+        json={
+            "openai_stt_enabled": "true",
+            "openai_stt_model": "whisper-1",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["openai_stt_enabled"] == "true"
+    assert body["openai_stt_model"] == "whisper-1"
+
+
 def test_patch_settings_invalidates_clock_and_date_widget_cache(client, tmp_db):
     from app.storage.cache import cache
 
@@ -162,3 +177,58 @@ def test_patch_settings_accepts_https_and_clearing_searxng_url(client, tmp_db):
     res_clear = client.patch("/api/settings", json={"searxng_url": ""})
     assert res_clear.status_code == 200
     assert res_clear.json()["searxng_url"] == ""
+
+
+def test_patch_settings_tmdb_api_key_and_discord_bot_token(client, tmp_db):
+    response = client.patch(
+        "/api/settings",
+        json={
+            "tmdb_api_key": "tmdb-secret-key",
+            "discord_bot_token": "discord-secret-token",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "tmdb_api_key" not in body
+    assert "discord_bot_token" not in body
+    assert body["has_tmdb_api_key"] is True
+    assert body["has_discord_bot_token"] is True
+
+
+def test_patch_settings_clearing_tmdb_and_discord(client, tmp_db):
+    client.patch(
+        "/api/settings",
+        json={
+            "tmdb_api_key": "tmdb-secret-key",
+            "discord_bot_token": "discord-secret-token",
+        },
+    )
+    response = client.patch(
+        "/api/settings",
+        json={
+            "tmdb_api_key": "",
+            "discord_bot_token": "",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["has_tmdb_api_key"] is False
+    assert body["has_discord_bot_token"] is False
+
+
+def test_patch_settings_invalidates_movies_and_discord_cache(client, tmp_db):
+    from app.storage.cache import cache
+
+    cache.set("summary:movies:en", {"data": 1}, 3600)
+    cache.set("detail:movies:en", {"data": 2}, 3600)
+    cache.set("movies:providers:US:movie:123", {"data": 3}, 3600)
+    cache.set("summary:discord:en", {"data": 4}, 3600)
+    cache.set("detail:discord:en", {"data": 5}, 3600)
+
+    client.patch("/api/settings", json={"tmdb_api_key": "new-key", "discord_bot_token": "new-token"})
+
+    assert cache.get("summary:movies:en") is None
+    assert cache.get("detail:movies:en") is None
+    assert cache.get("movies:providers:US:movie:123") is None
+    assert cache.get("summary:discord:en") is None
+    assert cache.get("detail:discord:en") is None

@@ -902,6 +902,91 @@ def test_add_widget_returns_400_for_unknown_type(client, dashboard_yaml, tmp_db)
     assert response.status_code == 400
 
 
+def test_add_widget_admin_can_assign_owner_to_other_user(client, dashboard_yaml, tmp_db):
+    db.create_user("other-user", "Bob", None, "pin_hash", "pin_salt", 1000, "2026-01-01T00:00:00")
+
+    response = client.post(
+        "/api/widgets",
+        json={
+            "type": "clock",
+            "layout": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1},
+            "owner_user_id": "other-user",
+        },
+    )
+
+    assert response.status_code == 200
+    widget_id = response.json()["id"]
+    row = db.list_custom_widgets()[0]
+    assert row["id"] == widget_id
+    assert row["owner_user_id"] == "other-user"
+    # None = visible to that user on any of their devices, not just the
+    # (device) the admin happened to be using — see _widget_is_visible.
+    assert row["owner_device_id"] is None
+
+
+def test_add_widget_member_cannot_assign_owner_to_other_user(member_client, dashboard_yaml, tmp_db):
+    db.create_user("other-user", "Bob", None, "pin_hash", "pin_salt", 1000, "2026-01-01T00:00:00")
+
+    response = member_client.post(
+        "/api/widgets",
+        json={
+            "type": "rss",
+            "layout": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1},
+            "owner_user_id": "other-user",
+        },
+    )
+
+    assert response.status_code == 403
+    assert db.list_custom_widgets() == []
+
+
+def test_add_widget_rejects_unknown_owner_user_id(client, dashboard_yaml, tmp_db):
+    response = client.post(
+        "/api/widgets",
+        json={
+            "type": "clock",
+            "layout": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1},
+            "owner_user_id": "nonexistent-user",
+        },
+    )
+
+    assert response.status_code == 404
+    assert db.list_custom_widgets() == []
+
+
+def test_list_widgets_visible_to_admin_assigned_user_on_any_device(dashboard_yaml, tmp_db):
+    # owner_device_id=None (as set by an admin assigning a tile to a user,
+    # rather than a user creating their own) must not be read as "only
+    # visible on device None" — it means "any of that user's devices".
+    db.save_custom_widget(
+        "personal-stub",
+        "personal-stub",
+        {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1},
+        None,
+        "target-user",
+        None,
+    )
+    registry.register(StubPersonalPlugin({"id": "personal-stub", "settings": {}}))
+
+    app = FastAPI()
+    app.include_router(widgets.router)
+    app.dependency_overrides[get_current_user] = lambda: {"id": "target-user", "role": "member"}
+    app.dependency_overrides[get_current_device] = lambda: {"id": "a-device-they-never-used-before"}
+    target_client = TestClient(app)
+
+    response = target_client.get("/api/widgets?breakpoint=wide")
+    assert "personal-stub" in [w["id"] for w in response.json()]
+
+    other_app = FastAPI()
+    other_app.include_router(widgets.router)
+    other_app.dependency_overrides[get_current_user] = lambda: {"id": "someone-else", "role": "member"}
+    other_app.dependency_overrides[get_current_device] = lambda: {"id": TEST_DEVICE_ID}
+    other_client = TestClient(other_app)
+
+    response = other_client.get("/api/widgets?breakpoint=wide")
+    assert "personal-stub" not in [w["id"] for w in response.json()]
+
+
 def test_remove_widget_returns_404_for_unregistered_widget(client, dashboard_yaml, tmp_db):
     response = client.delete("/api/widgets/nonexistent")
     assert response.status_code == 404
@@ -929,7 +1014,10 @@ def test_remove_widget_hides_network_scope_widget_for_member(member_client, dash
     assert registry.get("stub") is not None
 
 
-def test_remove_widget_owned_by_a_different_device_is_hidden_not_deleted(client, dashboard_yaml, tmp_db):
+def test_remove_widget_owned_by_a_different_device_is_hidden_not_deleted(member_client, dashboard_yaml, tmp_db):
+    # A non-admin non-owner still only hides. (Admins now force-delete
+    # widgets they don't own — see test_remove_widget_admin_force_deletes_*
+    # below — so this must use member_client, not the admin `client`.)
     db.save_custom_widget(
         "personal-stub",
         "personal-stub",
@@ -940,12 +1028,12 @@ def test_remove_widget_owned_by_a_different_device_is_hidden_not_deleted(client,
     )
     registry.register(StubPersonalPlugin({"id": "personal-stub", "settings": {}}))
 
-    response = client.delete("/api/widgets/personal-stub")
+    response = member_client.delete("/api/widgets/personal-stub")
 
     assert response.status_code == 200
     assert response.json() == {"status": "hidden"}
     assert registry.get("personal-stub") is not None
-    assert db.hidden_widget_ids(TEST_USER_ID, TEST_DEVICE_ID) == {"personal-stub"}
+    assert db.hidden_widget_ids("member-user", TEST_DEVICE_ID) == {"personal-stub"}
 
 
 def test_remove_widget_allows_member_for_personal_scope_widget(member_client, dashboard_yaml, tmp_db):
@@ -1009,6 +1097,57 @@ def test_remove_widget_deletes_custom_widget_entirely(client, dashboard_yaml, tm
     assert registry.get(widget_id) is None
     assert db.list_custom_widgets() == []
     assert db.hidden_widget_ids(TEST_USER_ID, TEST_DEVICE_ID) == set()
+
+
+def test_remove_widget_admin_force_deletes_widget_owned_by_another_user(client, dashboard_yaml, tmp_db):
+    db.save_custom_widget(
+        "personal-stub",
+        "personal-stub",
+        {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1},
+        None,
+        "other-user",
+        "other-device",
+    )
+    registry.register(StubPersonalPlugin({"id": "personal-stub", "settings": {}}))
+
+    response = client.delete("/api/widgets/personal-stub")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert registry.get("personal-stub") is None
+    assert db.list_custom_widgets() == []
+
+
+def test_remove_widget_admin_cannot_force_delete_builtin_widget(client, dashboard_yaml, tmp_db):
+    # dashboard.yaml widgets have no custom_widgets row to delete, so even
+    # an admin can only ever hide them — matches decision #2 in the plan.
+    registry.register(StubPlugin({}))
+
+    response = client.delete("/api/widgets/stub")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "hidden"}
+    assert registry.get("stub") is not None
+    assert db.hidden_widget_ids(TEST_USER_ID, TEST_DEVICE_ID) == {"stub"}
+
+
+def test_remove_widget_member_still_only_hides_others_widgets(member_client, dashboard_yaml, tmp_db):
+    db.save_custom_widget(
+        "personal-stub",
+        "personal-stub",
+        {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1},
+        None,
+        "other-user",
+        "other-device",
+    )
+    registry.register(StubPersonalPlugin({"id": "personal-stub", "settings": {}}))
+
+    response = member_client.delete("/api/widgets/personal-stub")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "hidden"}
+    assert registry.get("personal-stub") is not None
+    assert db.list_custom_widgets() != []
 
 
 def test_remove_widget_deletes_photo_index_rows(client, dashboard_yaml, tmp_db):
