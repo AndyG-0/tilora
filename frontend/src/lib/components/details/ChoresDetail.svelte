@@ -54,7 +54,7 @@
 	}
 </script>
 
-<h1>{detail.title || 'To-Do'}</h1>
+<h1>{detail.title || $_('chores.default_title')}</h1>
 
 <form class="add" onsubmit={(e) => (e.preventDefault(), addItem())}>
 	<input type="text" placeholder={$_('common.add_item_placeholder')} bind:value={text} />

@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api import screensaver as screensaver_api
+from app.auth import _hash_token
 from app.storage import db
 
 _DEFAULTS = {
@@ -27,9 +28,13 @@ def client():
 
 
 def _login(client, user_id="alice", device_id="tablet"):
+    # devices/sessions are keyed by a hash of the bearer token — store the
+    # hash, present the raw value as the cookie (see app.auth._hash_token).
     db.create_user(user_id, "Alice", None, None, None, None, "2026-01-01T00:00:00Z")
-    db.create_device(device_id, "Tablet", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")
-    db.create_session("sess1", user_id, device_id, "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
+    db.create_device(_hash_token(device_id), "Tablet", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")
+    db.create_session(
+        _hash_token("sess1"), user_id, _hash_token(device_id), "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z"
+    )
     client.cookies.set("tilora_session", "sess1")
     client.cookies.set("tilora_device", device_id)
 
@@ -145,7 +150,7 @@ def test_settings_are_scoped_independently_per_device_for_the_same_user(client, 
     _login(client, user_id="alice", device_id="tablet")
     client.patch("/api/screensaver/settings", json={"enabled": True})
 
-    db.create_device("phone", "Phone", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")
+    db.create_device(_hash_token("phone"), "Phone", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")
     client.cookies.set("tilora_device", "phone")
 
     assert client.get("/api/screensaver/settings").json()["enabled"] is False
@@ -156,7 +161,9 @@ def test_settings_are_scoped_independently_per_user_for_the_same_device(client, 
     client.patch("/api/screensaver/settings", json={"enabled": True})
 
     db.create_user("bob", "Bob", None, None, None, None, "2026-01-01T00:00:00Z")
-    db.create_session("sess2", "bob", "tablet", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
+    db.create_session(
+        _hash_token("sess2"), "bob", _hash_token("tablet"), "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z"
+    )
     client.cookies.set("tilora_session", "sess2")
 
     assert client.get("/api/screensaver/settings").json()["enabled"] is False

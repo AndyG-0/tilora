@@ -125,17 +125,17 @@ def test_patch_settings_persists_stt_provider_fields(client, tmp_db):
 def test_patch_settings_invalidates_clock_and_date_widget_cache(client, tmp_db):
     from app.storage.cache import cache
 
-    cache.set("summary:clock", {"timezone": "UTC"}, 3600)
-    cache.set("detail:clock", {"timezone": "UTC"}, 3600)
-    cache.set("summary:date", {"timezone": "UTC"}, 3600)
-    cache.set("detail:date", {"timezone": "UTC"}, 3600)
+    cache.set("summary:clock:en", {"timezone": "UTC"}, 3600)
+    cache.set("detail:clock:en", {"timezone": "UTC"}, 3600)
+    cache.set("summary:date:en", {"timezone": "UTC"}, 3600)
+    cache.set("detail:date:en", {"timezone": "UTC"}, 3600)
 
     client.patch("/api/settings", json={"timezone": "America/New_York"})
 
-    assert cache.get("summary:clock") is None
-    assert cache.get("detail:clock") is None
-    assert cache.get("summary:date") is None
-    assert cache.get("detail:date") is None
+    assert cache.get("summary:clock:en") is None
+    assert cache.get("detail:clock:en") is None
+    assert cache.get("summary:date:en") is None
+    assert cache.get("detail:date:en") is None
 
 
 def test_patch_settings_persists_agent_name_and_searxng_url(client, tmp_db):
@@ -214,6 +214,36 @@ def test_patch_settings_clearing_tmdb_and_discord(client, tmp_db):
     body = response.json()
     assert body["has_tmdb_api_key"] is False
     assert body["has_discord_bot_token"] is False
+
+
+def test_patch_settings_artificial_analysis_api_key(client, tmp_db):
+    response = client.patch(
+        "/api/settings",
+        json={"artificial_analysis_api_key": "aa-secret-key"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "artificial_analysis_api_key" not in body
+    assert body["has_artificial_analysis_api_key"] is True
+
+
+def test_patch_settings_clearing_artificial_analysis_api_key(client, tmp_db):
+    client.patch("/api/settings", json={"artificial_analysis_api_key": "aa-secret-key"})
+    response = client.patch("/api/settings", json={"artificial_analysis_api_key": ""})
+    assert response.status_code == 200
+    assert response.json()["has_artificial_analysis_api_key"] is False
+
+
+def test_patch_settings_invalidates_artificial_analysis_cache(client, tmp_db):
+    from app.storage.cache import cache
+
+    cache.set("summary:artificial_analysis:en", {"data": 1}, 3600)
+    cache.set("detail:artificial_analysis:en", {"data": 2}, 3600)
+
+    client.patch("/api/settings", json={"artificial_analysis_api_key": "new-key"})
+
+    assert cache.get("summary:artificial_analysis:en") is None
+    assert cache.get("detail:artificial_analysis:en") is None
 
 
 def test_patch_settings_invalidates_movies_and_discord_cache(client, tmp_db):

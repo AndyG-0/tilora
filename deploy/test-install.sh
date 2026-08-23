@@ -21,11 +21,13 @@ assert_contains() {
 
 mock_log="$TEST_ROOT/mock.log"
 sudo() { if [[ "$1" == "-v" ]]; then return 0; fi; "$@"; }
-apt-get() { printf 'apt-get'; printf ' %s' "$@"; printf '\n'; } >>"$mock_log"
+_mock_log() { printf '%s' "$1"; shift; printf ' %s' "$@"; printf '\n'; } >>"$mock_log"
+apt-get() { _mock_log "apt-get" "$@"; }
 curl() { printf 'exit 0\n'; }
 node() { printf 'v24.0.0\n'; }
-git() { printf 'git'; printf ' %s' "$@"; printf '\n'; } >>"$mock_log"
-systemctl() { printf 'systemctl'; printf ' %s' "$@"; printf '\n'; } >>"$mock_log"
+git() { _mock_log "git" "$@"; }
+systemctl() { _mock_log "systemctl" "$@"; }
+uv() { _mock_log "uv" "$@"; }
 
 test_platform_validation() {
   local os_file="$TEST_ROOT/os-release"
@@ -200,6 +202,15 @@ test_mocked_dependencies_and_upgrade() {
   pass "uses mocked apt and fast-forward Git upgrade"
 }
 
+test_cli_install() {
+  INSTALL_DIR="$TEST_ROOT/cli_tilora"
+  mkdir -p "$INSTALL_DIR/cli"
+
+  install_cli
+  assert_contains "$mock_log" "uv tool install --editable $INSTALL_DIR/cli --force"
+  pass "installs the tilora CLI via uv tool install --editable"
+}
+
 test_service_rendering() {
   local template_root="$TEST_ROOT/templates"
   mkdir -p "$template_root/deploy" "$TEST_ROOT/systemd"
@@ -363,6 +374,7 @@ test_kiosk_configuration
 test_frontend_env_configuration
 test_piped_execution
 test_mocked_dependencies_and_upgrade
+test_cli_install
 test_service_rendering
 test_health_failure
 test_uninstall

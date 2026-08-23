@@ -158,6 +158,7 @@ export interface AppSettings {
 	piper_server_url: string;
 	piper_voices: string;
 	has_tmdb_api_key: boolean;
+	has_artificial_analysis_api_key: boolean;
 	has_discord_bot_token: boolean;
 	has_google_calendar_client_id: boolean;
 	has_google_calendar_client_secret: boolean;
@@ -559,11 +560,13 @@ export interface GoodreadsBookDetail extends GoodreadsBookSummary {
 }
 
 export interface GoodreadsSummary {
+	configured?: boolean;
 	shelf: string;
 	books: GoodreadsBookSummary[];
 }
 
 export interface GoodreadsDetail {
+	configured?: boolean;
 	shelf: string;
 	user_id: string;
 	books: GoodreadsBookDetail[];
@@ -639,6 +642,7 @@ export interface RSSFeed {
 export interface RSSItem {
 	title: string;
 	link: string;
+	comments?: string | null;
 	published: string | null;
 	source: string;
 	summary?: string;

@@ -30,6 +30,7 @@ const SAMPLE_DATA = {
 	radius_nm: 25,
 	speed_unit: 'mph' as const,
 	count: 2,
+	truncated: false,
 	flights: [
 		{
 			hex: 'a835an',
@@ -46,8 +47,8 @@ const SAMPLE_DATA = {
 			heading: 270,
 			latitude: 32.9,
 			longitude: -97.1,
-			origin: { iata: 'DFW', icao: 'KDFW', city: 'Dallas-Fort Worth' },
-			destination: { iata: 'LHR', icao: 'EGLL', city: 'London' },
+			origin: { iata: 'DFW', icao: 'KDFW', city: 'Dallas-Fort Worth', latitude: 32.8998, longitude: -97.0403 },
+			destination: { iata: 'LHR', icao: 'EGLL', city: 'London', latitude: 51.47, longitude: -0.4543 },
 			photo_thumbnail_url: 'https://example.com/aal100.jpg',
 			photo_photographer: 'John Doe',
 		},
@@ -202,11 +203,50 @@ describe('FlightsDetail', () => {
 		expect(n12345Row).toHaveClass('selected');
 	});
 
+	it('labels a route-less flight as "Local flight" when the operator is unrecognized', async () => {
+		render(FlightsDetail, { props: { data: SAMPLE_DATA } });
+
+		const row = screen.getByText('N12345', { selector: '.dots' }).closest('.table-row');
+		expect(row).toHaveTextContent('Local flight');
+	});
+
+	it('labels a route-less flight as "Route unavailable" when it belongs to a recognized airline', async () => {
+		const customData = {
+			...SAMPLE_DATA,
+			flights: [
+				{
+					...SAMPLE_DATA.flights[0],
+					callsign: 'AAL200',
+					origin: null,
+					destination: null,
+				},
+			],
+		};
+
+		render(FlightsDetail, { props: { data: customData } });
+
+		const row = screen.getByText('AAL200', { selector: '.dots' }).closest('.table-row');
+		expect(row).toHaveTextContent('Route unavailable');
+	});
+
 	it('shows edit controls for non-admin members', () => {
 		user.set({ id: 'member-user', name: 'Member', avatar: null, role: 'member' });
 		render(FlightsDetail, { props: { data: SAMPLE_DATA } });
 
 		expect(screen.getByText('Change location')).toBeInTheDocument();
 		expect(screen.getByLabelText('Search radius (nm)')).toBeInTheDocument();
+	});
+
+	it('shows a truncation warning when more flights are nearby than shown', () => {
+		const truncatedData = { ...SAMPLE_DATA, count: 150, truncated: true };
+		render(FlightsDetail, { props: { data: truncatedData } });
+
+		expect(screen.getByText('Showing the nearest 2 of 150 flights nearby.')).toBeInTheDocument();
+	});
+
+	it('omits the truncation warning when all nearby flights are shown', () => {
+		render(FlightsDetail, { props: { data: SAMPLE_DATA } });
+
+		expect(screen.queryByText(/Showing the nearest/)).not.toBeInTheDocument();
 	});
 });

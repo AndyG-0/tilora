@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.auth import (
     SESSION_COOKIE_NAME,
+    _hash_token,
     clear_session_cookie,
     get_current_device,
     get_current_user,
@@ -109,7 +110,7 @@ async def create_profile(
     await asyncio.to_thread(create_user, user_id, payload.name, payload.avatar, pin_hash, pin_salt, pin_iterations, now)
 
     session_id = new_token()
-    await asyncio.to_thread(create_session, session_id, user_id, device["id"], now, session_expiry())
+    await asyncio.to_thread(create_session, _hash_token(session_id), user_id, device["id"], now, session_expiry())
     set_session_cookie(response, session_id)
 
     return user_shape({"id": user_id, "name": payload.name, "avatar": payload.avatar, "role": "member"})
@@ -136,7 +137,7 @@ async def login(
     # Login (profile switch) is the natural, frequent moment to reap sessions
     # that expired since they were created — nothing else ever purges them.
     await asyncio.to_thread(delete_expired_sessions, now)
-    await asyncio.to_thread(create_session, session_id, user["id"], device["id"], now, session_expiry())
+    await asyncio.to_thread(create_session, _hash_token(session_id), user["id"], device["id"], now, session_expiry())
     set_session_cookie(response, session_id)
 
     return user_shape(user)
@@ -149,7 +150,7 @@ async def logout(request: Request, response: Response):
     # cookie instead of 401ing.
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
     if session_id:
-        await asyncio.to_thread(delete_session, session_id)
+        await asyncio.to_thread(delete_session, _hash_token(session_id))
     clear_session_cookie(response)
     return {"status": "ok"}
 

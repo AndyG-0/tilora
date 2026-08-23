@@ -14,6 +14,8 @@
 		iata: string | null;
 		icao: string;
 		city: string | null;
+		latitude: number | null;
+		longitude: number | null;
 	}
 
 	interface FlightItem {
@@ -46,9 +48,16 @@
 	}
 
 	function routeText(flight: FlightItem): string {
-		return flight.origin && flight.destination
-			? `${airportCode(flight.origin)} → ${airportCode(flight.destination)}`
-			: '—';
+		if (flight.origin && flight.destination) {
+			return `${airportCode(flight.origin)} → ${airportCode(flight.destination)}`;
+		}
+		// A recognized carrier with no route means we have a real flight but
+		// couldn't get trustworthy route data; an unrecognized operator (tail
+		// number, flight-school callsign) almost always means there's no
+		// filed route to find anywhere -- most likely local/pattern traffic.
+		return flight.airline_name
+			? get(_)('flights.detail.route_unavailable')
+			: get(_)('flights.detail.route_local_flight');
 	}
 
 	interface FlightsDetailData {
@@ -59,6 +68,7 @@
 		speed_unit?: 'mph' | 'kmh';
 		count: number;
 		flights: FlightItem[];
+		truncated: boolean;
 	}
 
 	let { data: initialData }: { data: FlightsDetailData } = $props();
@@ -243,6 +253,12 @@
 	</div>
 </div>
 
+{#if flightsData.truncated}
+	<p class="warning">
+		{$_('flights.detail.truncated', { values: { shown: flightsData.flights.length, total: flightsData.count } })}
+	</p>
+{/if}
+
 {#if flightsData.flights.length === 0}
 	<p class="empty">{$_('flights.detail.empty')}</p>
 {:else}
@@ -255,7 +271,7 @@
 			<span>{$_('flights.detail.column_speed')}</span>
 			<span>{$_('flights.detail.column_distance')}</span>
 		</div>
-		{#each flightsData.flights as flight (flight.callsign)}
+		{#each flightsData.flights as flight (flight.hex ?? flight.callsign)}
 			{@const isSelected = selectedCallsign === flight.callsign}
 			{@const logo = airlineLogoSrc(flight.airline_code)}
 			{@const airlineTitle = formatAirlineTooltip(flight)}
@@ -498,6 +514,12 @@
 	.empty {
 		color: var(--color-text-muted);
 		margin-top: 2rem;
+	}
+
+	.warning {
+		color: var(--color-text-muted);
+		font-size: 0.85rem;
+		margin: 1rem 0 0;
 	}
 
 	.table {

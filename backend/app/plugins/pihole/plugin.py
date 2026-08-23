@@ -30,19 +30,7 @@ class PiholePlugin(Plugin):
         "use_https": False,
         "password": "",
     }
-
-    def _safe_settings(self) -> dict[str, Any]:
-        # Secrets are write-only: callers get a boolean "is it set", never
-        # the raw value, since the generic settings PATCH endpoint echoes
-        # this plugin's own config verbatim — masking has to happen here
-        # (same pattern as JellyfinPlugin._safe_settings).
-        s = self.config["settings"]
-        return {
-            "host": s.get("host", ""),
-            "port": s.get("port", 80),
-            "use_https": bool(s.get("use_https", False)),
-            "has_password": bool(s.get("password")),
-        }
+    secret_setting_keys = frozenset({"password"})
 
     def _is_connected(self) -> bool:
         return pihole_client.is_configured(self.config["settings"])

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from app.plugins.ai_insights.plugin import AIInsightsPlugin
 from app.plugins.alert.plugin import AlertPlugin
+from app.plugins.artificial_analysis.plugin import ArtificialAnalysisPlugin
 from app.plugins.asus_router.plugin import AsusRouterPlugin
 from app.plugins.bf6.plugin import BF6Plugin
 from app.plugins.bookmarks.plugin import BookmarksPlugin
@@ -77,4 +78,5 @@ PLUGIN_CLASSES_BY_TYPE = {
     "speedtest": SpeedtestPlugin,
     "packages": PackagesPlugin,
     "nasa_apod": NASAApodPlugin,
+    "artificial_analysis": ArtificialAnalysisPlugin,
 }

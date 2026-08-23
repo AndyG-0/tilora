@@ -44,7 +44,7 @@ test.describe('dashboard tile editing', () => {
 	});
 
 	test('drag-to-rearrange swaps two tiles and persists', async ({ page }) => {
-		await page.getByLabel('Rearrange widgets').click();
+		await page.getByLabel('Rearrange tiles').click();
 		const clock = page.locator('[data-widget-id="clock"]');
 		const date = page.locator('[data-widget-id="date"]');
 		const clockBefore = await clock.boundingBox();
@@ -58,14 +58,14 @@ test.describe('dashboard tile editing', () => {
 
 		await page.reload();
 		await expect(clock).toBeVisible();
-		await page.getByLabel('Rearrange widgets').click();
+		await page.getByLabel('Rearrange tiles').click();
 		const clockAfterReload = await clock.boundingBox();
 		expect(clockAfterReload?.x).toBe(dateBefore.x);
 		expect(clockAfterReload?.y).toBe(dateBefore.y);
 	});
 
 	test('resizing a tile grows it and persists', async ({ page }) => {
-		await page.getByLabel('Rearrange widgets').click();
+		await page.getByLabel('Rearrange tiles').click();
 		const message = page.locator('[data-widget-id="message"]');
 		const before = await message.boundingBox();
 		if (!before) throw new Error('message tile not laid out');
@@ -82,8 +82,31 @@ test.describe('dashboard tile editing', () => {
 		expect(afterReload?.height).toBeCloseTo(grownHeight, 0);
 	});
 
+	test('resizing a tile into an occupied region pushes the sibling down and persists', async ({ page }) => {
+		await page.getByLabel('Rearrange tiles').click();
+		// clock (col1,row1) sits directly above message (col1-2,row2) in the
+		// fixture — growing clock's rowSpan by one row lands it on message.
+		const clock = page.locator('[data-widget-id="clock"]');
+		const message = page.locator('[data-widget-id="message"]');
+		const messageBefore = await message.boundingBox();
+		if (!messageBefore) throw new Error('message tile not laid out');
+
+		const handle = clock.locator('.resize-handle');
+		await dragGesture(page, handle, 0, 150);
+
+		await expect.poll(async () => (await message.boundingBox())?.y).toBeGreaterThan(messageBefore.y);
+		const clockAfterDrag = await clock.boundingBox();
+		const messageAfterDrag = await message.boundingBox();
+		expect(messageAfterDrag!.y).toBeGreaterThanOrEqual(clockAfterDrag!.y + clockAfterDrag!.height);
+
+		await page.reload();
+		await expect(clock).toBeVisible();
+		const messageAfterReload = await message.boundingBox();
+		expect(messageAfterReload?.y).toBeCloseTo(messageAfterDrag!.y, 0);
+	});
+
 	test('adding a widget opens picker and places new tile on dashboard', async ({ page }) => {
-		await page.getByLabel('Rearrange widgets').click();
+		await page.getByLabel('Rearrange tiles').click();
 		const countBefore = await page.locator('[data-widget-id]').count();
 
 		await page.getByRole('button', { name: '+ Add widget' }).click();
@@ -106,7 +129,7 @@ test.describe('dashboard tile editing', () => {
 	});
 
 	test('deleting a tile removes it and it stays removed after reload', async ({ page }) => {
-		await page.getByLabel('Rearrange widgets').click();
+		await page.getByLabel('Rearrange tiles').click();
 		const idsBefore = await page
 			.locator('[data-widget-id]')
 			.evaluateAll((els) => els.map((el) => el.getAttribute('data-widget-id')));

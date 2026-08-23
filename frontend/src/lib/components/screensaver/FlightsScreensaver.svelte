@@ -10,11 +10,13 @@
 	}
 
 	interface FlightItem {
+		hex?: string | null;
 		callsign: string;
 		airline_code: string | null;
 		airline_name: string | null;
 		aircraft_type: string | null;
 		aircraft_kind: string | null;
+		registration?: string | null;
 		altitude_ft: number | null;
 		speed_kts: number | null;
 		distance_nm: number | null;
@@ -53,7 +55,7 @@
 	// font and `white-space: pre` below -- matches a real split-flap board's
 	// column layout without a full table.
 	function formatRow(flight: FlightItem): string {
-		const callsign = flight.callsign.padEnd(9);
+		const callsign = (flight.callsign || flight.registration || flight.hex || '').padEnd(9);
 		const kind = kindTag(flight.aircraft_kind).padEnd(5);
 		const type = (flight.aircraft_type ?? '---').padEnd(7);
 		const route = routeTag(flight).padEnd(10);
@@ -79,7 +81,7 @@
 		</div>
 	{:else}
 		<div class="rows">
-			{#each data.flights as flight (flight.callsign)}
+			{#each data.flights as flight (flight.hex ?? flight.callsign)}
 				{@const logo = airlineLogoSrc(flight.airline_code)}
 				<div class="row">
 					{#if logo}

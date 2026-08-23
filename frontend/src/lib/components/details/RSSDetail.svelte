@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { api } from '$lib/api';
 	import type { RSSDetail as RSSDetailData, RSSItem, RSSFeed } from '$lib/api';
+	import { isSafeUrl } from '$lib/url';
 	import { _ } from 'svelte-i18n';
 	import { get } from 'svelte/store';
 
@@ -114,18 +115,44 @@
 {#snippet mediaList(items: RSSItem[])}
 	<div class="list">
 		{#each items as item (item.link)}
-			<a class="item" href={item.link} target="_blank" rel="noreferrer">
+			<div class="item">
 				{#if item.image}
-					<img class="thumb" src={item.image} alt="" loading="lazy" decoding="async" />
+					<a
+						href={isSafeUrl(item.link) ? item.link : undefined}
+						target="_blank"
+						rel="noreferrer"
+						class="thumb-link"
+						tabindex="-1"
+						aria-hidden="true"
+					>
+						<img class="thumb" src={item.image} alt="" loading="lazy" decoding="async" />
+					</a>
 				{/if}
 				<div class="info">
-					<h2>{item.title}</h2>
-					<p class="meta">{item.source}{item.published ? ` · ${item.published}` : ''}</p>
+					<h2>
+						<a href={isSafeUrl(item.link) ? item.link : undefined} target="_blank" rel="noreferrer" class="title-link">
+							{item.title}
+						</a>
+					</h2>
+					<p class="meta">
+						<span>{item.source}{item.published ? ` · ${item.published}` : ''}</span>
+						{#if item.comments}
+							<span class="meta-separator">·</span>
+							<a
+								href={isSafeUrl(item.comments) ? item.comments : undefined}
+								target="_blank"
+								rel="noreferrer"
+								class="comments-link"
+							>
+								{$_('rss.detail.comments')}
+							</a>
+						{/if}
+					</p>
 					{#if item.summary}
 						<p class="summary">{item.summary}</p>
 					{/if}
 				</div>
-			</a>
+			</div>
 		{/each}
 	</div>
 {/snippet}
@@ -374,7 +401,7 @@
 	}
 
 	.group-heading {
-		margin: 1.5rem 0 0.75rem;
+		margin: 2.25rem 0 0.75rem;
 		font-size: 1.1rem;
 	}
 
@@ -396,19 +423,19 @@
 		border-radius: 1rem;
 		padding: 1rem;
 		color: inherit;
-		text-decoration: none;
 	}
 
-	.item:active {
-		background: var(--color-surface-hover);
+	.thumb-link {
+		display: block;
+		flex-shrink: 0;
 	}
 
 	.thumb {
-		flex-shrink: 0;
 		width: 5rem;
 		height: 5rem;
 		border-radius: 0.5rem;
 		object-fit: cover;
+		display: block;
 	}
 
 	.info {
@@ -418,12 +445,41 @@
 	.item h2 {
 		margin: 0 0 0.25rem;
 		font-size: 1.1rem;
+		line-height: 1.3;
+	}
+
+	.title-link {
+		color: inherit;
+		text-decoration: none;
+	}
+
+	.title-link:hover,
+	.title-link:focus-visible {
+		text-decoration: underline;
 	}
 
 	.meta {
 		color: var(--color-text-muted);
 		font-size: 0.85rem;
 		margin: 0 0 0.5rem;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+		align-items: baseline;
+	}
+
+	.meta-separator {
+		color: var(--color-text-muted);
+	}
+
+	.comments-link {
+		color: var(--color-accent);
+		text-decoration: underline;
+	}
+
+	.comments-link:hover,
+	.comments-link:focus-visible {
+		text-decoration: none;
 	}
 
 	.summary {

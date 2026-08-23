@@ -52,6 +52,122 @@ export function isRectFree(
 	return true;
 }
 
+// Called live during a resize gesture (every pointermove/auto-scroll tick)
+// and once more at pointer-up to compute the persisted result. `widgets`
+// must already be filtered to the resizing tile's tab (same convention as
+// isRectFree's/packWidgets' callers). `newLayout` is the resizing tile's
+// candidate layout from computeResizedLayout and is treated as fixed —
+// growth always starts from a fixed top-left anchor (the resize handle is
+// bottom-right only), so the resizing tile itself is never pushed. Every
+// other widget that column-overlaps and row-overlaps any currently-placed
+// rect (the resizing tile or an already-pushed sibling) is pushed straight
+// down to sit just below whichever collider is lowest — col/colSpan/rowSpan
+// are never touched on a pushed sibling, only row (no `columns` edge check
+// is needed here, unlike isRectFree: the resizing tile's own colSpan is
+// already clamped to the grid width by computeResizedLayout, and pushed
+// siblings never change column). This does not compact anything back up
+// (see packWidgets/"Auto Arrange" for that): a sibling that never collides
+// doesn't move, and a sibling pushed down here stays put even after a
+// later shrink.
+export function resolveResizePush(
+	widgets: WidgetSummaryMeta[],
+	resizingId: string,
+	newLayout: WidgetLayout,
+): { id: string; layout: WidgetLayout }[] {
+	if (!widgets.some((w) => w.id === resizingId)) return [];
+
+	const current = new Map<string, WidgetLayout>(widgets.map((w) => [w.id, w.layout]));
+	current.set(resizingId, newLayout);
+
+	// A widget only moves if it collides with the resizing tile or with a
+	// sibling that has itself already been pushed by this cascade — a
+	// pre-existing overlap between two untouched siblings the resize never
+	// reaches is left alone (that's packWidgets/"Auto Arrange" territory).
+	const moved = new Set<string>([resizingId]);
+
+	// Settle siblings top-to-bottom (by original row, then col) so each one
+	// is resolved against everything already placed/settled before it and
+	// never has to move again once processed.
+	const ordered = widgets
+		.filter((w) => w.id !== resizingId)
+		.sort((a, b) => a.layout.row - b.layout.row || a.layout.col - b.layout.col);
+
+	for (const widget of ordered) {
+		const rect = current.get(widget.id)!;
+		let row = rect.row;
+
+		// Drop the widget down past every already-moved rect it lands on,
+		// re-checking after each bump since clearing one collider can land
+		// it on another (e.g. the sibling that was just pushed below it).
+		let bumped = true;
+		while (bumped) {
+			bumped = false;
+			for (const otherId of moved) {
+				const other = current.get(otherId)!;
+				const colOverlap = rect.col < other.col + other.colSpan && other.col < rect.col + rect.colSpan;
+				const rowOverlap = row < other.row + other.rowSpan && other.row < row + rect.rowSpan;
+				if (colOverlap && rowOverlap) {
+					const below = other.row + other.rowSpan;
+					if (below > row) {
+						row = below;
+						bumped = true;
+					}
+				}
+			}
+		}
+
+		if (row !== rect.row) {
+			current.set(widget.id, { ...rect, row });
+			moved.add(widget.id);
+		}
+	}
+
+	const updates: { id: string; layout: WidgetLayout }[] = [];
+	for (const w of widgets) {
+		const final = current.get(w.id)!;
+		if (w.id === resizingId || final.row !== w.layout.row) {
+			updates.push({ id: w.id, layout: final });
+		}
+	}
+	return updates;
+}
+
+// Repositions every widget's existing colSpan/rowSpan into the first free
+// slot scanning row-major top-left to bottom-right, eliminating gaps and
+// overlaps without resizing anything. Widgets are visited in (row, then col)
+// order so the result reads in roughly the same order as before. Reuses
+// `isRectFree` against the widgets already placed so far as the running
+// occupancy check, mirroring the same collision logic drag/resize already use.
+export function packWidgets(widgets: WidgetSummaryMeta[], columns: number): { id: string; layout: WidgetLayout }[] {
+	const ordered = [...widgets].sort((a, b) => a.layout.row - b.layout.row || a.layout.col - b.layout.col);
+	const placed: WidgetSummaryMeta[] = [];
+	const updates: { id: string; layout: WidgetLayout }[] = [];
+
+	for (const widget of ordered) {
+		// Clamp defensively: a span wider than the grid would otherwise leave
+		// no valid starting column and spin the row scan forever.
+		const colSpan = Math.min(widget.layout.colSpan, columns);
+		const rowSpan = widget.layout.rowSpan;
+		const maxCol = columns - colSpan + 1;
+
+		let layout: WidgetLayout | null = null;
+		for (let row = 1; !layout; row++) {
+			for (let col = 1; col <= maxCol; col++) {
+				const candidate: WidgetLayout = { col, row, colSpan, rowSpan };
+				if (isRectFree(placed, widget.id, candidate, columns)) {
+					layout = candidate;
+					break;
+				}
+			}
+		}
+
+		placed.push({ ...widget, layout });
+		updates.push({ id: widget.id, layout });
+	}
+
+	return updates;
+}
+
 // At the narrow breakpoint, `.cell` is forced to `grid-row: auto` (see
 // +page.svelte's media query) — a tile's visual stacking position there is
 // its position in this array, not its `row`. This sorts a tab's widgets

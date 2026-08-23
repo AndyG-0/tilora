@@ -46,6 +46,15 @@ CREATE TABLE IF NOT EXISTS nasa_apod_fetches (
 );
 CREATE INDEX IF NOT EXISTS idx_nasa_apod_fetches_widget_id ON nasa_apod_fetches (widget_id, fetched_at DESC);
 
+CREATE TABLE IF NOT EXISTS artificial_analysis_fetches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    widget_id TEXT NOT NULL,
+    fetched_at TEXT NOT NULL,
+    result TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_artificial_analysis_fetches_widget_id
+    ON artificial_analysis_fetches (widget_id, fetched_at DESC);
+
 CREATE TABLE IF NOT EXISTS chores (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     widget_id TEXT NOT NULL,
@@ -1153,6 +1162,26 @@ def latest_nasa_apod_fetch(widget_id: str) -> dict[str, Any] | None:
     with _connect() as conn:
         row = conn.execute(
             "SELECT fetched_at, result FROM nasa_apod_fetches WHERE widget_id = ? ORDER BY fetched_at DESC LIMIT 1",
+            (widget_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {"fetched_at": row["fetched_at"], **json.loads(row["result"])}
+
+
+def record_artificial_analysis_fetch(widget_id: str, result: dict[str, Any]) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO artificial_analysis_fetches (widget_id, fetched_at, result) VALUES (?, ?, ?)",
+            (widget_id, datetime.now(UTC).isoformat(), json.dumps(result)),
+        )
+
+
+def latest_artificial_analysis_fetch(widget_id: str) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT fetched_at, result FROM artificial_analysis_fetches WHERE widget_id = ? "
+            "ORDER BY fetched_at DESC LIMIT 1",
             (widget_id,),
         ).fetchone()
     if row is None:

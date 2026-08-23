@@ -35,13 +35,14 @@ Microsoft's own docs rather than assumed:
 from __future__ import annotations
 
 import asyncio
+import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
 import httpx
 
-from app.config import settings
+from app.config import effective_settings, settings
 from app.storage import db
 
 _AUTH_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
@@ -54,26 +55,32 @@ def redirect_uri() -> str:
     return f"{settings.backend_public_url}/api/calendar/auth/microsoft/callback"
 
 
-def build_auth_url() -> str:
+def build_auth_url() -> tuple[str, str]:
+    """Returns (authorization_url, state) — the caller is responsible for
+    persisting `state` and verifying it on the callback (CSRF protection)."""
+    creds = effective_settings()
+    state = secrets.token_urlsafe(32)
     params = {
-        "client_id": settings.microsoft_calendar_client_id or "",
+        "client_id": creds["microsoft_calendar_client_id"] or "",
         "redirect_uri": redirect_uri(),
         "response_type": "code",
         "response_mode": "query",
         "scope": _SCOPE,
+        "state": state,
     }
-    return f"{_AUTH_URL}?{urlencode(params)}"
+    return f"{_AUTH_URL}?{urlencode(params)}", state
 
 
 async def exchange_code(code: str) -> None:
     """Exchange an auth code for tokens and persist the refresh token."""
+    creds = effective_settings()
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.post(
             _TOKEN_URL,
             data={
                 "code": code,
-                "client_id": settings.microsoft_calendar_client_id or "",
-                "client_secret": settings.microsoft_calendar_client_secret or "",
+                "client_id": creds["microsoft_calendar_client_id"] or "",
+                "client_secret": creds["microsoft_calendar_client_secret"] or "",
                 "redirect_uri": redirect_uri(),
                 "grant_type": "authorization_code",
                 "scope": _SCOPE,
@@ -92,13 +99,14 @@ async def exchange_code(code: str) -> None:
 
 
 async def _refresh_access_token(refresh_token: str) -> dict[str, Any]:
+    creds = effective_settings()
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.post(
             _TOKEN_URL,
             data={
                 "refresh_token": refresh_token,
-                "client_id": settings.microsoft_calendar_client_id or "",
-                "client_secret": settings.microsoft_calendar_client_secret or "",
+                "client_id": creds["microsoft_calendar_client_id"] or "",
+                "client_secret": creds["microsoft_calendar_client_secret"] or "",
                 "grant_type": "refresh_token",
                 "scope": _SCOPE,
             },

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 import yaml
@@ -16,10 +16,12 @@ from app.plugins.ai_insights.plugin import AIInsightsPlugin
 from app.plugins.base import Plugin, registry
 from app.plugins.container.plugin import ContainerPlugin
 from app.plugins.hdhomerun.plugin import HDHomeRunPlugin
+from app.plugins.jellyfin.plugin import JellyfinPlugin
 from app.plugins.photos.plugin import PhotosPlugin
 from app.plugins.pihole.plugin import PiholePlugin
 from app.plugins.speedtest.plugin import SpeedtestPlugin
 from app.plugins.sports.plugin import SportsPlugin
+from app.plugins.steam.plugin import SteamPlugin
 from app.plugins.weather.plugin import WeatherPlugin
 from app.storage import db
 from app.storage.cache import cache, user_locale_cache_key
@@ -32,6 +34,10 @@ class StubPlugin(Plugin):
     id = "stub"
     name = "Stub"
     refresh_interval_seconds = 300
+    # Declared like every real plugin's settings surface, so _safe_settings()
+    # (used by the settings PATCH response) echoes these keys back like it
+    # would for a real widget instead of silently dropping them.
+    default_settings: ClassVar[dict[str, Any]] = {"a": 1, "b": 2, "c": 4}
 
     def __init__(self, config):
         super().__init__(config)
@@ -54,6 +60,7 @@ class StubPersonalPlugin(StubPlugin):
     id = "personal-stub"
     name = "Stub Personal"
     settings_scope = "personal"
+    default_settings: ClassVar[dict[str, Any]] = {"value": "default"}
 
     async def get_summary(self) -> dict[str, Any]:
         self.summary_calls += 1
@@ -71,6 +78,7 @@ class StubDeviceOverridablePlugin(StubPlugin):
     id = "device-stub"
     name = "Stub Device Overridable"
     device_overridable_settings = frozenset({"value"})
+    default_settings: ClassVar[dict[str, Any]] = {"value": "default"}
 
     async def get_summary(self) -> dict[str, Any]:
         self.summary_calls += 1
@@ -103,6 +111,7 @@ class StubValidatingPlugin(StubPlugin):
 
     id = "validating-stub"
     name = "Stub Validating"
+    default_settings: ClassVar[dict[str, Any]] = {"value": "good"}
 
     def validate_settings(self, payload: dict[str, Any]) -> None:
         if payload.get("value") == "bad":
@@ -119,6 +128,7 @@ class StubPersonalDeviceOverridablePlugin(StubPlugin):
     name = "Stub Personal Device Overridable"
     settings_scope = "personal"
     device_overridable_settings = frozenset({"value"})
+    default_settings: ClassVar[dict[str, Any]] = {"value": "default"}
 
     async def get_summary(self) -> dict[str, Any]:
         self.summary_calls += 1
@@ -1357,6 +1367,45 @@ def test_update_settings_rejects_connection_keys_for_network_integration_plugins
     assert "network-settings" in response.json()["detail"]
     # The rejected key is never applied, even though it's part of the payload.
     assert registry.get("pihole").config["settings"]["host"] == ""
+
+
+def test_update_settings_masks_secrets_in_response_for_network_scope_widgets(client, tmp_db):
+    # Regression test: the response used to echo the plugin's full live
+    # settings verbatim, including secrets merged in from the network
+    # integration row (api_key/password) even though this payload never
+    # touches them — a network inspector or client-side logger capturing
+    # this PATCH response would see the plaintext secret where it wouldn't
+    # from the equivalent GET (which already goes through _safe_settings()).
+    settings = {
+        **JellyfinPlugin.network_default_settings,
+        **JellyfinPlugin.default_settings,
+        "api_key": "sk-live-secret",
+    }
+    registry.register(JellyfinPlugin({"id": "jellyfin", "settings": settings}))
+
+    response = client.patch("/api/widgets/jellyfin/settings", json={"content_mode": "played"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["content_mode"] == "played"
+    assert body["has_api_key"] is True
+    assert "api_key" not in body
+    assert "password" not in body
+
+
+def test_update_settings_masks_secrets_in_response_for_personal_scope_widgets(member_client, tmp_db):
+    # Same regression as above, for the personal-scope branch (a member's
+    # own Steam API key echoed back on an unrelated settings change).
+    plugin = SteamPlugin({"id": "steam", "settings": {"steamid": "123", "api_key": "sk-secret"}})
+    registry.register(plugin)
+
+    response = member_client.patch("/api/widgets/steam/settings", json={"steamid": "456"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["steamid"] == "456"
+    assert body["has_api_key"] is True
+    assert "api_key" not in body
 
 
 def test_update_settings_container_re_resolves_on_reference_change(client, tmp_db):

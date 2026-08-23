@@ -30,15 +30,7 @@ class AsusRouterPlugin(Plugin):
         "username": "",
         "password": "",
     }
-
-    def _safe_settings(self) -> dict[str, Any]:
-        s = self.config["settings"]
-        return {
-            "host": s.get("host", ""),
-            "ssh_port": s.get("ssh_port", 22),
-            "username": s.get("username", ""),
-            "has_password": bool(s.get("password")),
-        }
+    secret_setting_keys: ClassVar[frozenset[str]] = frozenset({"password"})
 
     def _is_connected(self) -> bool:
         return asus_router_client.is_configured(self.config["settings"])
@@ -144,5 +136,6 @@ class AsusRouterPlugin(Plugin):
                     "required": ["mac"],
                 },
                 handler=send_wake_on_lan,
+                requires_admin=True,
             ),
         ]

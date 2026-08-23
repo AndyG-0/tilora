@@ -22,40 +22,44 @@
 </script>
 
 <TileCard {widgetId}>
-	{#if summary?.books.length}
-		<div class="frame">
-			<div class="title">Goodreads</div>
-			<div class="scroll-wrap">
-				<ul class="more-books" use:scrollFade={summary}>
-					{#each summary.books as book (book.link)}
-						<li>
-							{#if book.book_image_url}
-								<img class="thumb" src={book.book_image_url} alt="" loading="lazy" decoding="async" />
-							{/if}
-							<div class="book-text">
-								<div class="book-title">{book.title}</div>
-								{#if book.author_name}
-									<div class="author">{book.author_name}</div>
+	<div class="widget">
+		<div class="title">Goodreads</div>
+		{#if !summary}
+			<div class="hint">{$_('common.loading')}</div>
+		{:else if !summary.configured}
+			<div class="hint">{$_('common.not_configured')}</div>
+		{:else if summary.books.length > 0}
+			<div class="frame">
+				<div class="scroll-wrap">
+					<ul class="more-books" use:scrollFade={summary}>
+						{#each summary.books as book (book.link)}
+							<li>
+								{#if book.book_image_url}
+									<img class="thumb" src={book.book_image_url} alt="" loading="lazy" decoding="async" />
 								{/if}
-							</div>
-						</li>
-					{/each}
-				</ul>
+								<div class="book-text">
+									<div class="book-title">{book.title}</div>
+									{#if book.author_name}
+										<div class="author">{book.author_name}</div>
+									{/if}
+								</div>
+							</li>
+						{/each}
+					</ul>
+				</div>
 			</div>
-		</div>
-	{:else}
-		<div class="empty">{$_('goodreads.tile.empty')}</div>
-	{/if}
+		{:else}
+			<div class="empty">{$_('goodreads.tile.empty')}</div>
+		{/if}
+	</div>
 </TileCard>
 
 <style>
-	.frame {
-		position: relative;
-		width: 100%;
-		height: 100%;
+	.widget {
 		display: flex;
 		flex-direction: column;
-		overflow: hidden;
+		height: 100%;
+		min-height: 0;
 	}
 
 	.title {
@@ -63,6 +67,21 @@
 		font-weight: 600;
 		color: var(--color-text-muted);
 		margin: 0 0 0.35rem;
+		flex-shrink: 0;
+	}
+
+	.hint {
+		color: var(--color-text-muted);
+	}
+
+	.frame {
+		position: relative;
+		width: 100%;
+		flex: 1;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
 	}
 
 	.book-title {

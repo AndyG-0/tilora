@@ -14,6 +14,7 @@
 	}
 
 	interface FlightItem {
+		hex?: string | null;
 		callsign: string;
 		airline_code: string | null;
 		airline_name: string | null;
@@ -32,6 +33,7 @@
 		radius_nm: number;
 		count: number;
 		flights: FlightItem[];
+		truncated: boolean;
 	}
 
 	const LED_COLOR = '#ff8a00';
@@ -67,7 +69,7 @@
 				</span>
 			</div>
 			<ul class="rows">
-				{#each summary.flights.slice(0, 3) as flight (flight.callsign)}
+				{#each summary.flights as flight (flight.hex ?? flight.callsign)}
 					{@const airlineTitle = formatAirlineTooltip(flight)}
 					{@const aircraftTitle = formatAircraftTooltip(
 						flight,
@@ -83,7 +85,11 @@
 						</span>
 						<div class="lines">
 							<div class="line callsign" title={airlineTitle || undefined}>
-								<LedText text={flight.callsign} color={LED_COLOR} weight={700} />
+								<LedText
+									text={flight.callsign || flight.registration || flight.hex || '—'}
+									color={LED_COLOR}
+									weight={700}
+								/>
 								{#if flight.altitude_ft !== null}
 									<span class="altitude-text">
 										<LedText text={`${Math.round(flight.altitude_ft).toLocaleString()} FT`} color={LED_COLOR} />
@@ -102,6 +108,11 @@
 					</li>
 				{/each}
 			</ul>
+			{#if summary.truncated}
+				<div class="warning">
+					{$_('flights.tile.truncated', { values: { shown: summary.flights.length, total: summary.count } })}
+				</div>
+			{/if}
 		{:else}
 			<div class="count">{$_('flights.tile.loading')}</div>
 		{/if}
@@ -117,6 +128,8 @@
 		background: #0a0a0a;
 		box-sizing: border-box;
 		overflow: hidden;
+		display: flex;
+		flex-direction: column;
 	}
 
 	.header {
@@ -125,6 +138,7 @@
 		justify-content: space-between;
 		gap: 0.5rem;
 		font-size: clamp(0.75rem, 8cqh, 0.9rem);
+		flex-shrink: 0;
 	}
 
 	.header :global(.stack) {
@@ -145,12 +159,32 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
+	}
+
+	.rows::-webkit-scrollbar {
+		width: 4px;
+	}
+
+	.rows::-webkit-scrollbar-thumb {
+		background: var(--color-border);
+		border-radius: 2px;
 	}
 
 	.row {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
+		flex-shrink: 0;
+	}
+
+	.warning {
+		flex-shrink: 0;
+		margin-top: 0.35rem;
+		font-size: 0.7em;
+		color: var(--color-text-muted);
 	}
 
 	.icon {

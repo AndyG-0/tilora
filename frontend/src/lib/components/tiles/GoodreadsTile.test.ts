@@ -7,8 +7,16 @@ vi.mock('$lib/api', () => ({ api: { widgetSummary } }));
 import GoodreadsTile from './GoodreadsTile.svelte';
 
 describe('GoodreadsTile', () => {
-	it('shows an empty state when there are no books', async () => {
-		widgetSummary.mockResolvedValue({ shelf: 'currently-reading', books: [] });
+	it('shows a not-configured state when configured is false', async () => {
+		widgetSummary.mockResolvedValue({ configured: false, shelf: 'currently-reading', books: [] });
+
+		render(GoodreadsTile, { props: { widgetId: 'goodreads', refreshIntervalSeconds: 60 } });
+
+		expect(await screen.findByText('Not configured')).toBeInTheDocument();
+	});
+
+	it('shows an empty state when configured but there are no books', async () => {
+		widgetSummary.mockResolvedValue({ configured: true, shelf: 'currently-reading', books: [] });
 
 		render(GoodreadsTile, { props: { widgetId: 'goodreads', refreshIntervalSeconds: 60 } });
 
@@ -17,6 +25,7 @@ describe('GoodreadsTile', () => {
 
 	it('shows the Goodreads header and the book cover, title, and author', async () => {
 		widgetSummary.mockResolvedValue({
+			configured: true,
 			shelf: 'currently-reading',
 			books: [
 				{
@@ -38,6 +47,7 @@ describe('GoodreadsTile', () => {
 
 	it('lists all books at the same size when there is more than one', async () => {
 		widgetSummary.mockResolvedValue({
+			configured: true,
 			shelf: 'currently-reading',
 			books: [
 				{ title: 'Book One', link: 'https://x/1', book_image_url: '', author_name: 'A' },
@@ -72,6 +82,7 @@ describe('GoodreadsTile', () => {
 
 	it('renders a single book in the list', async () => {
 		widgetSummary.mockResolvedValue({
+			configured: true,
 			shelf: 'currently-reading',
 			books: [{ title: 'Solo Book', link: 'https://x/1', book_image_url: '', author_name: 'A' }],
 		});

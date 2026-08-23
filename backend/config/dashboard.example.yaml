@@ -184,6 +184,21 @@ widgets:
       # categories: [popular_movies, popular_tv, trending_movies, trending_tv, on_streaming]
       # providers: [8, 337]  # e.g. Netflix, Disney+ — see GET /api/movies/providers for IDs
 
+  - id: artificial_analysis
+    type: artificial_analysis
+    # Disabled by default — requires ARTIFICIAL_ANALYSIS_API_KEY in
+    # backend/.env or Settings (artificialanalysis.ai/data-api, free tier).
+    # `category` picks which leaderboard the tile shows by default: "coding"
+    # (default), "intelligence", "cost" (cheapest, blended input/output
+    # price), or "speed" (fastest output tokens/sec) — all four are always
+    # browsable from this widget's detail view regardless of this setting.
+    # Data refreshes at most once every 24 hours to respect the free tier's
+    # 100-requests/day limit — this is not configurable.
+    enabled: false
+    layout: { col: 1, row: 16, colSpan: 2, rowSpan: 1 }
+    settings:
+      category: coding
+
   - id: discord
     type: discord
     # Disabled by default — requires DISCORD_BOT_TOKEN in backend/.env (or
@@ -536,7 +551,7 @@ widgets:
     enabled: false
     layout: { col: 1, row: 15, colSpan: 1, rowSpan: 2 }
     settings:
-      user_id: "12345678"
+      user_id: ""
       shelf: "currently-reading"
 
   - id: bookmarks

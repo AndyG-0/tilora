@@ -1,0 +1,132 @@
+site_name: Tilora Documentation
+site_description: A customizable smart-display dashboard and home server for Raspberry Pi, Debian, Ubuntu, and Docker.
+site_author: AndyG-0
+site_url: https://andyg-0.github.io/tilora/
+repo_url: https://github.com/AndyG-0/tilora
+repo_name: AndyG-0/tilora
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  language: en
+  palette:
+    # Palette toggle for automatic / light / dark mode
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/link
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/weather-night
+        name: Switch to system preference
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.instant
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+
+markdown_extensions:
+  - md_in_html
+  - admonition
+  - attr_list
+  - def_list
+  - tables
+  - footnotes
+  - pymdownx.details
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Docker: getting-started/docker.md
+      - Quick Start: getting-started/quick-start.md
+  - User Guide:
+      - Dashboard Overview: user-guide/overview.md
+      - Profiles & Security: user-guide/profiles.md
+      - Voice Assistant: user-guide/voice-assistant.md
+      - Screensaver: user-guide/screensaver.md
+      - Personal Settings: user-guide/personal-settings.md
+      - Widgets:
+          - Overview: user-guide/widgets/overview.md
+          - AI Daily Briefing: user-guide/widgets/ai-insights.md
+          - Alert: user-guide/widgets/alert.md
+          - Asus Router: user-guide/widgets/asus-router.md
+          - Battlefield Stats (BF6): user-guide/widgets/bf6.md
+          - Bookmarks: user-guide/widgets/bookmarks.md
+          - Calendar (Google / CalDAV / MS 365): user-guide/widgets/calendar.md
+          - Chores (To-Do): user-guide/widgets/chores.md
+          - Clock: user-guide/widgets/clock.md
+          - Container (Docker & Podman): user-guide/widgets/container.md
+          - Date: user-guide/widgets/date.md
+          - Discord: user-guide/widgets/discord.md
+          - Flights (ADS-B / OpenSky): user-guide/widgets/flights.md
+          - Game 2048: user-guide/widgets/game2048.md
+          - Goodreads: user-guide/widgets/goodreads.md
+          - HDHomeRun Live TV: user-guide/widgets/hdhomerun.md
+          - Jellyfin: user-guide/widgets/jellyfin.md
+          - Mapping & Places: user-guide/widgets/mapping.md
+          - Message Board: user-guide/widgets/message.md
+          - Movies & Shows: user-guide/widgets/movies.md
+          - NASA APOD: user-guide/widgets/nasa-apod.md
+          - Package Tracking: user-guide/widgets/packages.md
+          - Photos Slideshow: user-guide/widgets/photos.md
+          - Pi-hole: user-guide/widgets/pihole.md
+          - qBittorrent: user-guide/widgets/qbittorrent.md
+          - RSS News: user-guide/widgets/rss.md
+          - Shopping List: user-guide/widgets/shopping.md
+          - Speedtest: user-guide/widgets/speedtest.md
+          - Sports Scores: user-guide/widgets/sports.md
+          - Steam: user-guide/widgets/steam.md
+          - Synology NAS: user-guide/widgets/synology.md
+          - System Monitor: user-guide/widgets/system-monitor.md
+          - Weather: user-guide/widgets/weather.md
+          - Wordle: user-guide/widgets/wordle.md
+  - Admin Guide:
+      - Overview & Permissions: admin-guide/overview.md
+      - Household Management: admin-guide/household.md
+      - AI Providers & Models: admin-guide/ai-providers.md
+      - Voice Setup (STT & TTS): admin-guide/voice-setup.md
+      - Calendar & OAuth Integrations: admin-guide/calendar-oauth.md
+      - Network Integrations: admin-guide/network-integrations.md
+      - Container Host Management: admin-guide/container-hosts.md
+      - Hardware Acceleration: admin-guide/hardware-acceleration.md
+      - Updates & Maintenance: admin-guide/backup-update.md
+      - Security & Network Exposure: admin-guide/security.md
+  - Deployment:
+      - Raspberry Pi Kiosk: deployment/raspberry-pi-kiosk.md
+      - Linux Service (systemd): deployment/linux-service.md
+      - Docker Compose: deployment/docker.md
+      - Troubleshooting: deployment/troubleshooting.md
+  - Architecture:
+      - Plugin Marketplace Design: marketplace-design.md

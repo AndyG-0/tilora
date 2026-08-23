@@ -27,6 +27,10 @@ const initialData = {
 describe('SystemMonitorDetail', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		// pollWidget refreshes once immediately on mount, in addition to the
+		// interval — give every test a resolved default so that first refresh
+		// doesn't clobber `stats` with undefined before a test overrides it.
+		widgetDetail.mockResolvedValue(initialData);
 	});
 
 	it('renders the seeded stats', () => {

@@ -43,26 +43,15 @@ class JellyfinPlugin(Plugin):
         "content_mode": "added",
     }
     default_layout = {"colSpan": 2, "rowSpan": 1}
+    secret_setting_keys = frozenset({"api_key", "password"})
 
     def _safe_settings(self) -> dict[str, Any]:
-        # Secrets are write-only: callers get a boolean "is it set", never
-        # the raw value, since the generic settings PATCH endpoint echoes
-        # this plugin's own config verbatim — masking has to happen here.
-        s = self.config["settings"]
         return {
-            "host": s.get("host", ""),
-            "port": s.get("port", 8096),
-            "use_https": bool(s.get("use_https", False)),
-            "auth_mode": s.get("auth_mode", "api_key"),
-            "username": s.get("username", ""),
-            "library_ids": s.get("library_ids") or [],
-            "content_mode": s.get("content_mode", "added"),
-            "has_api_key": bool(s.get("api_key")),
-            "has_password": bool(s.get("password")),
+            **super()._safe_settings(),
             # Continue Watching needs a real user context (see
             # jellyfin_client.list_resume_items) — the frontend uses this to
             # disable "played"/"both" rather than silently showing nothing.
-            "resume_available": s.get("auth_mode") == "password",
+            "resume_available": self.config["settings"].get("auth_mode") == "password",
         }
 
     def _is_connected(self) -> bool:

@@ -35,7 +35,7 @@
 <TileCard {widgetId}>
 	<div class="widget">
 		<div class="header">
-			<span class="title">{summary?.title ?? 'To-Do'}</span>
+			<span class="title">{summary?.title ?? $_('chores.default_title')}</span>
 			{#if summary && summary.open_count > 0}
 				<span class="badge">{summary.open_count}</span>
 			{/if}

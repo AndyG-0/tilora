@@ -1,10 +1,40 @@
 # Linux installation and Raspberry Pi kiosk setup
 
+## Management CLI
+
+`deploy/install.sh` and `deploy/update.sh` both install a `tilora` command
+(`uv tool install --editable ~/tilora/cli`) for managing a native install
+from the box itself:
+
+```
+tilora status                  # service status, health check, installed version
+tilora start / stop / restart  # sudo systemctl under the hood; restart waits for health
+tilora update [--ref REF]      # fetch, rebuild, restart — the preferred way to update
+tilora logs [-f] [-n N] [--backend|--frontend]
+tilora config get/set KEY [VALUE] [--file backend-env|frontend-env|dashboard]
+tilora doctor                  # PASS/WARN/FAIL checks: services, health, disk, tools, hwaccel, git sync, kiosk policy
+tilora kiosk enable/disable/status
+```
+
+Every command accepts `--install-dir` (or `$TILORA_INSTALL_DIR`) if Tilora
+isn't at the default `~/tilora`. Run `tilora --help` or `tilora <command>
+--help` for full option lists.
+
+The CLI ships from the same checkout and version as the rest of Tilora — it's
+not published separately, so `tilora --version` always matches `VERSION`
+once you've re-run `install.sh`/`update.sh` (or `tilora update` itself).
+
+If the CLI isn't installed yet (e.g. an install predating it), fall back to
+the scripts below directly.
+
 ## Updating
 
 ### Native (systemd) installation
 
-Run the standalone update script to pull the latest code, rebuild, and
+Preferred: `tilora update` (see above) — same effect as the script below,
+usable without a full local checkout since it's already on `PATH`.
+
+Or run the standalone update script to pull the latest code, rebuild, and
 restart the services — no interactive prompts, preserves your configuration:
 
 ```bash
@@ -235,7 +265,9 @@ The backend unit is sandboxed
 (`ProtectSystem=strict`) with `ReadWritePaths=` pointing at its own
 directory for `storage.db` — if you relocate the checkout or set `DB_PATH`
 to somewhere else, update `ReadWritePaths=` to match, or `storage.db`
-writes will fail.
+writes will fail. Only run one instance of this unit against a given
+`storage.db` — see the main README's "Network exposure" section for why
+(single SQLite writer, not a multi-process design).
 
 ## Optional Raspberry Pi kiosk
 

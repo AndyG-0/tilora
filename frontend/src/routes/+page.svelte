@@ -9,7 +9,14 @@
 	import { api, type WidgetLayout, type WidgetSummaryMeta } from '$lib/api';
 	import { groupWidgetsByTab, resolveSwipe } from '$lib/tabNavigation';
 	import { computeResizedLayout, MAX_ROW_SPAN } from '$lib/resize';
-	import { computeEmptyCells, isRectFree, reorderNarrow, sortForNarrow } from '$lib/layout';
+	import {
+		computeEmptyCells,
+		isRectFree,
+		packWidgets,
+		reorderNarrow,
+		resolveResizePush,
+		sortForNarrow,
+	} from '$lib/layout';
 	import { breakpoint } from '$lib/stores/breakpoint';
 	import {
 		ensureMicrophonePermission,
@@ -25,6 +32,7 @@
 	import { voiceSelection } from '$lib/stores/voice';
 	import { agentName, alwaysOnMic, sttAvailable } from '$lib/stores/assistant';
 	import { TILE_COMPONENTS } from '$lib/widgetComponents';
+	import { tooltip } from '$lib/tooltip';
 	import { _ } from 'svelte-i18n';
 	import { get } from 'svelte/store';
 
@@ -152,6 +160,33 @@
 		editMode = !editMode;
 	}
 
+	// Auto Arrange: repacks the current tab's widgets (position only, spans
+	// unchanged) to remove gaps/overlaps. Gated behind a confirmation since it
+	// can undo intentional manual placement.
+	let arrangeConfirmOpen = $state(false);
+	// Same gesture-start capture rationale as dragBreakpoint/resizeBreakpoint.
+	let arrangeBreakpoint = get(breakpoint);
+
+	function openArrangeConfirm() {
+		arrangeBreakpoint = get(breakpoint);
+		arrangeConfirmOpen = true;
+	}
+
+	function closeArrangeConfirm() {
+		arrangeConfirmOpen = false;
+	}
+
+	async function confirmAutoArrange() {
+		arrangeConfirmOpen = false;
+		const tabId = grouped[clampedIndex]?.id;
+		if (!tabId) return;
+		const tabWidgets = $widgets.filter((w) => w.tab === tabId);
+		const updates = packWidgets(tabWidgets, GRID_COLUMNS);
+		if (updates.length === 0) return;
+		await api.updateWidgetsLayout(updates, arrangeBreakpoint);
+		applyLayoutUpdates(updates);
+	}
+
 	function onCellPointerDown(event: PointerEvent, widgetId: string) {
 		if (!editMode) return;
 		event.preventDefault();
@@ -252,7 +287,11 @@
 	let resizeStartLayout: WidgetLayout | null = null;
 	let resizeCellSize = { width: 100, height: 100 };
 	let resizeStart = { x: 0, y: 0 };
-	let resizePreviewLayout = $state<WidgetLayout | null>(null);
+	// Every widget affected by the live resize preview — the resizing tile
+	// itself plus any siblings resolveResizePush is currently pushing out of
+	// the way. Keyed by widget id so the template can look up any widget's
+	// possibly-overridden layout, not just the one being resized.
+	let resizePreviewLayouts = $state<Map<string, WidgetLayout>>(new Map());
 	let resizeLastPointer = { x: 0, y: 0 };
 	// Same gesture-start capture as dragBreakpoint above.
 	let resizeBreakpoint = get(breakpoint);
@@ -284,7 +323,10 @@
 		};
 		resizeWidgetId = widget.id;
 		resizeStartLayout = widget.layout;
-		resizePreviewLayout = widget.layout;
+		// Reset (not just overwrite one entry) so a stale sibling push from a
+		// previous gesture on this tab can't bleed into the new gesture's
+		// first rendered frame before the first pointermove recomputes it.
+		resizePreviewLayouts = new Map([[widget.id, widget.layout]]);
 		resizeBreakpoint = get(breakpoint);
 		resizeStart = { x: event.clientX, y: event.clientY };
 		resizeLastPointer = { x: event.clientX, y: event.clientY };
@@ -294,7 +336,7 @@
 
 	function updateResizePreview() {
 		if (!resizeWidgetId || !resizeStartLayout) return;
-		resizePreviewLayout = computeResizedLayout(
+		const resized = computeResizedLayout(
 			resizeStartLayout,
 			resizeLastPointer.x - resizeStart.x,
 			resizeLastPointer.y - resizeStart.y + resizeScrollOffset,
@@ -302,6 +344,21 @@
 			resizeCellSize.height,
 			GRID_COLUMNS,
 		);
+
+		if (resizeBreakpoint !== 'wide') {
+			// Narrow's forced grid-row:auto (see the .cell media query below)
+			// makes 2D sibling collision meaningless there — only the
+			// resizing tile's own span preview applies, mirroring
+			// onCellPointerMove's narrow gate above.
+			resizePreviewLayouts = new Map([[resizeWidgetId, resized]]);
+			return;
+		}
+
+		const resizingWidget = $widgets.find((w) => w.id === resizeWidgetId);
+		if (!resizingWidget) return;
+		const siblings = $widgets.filter((w) => w.tab === resizingWidget.tab);
+		const pushed = resolveResizePush(siblings, resizeWidgetId, resized);
+		resizePreviewLayouts = new Map(pushed.map((u) => [u.id, u.layout]));
 	}
 
 	function runAutoScroll() {
@@ -344,14 +401,12 @@
 
 	async function onResizePointerUp() {
 		stopAutoScroll();
-		const widgetId = resizeWidgetId;
-		const layout = resizePreviewLayout;
+		const updates = [...resizePreviewLayouts.entries()].map(([id, layout]) => ({ id, layout }));
 		resizeWidgetId = null;
 		resizeStartLayout = null;
-		resizePreviewLayout = null;
-		if (!widgetId || !layout) return;
+		resizePreviewLayouts = new Map();
+		if (updates.length === 0) return;
 
-		const updates = [{ id: widgetId, layout }];
 		await api.updateWidgetsLayout(updates, resizeBreakpoint);
 		applyLayoutUpdates(updates);
 	}
@@ -517,10 +572,11 @@
 		}
 	});
 
-	// Add/remove widgets: edit mode gains a "✕" per cell and a "+ Add widget"
-	// tile that opens a small inline type picker. No naming/id prompt — the
-	// backend generates the id.
-	let addingWidget = $state(false);
+	// Add/remove widgets: edit mode gains a "✕" per cell and a "+" affordance
+	// on every empty grid cell (plus a trailing tile at the narrow breakpoint,
+	// where cells don't have 2D coordinates) that opens a small inline type
+	// picker. No naming/id prompt — the backend generates the id.
+	let addAtCell = $state<{ tabId: string; cell: { col: number; row: number } | null } | null>(null);
 	let widgetTypeOptions = $state<
 		{ type: string; name: string; default_layout: { colSpan: number; rowSpan: number } }[]
 	>([]);
@@ -531,24 +587,40 @@
 		removeWidgetLocal(widgetId);
 	}
 
-	async function openAddWidget() {
-		addingWidget = true;
+	async function openAddWidgetAt(tabId: string, cell: { col: number; row: number } | null) {
+		addAtCell = { tabId, cell };
 		widgetTypeOptions = await api.widgetTypes();
 	}
 
 	function closeAddWidget() {
-		addingWidget = false;
+		addAtCell = null;
 	}
 
-	async function selectWidgetType(
-		option: { type: string; default_layout: { colSpan: number; rowSpan: number } },
-		tabId: string,
-	) {
-		const tabWidgets = $widgets.filter((w) => w.tab === tabId);
+	function bottomLayout(
+		tabWidgets: WidgetSummaryMeta[],
+		defaultLayout: { colSpan: number; rowSpan: number },
+	): WidgetLayout {
 		const maxRow = Math.max(0, ...tabWidgets.map((w) => w.layout.row + w.layout.rowSpan - 1));
-		const layout: WidgetLayout = { col: 1, row: maxRow + 1, ...option.default_layout };
-		addingWidget = false;
-		const newWidget = await api.addWidget(option.type, layout, tabId);
+		return { col: 1, row: maxRow + 1, ...defaultLayout };
+	}
+
+	async function selectWidgetType(option: { type: string; default_layout: { colSpan: number; rowSpan: number } }) {
+		const target = addAtCell;
+		addAtCell = null;
+		if (!target) return;
+
+		const tabWidgets = $widgets.filter((w) => w.tab === target.tabId);
+		let layout: WidgetLayout;
+		if (target.cell) {
+			const candidate: WidgetLayout = { ...target.cell, ...option.default_layout };
+			layout = isRectFree(tabWidgets, '', candidate, GRID_COLUMNS)
+				? candidate
+				: bottomLayout(tabWidgets, option.default_layout);
+		} else {
+			layout = bottomLayout(tabWidgets, option.default_layout);
+		}
+
+		const newWidget = await api.addWidget(option.type, layout, target.tabId);
 		addWidgetLocal(newWidget);
 	}
 </script>
@@ -582,6 +654,9 @@
 			aria-label={alwaysOnActive && assistantState.status === 'idle'
 				? $_('dashboard.always_on_standby_label', { values: { agentName: $agentName } })
 				: $_('dashboard.ask_question')}
+			use:tooltip={alwaysOnActive && assistantState.status === 'idle'
+				? $_('dashboard.always_on_standby_label', { values: { agentName: $agentName } })
+				: $_('dashboard.ask_question')}
 		>
 			<svg
 				viewBox="0 0 24 24"
@@ -603,7 +678,12 @@
 			{/if}
 		</button>
 	{/if}
-	<button class="icon-button" onclick={() => goto('/settings')} aria-label={$_('settings.page.title')}>
+	<button
+		class="icon-button"
+		onclick={() => goto('/settings')}
+		aria-label={$_('settings.page.title')}
+		use:tooltip={$_('settings.page.title')}
+	>
 		<svg
 			viewBox="0 0 24 24"
 			width="20"
@@ -624,7 +704,12 @@
 			<span class="update-badge" aria-label={$_('dashboard.update_available')}></span>
 		{/if}
 	</button>
-	<button class="icon-button" onclick={() => goto('/reports')} aria-label={$_('reports.title')}>
+	<button
+		class="icon-button"
+		onclick={() => goto('/reports')}
+		aria-label={$_('reports.title')}
+		use:tooltip={$_('reports.title')}
+	>
 		<svg
 			viewBox="0 0 24 24"
 			width="20"
@@ -641,7 +726,12 @@
 			<line x1="6" y1="20" x2="6" y2="14" />
 		</svg>
 	</button>
-	<button class="icon-button" onclick={cycleTheme} aria-label={$_('dashboard.change_theme')}>
+	<button
+		class="icon-button"
+		onclick={cycleTheme}
+		aria-label={$_('dashboard.change_theme')}
+		use:tooltip={$_('dashboard.change_theme')}
+	>
 		{#if $theme === 'dark'}
 			<svg
 				viewBox="0 0 24 24"
@@ -765,7 +855,8 @@
 		class="icon-button"
 		class:active={editMode}
 		onclick={toggleEditMode}
-		aria-label={editMode ? $_('dashboard.done_rearranging') : $_('dashboard.rearrange_widgets')}
+		aria-label={editMode ? $_('dashboard.done_rearranging') : $_('dashboard.rearrange_tiles')}
+		use:tooltip={editMode ? $_('dashboard.done_rearranging') : $_('dashboard.rearrange_tiles')}
 	>
 		{#if editMode}
 			<svg
@@ -797,6 +888,31 @@
 			</svg>
 		{/if}
 	</button>
+	{#if editMode && $breakpoint === 'wide'}
+		<button
+			class="icon-button"
+			onclick={openArrangeConfirm}
+			aria-label={$_('dashboard.auto_arrange')}
+			use:tooltip={$_('dashboard.auto_arrange')}
+		>
+			<svg
+				viewBox="0 0 24 24"
+				width="20"
+				height="20"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				aria-hidden="true"
+			>
+				<rect x="3" y="3" width="7" height="7" rx="1" />
+				<rect x="14" y="3" width="7" height="7" rx="1" />
+				<rect x="3" y="14" width="7" height="7" rx="1" />
+				<rect x="14" y="14" width="7" height="7" rx="1" />
+			</svg>
+		</button>
+	{/if}
 	{#if $user}
 		<div class="profile-menu-wrap">
 			<button
@@ -804,6 +920,7 @@
 				class:active={profileMenuOpen}
 				onclick={toggleProfileMenu}
 				aria-label={$_('settings.profile.heading')}
+				use:tooltip={$_('settings.profile.heading')}
 			>
 				{$user.avatar || $user.name.charAt(0).toUpperCase()}
 			</button>
@@ -858,12 +975,15 @@
 				>
 					{#each tab.widgets as widget (widget.id)}
 						{@const Tile = TILE_COMPONENTS[widget.type]}
-						{@const layout = resizeWidgetId === widget.id && resizePreviewLayout ? resizePreviewLayout : widget.layout}
+						{@const layout = resizePreviewLayouts.get(widget.id) ?? widget.layout}
 						<div
 							class="cell"
 							class:editing={editMode}
 							class:dragging={dragWidgetId === widget.id}
 							class:resizing={resizeWidgetId === widget.id}
+							class:resize-pushed={resizeWidgetId !== null &&
+								resizeWidgetId !== widget.id &&
+								resizePreviewLayouts.has(widget.id)}
 							class:drop-target={dropTargetId === widget.id}
 							data-widget-id={widget.id}
 							role="presentation"
@@ -884,7 +1004,7 @@
 									class="remove-button"
 									onpointerdown={(e) => e.stopPropagation()}
 									onclick={(e) => handleRemoveWidget(e, widget.id)}
-									aria-label={$_('dashboard.remove_widget')}
+									aria-label={$_('dashboard.remove_tile')}
 								>
 									✕
 								</button>
@@ -893,14 +1013,14 @@
 									onpointerdown={(e) => onResizePointerDown(e, widget)}
 									onpointerup={onResizePointerUp}
 									onpointercancel={onResizePointerUp}
-									aria-label={$_('dashboard.resize_widget')}
+									aria-label={$_('dashboard.resize_tile')}
 								>
 									⤡
 								</button>
 							{/if}
 						</div>
 					{/each}
-					{#if dragWidgetId && tabIndex === clampedIndex && dragBreakpoint === 'wide'}
+					{#if tabIndex === clampedIndex && (dragWidgetId ? dragBreakpoint === 'wide' : editMode && $breakpoint === 'wide' && resizeWidgetId === null)}
 						{@const emptyCells = computeEmptyCells(tab.widgets, dragWidgetId, GRID_COLUMNS)}
 						{#each emptyCells as cell (cell.col + '-' + cell.row)}
 							<div
@@ -910,7 +1030,27 @@
 								data-row={cell.row}
 								style="grid-column: {cell.col} / span 1; grid-row: {cell.row} / span 1;"
 								role="presentation"
-							></div>
+							>
+								{#if editMode && !dragWidgetId}
+									<button
+										class="empty-cell-add"
+										onclick={() => openAddWidgetAt(tab.id, cell)}
+										aria-label={$_('dashboard.add_tile')}
+									>
+										+
+									</button>
+									{#if addAtCell?.tabId === tab.id && addAtCell.cell?.col === cell.col && addAtCell.cell?.row === cell.row}
+										<div class="widget-picker">
+											{#each widgetTypeOptions as option (option.type)}
+												<button class="widget-picker-option" onclick={() => selectWidgetType(option)}>
+													{option.name}
+												</button>
+											{/each}
+											<button class="widget-picker-cancel" onclick={closeAddWidget}>{$_('common.cancel')}</button>
+										</div>
+									{/if}
+								{/if}
+							</div>
 						{/each}
 						{#if dropEmptyCell}
 							{@const source = $widgets.find((w) => w.id === dragWidgetId)}
@@ -924,13 +1064,15 @@
 							{/if}
 						{/if}
 					{/if}
-					{#if editMode && tabIndex === clampedIndex}
+					{#if editMode && tabIndex === clampedIndex && $breakpoint === 'narrow'}
 						<div class="cell add-widget-cell" style="grid-column: auto; grid-row: auto;">
-							<button class="add-widget-button" onclick={openAddWidget}>{$_('dashboard.add_widget')}</button>
-							{#if addingWidget}
+							<button class="add-widget-button" onclick={() => openAddWidgetAt(tab.id, null)}
+								>{$_('dashboard.add_tile')}</button
+							>
+							{#if addAtCell?.tabId === tab.id && addAtCell.cell === null}
 								<div class="widget-picker">
 									{#each widgetTypeOptions as option (option.type)}
-										<button class="widget-picker-option" onclick={() => selectWidgetType(option, tab.id)}>
+										<button class="widget-picker-option" onclick={() => selectWidgetType(option)}>
 											{option.name}
 										</button>
 									{/each}
@@ -950,6 +1092,30 @@
 		{#each grouped as tab, i (tab.id)}
 			<button class="dot" class:active={i === clampedIndex} aria-label={tab.name} onclick={() => goToTab(i)}></button>
 		{/each}
+	</div>
+{/if}
+
+{#if arrangeConfirmOpen}
+	<div class="modal-backdrop" role="presentation" onclick={closeArrangeConfirm}>
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+		<div
+			class="modal-box"
+			role="dialog"
+			tabindex="-1"
+			aria-modal="true"
+			aria-labelledby="arrange-title"
+			onclick={(e) => e.stopPropagation()}
+		>
+			<h3 id="arrange-title">{$_('dashboard.auto_arrange_confirm_title')}</h3>
+			<p class="modal-hint">{$_('dashboard.auto_arrange_confirm_text')}</p>
+			<div class="modal-buttons modal-right-only">
+				<button type="button" class="btn cancel-btn" onclick={closeArrangeConfirm}>{$_('common.cancel')}</button>
+				<button type="button" class="btn confirm-btn" onclick={confirmAutoArrange}>
+					{$_('dashboard.auto_arrange_confirm_action')}
+				</button>
+			</div>
+		</div>
 	</div>
 {/if}
 
@@ -1204,9 +1370,46 @@
 		z-index: 20;
 	}
 
+	/* Subtle cue that this tile moved to make room for a resize in progress,
+	   distinct from .drop-target's dashed outline (a click-target affordance
+	   for drag-to-move, not a "you're being moved" one). */
+	.cell.resize-pushed {
+		opacity: 0.85;
+	}
+
 	.empty-cell {
+		position: relative;
 		min-width: 0;
 		min-height: 0;
+	}
+
+	/* Always present (not hover-only) while editing, since Tilora runs on
+	   touch kiosks where hover doesn't exist — hover/focus just intensify it
+	   for mouse users. */
+	.empty-cell-add {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		border-radius: 1rem;
+		border: 2px dashed var(--color-border);
+		background: transparent;
+		color: var(--color-text-muted);
+		font-size: 1.25rem;
+		line-height: 1;
+		opacity: 0.55;
+		cursor: pointer;
+		transition:
+			opacity 0.15s ease,
+			border-color 0.15s ease,
+			color 0.15s ease;
+	}
+
+	.empty-cell-add:hover,
+	.empty-cell-add:focus-visible {
+		opacity: 1;
+		border-color: var(--color-accent);
+		color: var(--color-text);
 	}
 
 	.drop-ghost {
@@ -1304,6 +1507,82 @@
 
 	.widget-picker-cancel {
 		color: var(--color-text-muted);
+	}
+
+	.modal-backdrop {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.6);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 1000;
+		padding: 1rem;
+	}
+
+	.modal-box {
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 0.85rem;
+		padding: 1.5rem;
+		width: 100%;
+		max-width: 450px;
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+	}
+
+	.modal-box h3 {
+		margin: 0;
+		font-size: 1.25rem;
+		color: var(--color-text);
+	}
+
+	.modal-hint {
+		margin: 0;
+		font-size: 0.875rem;
+		color: var(--color-text-muted);
+		line-height: 1.4;
+	}
+
+	.modal-buttons {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		margin-top: 0.5rem;
+		flex-wrap: wrap;
+	}
+
+	.modal-right-only {
+		justify-content: flex-end;
+	}
+
+	.btn {
+		padding: 0.5rem 0.9rem;
+		border-radius: 0.5rem;
+		font-size: 0.875rem;
+		font-weight: 600;
+		cursor: pointer;
+		border: none;
+		transition: opacity 0.15s ease;
+	}
+
+	.btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.cancel-btn {
+		background: var(--color-bg);
+		color: var(--color-text);
+		border: 1px solid var(--color-border);
+	}
+
+	.confirm-btn {
+		background: var(--color-accent);
+		color: var(--color-on-accent);
 	}
 
 	.assistant-overlay {

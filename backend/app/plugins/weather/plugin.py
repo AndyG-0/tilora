@@ -228,10 +228,13 @@ class WeatherPlugin(Plugin):
             for i in range(len(daily["time"]))
         ]
         summary = self._build_summary(data["current"])
+        settings = self.config["settings"]
         detail = {
             **summary,
             "daily_forecast": forecast,
-            "severe_weather_alerts": self.config["settings"].get("severe_weather_alerts", True),
+            "severe_weather_alerts": settings.get("severe_weather_alerts", True),
+            "latitude": settings["latitude"],
+            "longitude": settings["longitude"],
         }
         air_quality = await self._fetch_air_quality()
         if air_quality is not None:

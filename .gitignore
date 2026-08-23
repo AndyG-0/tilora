@@ -2,3 +2,5 @@
 .claude/scheduled_tasks.lock
 IDEAS.md
 docker-compose.override.yml
+site/
+**DS_Store**

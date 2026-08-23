@@ -7,6 +7,20 @@
 		"done": "Terminé"
 	},
 	"settings": {
+		"help_documentation": "Aide et documentation",
+		"docs_guide_link": "Guide de configuration dans la documentation",
+		"ai": {
+			"reasoning_hint": "Contrôle le budget de réflexion pour les modèles prenant en charge le raisonnement ajustable (OpenAI série o, Claude extended thinking, Gemini thinking)."
+		},
+		"voice_output": {
+			"hint": "Contrôle les options de synthèse vocale disponibles pour les membres du foyer. La voix intégrée du navigateur est toujours disponible sans configuration."
+		},
+		"google_calendar": {
+			"hint": "Depuis un identifiant client OAuth 2.0 (console.cloud.google.com). Nécessite l'ajout de votre URL de rappel backend et d'utilisateurs test."
+		},
+		"microsoft_calendar": {
+			"hint": "Depuis un enregistrement d'application dans Microsoft Entra ID (portal.azure.com). Nécessite la configuration de votre URI de redirection backend."
+		},
 		"language": {
 			"title": "Langue",
 			"save_error": "Impossible d'enregistrer la langue.",
@@ -198,6 +212,11 @@
 			"no_cities_found": "Aucune ville trouvée.",
 			"update_failed": "Impossible de mettre à jour l'emplacement.",
 			"severe_weather_alerts": "Alertes météo sévères",
+			"radar_map_label": "Radar de précipitations",
+			"radar_play": "Lecture",
+			"radar_pause": "Pause",
+			"radar_step_back": "Image précédente",
+			"radar_step_forward": "Image suivante",
 			"air_quality_title": "Qualité de l'air",
 			"pollen_title": "Pollen",
 			"pollen": {
@@ -246,7 +265,8 @@
 		"tile": {
 			"loading": "Chargement des vols…",
 			"count": "{count} à proximité",
-			"empty": "Aucun avion à proximité"
+			"empty": "Aucun avion à proximité",
+			"truncated": "Affichage de {shown} sur {total}"
 		},
 		"detail": {
 			"change_location": "Changer d'emplacement",
@@ -267,8 +287,11 @@
 			"column_altitude": "Altitude",
 			"column_speed": "Vitesse",
 			"column_distance": "Distance",
+			"route_unavailable": "Itinéraire indisponible",
+			"route_local_flight": "Vol local",
 			"no_photo": "Photo non disponible",
-			"photo_by": "Photo par {name}"
+			"photo_by": "Photo par {name}",
+			"truncated": "Affichage des {shown} vols les plus proches sur {total} à proximité."
 		},
 		"screensaver": {
 			"no_aircraft": "AUCUN AVION À PROXIMITÉ"
@@ -387,6 +410,7 @@
 	},
 	"packages": {
 		"tile": {
+			"default_title": "Colis",
 			"arriving_today": "Arrivent aujourd'hui",
 			"in_transit": "{count} en cours d'acheminement",
 			"nothing_tracked": "Rien à suivre"
@@ -409,12 +433,33 @@
 			"stale_badge": "En cache"
 		},
 		"detail": {
+			"default_title": "Photo astronomique du jour",
 			"unavailable": "La photo du jour n'est pas disponible pour le moment.",
 			"stale_notice": "Impossible de charger la photo du jour — affichage de celle du {date}."
 		}
 	},
+	"artificial_analysis": {
+		"category": {
+			"coding": "Codage",
+			"intelligence": "Intelligence",
+			"cost": "Coût",
+			"speed": "Vitesse"
+		},
+		"tile": {
+			"title": "Classement des modèles d'IA",
+			"stale_badge": "En cache"
+		},
+		"detail": {
+			"title": "Classement des modèles d'IA",
+			"search_placeholder": "Rechercher des modèles ou créateurs…",
+			"default_category_label": "Classement par défaut affiché sur la tuile",
+			"save_error": "Impossible de mettre à jour les paramètres.",
+			"stale_data": "Impossible d'actualiser les données — affichage des résultats du {fetched_at}."
+		}
+	},
 	"bookmarks": {
 		"tile": {
+			"default_title": "Favoris",
 			"loading": "Chargement des favoris…",
 			"empty": "Aucun favori pour l'instant"
 		},
@@ -428,7 +473,23 @@
 			"empty_editing_hint": "Aucun favori pour l'instant — ajoutez-en un ci-dessous.",
 			"add_bookmark": "+ Ajouter un favori",
 			"save_error": "Impossible de mettre à jour les favoris.",
-			"empty_hint": "Aucun favori configuré pour l'instant — appuyez sur « Modifier les favoris » pour en ajouter un."
+			"empty_hint": "Aucun favori configuré pour l'instant — appuyez sur « Modifier les favoris » pour en ajouter un.",
+			"search_placeholder": "Rechercher dans les favoris…",
+			"search_clear": "Effacer la recherche",
+			"no_search_results": "Aucun favori ne correspond à « {query} »",
+			"showing_results": "Affichage de {count} sur {total} favoris",
+			"sort_az": "Trier A–Z",
+			"sort_za": "Trier Z–A",
+			"import_bookmarks": "Importer des favoris",
+			"import_success": "{count} favoris importés.",
+			"import_error": "Impossible d'importer les favoris à partir du fichier.",
+			"import_replace": "Tout remplacer",
+			"import_append": "Ajouter aux existants",
+			"import_prompt_title": "Importer des favoris",
+			"import_prompt_body": "{count} favoris trouvés. Comment souhaitez-vous les importer ?",
+			"move_up": "Monter",
+			"move_down": "Descendre",
+			"drag_handle": "Faire glisser pour réorganiser"
 		}
 	},
 	"alert": {
@@ -464,6 +525,7 @@
 			"connected_result": "✓ Connecté (Pi-hole {version})",
 			"clear_password_error": "Impossible d'effacer le mot de passe.",
 			"not_connected_hint": "Pas encore connecté — configurez Pi-hole dans les paramètres réseau.",
+			"admin_only_hint": "Seul un administrateur peut modifier le blocage.",
 			"blocking_enabled": "● Blocage activé",
 			"blocking_paused": "⏸ Blocage en pause",
 			"pause_30s": "Pause 30 s",
@@ -502,6 +564,7 @@
 	},
 	"container": {
 		"tile": {
+			"default_title": "Conteneur",
 			"running": "{count} en cours",
 			"stopped": "{count} arrêtés"
 		},
@@ -621,7 +684,11 @@
 			"empty_hint": "Aucun livre sur cette étagère pour l'instant."
 		}
 	},
+	"chores": {
+		"default_title": "À faire"
+	},
 	"shopping": {
+		"default_title": "Liste de courses",
 		"detail": {
 			"checked_by": "coché par {name}",
 			"added_by": "ajouté par {name}"
@@ -629,6 +696,7 @@
 	},
 	"rss": {
 		"tile": {
+			"default_title": "Titres",
 			"loading": "Chargement des titres…"
 		},
 		"detail": {
@@ -647,7 +715,8 @@
 			"name_placeholder": "Nom (facultatif)",
 			"add_feed": "+ Ajouter un flux",
 			"no_feeds_selected_hint": "Aucun flux sélectionné pour l'instant — appuyez sur « Modifier les flux » pour en choisir un.",
-			"no_items": "Aucun élément pour l'instant."
+			"no_items": "Aucun élément pour l'instant.",
+			"comments": "Commentaires"
 		},
 		"screensaver": {
 			"no_headlines": "Pas encore de titres."
@@ -1011,6 +1080,7 @@
 	"message": {
 		"empty_placeholder": "(message vide)",
 		"detail": {
+			"default_title": "Message",
 			"edit_message": "Modifier le message",
 			"title_label": "Titre",
 			"text_label": "Texte",
@@ -1023,16 +1093,20 @@
 		"update_available": "Mise à jour disponible",
 		"change_theme": "Changer de thème",
 		"done_rearranging": "Terminer la réorganisation",
-		"rearrange_widgets": "Réorganiser les widgets",
+		"rearrange_tiles": "Réorganiser les tuiles",
 		"switch_profile": "Changer de profil",
 		"log_out": "Se déconnecter",
 		"listening": "Écoute…",
 		"listening_cloud_stt": "Écoute (Cloud STT)…",
 		"transcribing": "Transcription audio…",
 		"thinking": "Réflexion…",
-		"remove_widget": "Supprimer le widget",
-		"resize_widget": "Redimensionner le widget",
-		"add_widget": "+ Ajouter un widget",
+		"remove_tile": "Supprimer la tuile",
+		"resize_tile": "Redimensionner la tuile",
+		"add_tile": "+ Ajouter une tuile",
+		"auto_arrange": "Organisation automatique",
+		"auto_arrange_confirm_title": "Organiser automatiquement les tuiles ?",
+		"auto_arrange_confirm_text": "Cela repositionne toutes les tuiles de cet onglet pour supprimer les espaces vides. Cela peut annuler toute disposition manuelle que vous avez effectuée.",
+		"auto_arrange_confirm_action": "Organiser",
 		"mic_no_match": "Je n'ai pas compris.",
 		"mic_permission_denied": "Permission du microphone refusée. Vérifiez les autorisations du navigateur.",
 		"mic_not_found": "Aucun microphone détecté. Vérifiez votre périphérique d'entrée audio.",
