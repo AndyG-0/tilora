@@ -7,6 +7,20 @@
 		"done": "Fertig"
 	},
 	"settings": {
+		"help_documentation": "Hilfe & Dokumentation",
+		"docs_guide_link": "Einrichtungsanleitung in der Dokumentation",
+		"ai": {
+			"reasoning_hint": "Steuert das Denkbudget für Modelle mit konfigurierbarem Reasoning (OpenAI o-Serie, Claude Extended Thinking, Gemini Thinking)."
+		},
+		"voice_output": {
+			"hint": "Steuert die Sprachausgabe-Optionen für Haushaltsmitglieder. Die integrierte Browser-Stimme ist immer ohne Einrichtung verfügbar."
+		},
+		"google_calendar": {
+			"hint": "Aus einer OAuth 2.0-Client-ID (console.cloud.google.com). Erfordert das Hinzufügen Ihrer Backend-Callback-URL und Testbenutzer."
+		},
+		"microsoft_calendar": {
+			"hint": "Aus einer App-Registrierung in Microsoft Entra ID (portal.azure.com). Erfordert die Konfiguration Ihrer Backend-Redirect-URI."
+		},
 		"language": {
 			"title": "Sprache",
 			"save_error": "Sprache konnte nicht gespeichert werden.",
@@ -198,6 +212,11 @@
 			"no_cities_found": "Keine Städte gefunden.",
 			"update_failed": "Standort konnte nicht aktualisiert werden.",
 			"severe_weather_alerts": "Unwetterwarnungen",
+			"radar_map_label": "Niederschlagsradar",
+			"radar_play": "Abspielen",
+			"radar_pause": "Pause",
+			"radar_step_back": "Vorheriger Frame",
+			"radar_step_forward": "Nächster Frame",
 			"air_quality_title": "Luftqualität",
 			"pollen_title": "Pollen",
 			"pollen": {
@@ -246,7 +265,8 @@
 		"tile": {
 			"loading": "Flüge werden geladen…",
 			"count": "{count} in der Nähe",
-			"empty": "Keine Flugzeuge in der Nähe"
+			"empty": "Keine Flugzeuge in der Nähe",
+			"truncated": "{shown} von {total} werden angezeigt"
 		},
 		"detail": {
 			"change_location": "Standort ändern",
@@ -267,8 +287,11 @@
 			"column_altitude": "Höhe",
 			"column_speed": "Geschwindigkeit",
 			"column_distance": "Entfernung",
+			"route_unavailable": "Route nicht verfügbar",
+			"route_local_flight": "Lokalflug",
 			"no_photo": "Kein Foto verfügbar",
-			"photo_by": "Foto von {name}"
+			"photo_by": "Foto von {name}",
+			"truncated": "Die nächsten {shown} von {total} Flügen in der Nähe werden angezeigt."
 		},
 		"screensaver": {
 			"no_aircraft": "KEINE FLUGZEUGE IN DER NÄHE"
@@ -387,6 +410,7 @@
 	},
 	"packages": {
 		"tile": {
+			"default_title": "Pakete",
 			"arriving_today": "Kommen heute an",
 			"in_transit": "{count} unterwegs",
 			"nothing_tracked": "Nichts wird verfolgt"
@@ -409,12 +433,33 @@
 			"stale_badge": "Zwischengespeichert"
 		},
 		"detail": {
+			"default_title": "Astronomisches Bild des Tages",
 			"unavailable": "Das Bild des Tages ist gerade nicht verfügbar.",
 			"stale_notice": "Das heutige Bild konnte nicht geladen werden – angezeigt wird das Bild vom {date}."
 		}
 	},
+	"artificial_analysis": {
+		"category": {
+			"coding": "Programmierung",
+			"intelligence": "Intelligenz",
+			"cost": "Kosten",
+			"speed": "Geschwindigkeit"
+		},
+		"tile": {
+			"title": "KI-Modell-Rangliste",
+			"stale_badge": "Zwischengespeichert"
+		},
+		"detail": {
+			"title": "KI-Modell-Rangliste",
+			"search_placeholder": "Modelle oder Ersteller suchen…",
+			"default_category_label": "Standard-Rangliste auf der Kachel",
+			"save_error": "Einstellungen konnten nicht gespeichert werden.",
+			"stale_data": "Daten konnten nicht aktualisiert werden – zeige Ergebnisse vom {fetched_at}."
+		}
+	},
 	"bookmarks": {
 		"tile": {
+			"default_title": "Lesezeichen",
 			"loading": "Lesezeichen werden geladen…",
 			"empty": "Noch keine Lesezeichen"
 		},
@@ -428,7 +473,23 @@
 			"empty_editing_hint": "Noch keine Lesezeichen — füge unten eines hinzu.",
 			"add_bookmark": "+ Lesezeichen hinzufügen",
 			"save_error": "Die Lesezeichen konnten nicht aktualisiert werden.",
-			"empty_hint": "Noch keine Lesezeichen konfiguriert — tippe auf „Lesezeichen bearbeiten“, um eines hinzuzufügen."
+			"empty_hint": "Noch keine Lesezeichen konfiguriert — tippe auf „Lesezeichen bearbeiten“, um eines hinzuzufügen.",
+			"search_placeholder": "Lesezeichen durchsuchen…",
+			"search_clear": "Suche löschen",
+			"no_search_results": "Keine Lesezeichen für „{query}“ gefunden",
+			"showing_results": "Zeige {count} von {total} Lesezeichen",
+			"sort_az": "Sortieren A–Z",
+			"sort_za": "Sortieren Z–A",
+			"import_bookmarks": "Lesezeichen importieren",
+			"import_success": "{count} Lesezeichen importiert.",
+			"import_error": "Lesezeichen konnten nicht aus der Datei importiert werden.",
+			"import_replace": "Alle ersetzen",
+			"import_append": "Zu bestehenden hinzufügen",
+			"import_prompt_title": "Lesezeichen importieren",
+			"import_prompt_body": "{count} Lesezeichen gefunden. Wie möchten Sie diese importieren?",
+			"move_up": "Nach oben",
+			"move_down": "Nach unten",
+			"drag_handle": "Ziehen zum Neuanordnen"
 		}
 	},
 	"alert": {
@@ -464,6 +525,7 @@
 			"connected_result": "✓ Verbunden (Pi-hole {version})",
 			"clear_password_error": "Das Passwort konnte nicht gelöscht werden.",
 			"not_connected_hint": "Noch nicht verbunden — richte Pi-hole in den Netzwerkeinstellungen ein.",
+			"admin_only_hint": "Nur ein Administrator kann die Blockierung ändern.",
 			"blocking_enabled": "● Blockierung aktiviert",
 			"blocking_paused": "⏸ Blockierung pausiert",
 			"pause_30s": "30 s pausieren",
@@ -502,6 +564,7 @@
 	},
 	"container": {
 		"tile": {
+			"default_title": "Container",
 			"running": "{count} aktiv",
 			"stopped": "{count} gestoppt"
 		},
@@ -621,7 +684,11 @@
 			"empty_hint": "Noch keine Bücher in diesem Regal."
 		}
 	},
+	"chores": {
+		"default_title": "Aufgaben"
+	},
 	"shopping": {
+		"default_title": "Einkaufsliste",
 		"detail": {
 			"checked_by": "abgehakt von {name}",
 			"added_by": "hinzugefügt von {name}"
@@ -629,6 +696,7 @@
 	},
 	"rss": {
 		"tile": {
+			"default_title": "Schlagzeilen",
 			"loading": "Schlagzeilen werden geladen…"
 		},
 		"detail": {
@@ -647,7 +715,8 @@
 			"name_placeholder": "Name (optional)",
 			"add_feed": "+ Feed hinzufügen",
 			"no_feeds_selected_hint": "Noch keine Feeds ausgewählt — tippe auf „Feeds bearbeiten\", um einen auszuwählen.",
-			"no_items": "Noch keine Einträge."
+			"no_items": "Noch keine Einträge.",
+			"comments": "Kommentare"
 		},
 		"screensaver": {
 			"no_headlines": "Noch keine Schlagzeilen."
@@ -1011,6 +1080,7 @@
 	"message": {
 		"empty_placeholder": "(leere Nachricht)",
 		"detail": {
+			"default_title": "Nachricht",
 			"edit_message": "Nachricht bearbeiten",
 			"title_label": "Titel",
 			"text_label": "Text",
@@ -1023,16 +1093,20 @@
 		"update_available": "Update verfügbar",
 		"change_theme": "Design wechseln",
 		"done_rearranging": "Anordnen beenden",
-		"rearrange_widgets": "Widgets anordnen",
+		"rearrange_tiles": "Kacheln anordnen",
 		"switch_profile": "Profil wechseln",
 		"log_out": "Abmelden",
 		"listening": "Hört zu…",
 		"listening_cloud_stt": "Hört zu (Cloud STT)…",
 		"transcribing": "Audio wird transkribiert…",
 		"thinking": "Denkt nach…",
-		"remove_widget": "Widget entfernen",
-		"resize_widget": "Widget-Größe ändern",
-		"add_widget": "+ Widget hinzufügen",
+		"remove_tile": "Kachel entfernen",
+		"resize_tile": "Kachel-Größe ändern",
+		"add_tile": "+ Kachel hinzufügen",
+		"auto_arrange": "Automatisch anordnen",
+		"auto_arrange_confirm_title": "Kacheln automatisch anordnen?",
+		"auto_arrange_confirm_text": "Dadurch werden alle Kacheln auf diesem Tab neu angeordnet, um Lücken zu entfernen. Manuelle Anordnungen können dabei verloren gehen.",
+		"auto_arrange_confirm_action": "Anordnen",
 		"mic_no_match": "Das wurde nicht verstanden.",
 		"mic_permission_denied": "Mikrofonzugriff verweigert. Bitte Browserberechtigungen prüfen.",
 		"mic_not_found": "Kein Mikrofon erkannt. Bitte Audio-Eingabegerät prüfen.",

@@ -20,6 +20,13 @@ cd backend && uv sync && uv run uvicorn app.main:app --reload --port 8000
 cd frontend && npm install && npm run dev
 ```
 
+To run the documentation site locally with live reload:
+
+```bash
+./docs.sh   # Serves documentation at http://localhost:8080
+```
+
+
 ## Adding a plugin
 
 Every widget is a `Plugin` subclass (`backend/app/plugins/base.py`):
@@ -298,10 +305,10 @@ UI rendering isn't covered by the backend suite.
 ## Releasing
 
 Tilora uses plain semantic versioning (`X.Y.Z` in `VERSION`,
-`backend/pyproject.toml`, and `frontend/package.json`; `vX.Y.Z` for git tags
-and GitHub releases — see `backend/app/update_check.py` for why only plain
-`X.Y.Z` is supported, no prerelease/build suffixes). From an up-to-date
-`main` with a clean working tree:
+`backend/pyproject.toml`, `frontend/package.json`, and `cli/pyproject.toml`;
+`vX.Y.Z` for git tags and GitHub releases — see `backend/app/update_check.py`
+for why only plain `X.Y.Z` is supported, no prerelease/build suffixes). From
+an up-to-date `main` with a clean working tree:
 
 ```bash
 ./scripts/release.sh patch   # or: minor / major
@@ -309,13 +316,17 @@ git push origin main
 git push origin vX.Y.Z       # printed by the script — triggers the release workflows
 ```
 
-The script bumps `VERSION`, `backend/pyproject.toml`, and
-`frontend/package.json` (regenerating `backend/uv.lock` and
-`frontend/package-lock.json` in the process), then commits and tags the
-release locally — it never pushes on its own (pass `--push` to do both in
-one step). Pushing the tag triggers `.github/workflows/publish-images.yml`
-(GHCR images) and `.github/workflows/release.yml` (the GitHub Release, with
-notes auto-generated from merged PRs/commits since the last tag).
+The script bumps `VERSION`, `backend/pyproject.toml`, `frontend/package.json`,
+and `cli/pyproject.toml` (regenerating `backend/uv.lock`,
+`frontend/package-lock.json`, and `cli/uv.lock` in the process), then
+commits and tags the release locally — it never pushes on its own (pass
+`--push` to do both in one step). Pushing the tag triggers
+`.github/workflows/publish-images.yml` (GHCR images) and
+`.github/workflows/release.yml` (the GitHub Release, with notes
+auto-generated from merged PRs/commits since the last tag). The CLI isn't
+published as its own artifact — it ships as source, installed by
+`deploy/install.sh`/`deploy/update.sh` via `uv tool install --editable`, so
+it's just along for the ride on the same version/tag.
 
 ## Out of scope for now
 

@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth import get_current_user, require_write_access
 from app.integrations import pihole_client
-from app.plugins.base import registry
+from app.plugins.base import get_typed_plugin
 from app.plugins.pihole.plugin import PiholePlugin
 from app.storage.cache import cache
 
@@ -23,10 +23,7 @@ router = APIRouter(prefix="/api/pihole", tags=["pihole"], dependencies=[Depends(
 
 
 def _get_plugin(widget_id: str) -> PiholePlugin:
-    plugin = registry.get(widget_id)
-    if not isinstance(plugin, PiholePlugin):
-        raise HTTPException(status_code=404, detail=f"Unknown Pi-hole widget '{widget_id}'")
-    return plugin
+    return get_typed_plugin(widget_id, PiholePlugin, "Pi-hole")
 
 
 @router.post("/{widget_id}/blocking")
@@ -40,6 +37,6 @@ async def set_blocking(widget_id: str, payload: dict[str, Any], user: dict[str, 
     except pihole_client.PiholeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    cache.delete(f"summary:{widget_id}")
-    cache.delete(f"detail:{widget_id}")
+    cache.delete_prefix(f"summary:{widget_id}:")
+    cache.delete_prefix(f"detail:{widget_id}:")
     return result

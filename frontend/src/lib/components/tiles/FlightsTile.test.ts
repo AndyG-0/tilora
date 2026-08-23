@@ -37,6 +37,7 @@ describe('FlightsTile', () => {
 			location_name: 'Fort Worth, TX',
 			radius_nm: 15,
 			count: 1,
+			truncated: false,
 			flights: [
 				{
 					callsign: 'UAL123',
@@ -67,6 +68,7 @@ describe('FlightsTile', () => {
 			location_name: 'Fort Worth, TX',
 			radius_nm: 15,
 			count: 1,
+			truncated: false,
 			flights: [
 				{
 					callsign: 'N126JH',
@@ -93,6 +95,7 @@ describe('FlightsTile', () => {
 			location_name: 'Fort Worth, TX',
 			radius_nm: 15,
 			count: 0,
+			truncated: false,
 			flights: [],
 		});
 
@@ -108,6 +111,7 @@ describe('FlightsTile', () => {
 				location_name: 'Fort Worth, TX',
 				radius_nm: 15,
 				count: 0,
+				truncated: false,
 				flights: [],
 			});
 			render(FlightsTile, { props: { widgetId: 'flights', refreshIntervalSeconds: 60 } });
@@ -121,5 +125,103 @@ describe('FlightsTile', () => {
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+
+	it('renders multiple aircraft that lack commercial callsigns without key collision', async () => {
+		widgetSummary.mockResolvedValue({
+			location_name: 'Fort Worth, TX',
+			radius_nm: 15,
+			count: 2,
+			truncated: false,
+			flights: [
+				{
+					hex: 'a00001',
+					callsign: 'N100AA',
+					registration: 'N100AA',
+					airline_code: null,
+					airline_name: null,
+					aircraft_type: 'C172',
+					aircraft_kind: 'prop',
+					altitude_ft: 3500,
+					distance_nm: 2.1,
+					origin: null,
+					destination: null,
+				},
+				{
+					hex: 'a00002',
+					callsign: 'A00002',
+					registration: null,
+					airline_code: null,
+					airline_name: null,
+					aircraft_type: 'PA28',
+					aircraft_kind: 'prop',
+					altitude_ft: 4500,
+					distance_nm: 3.8,
+					origin: null,
+					destination: null,
+				},
+			],
+		});
+
+		render(FlightsTile, { props: { widgetId: 'flights', refreshIntervalSeconds: 60 } });
+
+		expect(await screen.findByText('N100AA', { selector: '.dots' })).toBeInTheDocument();
+		expect(screen.getByText('A00002', { selector: '.dots' })).toBeInTheDocument();
+		expect(screen.getByText('3,500 FT', { selector: '.dots' })).toBeInTheDocument();
+		expect(screen.getByText('4,500 FT', { selector: '.dots' })).toBeInTheDocument();
+	});
+
+	it('renders more than three flights when the backend sends more', async () => {
+		const flights = Array.from({ length: 5 }, (_, i) => ({
+			hex: `a0000${i}`,
+			callsign: `FLT${i}`,
+			airline_code: null,
+			airline_name: null,
+			aircraft_type: 'C172',
+			aircraft_kind: 'prop',
+			altitude_ft: 3000 + i * 100,
+			distance_nm: i + 1,
+			origin: null,
+			destination: null,
+		}));
+		widgetSummary.mockResolvedValue({
+			location_name: 'Fort Worth, TX',
+			radius_nm: 15,
+			count: 5,
+			truncated: false,
+			flights,
+		});
+
+		render(FlightsTile, { props: { widgetId: 'flights', refreshIntervalSeconds: 60 } });
+
+		for (const flight of flights) {
+			expect(await screen.findByText(flight.callsign, { selector: '.dots' })).toBeInTheDocument();
+		}
+	});
+
+	it('shows a truncation warning when more flights are nearby than shown', async () => {
+		widgetSummary.mockResolvedValue({
+			location_name: 'Fort Worth, TX',
+			radius_nm: 15,
+			count: 150,
+			truncated: true,
+			flights: [
+				{
+					callsign: 'UAL123',
+					airline_code: 'UAL',
+					airline_name: 'United Airlines',
+					aircraft_type: 'B738',
+					aircraft_kind: 'jet',
+					altitude_ft: 35000,
+					distance_nm: 4.2,
+					origin: null,
+					destination: null,
+				},
+			],
+		});
+
+		render(FlightsTile, { props: { widgetId: 'flights', refreshIntervalSeconds: 60 } });
+
+		expect(await screen.findByText('Showing 1 of 150')).toBeInTheDocument();
 	});
 });

@@ -19,6 +19,7 @@ Runs the CI jobs locally, in the same order as .github/workflows/ci.yml:
 
   shell:    shellcheck, deploy/test-install.sh
   backend:  uv sync, ruff check, ruff format --check, pytest
+  cli:      uv sync, ruff check, ruff format --check, pytest
   frontend: npm ci, lint, format:check, check (svelte-check), test,
             playwright install, test:e2e
 
@@ -63,6 +64,20 @@ info "Backend: ruff format --check"
 uv run ruff format --check .
 
 info "Backend: pytest"
+uv run pytest
+
+cd "$ROOT_DIR/cli"
+
+info "CLI: uv sync"
+uv sync
+
+info "CLI: ruff check"
+uv run ruff check .
+
+info "CLI: ruff format --check"
+uv run ruff format --check .
+
+info "CLI: pytest"
 uv run pytest
 
 cd "$ROOT_DIR/frontend"

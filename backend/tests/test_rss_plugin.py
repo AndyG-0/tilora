@@ -35,6 +35,34 @@ FEED_TWO = b"""<?xml version="1.0"?>
 </rss>
 """
 
+FEED_HN = b"""<?xml version="1.0"?>
+<rss version="2.0">
+<channel>
+<title>Hacker News</title>
+<item>
+<title>Show HN: Project</title>
+<link>https://example.com/project</link>
+<comments>https://news.ycombinator.com/item?id=123456</comments>
+<description><![CDATA[<a href="https://news.ycombinator.com/item?id=123456">Comments</a>]]></description>
+<pubDate>Mon, 01 Jan 2026 12:00:00 GMT</pubDate>
+</item>
+</channel>
+</rss>
+"""
+
+FEED_ATOM_REPLIES = b"""<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+<title>Atom Feed</title>
+<entry>
+<title>Atom Post</title>
+<link rel="alternate" href="https://example.com/post"/>
+<link rel="replies" type="text/html" href="https://example.com/post/comments"/>
+<id>urn:uuid:123</id>
+<updated>2026-01-01T12:00:00Z</updated>
+</entry>
+</feed>
+"""
+
 
 def make_plugin(widget_id: str = "rss", user_id: str | None = "user-1", **settings) -> RSSPlugin:
     return RSSPlugin({"id": widget_id, "settings": settings, "user_id": user_id})
@@ -101,6 +129,35 @@ async def test_get_detail_extracts_media_thumbnail_image(tmp_db):
     detail = await plugin.get_detail()
 
     assert detail["feed_groups"][0]["items"][0]["image"] == "https://example.com/newer.jpg"
+
+
+@respx.mock
+async def test_get_detail_cleans_hackernews_summary_and_extracts_comments(tmp_db):
+    respx.get("https://news.ycombinator.com/rss").mock(return_value=httpx.Response(200, content=FEED_HN))
+    feed = db.add_rss_feed("user-1", "https://news.ycombinator.com/rss", "HN")
+    plugin = make_plugin(feed_ids=[feed["id"]])
+
+    detail = await plugin.get_detail()
+
+    item = detail["feed_groups"][0]["items"][0]
+    assert item["title"] == "Show HN: Project"
+    assert item["link"] == "https://example.com/project"
+    assert item["comments"] == "https://news.ycombinator.com/item?id=123456"
+    assert item["summary"] == ""
+
+
+@respx.mock
+async def test_get_detail_extracts_atom_replies_link(tmp_db):
+    respx.get("https://example.com/atom.xml").mock(return_value=httpx.Response(200, content=FEED_ATOM_REPLIES))
+    feed = db.add_rss_feed("user-1", "https://example.com/atom.xml", "Atom")
+    plugin = make_plugin(feed_ids=[feed["id"]])
+
+    detail = await plugin.get_detail()
+
+    item = detail["feed_groups"][0]["items"][0]
+    assert item["title"] == "Atom Post"
+    assert item["link"] == "https://example.com/post"
+    assert item["comments"] == "https://example.com/post/comments"
 
 
 @respx.mock

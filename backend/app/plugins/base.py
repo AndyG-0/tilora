@@ -13,6 +13,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar, Literal
 
+from fastapi import HTTPException
+
 
 @dataclass(frozen=True)
 class ToolDef:
@@ -34,6 +36,12 @@ class ToolDef:
     #: ToolBridge as the frontend navigation action, in addition to being fed
     #: back to the model like any other tool result. See ToolBridge.call.
     is_navigation: bool = False
+    #: True restricts this tool to admin-initiated conversations (and the
+    #: scheduled AI-insights job, which has no interactive user at all) --
+    #: for actions like waking a device on the LAN that shouldn't be
+    #: reachable from any household member's chat. See ai/assistant.py's
+    #: ask().
+    requires_admin: bool = False
 
 
 class Plugin(ABC):
@@ -88,6 +96,11 @@ class Plugin(ABC):
     #: connection-field subset that used to live in default_settings before
     #: this plugin opted into network_integration_type.
     network_default_settings: ClassVar[dict[str, Any]] = {}
+    #: settings keys whose raw value must never leave the backend — the
+    #: generic settings PATCH endpoint echoes a plugin's own config verbatim,
+    #: so masking has to happen here. `_safe_settings()` below replaces each
+    #: of these with a `has_<key>: bool` instead of passing the value through.
+    secret_setting_keys: ClassVar[frozenset[str]] = frozenset()
 
     def __init__(self, config: dict[str, Any]):
         self.config = config
@@ -124,6 +137,24 @@ class Plugin(ABC):
     def get_ai_tools(self) -> list[ToolDef]:
         """Tools this plugin exposes to the AI layer. Optional to override."""
         return []
+
+    def _safe_settings(self) -> dict[str, Any]:
+        """This plugin's settings with any `secret_setting_keys` masked.
+
+        Covers the common shape (pass every setting through as-is except a
+        secret key or two, masked to `has_<key>: bool`); override instead of
+        using `secret_setting_keys` when a plugin needs a derived field
+        alongside the masked settings (e.g. Jellyfin's `resume_available`).
+        """
+        s = self.config["settings"]
+        merged = {**self.network_default_settings, **self.default_settings}
+        result: dict[str, Any] = {}
+        for key, default in merged.items():
+            if key in self.secret_setting_keys:
+                result[f"has_{key}"] = bool(s.get(key))
+            else:
+                result[key] = s.get(key, default)
+        return result
 
     def validate_settings(self, payload: dict[str, Any]) -> None:
         """Reject a settings patch before it's persisted, by raising ValueError.
@@ -189,3 +220,18 @@ class PluginRegistry:
 
 
 registry = PluginRegistry()
+
+
+def get_typed_plugin[T: Plugin](widget_id: str, cls: type[T], label: str) -> T:
+    """Look up a widget's plugin instance and check it's the expected type.
+
+    Every route module for a network-integration widget (Pi-hole, qBittorrent,
+    Jellyfin, ...) needs this exact lookup-or-404 before doing anything else —
+    a bare `registry.get` would let a request for `widget_id` accidentally hit
+    a same-id-but-wrong-type plugin, so the isinstance check matters, not just
+    the None check.
+    """
+    plugin = registry.get(widget_id)
+    if not isinstance(plugin, cls):
+        raise HTTPException(status_code=404, detail=f"Unknown {label} widget '{widget_id}'")
+    return plugin

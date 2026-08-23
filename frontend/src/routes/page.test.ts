@@ -91,6 +91,7 @@ import Page from './+page.svelte';
 import { widgets } from '$lib/stores/widgets';
 import { activeTabIndex } from '$lib/stores/activeTab';
 import { agentName, alwaysOnMic } from '$lib/stores/assistant';
+import { breakpoint } from '$lib/stores/breakpoint';
 
 function widget(id: string, layout: WidgetLayout, tab = 'default'): WidgetSummaryMeta {
 	return { id, type: 'message', name: 'Message', layout, tab, refresh_interval_seconds: 60 };
@@ -122,25 +123,74 @@ describe('+page.svelte', () => {
 		updateWidgetsLayout.mockResolvedValue({ status: 'ok' });
 		widgets.set([]);
 		activeTabIndex.set(0);
+		breakpoint.set('wide');
 		Element.prototype.setPointerCapture = vi.fn();
 		document.elementFromPoint = vi.fn().mockReturnValue(null);
 	});
 
-	it('toggles edit mode, showing per-widget remove/resize controls and the add-widget tile', async () => {
+	it('toggles edit mode, showing per-widget remove/resize controls and per-empty-cell add affordances', async () => {
 		widgets.set([widget('w1', { col: 1, row: 1, colSpan: 1, rowSpan: 1 })]);
 		render(Page);
 
-		expect(screen.queryByRole('button', { name: 'Remove widget' })).not.toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'Remove tile' })).not.toBeInTheDocument();
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Rearrange widgets' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Rearrange tiles' }));
 
-		expect(screen.getByRole('button', { name: 'Remove widget' })).toBeInTheDocument();
-		expect(screen.getByRole('button', { name: 'Resize widget' })).toBeInTheDocument();
-		expect(screen.getByText('+ Add widget')).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Remove tile' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Resize tile' })).toBeInTheDocument();
+		expect(screen.getAllByRole('button', { name: '+ Add tile' }).length).toBeGreaterThan(0);
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Done rearranging' }));
 
-		expect(screen.queryByRole('button', { name: 'Remove widget' })).not.toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'Remove tile' })).not.toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: '+ Add tile' })).not.toBeInTheDocument();
+	});
+
+	it('adds a tile at the empty cell that was clicked', async () => {
+		widgets.set([widget('w1', { col: 1, row: 1, colSpan: 1, rowSpan: 1 })]);
+		widgetTypes.mockResolvedValue([{ type: 'clock', name: 'Clock', default_layout: { colSpan: 1, rowSpan: 1 } }]);
+		addWidget.mockResolvedValue(widget('w2', { col: 3, row: 1, colSpan: 1, rowSpan: 1 }));
+		render(Page);
+		await fireEvent.click(screen.getByRole('button', { name: 'Rearrange tiles' }));
+
+		const targetCell = document.querySelector('[data-empty-cell][data-col="3"][data-row="1"]') as HTMLElement;
+		const addButton = targetCell.querySelector('.empty-cell-add') as HTMLElement;
+		await fireEvent.click(addButton);
+
+		await fireEvent.click(await screen.findByRole('button', { name: 'Clock' }));
+
+		expect(addWidget).toHaveBeenCalledWith('clock', { col: 3, row: 1, colSpan: 1, rowSpan: 1 }, 'default');
+	});
+
+	it('falls back to bottom placement when the chosen type overflows the clicked cell', async () => {
+		widgets.set([
+			widget('w1', { col: 1, row: 1, colSpan: 1, rowSpan: 1 }),
+			widget('w2', { col: 4, row: 1, colSpan: 1, rowSpan: 1 }),
+		]);
+		widgetTypes.mockResolvedValue([{ type: 'clock', name: 'Clock', default_layout: { colSpan: 2, rowSpan: 1 } }]);
+		addWidget.mockResolvedValue(widget('w3', { col: 1, row: 2, colSpan: 2, rowSpan: 1 }));
+		render(Page);
+		await fireEvent.click(screen.getByRole('button', { name: 'Rearrange tiles' }));
+
+		// col 3 is free, but a colSpan-2 type placed there would overflow into
+		// col 4, which w2 already occupies.
+		const targetCell = document.querySelector('[data-empty-cell][data-col="3"][data-row="1"]') as HTMLElement;
+		const addButton = targetCell.querySelector('.empty-cell-add') as HTMLElement;
+		await fireEvent.click(addButton);
+
+		await fireEvent.click(await screen.findByRole('button', { name: 'Clock' }));
+
+		expect(addWidget).toHaveBeenCalledWith('clock', { col: 1, row: 2, colSpan: 2, rowSpan: 1 }, 'default');
+	});
+
+	it('shows a single trailing add-tile affordance at the narrow breakpoint', async () => {
+		breakpoint.set('narrow');
+		widgets.set([widget('w1', { col: 1, row: 1, colSpan: 1, rowSpan: 1 })]);
+		render(Page);
+		await fireEvent.click(screen.getByRole('button', { name: 'Rearrange tiles' }));
+
+		expect(screen.getAllByRole('button', { name: '+ Add tile' })).toHaveLength(1);
+		expect(document.querySelectorAll('[data-empty-cell]')).toHaveLength(0);
 	});
 
 	it('switches tabs when a tab dot is clicked', async () => {
@@ -188,7 +238,7 @@ describe('+page.svelte', () => {
 			widget('w2', { col: 2, row: 1, colSpan: 2, rowSpan: 1 }),
 		]);
 		render(Page);
-		await fireEvent.click(screen.getByRole('button', { name: 'Rearrange widgets' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Rearrange tiles' }));
 
 		const source = document.querySelector('[data-widget-id="w1"]') as HTMLElement;
 		const target = document.querySelector('[data-widget-id="w2"]') as HTMLElement;
@@ -216,7 +266,7 @@ describe('+page.svelte', () => {
 	it('drags a widget onto empty grid space to move it there', async () => {
 		widgets.set([widget('w1', { col: 1, row: 1, colSpan: 1, rowSpan: 1 })]);
 		render(Page);
-		await fireEvent.click(screen.getByRole('button', { name: 'Rearrange widgets' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Rearrange tiles' }));
 
 		const source = document.querySelector('[data-widget-id="w1"]') as HTMLElement;
 		await fireEvent.pointerDown(source, { clientX: 0, clientY: 0, pointerId: 1 });
@@ -237,11 +287,11 @@ describe('+page.svelte', () => {
 	it('resizes a widget by dragging its resize handle', async () => {
 		widgets.set([widget('w1', { col: 1, row: 1, colSpan: 1, rowSpan: 1 })]);
 		render(Page);
-		await fireEvent.click(screen.getByRole('button', { name: 'Rearrange widgets' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Rearrange tiles' }));
 
 		stubCellRect('w1', 100, 100);
 		const cell = document.querySelector('[data-widget-id="w1"]') as HTMLElement;
-		const handle = screen.getByRole('button', { name: 'Resize widget' });
+		const handle = screen.getByRole('button', { name: 'Resize tile' });
 
 		await fireEvent.pointerDown(handle, { clientX: 0, clientY: 0, pointerId: 1 });
 		await fireEvent.pointerMove(window, { clientX: 100, clientY: 0, pointerId: 1 });
@@ -255,6 +305,59 @@ describe('+page.svelte', () => {
 			'wide',
 		);
 		expect(cell).not.toHaveClass('resizing');
+	});
+
+	it('only shows Auto Arrange in edit mode at the wide breakpoint', async () => {
+		widgets.set([widget('w1', { col: 1, row: 1, colSpan: 1, rowSpan: 1 })]);
+		render(Page);
+
+		expect(screen.queryByRole('button', { name: 'Auto arrange' })).not.toBeInTheDocument();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Rearrange tiles' }));
+		expect(screen.getByRole('button', { name: 'Auto arrange' })).toBeInTheDocument();
+
+		breakpoint.set('narrow');
+		await Promise.resolve();
+		expect(screen.queryByRole('button', { name: 'Auto arrange' })).not.toBeInTheDocument();
+	});
+
+	it('cancelling the Auto Arrange confirmation leaves the layout untouched', async () => {
+		widgets.set([
+			widget('w1', { col: 1, row: 1, colSpan: 1, rowSpan: 1 }),
+			widget('w2', { col: 3, row: 1, colSpan: 1, rowSpan: 1 }),
+		]);
+		render(Page);
+		await fireEvent.click(screen.getByRole('button', { name: 'Rearrange tiles' }));
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Auto arrange' }));
+		expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+		expect(updateWidgetsLayout).not.toHaveBeenCalled();
+	});
+
+	it('confirming Auto Arrange packs the current tab and persists the result', async () => {
+		widgets.set([
+			widget('w1', { col: 1, row: 1, colSpan: 1, rowSpan: 1 }),
+			widget('w2', { col: 3, row: 1, colSpan: 1, rowSpan: 1 }),
+		]);
+		render(Page);
+		await fireEvent.click(screen.getByRole('button', { name: 'Rearrange tiles' }));
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Auto arrange' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Arrange' }));
+
+		expect(updateWidgetsLayout).toHaveBeenCalledWith(
+			[
+				{ id: 'w1', layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 } },
+				{ id: 'w2', layout: { col: 2, row: 1, colSpan: 1, rowSpan: 1 } },
+			],
+			'wide',
+		);
+		const w2 = document.querySelector('[data-widget-id="w2"]') as HTMLElement;
+		expect(w2.getAttribute('style')).toContain('grid-column: 2 / span 1');
 	});
 
 	it('handles manual click on mic button to ask assistant a question', async () => {

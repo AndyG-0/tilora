@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 import { locale, waitLocale } from 'svelte-i18n';
@@ -731,7 +731,7 @@ describe('settings +page.svelte — microphone guidance on insecure origins', ()
 describe('settings +page.svelte — devices section', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		user.set({ id: 'user1', name: 'User 1', avatar: null, role: 'member' });
+		user.set({ id: 'user1', name: 'User 1', avatar: null, role: 'admin' });
 		device.set({ id: 'dev1', name: 'Kitchen Tablet' });
 		settings.mockResolvedValue({ ...BASE_SETTINGS });
 		version.mockResolvedValue({
@@ -759,8 +759,8 @@ describe('settings +page.svelte — devices section', () => {
 
 		render(Page);
 
-		expect(await screen.findByText('Kitchen Tablet')).toBeInTheDocument();
-		expect(screen.getByText('Living Room TV')).toBeInTheDocument();
+		expect(await screen.findByText('Living Room TV')).toBeInTheDocument();
+		expect(screen.getByText('Kitchen Tablet')).toBeInTheDocument();
 		expect(screen.getByText('this device')).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Forget device' })).toBeInTheDocument();
@@ -774,13 +774,14 @@ describe('settings +page.svelte — devices section', () => {
 		render(Page);
 
 		expect(await screen.findByText('Kitchen Tablet')).toBeInTheDocument();
-		await fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+		const section = within(screen.getByText('Devices').closest('section') as HTMLElement);
+		await fireEvent.click(section.getByRole('button', { name: 'Rename' }));
 
 		const input = screen.getByDisplayValue('Kitchen Tablet');
 		expect(input).toBeInTheDocument();
 
 		await fireEvent.input(input, { target: { value: 'Countertop Tablet' } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+		await fireEvent.click(section.getByRole('button', { name: 'Save' }));
 
 		await waitFor(() => expect(renameDevice).toHaveBeenCalledWith('Countertop Tablet'));
 	});
@@ -808,12 +809,13 @@ describe('settings +page.svelte — devices section', () => {
 
 		render(Page);
 
-		expect(await screen.findByText('Kitchen Tablet')).toBeInTheDocument();
-		await fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+		expect(await screen.findByText('Living Room TV')).toBeInTheDocument();
+		const section = within(screen.getByText('Devices').closest('section') as HTMLElement);
+		await fireEvent.click(section.getByRole('button', { name: 'Rename' }));
 
 		const input = screen.getByDisplayValue('Kitchen Tablet');
 		await fireEvent.input(input, { target: { value: 'Living Room TV' } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+		await fireEvent.click(section.getByRole('button', { name: 'Save' }));
 
 		expect(renameDevice).not.toHaveBeenCalled();
 		expect(await screen.findByText('A device with that name already exists.')).toBeInTheDocument();
@@ -835,6 +837,18 @@ describe('settings +page.svelte — devices section', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Forget' }));
 
 		await waitFor(() => expect(deleteDevice).toHaveBeenCalledWith('dev2'));
+	});
+
+	it('non-admins only see their own device, with no forget button or device list', async () => {
+		user.set({ id: 'user1', name: 'User 1', avatar: null, role: 'member' });
+
+		render(Page);
+
+		expect(await screen.findByText('Kitchen Tablet')).toBeInTheDocument();
+		expect(screen.getByText('this device')).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'Forget device' })).not.toBeInTheDocument();
+		expect(listDevices).not.toHaveBeenCalled();
 	});
 });
 
@@ -929,6 +943,7 @@ describe('settings +page.svelte — Software update section', () => {
 
 		const btn = await screen.findByRole('button', { name: 'Check for updates' });
 		expect(btn).toBeInTheDocument();
+		expect(btn).toHaveClass('secondary');
 	});
 
 	it('re-fetches version info when Check for updates is clicked', async () => {
@@ -973,6 +988,7 @@ describe('settings +page.svelte — Software update section', () => {
 
 		const btn = await screen.findByRole('button', { name: 'Update now' });
 		expect(btn).toBeInTheDocument();
+		expect(btn).toHaveClass('save');
 	});
 
 	it('does not show Update now button for non-admin on native install', async () => {

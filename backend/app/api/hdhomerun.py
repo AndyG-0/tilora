@@ -33,7 +33,7 @@ from pydantic import BaseModel
 from app import hwaccel, media_probe, transcoding
 from app.auth import get_current_admin, get_current_user
 from app.integrations import hdhomerun_client
-from app.plugins.base import registry
+from app.plugins.base import get_typed_plugin
 from app.plugins.hdhomerun import media_cache
 from app.plugins.hdhomerun.plugin import HDHomeRunPlugin
 
@@ -62,6 +62,13 @@ _DETAIL_REASON_CHARS = 500
 # asyncio doesn't garbage-collect a task mid-flight — see `_run_in_background`.
 _background_tasks: set[asyncio.Task[None]] = set()
 
+# Nothing else limits how many ffmpeg transcodes can run at once, and each is
+# a real CPU/GPU cost — enough concurrent stream/recording requests can OOM
+# or thrash a Pi. Held for the life of the stream, not just around the spawn
+# (see `_terminate_and_release`), so this caps concurrent transcodes rather
+# than just concurrent spawns.
+_ffmpeg_semaphore = asyncio.Semaphore(2)
+
 # ffprobe metadata for a completed recording never changes, so it's cached
 # in-process per recording_id rather than re-run on every /recording-detail
 # poll (the player refetches this periodically while a recording is still
@@ -86,10 +93,7 @@ def _run_in_background(coro: Coroutine[Any, Any, None]) -> None:
 
 
 def _get_plugin(widget_id: str) -> HDHomeRunPlugin:
-    plugin = registry.get(widget_id)
-    if not isinstance(plugin, HDHomeRunPlugin):
-        raise HTTPException(status_code=404, detail=f"Unknown HDHomeRun widget '{widget_id}'")
-    return plugin
+    return get_typed_plugin(widget_id, HDHomeRunPlugin, "HDHomeRun")
 
 
 @router.get("/transcode-presets")
@@ -120,6 +124,20 @@ async def _terminate(process: asyncio.subprocess.Process) -> None:
     except TimeoutError:
         process.kill()
         await process.wait()
+
+
+async def _terminate_and_release(process: asyncio.subprocess.Process) -> None:
+    """Terminate a spawned ffmpeg process and free its `_ffmpeg_semaphore` slot.
+
+    Every successful `_ffmpeg_semaphore.acquire()` for this process is paired
+    with exactly one call to this (from the streaming generator's `finally`
+    or a post-spawn failure path) so the slot is held for the transcode's
+    whole lifetime, not just around the subprocess spawn.
+    """
+    try:
+        await _terminate(process)
+    finally:
+        _ffmpeg_semaphore.release()
 
 
 async def _drain_stderr(stderr: asyncio.StreamReader, tail: bytearray, done: asyncio.Event) -> None:
@@ -231,6 +249,7 @@ async def stream_channel(widget_id: str, channel_number: str, request: Request):
     device = transcoding.resolve_device(settings)
     command = shlex.join(["ffmpeg", *ffmpeg_args])
 
+    await _ffmpeg_semaphore.acquire()
     try:
         process = await asyncio.create_subprocess_exec(
             "ffmpeg",
@@ -239,6 +258,7 @@ async def stream_channel(widget_id: str, channel_number: str, request: Request):
             stderr=asyncio.subprocess.PIPE,
         )
     except FileNotFoundError as exc:
+        _ffmpeg_semaphore.release()
         raise HTTPException(
             status_code=503,
             detail=(
@@ -279,7 +299,7 @@ async def stream_channel(widget_id: str, channel_number: str, request: Request):
 
     if not first_chunk:
         cause, reason = await _describe_failure(process, stderr_tail, drain_done)
-        _run_in_background(_terminate(process))
+        _run_in_background(_terminate_and_release(process))
         logger.error(
             "HDHomeRun widget '%s' channel %s: %s (preset=%s, device=%s)\ncommand: %s\nffmpeg output:\n%s",
             widget_id,
@@ -359,7 +379,7 @@ async def stream_channel(widget_id: str, channel_number: str, request: Request):
             # cancelled (the client-disconnect case), awaiting anything
             # directly here would be cancelled too, before ffmpeg is
             # actually reaped and the tuner released.
-            _run_in_background(_terminate(process))
+            _run_in_background(_terminate_and_release(process))
 
     return StreamingResponse(body(), media_type="video/mp2t")
 
@@ -471,6 +491,7 @@ async def handle_stream_recording(widget_id: str, url: str, start: float | None 
         device = transcoding.resolve_device(settings)
         command = shlex.join(["ffmpeg", *ffmpeg_args])
 
+        await _ffmpeg_semaphore.acquire()
         try:
             process = await asyncio.create_subprocess_exec(
                 "ffmpeg",
@@ -479,6 +500,7 @@ async def handle_stream_recording(widget_id: str, url: str, start: float | None 
                 stderr=asyncio.subprocess.PIPE,
             )
         except FileNotFoundError as exc:
+            _ffmpeg_semaphore.release()
             raise HTTPException(status_code=503, detail="ffmpeg is not installed on PATH") from exc
 
         assert process.stdout is not None
@@ -506,7 +528,7 @@ async def handle_stream_recording(widget_id: str, url: str, start: float | None 
 
         if not first_chunk:
             cause, reason = await _describe_failure(process, stderr_tail, drain_done)
-            _run_in_background(_terminate(process))
+            _run_in_background(_terminate_and_release(process))
             logger.error(
                 "HDHomeRun widget '%s': recording transcode failed for %s: %s\nffmpeg output:\n%s",
                 widget_id,
@@ -534,7 +556,7 @@ async def handle_stream_recording(widget_id: str, url: str, start: float | None 
                         break
                     yield chunk
             finally:
-                _run_in_background(_terminate(process))
+                _run_in_background(_terminate_and_release(process))
 
         return StreamingResponse(
             transcode_generator(),

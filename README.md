@@ -1,5 +1,7 @@
 # Tilora
 
+[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue.svg)](https://andyg-0.github.io/tilora/)
+
 A customizable smart-display dashboard and home server for Raspberry Pi, Debian,
 Ubuntu, and other Linux devices. Run it as a dedicated fullscreen touchscreen
 kiosk or as a lightweight home server accessible from any phone, tablet, or
@@ -34,6 +36,8 @@ widget's config `type` to its plugin class.
 ```
 backend/    FastAPI app, plugins, AI layer, config
 frontend/   SvelteKit dashboard UI
+cli/        `tilora` management CLI (status/update/kiosk/config/doctor) for
+            native installs — see deploy/README.md
 deploy/     systemd units, kiosk launch script, Pi setup notes
 VERSION     current release version, checked against GitHub releases for
             the in-app update notification (backend/app/update_check.py)
@@ -59,6 +63,13 @@ cd frontend
 npm install
 npm run dev
 ```
+
+**Documentation (live reload):**
+
+```bash
+./docs.sh   # Serves documentation at http://localhost:8080
+```
+
 
 The frontend expects the backend at `PUBLIC_API_BASE_URL` (`frontend/.env`,
 defaults to `http://localhost:8000`), and the backend allows CORS from
@@ -117,154 +128,41 @@ if you override `PUBLIC_API_BASE_URL` to point at a different host, set
 `CORS_ORIGIN` to that same host on port 3000 alongside it, e.g.
 `PUBLIC_API_BASE_URL=http://<host-ip>:8000 CORS_ORIGIN=http://<host-ip>:3000 docker compose -f docker-compose.prod.yml up -d`.
 
+📖 **[Full Documentation & Guides](https://andyg-0.github.io/tilora/)** · **[Widget Catalog](https://andyg-0.github.io/tilora/user-guide/widgets/overview/)** · **[Admin Guide](https://andyg-0.github.io/tilora/admin-guide/overview/)** · **[Deployment](https://andyg-0.github.io/tilora/deployment/raspberry-pi-kiosk/)**
+
 ### Container widget: Docker/Podman socket access
 
-The Docker/Podman Container widget reads container status through the
-host's Docker- or Podman-Engine-API socket — but that socket is normally
-root-owned, and per Docker's own docs, giving a process group-level access
-to it is root-equivalent on the host (trivial to mount `/` and get a root
-shell). Mounting it straight into the backend means the whole backend
-(arbitrary plugin/AI-tool code, reachable from the LAN) carries that
-capability. Three ways to connect, in order of preference:
+The Docker/Podman Container widget reads container status through the host's Docker or Podman Engine API socket. Tilora supports connecting directly via Unix socket, TCP, or through a locked-down **`socket-proxy` sidecar** (`ghcr.io/tecnativa/docker-socket-proxy`) to prevent root socket exposure to the backend.
 
-1. **`socket-proxy` sidecar (recommended)** — uncomment the `socket-proxy`
-   service in `docker-compose.yml`/`.prod.yml`
-   (`ghcr.io/tecnativa/docker-socket-proxy`) and point the widget's
-   settings at `connection: tcp, host: socket-proxy, port: 2375` (Compose's
-   built-in per-project DNS resolves `socket-proxy` for the backend
-   automatically — no `ports:`/host exposure needed). This does **not**
-   make the socket readable without root — the proxy still needs read
-   access to the real socket, same as a direct mount would. What it buys
-   you is *scope*: only that small, single-purpose, locked-down proxy
-   (`CONTAINERS=1`/`POST=0` — read-only container listing, no
-   start/stop/exec no matter what a client asks) carries that access,
-   instead of the whole backend. The backend itself never mounts the
-   socket or gains any elevated privilege.
+See the **[Container Host Management & Security Guide](https://andyg-0.github.io/tilora/admin-guide/container-hosts/)** for configuration steps across Docker, rootless Podman, and remote hosts.
 
-   How the proxy gets that access differs by engine. With **Docker**, or
-   with **Podman run rootful** (the whole compose project run as root,
-   e.g. `sudo ... compose up`), the default `docker.sock` mount works as
-   written — a persistent root daemon (Docker) or your own root shell
-   (rootful Podman) does the mount setup, and the proxy's default
-   `USER root` can then read it. With **rootless Podman** (a regular
-   user's own `podman-compose up`, no sudo), there's no privileged daemon
-   doing that setup for you — the `podman` process preparing the bind
-   mount runs as *your own unprivileged user*, so it can only mount
-   sockets that user can already read. `/var/run/docker.sock` is commonly
-   a symlink to *rootful* Podman's socket even on a host that also runs
-   rootless Podman for your login — mounting that will fail with a
-   permission error at container-creation time (confirmed on Ubuntu
-   Server: `statfs /var/run/docker.sock: permission denied`), not inside
-   the container. In that case, set `CONTAINER_SOCKET_PATH` (an env var
-   the compose file reads, default `/var/run/docker.sock`) to your own
-   rootless socket instead — `$XDG_RUNTIME_DIR/podman/podman.sock`,
-   typically `/run/user/<uid>/podman/podman.sock`. Enable it once with
-   `systemctl --user enable --now podman.socket`, and run
-   `loginctl enable-linger <user>` so it survives logout/reboot on a
-   headless server.
-2. **Rootless Podman, no proxy** — same rootless socket as above
-   (`/run/user/<uid>/podman/podman.sock`), but skip the proxy and point
-   the widget's `connection: socket` straight at it. This is the only
-   option where root never enters the picture anywhere in the chain
-   (not just contained to one proxy), and its blast radius is smaller
-   than the rootful case too — that socket only controls *your* rootless
-   containers, not the whole host. Use it if your host can run Podman
-   rootless; add the proxy back in front of it instead if you want the
-   extra read-only enforcement even so.
-3. **Direct socket mount** — uncomment the `docker.sock`/`podman.sock`
-   line under the backend service's `volumes:`. Simplest, but grants that
-   root-equivalent access to the whole backend rather than containing it.
+### Hardware-accelerated live TV & transcoding
 
-The backend image bundles `ffmpeg`, so the HDHomeRun widget's
-`server_transcode` playback mode works out of the box in both compose files
-above — no extra install step needed (contrast with the bare-metal installer
-below, which intentionally leaves `ffmpeg` out; see `deploy/README.md`). The
-image also bundles the VA-API/Quick Sync driver packages for the `qsv` and
-`vaapi` hwaccel presets, but hardware device access can't be baked into an
-image — uncomment the `/dev/dri` block under the backend service in
-`docker-compose.yml`/`docker-compose.prod.yml` and set `RENDER_GID` (see the
-comment there) to actually use them.
+The backend container bundles `ffmpeg` and VA-API/Quick Sync drivers for real-time live TV stream transcoding (HDHomeRun MPEG-2 OTA to H.264/AAC).
 
-### Hardware acceleration won't start (502 on the stream)
+- **Diagnostics**: Open HDHomeRun → *Edit playback settings* → *Run diagnostics* (admin only) to verify `/dev/dri` permissions and test hardware encoding presets.
+- **Troubleshooting & Setup**: See the **[Hardware Acceleration Guide](https://andyg-0.github.io/tilora/admin-guide/hardware-acceleration/)** for `/dev/dri` passthrough, systemd permissions, and driver details (`iHD`, `i965`, `radeonsi`, `nvenc`, `videotoolbox`).
 
-Open the HDHomeRun widget → **Edit playback settings** → **Run diagnostics**
-(admin only). It checks each link in the chain independently — `/dev/dri`
-passthrough, device permissions, the VA-API driver, and a real test encode
-through every preset — and names the first thing that's actually broken. It
-needs no free tuner, so it works even while every tuner is in use. The same
-report is written to the backend log, so `docker compose logs backend` is
-enough for a bug report.
+For native Debian, Ubuntu, Raspberry Pi OS, and Debian-based distro installation, run:
+```bash
+curl -fsSL https://raw.githubusercontent.com/AndyG-0/tilora/main/deploy/install.sh | bash
+```
+See **[Linux & Raspberry Pi Kiosk Setup](https://andyg-0.github.io/tilora/deployment/raspberry-pi-kiosk/)** and `deploy/README.md` for configuration, upgrades, server-only vs kiosk modes, and network options.
 
-The usual causes, in the order the diagnostics check them:
+## Network exposure & security
 
-- **`/dev/dri` missing** — the device block is still commented out, or the
-  container wasn't recreated after uncommenting it.
-- **Device present but not readable** — `group_add` is missing or has the
-  wrong GID (`getent group render` on the host). `privileged: true` does not
-  fix this, because the backend runs as a non-root user.
-- **Wrong render node** — a host with a second DRM device puts the iGPU on
-  `/dev/dri/renderD129`. Set the widget's **Render device** setting.
-- **No VA-API driver** — set `LIBVA_DRIVER_NAME` (`iHD` for Intel Gen8+,
-  `i965` for older Intel, `radeonsi` for AMD).
-- **VAAPI works, Quick Sync doesn't** — on Alder Lake-N and newer Intel
-  parts, QSV may be unavailable through the ffmpeg build the image ships.
-  Use the **VAAPI** preset there.
-- **VAAPI works but "VAAPI, full hardware decode + encode" doesn't** — the
-  GPU has no hardware MPEG-2 decoder, which newer Intel GPUs have dropped.
-  The plain **VAAPI** preset decodes in software for exactly this reason.
+Tilora requires a session-cookie login (a household profile + optional PIN) for every widget read and write. Settings follow a 4-tier model (Admin, User-level, Widget-instance, Device).
 
-`software` always works and is the right fallback; turn on **Verbose ffmpeg
-logging** in the same settings panel if you need ffmpeg's own view of a
-failure in the backend log.
+Tilora is designed to run on a trusted home / local network (LAN), not to be exposed directly to the public internet without an authenticating reverse proxy or VPN (Tailscale, WireGuard). Tilora uses a single backend process backed by SQLite WAL mode. See the **[Security Guide](https://andyg-0.github.io/tilora/admin-guide/security/)** for architecture details.
 
-For native Debian, Ubuntu, Raspberry Pi OS, and Debian-based distro installation, run
-`curl -fsSL https://raw.githubusercontent.com/AndyG-0/tilora/main/deploy/install.sh | bash`.
-See `deploy/README.md` for configuration, upgrades, server-only vs kiosk modes, and
-network access options.
+## Voice assistant & speech recognition
 
-## Network exposure
+Tilora includes an AI voice assistant accessible via the top-bar microphone button or continuous wake-word detection (`"Tilora"`).
 
-Tilora requires a session-cookie login (a household profile + optional PIN)
-for every widget read and write — see `CONTRIBUTING.md`'s "Settings tiers"
-section for how that plays out per-widget: any logged-in member can view a
-widget's data, but changing a shared/network-wide setting (NAS, router,
-Docker, timezone, ...) requires the `admin` role, while personal settings
-(RSS feeds, calendar picks, ...) are each member's own to change. This
-protects against a device that merely shares your network, but not against
-another *logged-in* household member — Tilora is still built to run on a
-trusted home/local network (e.g. a Pi behind your router), not to be
-exposed directly to the internet. If you need remote access, put it behind
-a VPN (Tailscale, WireGuard) or an authenticating reverse proxy rather than
-port-forwarding it.
+- **Speech Recognition (STT)**: Native Web Speech API (Chrome/Edge/Safari) or Cloud STT via OpenAI Whisper (Chromium kiosks, Firefox, Brave).
+- **Text-to-Speech (TTS)**: Built-in browser voices, OpenAI Cloud TTS, or self-hosted Piper neural voices.
+- **Audio Policies**: See the **[Voice Setup Guide](https://andyg-0.github.io/tilora/admin-guide/voice-setup/)** for Chromium `--autoplay-policy=no-user-gesture-required` and insecure origin permissions.
 
-## Linux & Raspberry Pi deployment
-
-See `deploy/README.md` for full installation guides, server-only vs kiosk
-modes, systemd service management, and updates.
-
-## Voice assistant & browser compatibility
-
-Tilora includes an AI voice assistant accessible via the top-bar microphone button or continuous wake-word detection.
-
-| Browser / Client | Speech recognition (Speech-to-Text) | Setup & requirements |
-|---|---|---|
-| **Google Chrome** | Native Web Speech API (Free) | Built-in Google Speech API keys. On local HTTP IP, enable `#unsafely-treat-insecure-origin-as-secure`. |
-| **Microsoft Edge** | Native Web Speech API (Free) | Built-in Azure Speech API keys. On local HTTP IP, enable `#unsafely-treat-insecure-origin-as-secure`. |
-| **Apple Safari** | Native Speech Recognition (Free) | Requires HTTPS or `localhost` (Safari blocks microphone access on plain HTTP). |
-| **Chromium / Raspberry Pi Kiosk** | Cloud STT (OpenAI Whisper) | Open-source Chromium lacks built-in Google Speech keys. Enable **OpenAI Whisper STT** in Settings (Admin) + `#unsafely-treat-insecure-origin-as-secure`. |
-| **Mozilla Firefox** | Cloud STT (OpenAI Whisper) | Firefox does not support native speech recognition. Enable **OpenAI Whisper STT** in Settings (Admin). |
-| **Brave** | Cloud STT (OpenAI Whisper) | Enable **OpenAI Whisper STT** in Settings (Admin) + `#unsafely-treat-insecure-origin-as-secure`. |
-
-### Always-on TTS playback on Chromium
-
-Chromium-based browsers (Chromium, Brave, Edge) block audio playback — including OpenAI/Piper text-to-speech — until the
-page has received a real click, tap, or key press. A normal mic-button press satisfies this automatically, but a client
-running "Always-on microphone" mode that boots straight into the dashboard (e.g. a kiosk) never generates that first
-gesture on its own, so spoken responses stay silent until the screen is touched once. Tilora shows a one-time on-screen
-prompt asking for that tap, so this resolves itself with no configuration. To skip the prompt entirely on a client you
-control, launch Chromium with `--autoplay-policy=no-user-gesture-required` (already set by `deploy/kiosk.sh` for
-barebones Raspberry Pi installs) or apply the Chromium enterprise `AutoplayAllowlist` policy for server + separate-client
-deployments where you don't control the launch flags directly.
 
 ## License
 

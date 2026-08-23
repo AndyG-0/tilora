@@ -111,6 +111,18 @@ async def test_get_detail_includes_daily_forecast():
 
 
 @respx.mock
+async def test_get_detail_includes_latitude_and_longitude():
+    respx.get(FORECAST_URL).mock(return_value=httpx.Response(200, json=FAKE_RESPONSE))
+    respx.get(AIR_QUALITY_URL).mock(return_value=httpx.Response(200, json=FAKE_AIR_QUALITY_RESPONSE))
+    plugin = make_plugin()
+
+    detail = await plugin.get_detail()
+
+    assert detail["latitude"] == 32.7555
+    assert detail["longitude"] == -97.3308
+
+
+@respx.mock
 async def test_get_detail_includes_severe_weather_alerts_setting():
     respx.get(FORECAST_URL).mock(return_value=httpx.Response(200, json=FAKE_RESPONSE))
     respx.get(AIR_QUALITY_URL).mock(return_value=httpx.Response(200, json=FAKE_AIR_QUALITY_RESPONSE))

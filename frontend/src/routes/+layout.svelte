@@ -15,6 +15,7 @@
 	import { screensaverSettings, loadScreensaverSettings, forceScreensaverPreview } from '$lib/stores/screensaver';
 	import { loadVoiceSelectionFromServer } from '$lib/stores/voice';
 	import { loadAssistantConfigFromServer, loadAlwaysOnMicFromServer } from '$lib/stores/assistant';
+	import { reloadWidgets } from '$lib/stores/widgets';
 	import Screensaver from '$lib/components/Screensaver.svelte';
 
 	let { children } = $props();
@@ -110,6 +111,10 @@
 			loadVoiceSelectionFromServer();
 			loadAssistantConfigFromServer();
 			loadAlwaysOnMicFromServer();
+			// widgets.ts's own reload is a module-level breakpoint subscription
+			// that only fires once per bundle load, so it misses a same-session
+			// login (no page reload) unless triggered again here.
+			reloadWidgets();
 		}
 	});
 

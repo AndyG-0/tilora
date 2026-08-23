@@ -4,7 +4,15 @@ import pytest
 
 from app import config
 from app.ai import assistant
+from app.plugins.asus_router.plugin import AsusRouterPlugin
+from app.plugins.base import registry
 from app.storage.db import save_app_settings, save_user_preferences
+
+
+def register_asus_router_plugin() -> AsusRouterPlugin:
+    plugin = AsusRouterPlugin({"id": "asus_router", "settings": {**AsusRouterPlugin.default_settings}})
+    registry.register(plugin)
+    return plugin
 
 
 @pytest.fixture
@@ -155,3 +163,64 @@ async def test_ask_omits_web_tools_when_searxng_url_not_configured(monkeypatch, 
 
     assert "web_search" not in captured["tool_names"]
     assert "web_fetch" not in captured["tool_names"]
+
+
+async def test_ask_omits_admin_only_tools_for_a_non_admin_user(monkeypatch, tmp_db, dashboard_yaml):
+    register_asus_router_plugin()
+    captured = {}
+
+    def fake_init(self, tool_bridge, model=None):
+        captured["tool_names"] = list(tool_bridge._tools.keys())
+        self._tools = tool_bridge
+        self._model = "test-model"
+
+    async def fake_run_prompt(self, prompt, max_tool_rounds=4, system_prompt=None):
+        return "ok"
+
+    monkeypatch.setattr("app.ai.provider.AIProvider.__init__", fake_init)
+    monkeypatch.setattr("app.ai.provider.AIProvider.run_prompt", fake_run_prompt)
+
+    await assistant.ask("wake my computer", user={"id": "user-1", "role": "member"})
+
+    assert "asus_router_wake_on_lan" not in captured["tool_names"]
+    assert "get_asus_router_status" in captured["tool_names"]
+
+
+async def test_ask_includes_admin_only_tools_for_an_admin_user(monkeypatch, tmp_db, dashboard_yaml):
+    register_asus_router_plugin()
+    captured = {}
+
+    def fake_init(self, tool_bridge, model=None):
+        captured["tool_names"] = list(tool_bridge._tools.keys())
+        self._tools = tool_bridge
+        self._model = "test-model"
+
+    async def fake_run_prompt(self, prompt, max_tool_rounds=4, system_prompt=None):
+        return "ok"
+
+    monkeypatch.setattr("app.ai.provider.AIProvider.__init__", fake_init)
+    monkeypatch.setattr("app.ai.provider.AIProvider.run_prompt", fake_run_prompt)
+
+    await assistant.ask("wake my computer", user={"id": "user-1", "role": "admin"})
+
+    assert "asus_router_wake_on_lan" in captured["tool_names"]
+
+
+async def test_ask_includes_admin_only_tools_for_the_scheduled_job_with_no_user(monkeypatch, tmp_db, dashboard_yaml):
+    register_asus_router_plugin()
+    captured = {}
+
+    def fake_init(self, tool_bridge, model=None):
+        captured["tool_names"] = list(tool_bridge._tools.keys())
+        self._tools = tool_bridge
+        self._model = "test-model"
+
+    async def fake_run_prompt(self, prompt, max_tool_rounds=4, system_prompt=None):
+        return "ok"
+
+    monkeypatch.setattr("app.ai.provider.AIProvider.__init__", fake_init)
+    monkeypatch.setattr("app.ai.provider.AIProvider.run_prompt", fake_run_prompt)
+
+    await assistant.ask("wake my computer")
+
+    assert "asus_router_wake_on_lan" in captured["tool_names"]

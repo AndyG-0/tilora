@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 
 from app.auth import get_current_user
 from app.integrations import icloud_photos, icloud_shared_album, immich_client
-from app.plugins.base import registry
+from app.plugins.base import get_typed_plugin
 from app.plugins.photos.plugin import IMAGE_EXTENSIONS, PhotosPlugin
 from app.storage import db
 
@@ -32,10 +32,7 @@ router = APIRouter(prefix="/api/photos", tags=["photos"], dependencies=[Depends(
 
 
 def _get_plugin(widget_id: str) -> PhotosPlugin:
-    plugin = registry.get(widget_id)
-    if not isinstance(plugin, PhotosPlugin):
-        raise HTTPException(status_code=404, detail=f"Unknown photos widget '{widget_id}'")
-    return plugin
+    return get_typed_plugin(widget_id, PhotosPlugin, "photos")
 
 
 @router.get("/{widget_id}/{filename:path}")

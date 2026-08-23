@@ -5,7 +5,13 @@ import respx
 
 from app.plugins.flights.aircraft import lookup_aircraft
 from app.plugins.flights.airlines import lookup
-from app.plugins.flights.plugin import FlightsPlugin, _aircraft_kind
+from app.plugins.flights.plugin import (
+    FlightsPlugin,
+    _aircraft_kind,
+    _airport_summary,
+    _normalize,
+    _parse_adsbdb_airport,
+)
 
 FAKE_RESPONSE = {
     "ac": [
@@ -78,6 +84,8 @@ def mock_routeset(response_json: list[dict] | None = None) -> respx.Route:
 def mock_external_apis():
     respx.get(url__startswith="https://api.adsbdb.com/v0/callsign/").mock(return_value=httpx.Response(404))
     respx.get(url__startswith="https://api.adsbdb.com/v0/aircraft/").mock(return_value=httpx.Response(404))
+    respx.get(url__startswith="https://hexdb.io/api/v1/route/iata/").mock(return_value=httpx.Response(404))
+    respx.get(url__startswith="https://hexdb.io/api/v1/airport/iata/").mock(return_value=httpx.Response(404))
     respx.get(url__startswith="https://api.planespotters.net/pub/photos/reg/").mock(
         return_value=httpx.Response(200, json={"photos": []})
     )
@@ -168,6 +176,18 @@ def test_aircraft_kind_classifies_missing_category_as_unknown():
     assert _aircraft_kind("") == "unknown"
 
 
+def test_airport_summary_includes_null_coords_when_missing():
+    assert _airport_summary({"iata": "DFW", "icao": "KDFW"})["latitude"] is None
+    assert _airport_summary({"iata": "DFW", "icao": "KDFW"})["longitude"] is None
+
+
+def test_parse_adsbdb_airport_includes_null_coords_when_missing():
+    airport = _parse_adsbdb_airport({"iata_code": "DFW"})
+    assert airport is not None
+    assert airport["latitude"] is None
+    assert airport["longitude"] is None
+
+
 @respx.mock
 async def test_get_summary_excludes_ground_traffic():
     respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
@@ -234,8 +254,8 @@ async def test_get_summary_maps_aircraft_kind():
 
 
 @respx.mock
-async def test_get_summary_caps_at_eight():
-    many = {"ac": [{**FAKE_RESPONSE["ac"][0], "hex": f"h{i}", "dst": float(i)} for i in range(12)]}
+async def test_get_summary_caps_at_hundred():
+    many = {"ac": [{**FAKE_RESPONSE["ac"][0], "hex": f"h{i}", "dst": float(i)} for i in range(120)]}
     respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(return_value=httpx.Response(200, json=many))
     mock_external_apis()
     mock_routeset()
@@ -243,13 +263,14 @@ async def test_get_summary_caps_at_eight():
 
     summary = await plugin.get_summary()
 
-    assert summary["count"] == 12
-    assert len(summary["flights"]) == 8
+    assert summary["count"] == 120
+    assert len(summary["flights"]) == 100
+    assert summary["truncated"] is True
 
 
 @respx.mock
-async def test_get_detail_caps_at_twenty():
-    many = {"ac": [{**FAKE_RESPONSE["ac"][0], "hex": f"h{i}", "dst": float(i)} for i in range(25)]}
+async def test_get_detail_caps_at_hundred():
+    many = {"ac": [{**FAKE_RESPONSE["ac"][0], "hex": f"h{i}", "dst": float(i)} for i in range(120)]}
     respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(return_value=httpx.Response(200, json=many))
     mock_external_apis()
     mock_routeset()
@@ -257,8 +278,23 @@ async def test_get_detail_caps_at_twenty():
 
     detail = await plugin.get_detail()
 
-    assert detail["count"] == 25
-    assert len(detail["flights"]) == 20
+    assert detail["count"] == 120
+    assert len(detail["flights"]) == 100
+    assert detail["truncated"] is True
+
+
+@respx.mock
+async def test_get_summary_not_truncated_under_cap():
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        return_value=httpx.Response(200, json=FAKE_RESPONSE)
+    )
+    mock_external_apis()
+    mock_routeset()
+    plugin = make_plugin()
+
+    summary = await plugin.get_summary()
+
+    assert summary["truncated"] is False
 
 
 @respx.mock
@@ -327,6 +363,10 @@ async def test_get_summary_includes_route_from_adsbdb():
     respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
         return_value=httpx.Response(200, json=FAKE_RESPONSE)
     )
+    # DFW->ORD is geographically plausible for UAL1698's fixture position
+    # (33.4245, -97.9147), which sits right where a DFW departure climbing
+    # out toward Chicago would be -- see test_flights_geo.py for the
+    # underlying plausibility check this exercises.
     respx.get("https://api.adsbdb.com/v0/callsign/UAL1698").mock(
         return_value=httpx.Response(
             200,
@@ -335,16 +375,20 @@ async def test_get_summary_includes_route_from_adsbdb():
                     "flightroute": {
                         "callsign": "UAL1698",
                         "origin": {
-                            "iata_code": "ABQ",
-                            "icao_code": "KABQ",
-                            "municipality": "Albuquerque",
-                            "name": "Albuquerque International Sunport",
+                            "iata_code": "DFW",
+                            "icao_code": "KDFW",
+                            "municipality": "Dallas-Fort Worth",
+                            "name": "Dallas Fort Worth International Airport",
+                            "latitude": 32.8998,
+                            "longitude": -97.0403,
                         },
                         "destination": {
-                            "iata_code": "IAH",
-                            "icao_code": "KIAH",
-                            "municipality": "Houston",
-                            "name": "George Bush Intercontinental Airport",
+                            "iata_code": "ORD",
+                            "icao_code": "KORD",
+                            "municipality": "Chicago",
+                            "name": "O'Hare International Airport",
+                            "latitude": 41.9786,
+                            "longitude": -87.9048,
                         },
                     }
                 }
@@ -358,8 +402,136 @@ async def test_get_summary_includes_route_from_adsbdb():
     summary = await plugin.get_summary()
 
     by_callsign = {f["callsign"]: f for f in summary["flights"]}
-    assert by_callsign["UAL1698"]["origin"] == {"iata": "ABQ", "icao": "KABQ", "city": "Albuquerque"}
-    assert by_callsign["UAL1698"]["destination"] == {"iata": "IAH", "icao": "KIAH", "city": "Houston"}
+    assert by_callsign["UAL1698"]["origin"] == {
+        "iata": "DFW",
+        "icao": "KDFW",
+        "city": "Dallas-Fort Worth",
+        "latitude": 32.8998,
+        "longitude": -97.0403,
+    }
+    assert by_callsign["UAL1698"]["destination"] == {
+        "iata": "ORD",
+        "icao": "KORD",
+        "city": "Chicago",
+        "latitude": 41.9786,
+        "longitude": -87.9048,
+    }
+
+
+@respx.mock
+async def test_get_summary_suppresses_geographically_implausible_adsbdb_route():
+    # Real-world bug case: ADSBDB is keyed purely by callsign with no sense
+    # of "today's actual flight", so a reused flight number can resolve to a
+    # route that has nothing to do with where the aircraft actually is (this
+    # exact response was observed live for a Southwest flight cruising near
+    # Phoenix, AZ). UAL1698's fixture position (33.4245, -97.9147) is near
+    # Fort Worth, TX -- nowhere near either Denver or Nashville.
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        return_value=httpx.Response(200, json=FAKE_RESPONSE)
+    )
+    respx.get("https://api.adsbdb.com/v0/callsign/UAL1698").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "response": {
+                    "flightroute": {
+                        "callsign": "UAL1698",
+                        "origin": {
+                            "iata_code": "DEN",
+                            "icao_code": "KDEN",
+                            "municipality": "Denver",
+                            "latitude": 39.8617,
+                            "longitude": -104.6731,
+                        },
+                        "destination": {
+                            "iata_code": "BNA",
+                            "icao_code": "KBNA",
+                            "municipality": "Nashville",
+                            "latitude": 36.1245,
+                            "longitude": -86.6782,
+                        },
+                    }
+                }
+            },
+        )
+    )
+    mock_external_apis()
+    mock_routeset()
+    plugin = make_plugin()
+
+    summary = await plugin.get_summary()
+
+    by_callsign = {f["callsign"]: f for f in summary["flights"]}
+    assert by_callsign["UAL1698"]["origin"] is None
+    assert by_callsign["UAL1698"]["destination"] is None
+
+
+@respx.mock
+async def test_get_summary_falls_back_to_routeset_when_adsbdb_route_is_implausible():
+    # When ADSBDB's route fails the plausibility check, it should be
+    # treated the same as "not found" and fall through to adsb.lol's
+    # routeset, rather than caching/returning the bad route.
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        return_value=httpx.Response(200, json=FAKE_RESPONSE)
+    )
+    respx.get("https://api.adsbdb.com/v0/callsign/UAL1698").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "response": {
+                    "flightroute": {
+                        "callsign": "UAL1698",
+                        "origin": {
+                            "iata_code": "DEN",
+                            "icao_code": "KDEN",
+                            "municipality": "Denver",
+                            "latitude": 39.8617,
+                            "longitude": -104.6731,
+                        },
+                        "destination": {
+                            "iata_code": "BNA",
+                            "icao_code": "KBNA",
+                            "municipality": "Nashville",
+                            "latitude": 36.1245,
+                            "longitude": -86.6782,
+                        },
+                    }
+                }
+            },
+        )
+    )
+    mock_external_apis()
+    mock_routeset(
+        [
+            {
+                "callsign": "UAL1698",
+                "plausible": True,
+                "_airports": [
+                    {"iata": "DFW", "icao": "KDFW", "location": "Dallas-Fort Worth", "lat": 32.8998, "lon": -97.0403},
+                    {"iata": "ORD", "icao": "KORD", "location": "Chicago", "lat": 41.9786, "lon": -87.9048},
+                ],
+            }
+        ]
+    )
+    plugin = make_plugin()
+
+    summary = await plugin.get_summary()
+
+    by_callsign = {f["callsign"]: f for f in summary["flights"]}
+    assert by_callsign["UAL1698"]["origin"] == {
+        "iata": "DFW",
+        "icao": "KDFW",
+        "city": "Dallas-Fort Worth",
+        "latitude": 32.8998,
+        "longitude": -97.0403,
+    }
+    assert by_callsign["UAL1698"]["destination"] == {
+        "iata": "ORD",
+        "icao": "KORD",
+        "city": "Chicago",
+        "latitude": 41.9786,
+        "longitude": -87.9048,
+    }
 
 
 @respx.mock
@@ -374,8 +546,8 @@ async def test_get_summary_falls_back_to_routeset_when_adsbdb_missing():
                 "callsign": "UAL1698",
                 "plausible": True,
                 "_airports": [
-                    {"iata": "ABQ", "icao": "KABQ", "location": "Albuquerque"},
-                    {"iata": "HOU", "icao": "KHOU", "location": "Houston"},
+                    {"iata": "DFW", "icao": "KDFW", "location": "Dallas-Fort Worth", "lat": 32.8998, "lon": -97.0403},
+                    {"iata": "MDW", "icao": "KMDW", "location": "Chicago", "lat": 41.7868, "lon": -87.7522},
                 ],
             }
         ]
@@ -385,8 +557,95 @@ async def test_get_summary_falls_back_to_routeset_when_adsbdb_missing():
     summary = await plugin.get_summary()
 
     by_callsign = {f["callsign"]: f for f in summary["flights"]}
-    assert by_callsign["UAL1698"]["origin"] == {"iata": "ABQ", "icao": "KABQ", "city": "Albuquerque"}
-    assert by_callsign["UAL1698"]["destination"] == {"iata": "HOU", "icao": "KHOU", "city": "Houston"}
+    assert by_callsign["UAL1698"]["origin"] == {
+        "iata": "DFW",
+        "icao": "KDFW",
+        "city": "Dallas-Fort Worth",
+        "latitude": 32.8998,
+        "longitude": -97.0403,
+    }
+    assert by_callsign["UAL1698"]["destination"] == {
+        "iata": "MDW",
+        "icao": "KMDW",
+        "city": "Chicago",
+        "latitude": 41.7868,
+        "longitude": -87.7522,
+    }
+
+
+@respx.mock
+async def test_get_summary_falls_back_to_hexdb_when_adsbdb_and_routeset_both_miss():
+    # ADSBDB 404s (via mock_external_apis) and adsb.lol's routeset comes
+    # back empty -- hexdb.io is the last resort. UAL1698's fixture position
+    # (33.4245, -97.9147) is consistent with a DFW-MDW route.
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        return_value=httpx.Response(200, json=FAKE_RESPONSE)
+    )
+    respx.get("https://hexdb.io/api/v1/route/iata/UAL1698").mock(
+        return_value=httpx.Response(200, json={"route": "DFW-MDW"})
+    )
+    respx.get("https://hexdb.io/api/v1/airport/iata/DFW").mock(
+        return_value=httpx.Response(
+            200, json={"iata": "DFW", "icao": "KDFW", "latitude": 32.8998, "longitude": -97.0403}
+        )
+    )
+    respx.get("https://hexdb.io/api/v1/airport/iata/MDW").mock(
+        return_value=httpx.Response(
+            200, json={"iata": "MDW", "icao": "KMDW", "latitude": 41.7868, "longitude": -87.7522}
+        )
+    )
+    mock_external_apis()
+    mock_routeset()
+    plugin = make_plugin()
+
+    summary = await plugin.get_summary()
+
+    by_callsign = {f["callsign"]: f for f in summary["flights"]}
+    assert by_callsign["UAL1698"]["origin"] == {
+        "iata": "DFW",
+        "icao": "KDFW",
+        "city": None,
+        "latitude": 32.8998,
+        "longitude": -97.0403,
+    }
+    assert by_callsign["UAL1698"]["destination"] == {
+        "iata": "MDW",
+        "icao": "KMDW",
+        "city": None,
+        "latitude": 41.7868,
+        "longitude": -87.7522,
+    }
+
+
+@respx.mock
+async def test_get_summary_suppresses_geographically_implausible_hexdb_route():
+    # Same real-world staleness problem as ADSBDB/routeset, but for hexdb.io:
+    # a Denver-Nashville route makes no sense for an aircraft near Fort Worth.
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        return_value=httpx.Response(200, json=FAKE_RESPONSE)
+    )
+    respx.get("https://hexdb.io/api/v1/route/iata/UAL1698").mock(
+        return_value=httpx.Response(200, json={"route": "DEN-BNA"})
+    )
+    respx.get("https://hexdb.io/api/v1/airport/iata/DEN").mock(
+        return_value=httpx.Response(
+            200, json={"iata": "DEN", "icao": "KDEN", "latitude": 39.8617, "longitude": -104.6731}
+        )
+    )
+    respx.get("https://hexdb.io/api/v1/airport/iata/BNA").mock(
+        return_value=httpx.Response(
+            200, json={"iata": "BNA", "icao": "KBNA", "latitude": 36.1245, "longitude": -86.6782}
+        )
+    )
+    mock_external_apis()
+    mock_routeset()
+    plugin = make_plugin()
+
+    summary = await plugin.get_summary()
+
+    by_callsign = {f["callsign"]: f for f in summary["flights"]}
+    assert by_callsign["UAL1698"]["origin"] is None
+    assert by_callsign["UAL1698"]["destination"] is None
 
 
 @respx.mock
@@ -492,3 +751,100 @@ def test_get_ai_tools_default_and_custom_instances():
     assert len(custom_tools) == 1
     assert custom_tools[0].name == "get_nearby_flights_summary_flights_custom_123"
     assert "London, UK" in custom_tools[0].description
+
+
+@respx.mock
+async def test_get_summary_handles_fetch_connect_timeout_gracefully():
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        side_effect=httpx.ConnectTimeout("Connection timed out")
+    )
+    plugin = make_plugin()
+
+    summary = await plugin.get_summary()
+
+    assert summary["count"] == 0
+    assert summary["flights"] == []
+    assert summary["location_name"] == "Fort Worth, TX"
+    assert summary["radius_nm"] == 15
+
+
+@respx.mock
+async def test_get_summary_handles_fetch_http_error_gracefully():
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(return_value=httpx.Response(503))
+    plugin = make_plugin()
+
+    summary = await plugin.get_summary()
+
+    assert summary["count"] == 0
+    assert summary["flights"] == []
+    assert summary["location_name"] == "Fort Worth, TX"
+
+
+@respx.mock
+async def test_get_detail_handles_fetch_http_error_gracefully():
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        side_effect=httpx.ConnectError("Connection refused")
+    )
+    plugin = make_plugin()
+
+    detail = await plugin.get_detail()
+
+    assert detail["count"] == 0
+    assert detail["flights"] == []
+    assert detail["location_name"] == "Fort Worth, TX"
+    assert detail["latitude"] == 32.7555
+    assert detail["longitude"] == -97.3308
+
+
+def test_normalize_falls_back_to_registration_when_flight_is_missing_or_empty():
+    ac_missing_flight = {"hex": "a06acc", "r": "N126JH", "t": "C172", "category": "A1"}
+    normalized = _normalize(ac_missing_flight)
+    assert normalized["callsign"] == "N126JH"
+    assert normalized["registration"] == "N126JH"
+    assert normalized["hex"] == "a06acc"
+
+    ac_empty_flight = {"hex": "a06acc", "flight": "   ", "r": "N126JH", "t": "C172", "category": "A1"}
+    normalized_empty = _normalize(ac_empty_flight)
+    assert normalized_empty["callsign"] == "N126JH"
+
+
+def test_normalize_falls_back_to_hex_when_flight_and_registration_are_missing():
+    ac_hex_only = {"hex": "a06acc", "t": "C172", "category": "A1"}
+    normalized = _normalize(ac_hex_only)
+    assert normalized["callsign"] == "A06ACC"
+    assert normalized["registration"] is None
+    assert normalized["hex"] == "a06acc"
+
+
+@respx.mock
+async def test_get_summary_includes_aircraft_without_flight_callsigns():
+    response = {
+        "ac": [
+            {
+                "hex": "a00001",
+                "r": "N100AA",
+                "t": "C172",
+                "category": "A1",
+                "alt_baro": 3500,
+                "dst": 2.1,
+            },
+            {
+                "hex": "a00002",
+                "t": "PA28",
+                "category": "A1",
+                "alt_baro": 4500,
+                "dst": 4.5,
+            },
+        ]
+    }
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(return_value=httpx.Response(200, json=response))
+    mock_external_apis()
+    mock_routeset()
+    plugin = make_plugin()
+
+    summary = await plugin.get_summary()
+    assert summary["count"] == 2
+    assert summary["flights"][0]["callsign"] == "N100AA"
+    assert summary["flights"][0]["hex"] == "a00001"
+    assert summary["flights"][1]["callsign"] == "A00002"
+    assert summary["flights"][1]["hex"] == "a00002"

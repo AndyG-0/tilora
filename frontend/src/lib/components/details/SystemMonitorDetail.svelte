@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { api, type SystemMonitorDetail } from '$lib/api';
+	import { pollWidget } from '$lib/polling';
 	import { _ } from 'svelte-i18n';
 
 	let { data: initialData }: { data: SystemMonitorDetail } = $props();
@@ -20,10 +20,7 @@
 		}
 	}
 
-	onMount(() => {
-		const interval = setInterval(refresh, 10_000);
-		return () => clearInterval(interval);
-	});
+	pollWidget(refresh, 10_000);
 
 	function formatUptime(seconds: number): string {
 		const days = Math.floor(seconds / 86_400);

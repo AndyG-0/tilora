@@ -59,6 +59,7 @@ class UpdateSettingsRequest(BaseModel):
     piper_server_url: str | None = None
     piper_voices: str | None = None
     tmdb_api_key: str | None = None
+    artificial_analysis_api_key: str | None = None
     discord_bot_token: str | None = None
     google_calendar_client_id: str | None = None
     google_calendar_client_secret: str | None = None
@@ -111,12 +112,15 @@ async def update_settings(payload: UpdateSettingsRequest):
     overrides = {key: (value if value != "" else None) for key, value in payload.model_dump(exclude_unset=True).items()}
     await asyncio.to_thread(save_app_settings, overrides)
     for widget_id in _GLOBAL_SETTINGS_WIDGET_IDS:
-        cache.delete(f"summary:{widget_id}")
-        cache.delete(f"detail:{widget_id}")
+        cache.delete_prefix(f"summary:{widget_id}:")
+        cache.delete_prefix(f"detail:{widget_id}:")
     if "tmdb_api_key" in overrides:
         cache.delete_prefix("summary:movies")
         cache.delete_prefix("detail:movies")
         cache.delete_prefix("movies:providers:")
+    if "artificial_analysis_api_key" in overrides:
+        cache.delete_prefix("summary:artificial_analysis")
+        cache.delete_prefix("detail:artificial_analysis")
     if "discord_bot_token" in overrides:
         cache.delete_prefix("summary:discord")
         cache.delete_prefix("detail:discord")

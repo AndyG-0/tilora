@@ -34,6 +34,17 @@ async def _credentials(user_id: str) -> tuple[str, str]:
     return username, password
 
 
+def _invalidate_photo_widgets(user_id: str) -> None:
+    """PhotosPlugin is personal-scope and per-instance (multiple photo
+    widgets can exist), so the cache key carries both the widget id and
+    user_id — a bare `cache.delete("summary:photos")` never matches any
+    actual stored key. Sweep every photo widget instance for this user."""
+    for plugin in registry.all():
+        if isinstance(plugin, PhotosPlugin):
+            cache.delete_prefix(f"summary:{plugin.id}:{user_id}:")
+            cache.delete_prefix(f"detail:{plugin.id}:{user_id}:")
+
+
 def _reindex_private_photo_widgets(user_id: str) -> None:
     """Schedules an immediate scan of user_id's own private library for every
     icloud_private widget, right after they connect/verify — each household
@@ -50,8 +61,7 @@ async def start_auth(user: dict[str, Any] = Depends(get_current_user)):
     username, password = await _credentials(user["id"])
     result = await icloud_photos.start_auth(user["id"], username, password)
     if result["connected"]:
-        cache.delete("summary:photos")
-        cache.delete("detail:photos")
+        _invalidate_photo_widgets(user["id"])
         _reindex_private_photo_widgets(user["id"])
     return result
 
@@ -64,8 +74,7 @@ async def verify_auth(payload: dict[str, str], user: dict[str, Any] = Depends(ge
 
     verified = await icloud_photos.verify_2fa(user["id"], code)
     if verified:
-        cache.delete("summary:photos")
-        cache.delete("detail:photos")
+        _invalidate_photo_widgets(user["id"])
         _reindex_private_photo_widgets(user["id"])
     return {"connected": verified}
 
@@ -95,8 +104,7 @@ async def set_credentials(payload: dict[str, str], user: dict[str, Any] = Depend
     credentials = {"username": username, "password": password}
     await asyncio.to_thread(db.save_user_credentials, user["id"], "icloud", credentials)
     icloud_photos.invalidate_service_cache(user["id"], clear_disk=True)
-    cache.delete("summary:photos")
-    cache.delete("detail:photos")
+    _invalidate_photo_widgets(user["id"])
     return {"username": username, "has_password": bool(password)}
 
 
@@ -104,6 +112,5 @@ async def set_credentials(payload: dict[str, str], user: dict[str, Any] = Depend
 async def clear_credentials(user: dict[str, Any] = Depends(get_current_user)):
     await asyncio.to_thread(db.delete_user_credentials, user["id"], "icloud")
     icloud_photos.invalidate_service_cache(user["id"], clear_disk=True)
-    cache.delete("summary:photos")
-    cache.delete("detail:photos")
+    _invalidate_photo_widgets(user["id"])
     return {"status": "ok"}

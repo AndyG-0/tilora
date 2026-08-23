@@ -115,6 +115,11 @@ class Settings(BaseSettings):
     # TMDB v3 API key, used by the movies plugin (themoviedb.org/settings/api).
     tmdb_api_key: str | None = None
 
+    # Artificial Analysis API key, used by the artificial_analysis plugin
+    # (artificialanalysis.ai/data-api) for the free-tier language-model
+    # leaderboard. No demo/shared key exists — required for the widget to work.
+    artificial_analysis_api_key: str | None = None
+
     # Discord bot token, used by the discord plugin (discord.com/developers/applications).
     discord_bot_token: str | None = None
 
@@ -154,6 +159,18 @@ class Settings(BaseSettings):
     # once, and lets frontend/backend run on different hosts without the
     # backend rejecting the frontend's actual origin.
     cors_origin: str = "http://localhost:5173"
+
+    @field_validator("cors_origin")
+    @classmethod
+    def validate_cors_origin(cls, v: str) -> str:
+        # main.py always sets allow_credentials=True for the device/session
+        # cookies, and Starlette reflects the request's actual Origin back
+        # verbatim for a credentialed "*" — silently permitting any site to
+        # make authenticated cross-origin requests. Reject it outright rather
+        # than let that combination ship unnoticed.
+        if any(origin.strip() == "*" for origin in v.split(",")):
+            raise ValueError("cors_origin may not be '*' (or include '*') since credentials are always allowed")
+        return v
 
     # Regex for origins allowed by CORS. Matches localhost, loopback, private
     # RFC 1918 LAN subnets (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16), and
@@ -212,6 +229,7 @@ APP_SETTINGS_KEYS = (
     "piper_server_url",
     "piper_voices",
     "tmdb_api_key",
+    "artificial_analysis_api_key",
     "discord_bot_token",
     "google_calendar_client_id",
     "google_calendar_client_secret",
@@ -232,6 +250,7 @@ SECRET_APP_SETTINGS_KEYS = (
     "openai_api_key",
     "gemini_api_key",
     "tmdb_api_key",
+    "artificial_analysis_api_key",
     "discord_bot_token",
     "google_calendar_client_id",
     "google_calendar_client_secret",

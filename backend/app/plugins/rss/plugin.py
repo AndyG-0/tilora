@@ -19,10 +19,36 @@ from app.storage import db
 logger = logging.getLogger(__name__)
 
 _TAG_RE = re.compile(r"<[^>]+>")
+_COMMENTS_LINK_RE = re.compile(r'<a\s+[^>]*href=["\']([^"\']+)["\'][^>]*>(?:\d+\s+)?comments?</a>', re.IGNORECASE)
 
 
 def _strip_html(text: str) -> str:
     return _TAG_RE.sub("", text).strip()
+
+
+def _clean_summary(text: str) -> str:
+    cleaned = _strip_html(text)
+    if cleaned.lower() == "comments":
+        return ""
+    return cleaned
+
+
+def _extract_comments(entry: Any) -> str | None:
+    comments = entry.get("comments")
+    if isinstance(comments, str) and comments.strip():
+        return comments.strip()
+    if isinstance(comments, dict) and comments.get("href"):
+        return str(comments["href"]).strip()
+    for link in entry.get("links", []):
+        if isinstance(link, dict) and link.get("rel") == "replies" and link.get("href"):
+            return str(link["href"]).strip()
+    for field in ("summary", "description"):
+        raw = entry.get(field)
+        if isinstance(raw, str):
+            m = _COMMENTS_LINK_RE.search(raw)
+            if m:
+                return m.group(1).strip()
+    return None
 
 
 def _extract_image(entry: Any) -> str | None:
@@ -109,9 +135,10 @@ class RSSPlugin(Plugin):
                 item = {
                     "title": entry.get("title", ""),
                     "link": entry.get("link", ""),
+                    "comments": _extract_comments(entry),
                     "published": entry.get("published"),
                     "published_ts": timegm(entry["published_parsed"]) if entry.get("published_parsed") else 0,
-                    "summary": _strip_html(entry.get("summary", "")),
+                    "summary": _clean_summary(entry.get("summary", "")),
                     "source": source,
                 }
                 if include_image:
@@ -128,6 +155,7 @@ class RSSPlugin(Plugin):
         for group in groups:
             for item in group["items"]:
                 item.pop("summary", None)
+                item.pop("comments", None)
         return {"title": self.title, "feed_groups": groups}
 
     async def get_detail(self) -> dict[str, Any]:

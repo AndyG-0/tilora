@@ -23,7 +23,7 @@
 <TileCard {widgetId}>
 	<div class="widget">
 		<div class="header">
-			<span class="title">{summary?.title ?? 'Packages'}</span>
+			<span class="title">{summary?.title ?? $_('packages.tile.default_title')}</span>
 			{#if summary && summary.arriving_today_count > 0}
 				<span class="badge">{summary.arriving_today_count}</span>
 			{/if}

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from app.api.users import PIN_PATTERN, user_shape
-from app.auth import get_current_device, hash_pin, new_token, session_expiry, set_session_cookie
+from app.auth import _hash_token, get_current_device, hash_pin, new_token, session_expiry, set_session_cookie
 from app.storage.db import create_session, create_user, list_users
 
 router = APIRouter(prefix="/api/setup", tags=["setup"])
@@ -57,7 +57,7 @@ async def create_admin(
     )
 
     session_id = new_token()
-    await asyncio.to_thread(create_session, session_id, user_id, device["id"], now, session_expiry())
+    await asyncio.to_thread(create_session, _hash_token(session_id), user_id, device["id"], now, session_expiry())
     set_session_cookie(response, session_id)
 
     return user_shape({"id": user_id, "name": payload.name, "avatar": payload.avatar, "role": "admin"})

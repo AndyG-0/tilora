@@ -37,13 +37,13 @@ def test_create_alert_defaults_widget_id_to_alert(client, tmp_db):
 
 
 def test_create_alert_invalidates_cache(client, tmp_db):
-    cache.set("summary:alert", {"stale": True}, ttl_seconds=60)
-    cache.set("detail:alert", {"stale": True}, ttl_seconds=60)
+    cache.set("summary:alert:en", {"stale": True}, ttl_seconds=60)
+    cache.set("detail:alert:en", {"stale": True}, ttl_seconds=60)
 
     client.post("/api/alerts", json={"message": "Hi"})
 
-    assert cache.get("summary:alert") is None
-    assert cache.get("detail:alert") is None
+    assert cache.get("summary:alert:en") is None
+    assert cache.get("detail:alert:en") is None
 
 
 def test_dismiss_alert_marks_dismissed(client, tmp_db):
@@ -57,13 +57,13 @@ def test_dismiss_alert_marks_dismissed(client, tmp_db):
 
 def test_dismiss_alert_invalidates_cache(client, tmp_db):
     alert = db.create_alert("alert", "Bye", "info")
-    cache.set("summary:alert", {"stale": True}, ttl_seconds=60)
-    cache.set("detail:alert", {"stale": True}, ttl_seconds=60)
+    cache.set("summary:alert:en", {"stale": True}, ttl_seconds=60)
+    cache.set("detail:alert:en", {"stale": True}, ttl_seconds=60)
 
     client.post(f"/api/alerts/{alert['id']}/dismiss")
 
-    assert cache.get("summary:alert") is None
-    assert cache.get("detail:alert") is None
+    assert cache.get("summary:alert:en") is None
+    assert cache.get("detail:alert:en") is None
 
 
 def test_dismiss_alert_returns_404_for_unknown_id(client, tmp_db):

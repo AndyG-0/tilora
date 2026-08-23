@@ -11,12 +11,14 @@ vi.mock('$app/state', () => ({ page: { params: { id: 'goodreads' } } }));
 import GoodreadsDetail from './GoodreadsDetail.svelte';
 
 const notConfigured = {
+	configured: false,
 	shelf: 'currently-reading',
 	user_id: '',
 	books: [],
 };
 
 const withBooks = {
+	configured: true,
 	shelf: 'currently-reading',
 	user_id: '12345',
 	books: [
@@ -103,7 +105,7 @@ describe('GoodreadsDetail', () => {
 	});
 
 	it('shows an error if saving settings fails', async () => {
-		updateWidgetSettings.mockRejectedValue(new Error('boom'));
+		updateWidgetSettings.mockRejectedValue(new Error('Could not update the shelf settings.'));
 
 		render(GoodreadsDetail, { props: { data: withBooks } });
 

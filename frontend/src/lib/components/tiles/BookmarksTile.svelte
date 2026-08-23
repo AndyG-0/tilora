@@ -4,6 +4,7 @@
 	import TileCard from '$lib/components/TileCard.svelte';
 	import type { BookmarksData } from '$lib/api';
 	import { faviconSrc, hideBrokenIcon } from '$lib/bookmarkIcons';
+	import { isSafeUrl } from '$lib/url';
 	import { _ } from 'svelte-i18n';
 
 	let { widgetId, refreshIntervalSeconds }: { widgetId: string; refreshIntervalSeconds: number } = $props();
@@ -30,12 +31,17 @@
 
 <TileCard {widgetId}>
 	<div class="widget">
-		<div class="title">{summary?.title ?? 'Bookmarks'}</div>
+		<div class="title">{summary?.title ?? $_('bookmarks.tile.default_title')}</div>
 		{#if summary?.bookmarks.length}
 			<ul class="items">
 				{#each summary.bookmarks as bookmark (bookmark.url)}
 					<li>
-						<a href={bookmark.url} target="_blank" rel="noreferrer" onclick={openBookmark}>
+						<a
+							href={isSafeUrl(bookmark.url) ? bookmark.url : undefined}
+							target="_blank"
+							rel="noreferrer"
+							onclick={openBookmark}
+						>
 							<img class="icon" src={faviconSrc(bookmark)} alt="" onerror={hideBrokenIcon} />
 							<span class="name">{bookmark.name}</span>
 						</a>

@@ -30,20 +30,7 @@ class SynologyPlugin(Plugin):
         "username": "",
         "password": "",
     }
-
-    def _safe_settings(self) -> dict[str, Any]:
-        # Secrets are write-only: callers get a boolean "is it set", never
-        # the raw value, since the generic settings PATCH endpoint echoes
-        # this plugin's own config verbatim — masking has to happen here
-        # (same pattern as PiholePlugin._safe_settings).
-        s = self.config["settings"]
-        return {
-            "host": s.get("host", ""),
-            "port": s.get("port", 5000),
-            "use_https": bool(s.get("use_https", False)),
-            "username": s.get("username", ""),
-            "has_password": bool(s.get("password")),
-        }
+    secret_setting_keys: ClassVar[frozenset[str]] = frozenset({"password"})
 
     def _is_connected(self) -> bool:
         return synology_client.is_configured(self.config["settings"])

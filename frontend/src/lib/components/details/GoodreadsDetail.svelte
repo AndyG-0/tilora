@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { api } from '$lib/api';
 	import type { GoodreadsDetail } from '$lib/api';
+	import { isSafeUrl } from '$lib/url';
 	import { _ } from 'svelte-i18n';
 	import { get } from 'svelte/store';
 
@@ -33,8 +34,8 @@
 			});
 			goodreads = await api.widgetDetail<GoodreadsDetail>(page.params.id!);
 			editing = false;
-		} catch {
-			error = get(_)('goodreads.detail.save_error');
+		} catch (e: unknown) {
+			error = e instanceof Error ? e.message : get(_)('goodreads.detail.save_error');
 		} finally {
 			saving = false;
 		}
@@ -52,7 +53,7 @@
 	<div class="settings-form">
 		<label>
 			{$_('goodreads.detail.user_id_label')}
-			<input type="text" placeholder="12345678" bind:value={userIdInput} />
+			<input type="text" placeholder="12345678" autocomplete="off" spellcheck="false" bind:value={userIdInput} />
 		</label>
 		<label>
 			{$_('goodreads.detail.shelf_label')}
@@ -74,7 +75,7 @@
 <div class="list">
 	{#if goodreads.books.length > 0}
 		{#each goodreads.books as book (book.link)}
-			<a class="item" href={book.link} target="_blank" rel="noreferrer">
+			<a class="item" href={isSafeUrl(book.link) ? book.link : undefined} target="_blank" rel="noreferrer">
 				{#if book.book_image_url}
 					<img class="cover" src={book.book_image_url} alt="" width="64" height="96" loading="lazy" decoding="async" />
 				{/if}
@@ -91,7 +92,7 @@
 				</div>
 			</a>
 		{/each}
-	{:else if !goodreads.user_id}
+	{:else if !goodreads.configured && !goodreads.user_id}
 		<p class="hint">{$_('goodreads.detail.no_shelf_hint')}</p>
 	{:else}
 		<p class="hint">{$_('goodreads.detail.empty_hint')}</p>

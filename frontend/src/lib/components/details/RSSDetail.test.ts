@@ -72,6 +72,41 @@ describe('RSSDetail', () => {
 		expect(screen.getByText(/Feed One/)).toBeInTheDocument();
 	});
 
+	it('renders title as link to article and renders comments link when available', () => {
+		render(RSSDetail, {
+			props: {
+				data: {
+					...baseData,
+					feed_groups: [
+						{
+							...baseData.feed_groups[0],
+							items: [
+								{
+									...baseData.feed_groups[0].items[0],
+									comments: 'https://news.ycombinator.com/item?id=123456',
+								},
+							],
+						},
+					],
+				},
+			},
+		});
+
+		const titleLink = screen.getByRole('link', { name: 'First headline' });
+		expect(titleLink).toHaveAttribute('href', 'https://example.com/1');
+		expect(titleLink).toHaveAttribute('target', '_blank');
+
+		const commentsLink = screen.getByRole('link', { name: 'Comments' });
+		expect(commentsLink).toHaveAttribute('href', 'https://news.ycombinator.com/item?id=123456');
+		expect(commentsLink).toHaveAttribute('target', '_blank');
+	});
+
+	it('does not render comments link when comments is missing', () => {
+		render(RSSDetail, { props: { data: baseData } });
+
+		expect(screen.queryByRole('link', { name: 'Comments' })).not.toBeInTheDocument();
+	});
+
 	it('does not show a group heading when only one feed has items', () => {
 		render(RSSDetail, { props: { data: baseData } });
 

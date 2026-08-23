@@ -13,7 +13,7 @@ jobs:
       - name: Run ShellCheck
         run: |
           command -v shellcheck >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y shellcheck; }
-          shellcheck deploy/*.sh dev.sh scripts/*.sh backend/docker-entrypoint.sh
+          shellcheck deploy/*.sh dev.sh docs.sh scripts/*.sh backend/docker-entrypoint.sh
       - name: Run installer test suite
         run: bash deploy/test-install.sh
 
@@ -22,6 +22,21 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.29"
+      - run: uv sync
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest
+
+  cli:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

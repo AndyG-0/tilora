@@ -38,6 +38,7 @@ import PackageTile from '$lib/components/tiles/PackageTile.svelte';
 import NASATile from '$lib/components/tiles/NASATile.svelte';
 import FlightsTile from '$lib/components/tiles/FlightsTile.svelte';
 import MappingTile from '$lib/components/tiles/MappingTile.svelte';
+import ArtificialAnalysisTile from '$lib/components/tiles/ArtificialAnalysisTile.svelte';
 
 import WeatherDetail from '$lib/components/details/WeatherDetail.svelte';
 import AIDetail from '$lib/components/details/AIDetail.svelte';
@@ -72,6 +73,7 @@ import PackageDetail from '$lib/components/details/PackageDetail.svelte';
 import NASADetail from '$lib/components/details/NASADetail.svelte';
 import FlightsDetail from '$lib/components/details/FlightsDetail.svelte';
 import MappingDetail from '$lib/components/details/MappingDetail.svelte';
+import ArtificialAnalysisDetail from '$lib/components/details/ArtificialAnalysisDetail.svelte';
 
 import ClockScreensaver from '$lib/components/screensaver/ClockScreensaver.svelte';
 import DateScreensaver from '$lib/components/screensaver/DateScreensaver.svelte';
@@ -112,7 +114,8 @@ type TileComponent =
 	| typeof PackageTile
 	| typeof NASATile
 	| typeof FlightsTile
-	| typeof MappingTile;
+	| typeof MappingTile
+	| typeof ArtificialAnalysisTile;
 
 type DetailComponent =
 	| typeof WeatherDetail
@@ -147,7 +150,8 @@ type DetailComponent =
 	| typeof PackageDetail
 	| typeof NASADetail
 	| typeof FlightsDetail
-	| typeof MappingDetail;
+	| typeof MappingDetail
+	| typeof ArtificialAnalysisDetail;
 
 export const TILE_COMPONENTS: Record<string, TileComponent> = {
 	weather: WeatherTile,
@@ -185,6 +189,7 @@ export const TILE_COMPONENTS: Record<string, TileComponent> = {
 	nasa_apod: NASATile,
 	flights: FlightsTile,
 	mapping: MappingTile,
+	artificial_analysis: ArtificialAnalysisTile,
 };
 
 export const DETAIL_COMPONENTS: Record<string, DetailComponent> = {
@@ -223,6 +228,7 @@ export const DETAIL_COMPONENTS: Record<string, DetailComponent> = {
 	nasa_apod: NASADetail,
 	flights: FlightsDetail,
 	mapping: MappingDetail,
+	artificial_analysis: ArtificialAnalysisDetail,
 };
 
 type ScreensaverComponent =

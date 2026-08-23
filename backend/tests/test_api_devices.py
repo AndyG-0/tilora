@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api import devices as devices_api
-from app.auth import DEVICE_COOKIE_NAME
+from app.auth import DEVICE_COOKIE_NAME, _hash_token
 from app.storage import db
 
 
@@ -107,10 +107,20 @@ def test_list_all_devices_requires_a_user_session(client, tmp_db):
     assert response.status_code == 401
 
 
+def test_list_all_devices_rejects_a_member_session(client, tmp_db):
+    db.create_user("alice", "Alice", None, None, None, None, "2026-01-01T00:00:00Z", role="member")
+    db.create_session(_hash_token("sess1"), "alice", "default", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
+    client.cookies.set("tilora_session", "sess1")
+
+    response = client.get("/api/devices")
+
+    assert response.status_code == 403
+
+
 def test_list_all_devices_returns_every_registered_device(client, tmp_db):
-    db.create_user("alice", "Alice", None, None, None, None, "2026-01-01T00:00:00Z")
+    db.create_user("alice", "Alice", None, None, None, None, "2026-01-01T00:00:00Z", role="admin")
     db.create_device("other", "Other Device", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")
-    db.create_session("sess1", "alice", "other", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
+    db.create_session(_hash_token("sess1"), "alice", "other", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
     client.cookies.set("tilora_session", "sess1")
     registered = client.post("/api/devices/register").json()
 
@@ -122,8 +132,8 @@ def test_list_all_devices_returns_every_registered_device(client, tmp_db):
 
 
 def test_forget_device_deletes_an_unknown_returns_404(client, tmp_db):
-    db.create_user("alice", "Alice", None, None, None, None, "2026-01-01T00:00:00Z")
-    db.create_session("sess1", "alice", "default", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
+    db.create_user("alice", "Alice", None, None, None, None, "2026-01-01T00:00:00Z", role="admin")
+    db.create_session(_hash_token("sess1"), "alice", "default", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
     client.cookies.set("tilora_session", "sess1")
     client.post("/api/devices/register")
 
@@ -132,9 +142,20 @@ def test_forget_device_deletes_an_unknown_returns_404(client, tmp_db):
     assert response.status_code == 404
 
 
+def test_forget_device_rejects_a_member_session(client, tmp_db):
+    db.create_user("alice", "Alice", None, None, None, None, "2026-01-01T00:00:00Z", role="member")
+    db.create_session(_hash_token("sess1"), "alice", "default", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
+    client.cookies.set("tilora_session", "sess1")
+    db.create_device("other", "Other Device", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")
+
+    response = client.delete("/api/devices/other")
+
+    assert response.status_code == 403
+
+
 def test_forget_device_removes_it(client, tmp_db):
-    db.create_user("alice", "Alice", None, None, None, None, "2026-01-01T00:00:00Z")
-    db.create_session("sess1", "alice", "default", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
+    db.create_user("alice", "Alice", None, None, None, None, "2026-01-01T00:00:00Z", role="admin")
+    db.create_session(_hash_token("sess1"), "alice", "default", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
     client.cookies.set("tilora_session", "sess1")
     # A device other than the one issuing this request — forgetting your own
     # active device is refused (see the test below).
@@ -151,8 +172,8 @@ def test_forget_device_deletes_that_devices_widget_layout_only(client, tmp_db):
     # Layout is keyed by (user, device, breakpoint) — forgetting a device
     # drops that screen's saved tile positions but must leave the same
     # user's layout on the device they're forgetting it from untouched.
-    db.create_user("alice", "Alice", None, None, None, None, "2026-01-01T00:00:00Z")
-    db.create_session("sess1", "alice", "default", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
+    db.create_user("alice", "Alice", None, None, None, None, "2026-01-01T00:00:00Z", role="admin")
+    db.create_session(_hash_token("sess1"), "alice", "default", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
     client.cookies.set("tilora_session", "sess1")
     db.create_device("other", "Other Device", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")
     db.save_widget_layout("alice", "other", "wide", "clock", {"col": 2, "row": 1, "colSpan": 1, "rowSpan": 1})
@@ -172,8 +193,8 @@ def test_forget_device_deletes_that_devices_widget_layout_only(client, tmp_db):
 
 
 def test_forget_device_refuses_to_delete_the_current_device(client, tmp_db):
-    db.create_user("alice", "Alice", None, None, None, None, "2026-01-01T00:00:00Z")
-    db.create_session("sess1", "alice", "default", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
+    db.create_user("alice", "Alice", None, None, None, None, "2026-01-01T00:00:00Z", role="admin")
+    db.create_session(_hash_token("sess1"), "alice", "default", "2026-01-01T00:00:00Z", "2099-01-01T00:00:00Z")
     client.cookies.set("tilora_session", "sess1")
     device_id = client.post("/api/devices/register").json()["id"]
 

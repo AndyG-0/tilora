@@ -6,7 +6,7 @@
 	let { data: apod }: { data: NASAApodDetail } = $props();
 </script>
 
-<h1>{apod.title || 'Astronomy Picture of the Day'}</h1>
+<h1>{apod.title || $_('nasa_apod.detail.default_title')}</h1>
 
 {#if apod.available}
 	<article class="apod">

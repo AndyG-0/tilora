@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { api, type PiholeDetail } from '$lib/api';
+	import { user } from '$lib/stores/user';
 	import { _, locale } from 'svelte-i18n';
 	import { get } from 'svelte/store';
 
@@ -9,6 +10,8 @@
 	// svelte-ignore state_referenced_locally -- seed local state from the
 	// initial load once; subsequent updates come from setBlocking's refetch.
 	let pihole = $state(initialData);
+
+	const isAdmin = $derived($user?.role === 'admin');
 
 	let error = $state<string | null>(null);
 	let blockingBusy = $state(false);
@@ -58,12 +61,18 @@
 			{pihole.blocking_enabled ? $_('pihole.detail.blocking_enabled') : $_('pihole.detail.blocking_paused')}
 		</span>
 		<div class="blocking-actions">
-			{#if pihole.blocking_enabled}
-				<button disabled={blockingBusy} onclick={() => setBlocking(false, 30)}>{$_('pihole.detail.pause_30s')}</button>
-				<button disabled={blockingBusy} onclick={() => setBlocking(false, 300)}>{$_('pihole.detail.pause_5m')}</button>
-				<button disabled={blockingBusy} onclick={() => setBlocking(false)}>{$_('pihole.detail.disable')}</button>
+			{#if isAdmin}
+				{#if pihole.blocking_enabled}
+					<button disabled={blockingBusy} onclick={() => setBlocking(false, 30)}>{$_('pihole.detail.pause_30s')}</button
+					>
+					<button disabled={blockingBusy} onclick={() => setBlocking(false, 300)}>{$_('pihole.detail.pause_5m')}</button
+					>
+					<button disabled={blockingBusy} onclick={() => setBlocking(false)}>{$_('pihole.detail.disable')}</button>
+				{:else}
+					<button disabled={blockingBusy} onclick={() => setBlocking(true)}>{$_('pihole.detail.enable')}</button>
+				{/if}
 			{:else}
-				<button disabled={blockingBusy} onclick={() => setBlocking(true)}>{$_('pihole.detail.enable')}</button>
+				<span class="hint">{$_('pihole.detail.admin_only_hint')}</span>
 			{/if}
 		</div>
 	</div>

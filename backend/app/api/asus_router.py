@@ -15,16 +15,13 @@ from pydantic import BaseModel, Field
 from app.auth import get_current_user, require_write_access
 from app.integrations import asus_router_client
 from app.plugins.asus_router.plugin import AsusRouterPlugin
-from app.plugins.base import registry
+from app.plugins.base import get_typed_plugin
 
 router = APIRouter(prefix="/api/asus-router", tags=["asus-router"], dependencies=[Depends(get_current_user)])
 
 
 def _get_plugin(widget_id: str) -> AsusRouterPlugin:
-    plugin = registry.get(widget_id)
-    if not isinstance(plugin, AsusRouterPlugin):
-        raise HTTPException(status_code=404, detail=f"Unknown Asus Router widget '{widget_id}'")
-    return plugin
+    return get_typed_plugin(widget_id, AsusRouterPlugin, "Asus Router")
 
 
 class ScanPortsRequest(BaseModel):

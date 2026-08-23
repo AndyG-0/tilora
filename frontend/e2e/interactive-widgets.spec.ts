@@ -80,26 +80,29 @@ test.describe('interactive widgets and mini-apps', () => {
 
 	test('bookmarks widget supports editing bookmark list', async ({ page }) => {
 		await page.goto('/widget/bookmarks');
-		await expect(page.locator('.detail-page')).toBeVisible();
+		await expect(page.locator('.detail-page')).toBeVisible({ timeout: 10000 });
 
 		// Open editor
 		await page.getByRole('button', { name: /edit/i }).click();
 		await expect(page.locator('.settings-form')).toBeVisible();
 
-		// Add a new bookmark row
+		// Name is unique per run so a CI retry (which re-runs this test
+		// against the same backend/db) can't collide with a bookmark a prior
+		// attempt already saved.
+		const bookmarkName = `Wikipedia ${Date.now()}`;
 		await page.getByRole('button', { name: /add bookmark/i }).click();
 		const rows = page.locator('.bookmark-row');
 		const newRow = rows.last();
-		await newRow.locator('input').nth(0).fill('Wikipedia');
+		await newRow.locator('input').nth(0).fill(bookmarkName);
 		await newRow.locator('input').nth(1).fill('https://wikipedia.org');
 
 		// Save bookmarks
 		await page.locator('.settings-form .save').click();
-		await expect(page.locator('.settings-form')).toHaveCount(0);
+		await expect(page.locator('.settings-form')).toHaveCount(0, { timeout: 15000 });
 
 		// Verify link is present in list
-		const wikiLink = page.locator('ul.list a.item').filter({ hasText: 'Wikipedia' });
-		await expect(wikiLink).toBeVisible();
+		const wikiLink = page.locator('ul.list a.item').filter({ hasText: bookmarkName });
+		await expect(wikiLink).toBeVisible({ timeout: 10000 });
 		await expect(wikiLink).toHaveAttribute('href', 'https://wikipedia.org');
 	});
 

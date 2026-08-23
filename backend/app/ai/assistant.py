@@ -72,7 +72,21 @@ async def ask(
         searxng_url = settings.get("searxng_url")
         web_tools = get_web_tools(searxng_url) if (allowed_widget_ids is None and searxng_url) else []
 
-        tools = [tool for plugin in plugins for tool in plugin.get_ai_tools()] + await mcp_source.tools() + web_tools
+        # requires_admin tools (e.g. Wake-on-LAN) are only reachable from an
+        # admin's interactive session or the scheduled AI-insights job (no
+        # interactive user at all, already admin-configured) — never from a
+        # non-admin household member's chat.
+        is_admin_context = user is None or user.get("role") == "admin"
+        tools = (
+            [
+                tool
+                for plugin in plugins
+                for tool in plugin.get_ai_tools()
+                if is_admin_context or not tool.requires_admin
+            ]
+            + await mcp_source.tools()
+            + web_tools
+        )
         provider = AIProvider(ToolBridge(tools))
         full_system_prompt = _build_system_prompt(system_prompt, user=user)
         return await provider.run_prompt(text, system_prompt=full_system_prompt)

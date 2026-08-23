@@ -205,6 +205,17 @@ remove_kiosk_configuration() {
   done
 }
 
+remove_cli() {
+  local uv_bin="$INSTALL_HOME/.local/bin/uv"
+  if [[ ! -x "$uv_bin" ]]; then
+    uv_bin="$(command -v uv || true)"
+  fi
+  if [[ -n "$uv_bin" ]]; then
+    info "Removing the tilora management CLI"
+    "$uv_bin" tool uninstall tilora-cli >/dev/null 2>&1 || true
+  fi
+}
+
 remove_install_files() {
   if [[ "$KEEP_DATA" == true ]]; then
     info "Preserving installation files at $INSTALL_DIR"
@@ -237,6 +248,7 @@ main() {
   stop_and_remove_services
   remove_sudoers_rule
   remove_kiosk_configuration
+  remove_cli
   remove_install_files
   print_completion
 }
