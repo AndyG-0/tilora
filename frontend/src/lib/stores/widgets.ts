@@ -27,7 +27,7 @@ export function applyLayoutUpdates(updates: { id: string; layout: WidgetLayout }
 }
 
 export function addWidgetLocal(widget: WidgetSummaryMeta) {
-	widgets.update((current) => [...current, widget]);
+	widgets.update((current) => (current.some((w) => w.id === widget.id) ? current : [...current, widget]));
 }
 
 export function removeWidgetLocal(id: string) {

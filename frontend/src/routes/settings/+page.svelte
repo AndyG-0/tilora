@@ -705,7 +705,7 @@
 	// used to pre-check a sensible starting selection the first time a user
 	// enables the screensaver with nothing chosen yet; never persisted unless
 	// they hit Save.
-	const SCREENSAVER_FRIENDLY_TYPES = ['clock', 'ai', 'discord', 'message', 'photos'];
+	const SCREENSAVER_FRIENDLY_TYPES = ['clock', 'ai', 'discord', 'message', 'photos', 'artificial_analysis'];
 
 	const TEXT_ANIMATION_STYLE_LABELS: Record<TextAnimationStyle, string> = $derived({
 		marquee: $_('settings.screensaver.animation_marquee'),

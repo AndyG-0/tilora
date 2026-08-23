@@ -86,6 +86,31 @@ describe('widgets store', () => {
 		unsubscribe();
 	});
 
+	it('addWidgetLocal is idempotent when a widget with the same id already exists', async () => {
+		const layout = { col: 1, row: 1, colSpan: 1, rowSpan: 1 };
+		const widget: WidgetSummaryMeta = {
+			id: 'new',
+			type: 'weather',
+			name: 'Weather',
+			layout,
+			tab: 'default',
+			refresh_interval_seconds: 600,
+		};
+		// Simulates a reload (e.g. a breakpoint change) racing ahead of the
+		// addWidget response and already picking up the server-persisted widget.
+		listWidgets.mockResolvedValue([widget]);
+
+		const { widgets, addWidgetLocal } = await import('./widgets');
+		let value: WidgetSummaryMeta[] = [];
+		const unsubscribe = widgets.subscribe((v) => (value = v));
+		await vi.waitFor(() => expect(value).toEqual([widget]));
+
+		addWidgetLocal(widget);
+
+		expect(value).toEqual([widget]);
+		unsubscribe();
+	});
+
 	it('removeWidgetLocal filters a widget out without a refetch', async () => {
 		const layout = { col: 1, row: 1, colSpan: 1, rowSpan: 1 };
 		listWidgets.mockResolvedValue([
