@@ -8,6 +8,7 @@ device.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import time
@@ -1020,6 +1021,34 @@ def _migration_018_clean_photos_widget_user_settings(conn: sqlite3.Connection) -
             )
 
 
+def _migration_019_hash_device_and_session_ids(conn: sqlite3.Connection) -> None:
+    """Rehashes devices.id/sessions.id to match app.auth._hash_token.
+
+    A prior release (v0.15.0) started looking up devices/sessions by
+    SHA-256(cookie value) instead of the raw cookie value, but shipped
+    without this migration — so every row written before that release still
+    has its pre-hash raw token as its id, and never matches a lookup again
+    (silently "forgetting" the device/session and, for devices, causing a
+    duplicate row via re-registration). Since migrations run exactly once,
+    every row's id here is still guaranteed to be the raw, pre-hash value.
+    """
+
+    def _hash(token: str) -> str:
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    device_ids = [row[0] for row in conn.execute("SELECT id FROM devices")]
+    for old_id in device_ids:
+        new_id = _hash(old_id)
+        for table, column in _DEVICE_SCOPED_TABLES:
+            conn.execute(f"UPDATE {table} SET {column} = ? WHERE {column} = ?", (new_id, old_id))
+        conn.execute("UPDATE custom_widgets SET owner_device_id = ? WHERE owner_device_id = ?", (new_id, old_id))
+        conn.execute("UPDATE devices SET id = ? WHERE id = ?", (new_id, old_id))
+
+    session_ids = [row[0] for row in conn.execute("SELECT id FROM sessions")]
+    for old_id in session_ids:
+        conn.execute("UPDATE sessions SET id = ? WHERE id = ?", (_hash(old_id), old_id))
+
+
 _MIGRATIONS: tuple[str | Callable[[sqlite3.Connection], None], ...] = (
     _MIGRATION_001_USERS_DEVICES,
     _migration_002_user_roles,
@@ -1039,6 +1068,7 @@ _MIGRATIONS: tuple[str | Callable[[sqlite3.Connection], None], ...] = (
     _migration_016_weather_flights_network_scope,
     _migration_017_weather_flights_personal_scope,
     _migration_018_clean_photos_widget_user_settings,
+    _migration_019_hash_device_and_session_ids,
 )
 
 
