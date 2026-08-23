@@ -376,7 +376,7 @@
 
 	<ul class="list">
 		{#if displayedBookmarks.length > 0}
-			{#each displayedBookmarks as bookmark (bookmark.url)}
+			{#each displayedBookmarks as bookmark, index (bookmark.url + '::' + index)}
 				<li>
 					<a class="item" href={isSafeUrl(bookmark.url) ? bookmark.url : undefined} target="_blank" rel="noreferrer">
 						<img class="icon" src={faviconSrc(bookmark)} alt="" onerror={hideBrokenIcon} />
