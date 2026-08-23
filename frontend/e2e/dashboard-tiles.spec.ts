@@ -109,7 +109,7 @@ test.describe('dashboard tile editing', () => {
 		await page.getByLabel('Rearrange tiles').click();
 		const countBefore = await page.locator('[data-widget-id]').count();
 
-		await page.getByRole('button', { name: '+ Add widget' }).click();
+		await page.getByRole('button', { name: '+ Add tile' }).first().click();
 		await expect(page.locator('.widget-picker')).toBeVisible();
 
 		// Add a date widget
@@ -134,7 +134,7 @@ test.describe('dashboard tile editing', () => {
 			.locator('[data-widget-id]')
 			.evaluateAll((els) => els.map((el) => el.getAttribute('data-widget-id')));
 
-		await page.getByRole('button', { name: '+ Add widget' }).click();
+		await page.getByRole('button', { name: '+ Add tile' }).first().click();
 		await page.getByRole('button', { name: 'Clock', exact: true }).click();
 
 		await expect.poll(() => page.locator('[data-widget-id]').count()).toBe(idsBefore.length + 1);
