@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Bumps VERSION (major/minor/patch), syncs backend/pyproject.toml,
-# frontend/package.json, and both lockfiles, then commits and tags a
-# release. See CONTRIBUTING.md "Releasing".
+# frontend/package.json, cli/pyproject.toml, and their lockfiles, then
+# commits and tags a release. See CONTRIBUTING.md "Releasing".
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -15,11 +15,12 @@ usage() {
 	cat <<'EOF'
 Usage: scripts/release.sh <major|minor|patch> [--push] [-y|--yes]
 
-Bumps the version in VERSION, backend/pyproject.toml, and
-frontend/package.json, regenerates backend/uv.lock and
-frontend/package-lock.json, commits, and creates an annotated git tag
-vX.Y.Z. Requires a clean working tree on the release branch (default
-"main"; override with TILORA_RELEASE_BRANCH).
+Bumps the version in VERSION, backend/pyproject.toml,
+frontend/package.json, and cli/pyproject.toml, regenerates
+backend/uv.lock, frontend/package-lock.json, and cli/uv.lock, commits,
+and creates an annotated git tag vX.Y.Z. Requires a clean working tree
+on the release branch (default "main"; override with
+TILORA_RELEASE_BRANCH).
 
   --push     Also push the branch and tag to origin. Omitted by default —
              the commit/tag are left local to review before pushing.
@@ -94,10 +95,13 @@ info "Bumping backend/pyproject.toml and re-locking backend/uv.lock"
 info "Bumping frontend/package.json and frontend/package-lock.json"
 (cd "$ROOT_DIR/frontend" && npm version "$new_version" --no-git-tag-version >/dev/null)
 
+info "Bumping cli/pyproject.toml and re-locking cli/uv.lock"
+(cd "$ROOT_DIR/cli" && uv version --bump "$BUMP" --no-sync)
+
 info "Writing VERSION"
 printf '%s\n' "$new_version" >"$ROOT_DIR/VERSION"
 
-git add VERSION backend/pyproject.toml backend/uv.lock frontend/package.json frontend/package-lock.json
+git add VERSION backend/pyproject.toml backend/uv.lock frontend/package.json frontend/package-lock.json cli/pyproject.toml cli/uv.lock
 git commit -m "Release v$new_version"
 git tag -a "v$new_version" -m "Release v$new_version"
 

@@ -210,8 +210,7 @@ async def add_widget(
     # settings is built just to read it correctly, rather than reading the
     # class attribute directly.
     throwaway = plugin_cls({"id": "", "settings": dict(plugin_cls.default_settings)})
-    if throwaway.settings_scope == "network" and user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
+    require_write_access(throwaway, user)
 
     target_user_id = user["id"]
     target_device_id = device["id"]
@@ -411,7 +410,7 @@ async def update_widget_settings(
         else:
             cache.delete_prefix(_cache_key_prefix("summary", plugin, user, device))
             cache.delete_prefix(_cache_key_prefix("detail", plugin, user, device))
-        return merged
+        return plugin.with_settings(merged)._safe_settings()
 
     if prospective.settings_scope == "network":
         require_write_access(prospective, user)
@@ -456,7 +455,7 @@ async def update_widget_settings(
         schedule_photo_index(plugin)
     elif isinstance(plugin, SpeedtestPlugin) and "interval_minutes" in payload:
         schedule_speedtest_widget(plugin)
-    return plugin.config["settings"]
+    return plugin._safe_settings()
 
 
 class RenameWidgetRequest(BaseModel):
@@ -536,6 +535,7 @@ async def clear_widget_device_settings_route(
 @router.post("/{widget_id}/run")
 async def run_widget_now(widget_id: str, user: dict[str, Any] = Depends(get_current_user)):
     plugin = _get_plugin(widget_id)
+    require_write_access(plugin, user)
     if isinstance(plugin, AIInsightsPlugin):
         await run_ai_widget(plugin)
     elif isinstance(plugin, SpeedtestPlugin):

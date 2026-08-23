@@ -1,9 +1,10 @@
 <script lang="ts">
 	import 'leaflet/dist/leaflet.css';
-	import type { Map as LeafletMap, LayerGroup, Marker as LeafletMarker } from 'leaflet';
+	import type { Map as LeafletMap, LayerGroup, Marker as LeafletMarker, LatLngBounds } from 'leaflet';
 	import { theme } from '$lib/stores/theme';
 	import { airlineLogoSrc } from '$lib/airlineLogos';
 	import { lookupAircraftName, formatSpeedTooltip } from '$lib/aircraftTypes';
+	import { greatCirclePoints } from '$lib/geo';
 	import { _ } from 'svelte-i18n';
 	import { get } from 'svelte/store';
 
@@ -11,6 +12,8 @@
 		iata: string | null;
 		icao: string;
 		city: string | null;
+		latitude: number | null;
+		longitude: number | null;
 	}
 
 	interface FlightItem {
@@ -61,6 +64,7 @@
 
 	let map: LeafletMap | undefined;
 	let markerLayer: LayerGroup | undefined;
+	let pathLayer: LayerGroup | undefined;
 	let tilePane: HTMLElement | undefined;
 	let markersByCallsign = new Map<string, LeafletMarker>();
 	let leafletInstance: Leaflet | undefined;
@@ -197,12 +201,19 @@
 			: 'none';
 	}
 
+	function allFlightsBounds(L: Leaflet, current: FlightsMapData): LatLngBounds {
+		const bounds = L.latLngBounds([[current.latitude, current.longitude]]);
+		for (const flight of current.flights) {
+			if (flight.latitude === null || flight.longitude === null) continue;
+			bounds.extend([flight.latitude, flight.longitude]);
+		}
+		return bounds;
+	}
+
 	function renderMarkers(L: Leaflet, current: FlightsMapData) {
 		if (!map || !markerLayer) return;
 		markerLayer.clearLayers();
 		markersByCallsign.clear();
-
-		const bounds = L.latLngBounds([[current.latitude, current.longitude]]);
 
 		L.marker([current.latitude, current.longitude], {
 			icon: L.divIcon({ className: 'home-marker', html: '<span></span>', iconSize: [12, 12] }),
@@ -244,10 +255,67 @@
 
 			marker.addTo(markerLayer);
 			markersByCallsign.set(flight.callsign, marker);
-			bounds.extend([flight.latitude, flight.longitude]);
 		}
+	}
 
-		map.fitBounds(bounds, { padding: [30, 30], maxZoom: 12 });
+	interface SelectedPathPoints {
+		originPos: [number, number];
+		destPos: [number, number];
+		planePos: [number, number];
+	}
+
+	function selectedFlightPath(current: FlightsMapData): SelectedPathPoints | null {
+		if (!selectedCallsign) return null;
+		const flight = current.flights.find((f) => f.callsign === selectedCallsign);
+		if (!flight || !flight.origin || !flight.destination) return null;
+		if (flight.latitude === null || flight.longitude === null) return null;
+		const { origin, destination } = flight;
+		if (origin.latitude === null || origin.longitude === null) return null;
+		if (destination.latitude === null || destination.longitude === null) return null;
+
+		const originPos: [number, number] = [origin.latitude, origin.longitude];
+		const destPos: [number, number] = [destination.latitude, destination.longitude];
+		const planePos: [number, number] = [flight.latitude, flight.longitude];
+
+		// Degenerate route (origin ~= destination) -- nothing meaningful to draw.
+		if (Math.abs(originPos[0] - destPos[0]) < 1e-6 && Math.abs(originPos[1] - destPos[1]) < 1e-6) return null;
+
+		return { originPos, destPos, planePos };
+	}
+
+	function drawSelectedPath(L: Leaflet, path: SelectedPathPoints | null) {
+		if (!pathLayer) return;
+		pathLayer.clearLayers();
+		if (!path) return;
+
+		const { originPos, destPos, planePos } = path;
+		const flownPath = greatCirclePoints(originPos[0], originPos[1], planePos[0], planePos[1]);
+		const remainingPath = greatCirclePoints(planePos[0], planePos[1], destPos[0], destPos[1]);
+
+		L.polyline(flownPath, { color: LED_COLOR, weight: 2, opacity: 0.85 }).addTo(pathLayer);
+		L.polyline(remainingPath, { color: LED_COLOR, weight: 2, opacity: 0.5, dashArray: '6 6' }).addTo(pathLayer);
+
+		const airportIcon = L.divIcon({ className: 'airport-marker', html: '<span></span>', iconSize: [8, 8] });
+		L.marker(originPos, { icon: airportIcon }).addTo(pathLayer);
+		L.marker(destPos, { icon: airportIcon }).addTo(pathLayer);
+	}
+
+	// Single source of truth for the map's viewport: fit to the selected
+	// flight's route when one resolves, otherwise fit to all visible flights
+	// (the default "zoomed in" view). Called once per render pass so switching
+	// selection is always a single transition, never a flash through the
+	// default view first.
+	function updateView(L: Leaflet, current: FlightsMapData) {
+		if (!map) return;
+		const path = selectedFlightPath(current);
+		drawSelectedPath(L, path);
+
+		if (path) {
+			const pathBounds = L.latLngBounds([path.originPos, path.destPos, path.planePos]);
+			map.fitBounds(pathBounds, { padding: [50, 50], maxZoom: 10 });
+		} else {
+			map.fitBounds(allFlightsBounds(L, current), { padding: [30, 30], maxZoom: 12 });
+		}
 	}
 
 	function attachMap(node: HTMLDivElement) {
@@ -267,7 +335,9 @@
 			tilePane = tileLayer.getContainer() ?? undefined;
 
 			markerLayer = L.layerGroup().addTo(map);
+			pathLayer = L.layerGroup().addTo(map);
 			renderMarkers(L, data);
+			updateView(L, data);
 			unsubscribeTheme = theme.subscribe((value) => applyThemeFilter(value));
 		});
 
@@ -278,6 +348,7 @@
 				map?.remove();
 				map = undefined;
 				markerLayer = undefined;
+				pathLayer = undefined;
 				tilePane = undefined;
 				markersByCallsign.clear();
 			},
@@ -285,22 +356,21 @@
 	}
 
 	$effect(() => {
+		// Reacts to both live data polls and selectedCallsign changes (e.g. row
+		// clicks in the table, or a marker click). Markers, the path, and the
+		// viewport are all recomputed together in one pass so switching
+		// selection is a single clean transition rather than two competing
+		// fitBounds calls racing each other.
 		const current = data;
-		if (map && markerLayer && leafletInstance) {
-			renderMarkers(leafletInstance, current);
-		}
-	});
-
-	$effect(() => {
-		// React to external selectedCallsign updates (e.g. row clicks in table)
 		const targetCallsign = selectedCallsign;
-		if (map && targetCallsign && markersByCallsign.has(targetCallsign)) {
-			const marker = markersByCallsign.get(targetCallsign);
-			if (marker) {
-				const pos = marker.getLatLng();
-				map.panTo(pos, { animate: true, duration: 0.4 });
-				marker.openPopup();
-			}
+		if (!map || !markerLayer || !leafletInstance) return;
+		const L = leafletInstance;
+
+		renderMarkers(L, current);
+		updateView(L, current);
+
+		if (targetCallsign && markersByCallsign.has(targetCallsign)) {
+			markersByCallsign.get(targetCallsign)?.openPopup();
 		}
 	});
 </script>
@@ -331,6 +401,16 @@
 		background: #ff8a00;
 		border: 2px solid #fff;
 		box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.4);
+	}
+
+	:global(.airport-marker span) {
+		display: block;
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: #ffffff;
+		border: 2px solid #ff8a00;
+		box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
 	}
 
 	:global(.aircraft-marker-wrap) {

@@ -190,8 +190,8 @@ async def run_severe_weather_check(plugin: WeatherPlugin) -> None:
             _SEVERE_WEATHER_ALERT_EXPIRES_MINUTES,
         )
         await asyncio.to_thread(db.mark_severe_weather_alert_seen, plugin.id, signal["key"])
-        cache.delete(f"summary:{ALERT_WIDGET_ID}")
-        cache.delete(f"detail:{ALERT_WIDGET_ID}")
+        cache.delete_prefix(f"summary:{ALERT_WIDGET_ID}:")
+        cache.delete_prefix(f"detail:{ALERT_WIDGET_ID}:")
         logger.info("Severe weather alert raised for widget '%s': %s", plugin.id, signal["key"])
 
 

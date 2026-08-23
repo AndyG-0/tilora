@@ -18,7 +18,7 @@ from fastapi.responses import StreamingResponse
 
 from app.auth import get_current_user
 from app.integrations import jellyfin_client
-from app.plugins.base import registry
+from app.plugins.base import get_typed_plugin
 from app.plugins.jellyfin.plugin import JellyfinPlugin
 
 router = APIRouter(prefix="/api/jellyfin", tags=["jellyfin"], dependencies=[Depends(get_current_user)])
@@ -27,10 +27,7 @@ _FORWARDED_STREAM_HEADERS = ("content-type", "content-length", "content-range", 
 
 
 def _get_plugin(widget_id: str) -> JellyfinPlugin:
-    plugin = registry.get(widget_id)
-    if not isinstance(plugin, JellyfinPlugin):
-        raise HTTPException(status_code=404, detail=f"Unknown Jellyfin widget '{widget_id}'")
-    return plugin
+    return get_typed_plugin(widget_id, JellyfinPlugin, "Jellyfin")
 
 
 @router.get("/{widget_id}/libraries")

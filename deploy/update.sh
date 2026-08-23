@@ -68,6 +68,11 @@ build_application() {
   (cd "$FRONTEND_DIR" && npm ci && npm run build)
 }
 
+install_cli() {
+  info "Installing the tilora management CLI"
+  uv tool install --editable "$INSTALL_DIR/cli" --force
+}
+
 restart_services() {
   info "Restarting services"
   sudo systemctl restart tilora-backend.service tilora-frontend.service
@@ -101,6 +106,7 @@ main() {
   check_install_dir
   sync_repository
   build_application
+  install_cli
   restart_services
   wait_for_health
   print_completion

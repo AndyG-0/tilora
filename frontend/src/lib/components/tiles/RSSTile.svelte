@@ -27,7 +27,7 @@
 
 <TileCard {widgetId}>
 	<div class="widget">
-		<div class="title">{summary?.title ?? 'Headlines'}</div>
+		<div class="title">{summary?.title ?? $_('rss.tile.default_title')}</div>
 		{#if !summary}
 			<div class="empty">{$_('rss.tile.loading')}</div>
 		{:else}
@@ -46,14 +46,16 @@
 			{#if hasItems}
 				<div class="groups">
 					{#each validGroups as group (group.feed_id)}
-						{#if groups.length > 1}
-							<div class="group-label">{group.name}</div>
-						{/if}
-						<ul class="items">
-							{#each group.items as item (item.link)}
-								<li>{item.title}</li>
-							{/each}
-						</ul>
+						<div class="group">
+							{#if groups.length > 1}
+								<div class="group-label">{group.name}</div>
+							{/if}
+							<ul class="items">
+								{#each group.items as item (item.link)}
+									<li>{item.title}</li>
+								{/each}
+							</ul>
+						</div>
 					{/each}
 				</div>
 			{:else if erroredGroups.length === 0}
@@ -115,10 +117,16 @@
 	.groups {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 1.25rem;
 		flex: 1;
 		min-height: 0;
 		overflow-y: auto;
+	}
+
+	.group {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
 	}
 
 	.group-label {
@@ -127,6 +135,7 @@
 		color: var(--color-text-muted);
 		text-transform: uppercase;
 		letter-spacing: 0.03em;
+		margin-top: 0.25rem;
 	}
 
 	.items {

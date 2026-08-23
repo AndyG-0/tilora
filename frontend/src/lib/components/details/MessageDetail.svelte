@@ -44,7 +44,7 @@
 </script>
 
 <div class="header">
-	<h1>{message.title || 'Message'}</h1>
+	<h1>{message.title || $_('message.detail.default_title')}</h1>
 	<button class="edit-settings" onclick={() => (editing ? (editing = false) : openEditor())}>
 		{editing ? $_('common.cancel') : $_('message.detail.edit_message')}
 	</button>

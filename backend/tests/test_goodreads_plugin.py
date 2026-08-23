@@ -51,6 +51,7 @@ async def test_get_summary_returns_books_with_covers_and_authors():
 
     summary = await plugin.get_summary()
 
+    assert summary["configured"] is True
     assert summary["shelf"] == "currently-reading"
     assert [book["title"] for book in summary["books"]] == [
         "Project Hail Mary by Andy Weir",
@@ -78,6 +79,7 @@ async def test_get_summary_respects_item_count_limit():
 
     summary = await plugin.get_summary()
 
+    assert summary["configured"] is True
     assert len(summary["books"]) == 5
 
 
@@ -90,6 +92,7 @@ async def test_get_detail_includes_ratings_and_dates():
 
     detail = await plugin.get_detail()
 
+    assert detail["configured"] is True
     assert detail["shelf"] == "read"
     assert detail["user_id"] == "12345"
     dune = detail["books"][1]
@@ -105,6 +108,7 @@ async def test_get_summary_returns_no_books_when_user_id_not_configured():
 
     summary = await plugin.get_summary()
 
+    assert summary["configured"] is False
     assert summary["books"] == []
 
 
@@ -113,6 +117,7 @@ async def test_get_detail_returns_no_books_when_user_id_not_configured():
 
     detail = await plugin.get_detail()
 
+    assert detail["configured"] is False
     assert detail["books"] == []
     assert detail["user_id"] == ""
 
@@ -133,22 +138,52 @@ def test_default_settings_start_with_currently_reading_shelf():
     assert GoodreadsPlugin.default_settings == {"user_id": "", "shelf": "currently-reading"}
 
 
+def test_validate_settings_accepts_valid_numeric_and_slug_user_id():
+    plugin = make_plugin()
+    # Should not raise
+    plugin.validate_settings({"user_id": "12345678", "shelf": "read"})
+    plugin.validate_settings({"user_id": "12345678-jane-doe", "shelf": "currently-reading"})
+    plugin.validate_settings({"user_id": ""})
+    plugin.validate_settings({"user_id": "   "})
+
+
+def test_validate_settings_rejects_email_and_invalid_username():
+    import pytest
+
+    plugin = make_plugin()
+    with pytest.raises(ValueError, match="numeric"):
+        plugin.validate_settings({"user_id": "andy.gilbreath@gmail.com"})
+
+    with pytest.raises(ValueError, match="numeric"):
+        plugin.validate_settings({"user_id": "jane_doe"})
+
+
+def test_validate_settings_rejects_empty_shelf():
+    import pytest
+
+    plugin = make_plugin()
+    with pytest.raises(ValueError, match="shelf"):
+        plugin.validate_settings({"shelf": "  "})
+
+
 @respx.mock
 async def test_get_detail_degrades_to_empty_when_goodreads_returns_error():
-    respx.get("https://www.goodreads.com/review/list_rss/bad-id").mock(return_value=httpx.Response(404))
-    plugin = make_plugin(user_id="bad-id", shelf="currently-reading")
+    respx.get("https://www.goodreads.com/review/list_rss/12345").mock(return_value=httpx.Response(404))
+    plugin = make_plugin(user_id="12345", shelf="currently-reading")
 
     detail = await plugin.get_detail()
 
+    assert detail["configured"] is True
     assert detail["books"] == []
-    assert detail["user_id"] == "bad-id"
+    assert detail["user_id"] == "12345"
 
 
 @respx.mock
 async def test_get_summary_degrades_to_empty_when_goodreads_returns_error():
-    respx.get("https://www.goodreads.com/review/list_rss/bad-id").mock(return_value=httpx.Response(404))
-    plugin = make_plugin(user_id="bad-id", shelf="currently-reading")
+    respx.get("https://www.goodreads.com/review/list_rss/12345").mock(return_value=httpx.Response(404))
+    plugin = make_plugin(user_id="12345", shelf="currently-reading")
 
     summary = await plugin.get_summary()
 
+    assert summary["configured"] is True
     assert summary["books"] == []

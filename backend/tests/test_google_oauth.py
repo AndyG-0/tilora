@@ -18,13 +18,24 @@ def _configure(monkeypatch):
     monkeypatch.setattr(settings, "backend_public_url", "http://backend.example")
 
 
-def test_build_auth_url_includes_client_id_and_redirect_uri(monkeypatch):
+def test_build_auth_url_includes_client_id_and_redirect_uri(tmp_db, monkeypatch):
     _configure(monkeypatch)
 
-    url = google_oauth.build_auth_url()
+    url, state = google_oauth.build_auth_url()
 
     assert "client_id=client-id" in url
     assert "redirect_uri=http%3A%2F%2Fbackend.example%2Fapi%2Fcalendar%2Fauth%2Fcallback" in url
+    assert f"state={state}" in url
+    assert state
+
+
+def test_build_auth_url_generates_a_fresh_state_each_call(tmp_db, monkeypatch):
+    _configure(monkeypatch)
+
+    _, state1 = google_oauth.build_auth_url()
+    _, state2 = google_oauth.build_auth_url()
+
+    assert state1 != state2
 
 
 def test_is_connected_false_when_no_tokens_stored(tmp_db):

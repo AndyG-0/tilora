@@ -12,6 +12,7 @@ from app.i18n import t
 from app.plugins.base import Plugin, ToolDef
 from app.plugins.flights.aircraft import lookup_aircraft
 from app.plugins.flights.airlines import lookup
+from app.plugins.flights.geo import is_route_plausible
 from app.storage.cache import cache
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,8 @@ ADSB_URL = "https://api.adsb.lol/v2/point/{lat}/{lon}/{radius_nm}"
 ROUTESET_URL = "https://api.adsb.lol/api/0/routeset"
 ADSBDB_CALLSIGN_URL = "https://api.adsbdb.com/v0/callsign/{callsign}"
 ADSBDB_AIRCRAFT_URL = "https://api.adsbdb.com/v0/aircraft/{hex}"
+HEXDB_ROUTE_URL = "https://hexdb.io/api/v1/route/iata/{callsign}"
+HEXDB_AIRPORT_URL = "https://hexdb.io/api/v1/airport/iata/{iata}"
 PLANESPOTTERS_URL = "https://api.planespotters.net/pub/photos/reg/{reg}"
 
 # adsb.lol's routeset endpoint silently returns a 201 with an empty body
@@ -41,8 +44,20 @@ _PLANESPOTTERS_HEADERS = {
     "User-Agent": "TiloraDashboard/1.0 (+https://github.com/tilora/tilora; support@tilora.local)",
 }
 
-_SUMMARY_CAP = 8
-_DETAIL_CAP = 20
+_FLIGHT_CAP = 100
+
+# Route/photo lookups fan out one request per uncached flight (up to
+# _FLIGHT_CAP, and hexdb.io needs two requests per route -- one per airport),
+# all launched concurrently via asyncio.gather. Uncapped, a busy airspace
+# near a major hub could burst 100-200 simultaneous connections to a single
+# free third-party API from one widget refresh, risking fd/memory pressure
+# on a Pi-class host and a household-wide rate-limit ban from these APIs
+# (same class of concern as hdhomerun.py's ffmpeg concurrency cap). Capped
+# per-host rather than with one shared semaphore so a slow/rate-limited host
+# doesn't stall lookups against the others.
+_ADSBDB_SEMAPHORE = asyncio.Semaphore(10)
+_HEXDB_SEMAPHORE = asyncio.Semaphore(10)
+_PLANESPOTTERS_SEMAPHORE = asyncio.Semaphore(10)
 
 # ADS-B emitter category -> our four-bucket aircraft classification. A2
 # (15,500-75,000 lbs) is inherently ambiguous between a regional turboprop
@@ -86,11 +101,13 @@ def _aircraft_kind(category: str | None) -> str:
 
 
 def _normalize(ac: dict[str, Any]) -> dict[str, Any]:
-    callsign = (ac.get("flight") or "").strip()
-    airline = lookup(callsign)
+    raw_flight = (ac.get("flight") or "").strip()
+    registration = (ac.get("r") or "").strip()
+    hex_code = (ac.get("hex") or "").strip().lower()
+    callsign = raw_flight or registration or hex_code.upper()
+    airline = lookup(raw_flight or callsign)
     aircraft = lookup_aircraft(ac.get("t"))
     category = ac.get("category")
-    hex_code = (ac.get("hex") or "").strip().lower()
     return {
         "hex": hex_code or None,
         "callsign": callsign,
@@ -101,7 +118,7 @@ def _normalize(ac: dict[str, Any]) -> dict[str, Any]:
         "aircraft_name": aircraft["name"],
         "aircraft_kind": _aircraft_kind(category),
         "category": category,
-        "registration": ac.get("r"),
+        "registration": registration or None,
         "altitude_ft": _altitude_ft(ac),
         "speed_kts": ac.get("gs"),
         "heading": ac.get("track"),
@@ -127,7 +144,62 @@ def _photo_cache_key(reg_or_hex: str) -> str:
 
 
 def _airport_summary(airport: dict[str, Any]) -> dict[str, Any]:
-    return {"iata": airport.get("iata") or None, "icao": airport.get("icao"), "city": airport.get("location")}
+    coords = _airport_coords(airport)
+    return {
+        "iata": airport.get("iata") or None,
+        "icao": airport.get("icao"),
+        "city": airport.get("location"),
+        "latitude": coords[0] if coords else None,
+        "longitude": coords[1] if coords else None,
+    }
+
+
+def _airport_coords(airport: dict[str, Any]) -> tuple[float, float] | None:
+    """Extract (lat, lon) from a raw airport payload, if present.
+
+    adsb.lol's routeset uses `lat`/`lon`; ADSBDB uses `latitude`/`longitude`.
+    """
+    lat = airport.get("lat", airport.get("latitude"))
+    lon = airport.get("lon", airport.get("longitude"))
+    if isinstance(lat, int | float) and isinstance(lon, int | float):
+        return (lat, lon)
+    return None
+
+
+def _route_is_plausible(
+    ac_lat: float | None,
+    ac_lon: float | None,
+    origin_raw: dict[str, Any],
+    dest_raw: dict[str, Any],
+) -> bool:
+    """Whether a candidate route is geographically consistent with the
+    aircraft's live position -- see `app.plugins.flights.geo`.
+
+    Both route-lookup APIs are keyed purely by callsign, with no notion of
+    "today's actual flight", so they frequently return a stale/wrong route
+    for a reused flight number. Fails open (treated as plausible) when
+    coordinates aren't available, rather than suppressing routes we can't
+    actually check.
+    """
+    if ac_lat is None or ac_lon is None:
+        return True
+    origin_coords = _airport_coords(origin_raw)
+    dest_coords = _airport_coords(dest_raw)
+    if origin_coords is None or dest_coords is None:
+        return True
+    return is_route_plausible(ac_lat, ac_lon, *origin_coords, *dest_coords)
+
+
+def _parse_route(result: dict[str, Any], ac_lat: float | None = None, ac_lon: float | None = None) -> dict[str, Any]:
+    airports = result.get("_airports") or []
+    if not result.get("plausible") or len(airports) < 2:
+        return {"origin": None, "destination": None}
+    # adsb.lol/tar1090 treat _airports[0] as origin and the last entry as
+    # destination, which also covers the rare >2-entry "multihop" case.
+    origin_raw, dest_raw = airports[0], airports[-1]
+    if not _route_is_plausible(ac_lat, ac_lon, origin_raw, dest_raw):
+        return {"origin": None, "destination": None}
+    return {"origin": _airport_summary(origin_raw), "destination": _airport_summary(dest_raw)}
 
 
 def _parse_adsbdb_airport(airport: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -138,33 +210,98 @@ def _parse_adsbdb_airport(airport: dict[str, Any] | None) -> dict[str, Any] | No
     if not icao and not iata:
         return None
     city = airport.get("municipality") or airport.get("city") or airport.get("name") or None
-    return {"iata": iata, "icao": icao, "city": city}
+    coords = _airport_coords(airport)
+    return {
+        "iata": iata,
+        "icao": icao,
+        "city": city,
+        "latitude": coords[0] if coords else None,
+        "longitude": coords[1] if coords else None,
+    }
 
 
-def _parse_route(result: dict[str, Any]) -> dict[str, Any]:
-    airports = result.get("_airports") or []
-    if not result.get("plausible") or len(airports) < 2:
-        return {"origin": None, "destination": None}
-    # adsb.lol/tar1090 treat _airports[0] as origin and the last entry as
-    # destination, which also covers the rare >2-entry "multihop" case.
-    return {"origin": _airport_summary(airports[0]), "destination": _airport_summary(airports[-1])}
-
-
-async def _fetch_single_adsbdb_route(client: httpx.AsyncClient, callsign: str) -> dict[str, Any] | None:
+async def _fetch_single_adsbdb_route(
+    client: httpx.AsyncClient, callsign: str, ac_lat: float | None, ac_lon: float | None
+) -> dict[str, Any] | None:
     try:
         url = ADSBDB_CALLSIGN_URL.format(callsign=callsign)
-        resp = await client.get(url, headers=_HEADERS, timeout=4.0)
+        async with _ADSBDB_SEMAPHORE:
+            resp = await client.get(url, headers=_HEADERS, timeout=4.0)
         if resp.status_code == 200:
             payload = resp.json().get("response", {}).get("flightroute", {})
-            origin = _parse_adsbdb_airport(payload.get("origin"))
-            destination = _parse_adsbdb_airport(payload.get("destination"))
-            if origin and destination:
+            origin_raw, dest_raw = payload.get("origin"), payload.get("destination")
+            origin = _parse_adsbdb_airport(origin_raw)
+            destination = _parse_adsbdb_airport(dest_raw)
+            if origin and destination and _route_is_plausible(ac_lat, ac_lon, origin_raw, dest_raw):
                 return {"origin": origin, "destination": destination}
         elif resp.status_code == 404:
             return {"origin": None, "destination": None}
     except Exception as exc:
         logger.debug("ADSBDB lookup failed for %s: %s", callsign, exc)
     return None
+
+
+async def _fetch_hexdb_airport(client: httpx.AsyncClient, iata: str) -> dict[str, Any] | None:
+    try:
+        url = HEXDB_AIRPORT_URL.format(iata=iata)
+        async with _HEXDB_SEMAPHORE:
+            resp = await client.get(url, headers=_HEADERS, timeout=4.0)
+        if resp.status_code != 200:
+            return None
+        payload = resp.json()
+        lat, lon = payload.get("latitude"), payload.get("longitude")
+        if not isinstance(lat, int | float) or not isinstance(lon, int | float):
+            return None
+        # No city/municipality field in hexdb.io's payload -- `_airport_summary`
+        # reads "location" for that, which is absent here, so city comes out
+        # None for hexdb-sourced airports. Acceptable: city is optional.
+        return {
+            "iata": payload.get("iata") or iata,
+            "icao": payload.get("icao"),
+            "latitude": lat,
+            "longitude": lon,
+        }
+    except Exception as exc:
+        logger.debug("hexdb.io airport lookup failed for %s: %s", iata, exc)
+        return None
+
+
+async def _fetch_single_hexdb_route(
+    client: httpx.AsyncClient, callsign: str, ac_lat: float | None, ac_lon: float | None
+) -> dict[str, Any] | None:
+    """Third fallback route source, tried after ADSBDB and adsb.lol's
+    routeset both fail to resolve a callsign. Unlike `_route_is_plausible`,
+    this fails *closed*: hexdb.io is the lowest-confidence source of the
+    three (crowdsourced, keyed by callsign the same way, equally prone to
+    stale flight-number reuse) so a route from it is only trusted when we
+    can actually verify it against the aircraft's live position.
+    """
+    try:
+        url = HEXDB_ROUTE_URL.format(callsign=callsign)
+        async with _HEXDB_SEMAPHORE:
+            resp = await client.get(url, headers=_HEADERS, timeout=4.0)
+        if resp.status_code != 200:
+            return None
+        route = (resp.json().get("route") or "").strip()
+        legs = [code.strip() for code in route.split("-") if code.strip()]
+        if len(legs) < 2:
+            return None
+        origin_iata, dest_iata = legs[0], legs[-1]
+        if ac_lat is None or ac_lon is None:
+            return None
+        origin_raw, dest_raw = await asyncio.gather(
+            _fetch_hexdb_airport(client, origin_iata), _fetch_hexdb_airport(client, dest_iata)
+        )
+        if not origin_raw or not dest_raw:
+            return None
+        if not is_route_plausible(
+            ac_lat, ac_lon, origin_raw["latitude"], origin_raw["longitude"], dest_raw["latitude"], dest_raw["longitude"]
+        ):
+            return None
+        return {"origin": _airport_summary(origin_raw), "destination": _airport_summary(dest_raw)}
+    except Exception as exc:
+        logger.debug("hexdb.io route lookup failed for %s: %s", callsign, exc)
+        return None
 
 
 async def _fetch_single_photo(
@@ -176,7 +313,8 @@ async def _fetch_single_photo(
     if registration:
         try:
             url = PLANESPOTTERS_URL.format(reg=registration)
-            resp = await client.get(url, headers=_PLANESPOTTERS_HEADERS, timeout=4.0)
+            async with _PLANESPOTTERS_SEMAPHORE:
+                resp = await client.get(url, headers=_PLANESPOTTERS_HEADERS, timeout=4.0)
             if resp.status_code == 200:
                 photos = resp.json().get("photos") or []
                 if photos:
@@ -196,7 +334,8 @@ async def _fetch_single_photo(
     if hex_code:
         try:
             url = ADSBDB_AIRCRAFT_URL.format(hex=hex_code)
-            resp = await client.get(url, headers=_HEADERS, timeout=4.0)
+            async with _ADSBDB_SEMAPHORE:
+                resp = await client.get(url, headers=_HEADERS, timeout=4.0)
             if resp.status_code == 200:
                 ac_data = resp.json().get("response", {}).get("aircraft", {})
                 thumb = ac_data.get("url_photo_thumbnail") or ac_data.get("url_photo")
@@ -242,7 +381,9 @@ async def _fetch_routes(client: httpx.AsyncClient, flights: list[dict[str, Any]]
         return routes
 
     # 1. Query ADSBDB concurrently for all uncached callsigns
-    adsbdb_tasks = [_fetch_single_adsbdb_route(client, plane["callsign"]) for plane in to_fetch]
+    adsbdb_tasks = [
+        _fetch_single_adsbdb_route(client, plane["callsign"], plane["lat"], plane["lng"]) for plane in to_fetch
+    ]
     adsbdb_results = await asyncio.gather(*adsbdb_tasks, return_exceptions=True)
 
     unresolved_planes: list[dict[str, Any]] = []
@@ -266,16 +407,34 @@ async def _fetch_routes(client: httpx.AsyncClient, flights: list[dict[str, Any]]
         logger.warning("Could not fetch flight routes from adsb.lol: %s", exc)
         results = []
 
+    planes_by_callsign = {plane["callsign"]: plane for plane in unresolved_planes}
     resolved: set[str] = set()
     for result in results:
         callsign = (result.get("callsign") or "").strip()
         if not callsign:
             continue
-        route = _parse_route(result)
+        plane = planes_by_callsign.get(callsign)
+        route = _parse_route(result, plane["lat"] if plane else None, plane["lng"] if plane else None)
         routes[callsign] = route
         resolved.add(callsign)
         ttl = _ROUTE_CACHE_TTL_FOUND_SECONDS if route["origin"] else _ROUTE_CACHE_TTL_NOT_FOUND_SECONDS
         cache.set(_route_cache_key(callsign), route, ttl)
+
+    # 3. Fallback to hexdb.io for whatever's still unresolved after both
+    # ADSBDB and adsb.lol's routeset
+    still_unresolved = [plane for plane in unresolved_planes if plane["callsign"] not in resolved]
+    if still_unresolved:
+        hexdb_tasks = [
+            _fetch_single_hexdb_route(client, plane["callsign"], plane["lat"], plane["lng"])
+            for plane in still_unresolved
+        ]
+        hexdb_results = await asyncio.gather(*hexdb_tasks, return_exceptions=True)
+        for plane, result in zip(still_unresolved, hexdb_results, strict=False):
+            if isinstance(result, dict) and result.get("origin") and result.get("destination"):
+                callsign = plane["callsign"]
+                routes[callsign] = result
+                resolved.add(callsign)
+                cache.set(_route_cache_key(callsign), result, _ROUTE_CACHE_TTL_FOUND_SECONDS)
 
     for plane in unresolved_planes:
         callsign = plane["callsign"]
@@ -356,18 +515,22 @@ class FlightsPlugin(Plugin):
             lon=settings["longitude"],
             radius_nm=settings.get("radius_nm", 15),
         )
-        response = await client.get(url)
-        response.raise_for_status()
-        return response.json().get("ac") or []
+        try:
+            response = await client.get(url)
+            response.raise_for_status()
+            return response.json().get("ac") or []
+        except httpx.HTTPError as exc:
+            logger.warning("Could not fetch nearby flights from ADS-B feed for widget '%s': %s", self.id, exc)
+            return []
 
     async def _nearby_flights(self) -> list[dict[str, Any]]:
-        async with httpx.AsyncClient(timeout=10, headers=_HEADERS) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0), headers=_HEADERS) as client:
             aircraft = await self._fetch(client)
             flights = [_normalize(ac) for ac in aircraft if ac.get("alt_baro") != "ground"]
             flights.sort(key=lambda f: f["distance_nm"] if f["distance_nm"] is not None else float("inf"))
             # Never fetch routes or photos for aircraft beyond what either endpoint
             # ever displays, bounding the batch size even when radius_nm is large.
-            target_slice = flights[:_DETAIL_CAP]
+            target_slice = flights[:_FLIGHT_CAP]
             routes, photos = await asyncio.gather(
                 _fetch_routes(client, target_slice),
                 _fetch_photos(client, target_slice),
@@ -392,7 +555,8 @@ class FlightsPlugin(Plugin):
             "location_name": settings.get("location_name") or t("flights.your_location", self.locale),
             "radius_nm": settings.get("radius_nm", 15),
             "count": len(flights),
-            "flights": flights[:_SUMMARY_CAP],
+            "flights": flights[:_FLIGHT_CAP],
+            "truncated": len(flights) > _FLIGHT_CAP,
         }
 
     async def get_detail(self) -> dict[str, Any]:
@@ -405,7 +569,8 @@ class FlightsPlugin(Plugin):
             "radius_nm": settings.get("radius_nm", 15),
             "speed_unit": settings.get("speed_unit", "mph"),
             "count": len(flights),
-            "flights": flights[:_DETAIL_CAP],
+            "flights": flights[:_FLIGHT_CAP],
+            "truncated": len(flights) > _FLIGHT_CAP,
         }
 
     def get_ai_tools(self) -> list[ToolDef]:

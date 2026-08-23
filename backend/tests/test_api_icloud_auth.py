@@ -7,10 +7,20 @@ from fastapi.testclient import TestClient
 from app.api import icloud_auth
 from app.auth import get_current_user
 from app.integrations import icloud_photos
+from app.plugins.base import registry
+from app.plugins.photos.plugin import PhotosPlugin
 from app.storage import db
 from app.storage.cache import cache
 
 USER_ID = "alice"
+
+
+def register_plugin(**settings) -> PhotosPlugin:
+    """Registers a photos widget the same way the live registry does — see
+    `register_plugin` in test_api_photos.py."""
+    plugin = PhotosPlugin({"id": "photos", "settings": {**PhotosPlugin.default_settings, **settings}})
+    registry.register(plugin)
+    return plugin
 
 
 @pytest.fixture
@@ -36,20 +46,21 @@ def test_start_auth_returns_400_when_not_configured(client):
 
 
 def test_start_auth_connects_and_invalidates_photos_cache(client, monkeypatch):
+    register_plugin()
     _save_credentials()
 
     class FakeService:
         requires_2fa = False
 
     monkeypatch.setattr(icloud_photos, "_build_service", lambda user_id, u, p: FakeService())
-    cache.set("summary:photos", {"stale": True}, 60)
-    cache.set("detail:photos", {"stale": True}, 60)
+    cache.set(f"summary:photos:{USER_ID}:en", {"stale": True}, 60)
+    cache.set(f"detail:photos:{USER_ID}:en", {"stale": True}, 60)
 
     response = client.post("/api/icloud/auth/start")
 
     assert response.json() == {"connected": True, "requires_2fa": False}
-    assert cache.get("summary:photos") is None
-    assert cache.get("detail:photos") is None
+    assert cache.get(f"summary:photos:{USER_ID}:en") is None
+    assert cache.get(f"detail:photos:{USER_ID}:en") is None
 
 
 def test_start_auth_requires_2fa(client, monkeypatch):
@@ -94,17 +105,18 @@ def test_verify_auth_succeeds_and_invalidates_photos_cache(client, monkeypatch):
         def trust_session(self) -> None:
             self.is_trusted_session = True
 
+    register_plugin()
     _save_credentials()
     monkeypatch.setattr(icloud_photos, "_build_service", lambda user_id, u, p: FakeService())
     client.post("/api/icloud/auth/start")
-    cache.set("summary:photos", {"stale": True}, 60)
-    cache.set("detail:photos", {"stale": True}, 60)
+    cache.set(f"summary:photos:{USER_ID}:en", {"stale": True}, 60)
+    cache.set(f"detail:photos:{USER_ID}:en", {"stale": True}, 60)
 
     response = client.post("/api/icloud/auth/verify", json={"code": "123456"})
 
     assert response.json() == {"connected": True}
-    assert cache.get("summary:photos") is None
-    assert cache.get("detail:photos") is None
+    assert cache.get(f"summary:photos:{USER_ID}:en") is None
+    assert cache.get(f"detail:photos:{USER_ID}:en") is None
 
 
 def test_status_reports_not_connected(client):
@@ -122,20 +134,21 @@ def test_status_reports_connected(client):
 
 
 def test_set_credentials_persists_and_invalidates_stale_session(client, monkeypatch):
+    register_plugin()
     invalidated = []
     monkeypatch.setattr(
         icloud_photos, "invalidate_service_cache", lambda user_id, clear_disk=False: invalidated.append(user_id)
     )
-    cache.set("summary:photos", {"stale": True}, 60)
-    cache.set("detail:photos", {"stale": True}, 60)
+    cache.set(f"summary:photos:{USER_ID}:en", {"stale": True}, 60)
+    cache.set(f"detail:photos:{USER_ID}:en", {"stale": True}, 60)
 
     response = client.put("/api/icloud/credentials", json={"username": "user@example.com", "password": "hunter2"})
 
     assert response.status_code == 200
     assert db.get_user_credentials(USER_ID, "icloud") == {"username": "user@example.com", "password": "hunter2"}
     assert invalidated == [USER_ID]
-    assert cache.get("summary:photos") is None
-    assert cache.get("detail:photos") is None
+    assert cache.get(f"summary:photos:{USER_ID}:en") is None
+    assert cache.get(f"detail:photos:{USER_ID}:en") is None
 
 
 def test_set_credentials_requires_both_fields(client):

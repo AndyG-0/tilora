@@ -86,10 +86,20 @@ def record_successful_login(user_id: str) -> None:
 
 
 def new_token() -> str:
-    """A random, unguessable id used as both a row's primary key and its
-    bearer credential (device ids and session ids double as cookie values).
+    """A random, unguessable bearer credential — set verbatim as a cookie
+    value. Never stored as-is; see `_hash_token`.
     """
     return secrets.token_urlsafe(32)
+
+
+def _hash_token(token: str) -> str:
+    """Devices/sessions are looked up by an unsalted hash of their bearer
+    token, not the raw value, so a leaked DB snapshot doesn't hand out live
+    credentials directly. A fast hash is fine here (unlike the PIN's
+    deliberately-slow PBKDF2) because the input is already a full-entropy
+    `secrets.token_urlsafe(32)` random value, not a guessable short PIN.
+    """
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def set_device_cookie(response: Response, device_id: str) -> None:
@@ -125,7 +135,7 @@ async def get_current_device(request: Request) -> dict[str, Any]:
     device row, so a stray GET can't silently mint one.
     """
     device_id = request.cookies.get(DEVICE_COOKIE_NAME)
-    device = await asyncio.to_thread(get_device, device_id) if device_id else None
+    device = await asyncio.to_thread(get_device, _hash_token(device_id)) if device_id else None
     if device is None:
         raise HTTPException(status_code=401, detail="No registered device")
     now = datetime.now(UTC)
@@ -136,7 +146,7 @@ async def get_current_device(request: Request) -> dict[str, Any]:
 
 async def get_current_session(request: Request) -> dict[str, Any]:
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
-    session = await asyncio.to_thread(get_session, session_id) if session_id else None
+    session = await asyncio.to_thread(get_session, _hash_token(session_id)) if session_id else None
     if session is None or session["expires_at"] < datetime.now(UTC).isoformat():
         raise HTTPException(status_code=401, detail="Not logged in")
     return session

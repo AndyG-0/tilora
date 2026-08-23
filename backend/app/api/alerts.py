@@ -13,8 +13,8 @@ router = APIRouter(prefix="/api/alerts", tags=["alerts"], dependencies=[Depends(
 
 
 def _invalidate(widget_id: str) -> None:
-    cache.delete(f"summary:{widget_id}")
-    cache.delete(f"detail:{widget_id}")
+    cache.delete_prefix(f"summary:{widget_id}:")
+    cache.delete_prefix(f"detail:{widget_id}:")
 
 
 @router.post("")

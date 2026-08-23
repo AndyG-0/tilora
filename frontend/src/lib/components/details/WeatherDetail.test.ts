@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/svelte';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 const { searchCities, updateWidgetSettings, widgetDetail } = vi.hoisted(() => ({
 	searchCities: vi.fn(),
@@ -18,6 +18,8 @@ const baseData = {
 	condition: 'Mainly clear',
 	weather_code: 1,
 	is_day: true,
+	latitude: 32.7555,
+	longitude: -97.3308,
 	daily_forecast: [{ date: '2026-07-24', high: 85, low: 68, condition: 'Mainly clear', weather_code: 1 }],
 	severe_weather_alerts: true,
 };
@@ -27,6 +29,19 @@ describe('WeatherDetail', () => {
 		vi.clearAllMocks();
 		vi.useFakeTimers();
 		user.set({ id: 'admin-user', name: 'Admin', avatar: null, role: 'admin' });
+		// WeatherMap fetches RainViewer radar frames on mount -- stub it out
+		// with no frames so these unrelated assertions don't hit the network.
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue({
+				ok: true,
+				json: async () => ({ host: 'https://tilecache.rainviewer.com', radar: { past: [], nowcast: [] } }),
+			}),
+		);
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
 	});
 
 	it('renders the current conditions and forecast', () => {

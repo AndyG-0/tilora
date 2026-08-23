@@ -1,0 +1,41 @@
+[project]
+name = "tilora-cli"
+version = "0.14.1"
+description = "Management CLI for a native Tilora installation"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "click>=8.1.8",
+    "httpx>=0.28.1",
+    "pyyaml>=6.0.3",
+]
+
+[project.scripts]
+tilora = "tilora_cli.main:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tilora_cli"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "ruff>=0.16.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["tilora_cli"]

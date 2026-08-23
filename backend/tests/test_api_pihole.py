@@ -69,14 +69,14 @@ def test_set_blocking_invalidates_cache(client):
     respx.post("http://pi.local:80/api/dns/blocking").mock(
         return_value=httpx.Response(200, json={"blocking": "disabled", "timer": 300})
     )
-    cache.set("summary:ph1", {"stale": True}, 60)
-    cache.set("detail:ph1", {"stale": True}, 60)
+    cache.set("summary:ph1:en", {"stale": True}, 60)
+    cache.set("detail:ph1:en", {"stale": True}, 60)
 
     response = client.post("/api/pihole/ph1/blocking", json={"enabled": False, "timer": 300})
 
     assert response.json() == {"blocking": "disabled", "timer": 300}
-    assert cache.get("summary:ph1") is None
-    assert cache.get("detail:ph1") is None
+    assert cache.get("summary:ph1:en") is None
+    assert cache.get("detail:ph1:en") is None
 
 
 @respx.mock

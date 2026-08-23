@@ -509,6 +509,11 @@ build_application() {
   (cd "$FRONTEND_DIR" && npm ci && npm run build)
 }
 
+install_cli() {
+  info "Installing the tilora management CLI"
+  uv tool install --editable "$INSTALL_DIR/cli" --force
+}
+
 render_service_units() {
   local service template temporary api_base_url
   api_base_url="$(get_env_value "$FRONTEND_DIR/.env" PUBLIC_API_BASE_URL)"
@@ -613,6 +618,7 @@ main() {
   local first_install
   first_install="$(prepare_configuration)"
   build_application
+  install_cli
   if [[ "$first_install" == true ]]; then
     info "First-run configuration"
     configure_dashboard

@@ -70,6 +70,7 @@
 	let caldavUsernameInput = $state('');
 	let caldavPasswordInput = $state('');
 	let tmdbKeyInput = $state('');
+	let aaKeyInput = $state('');
 	let discordTokenInput = $state('');
 	let icloudCredentials = $state<IcloudCredentials>({ username: '', has_password: false });
 	let icloudUsernameInput = $state('');
@@ -106,6 +107,10 @@
 	let tmdbSaving = $state(false);
 	let tmdbSaved = $state(false);
 	let tmdbError = $state<string | null>(null);
+
+	let aaSaving = $state(false);
+	let aaSaved = $state(false);
+	let aaError = $state<string | null>(null);
 
 	let discordSaving = $state(false);
 	let discordSaved = $state(false);
@@ -619,6 +624,11 @@
 		containerHosts = containerHosts.filter((h) => h.id !== id);
 	}
 
+	// Listing every device and forgetting one requires admin on the backend
+	// (devices have no per-user ownership column); a non-admin can still
+	// rename their own device via $currentDevice below.
+	const isAdmin = $derived($user?.role === 'admin');
+
 	let devices = $state<DeviceListEntry[]>([]);
 	let devicesError = $state<string | null>(null);
 	let deviceNameInput = $state('');
@@ -640,6 +650,7 @@
 	}
 
 	async function loadDevices() {
+		if (!isAdmin) return;
 		try {
 			devices = await api.listDevices();
 		} catch {
@@ -1088,6 +1099,23 @@
 		}
 	}
 
+	async function saveArtificialAnalysis() {
+		aaSaving = true;
+		aaSaved = false;
+		aaError = null;
+		try {
+			const partial: Record<string, string> = {};
+			if (aaKeyInput) partial.artificial_analysis_api_key = aaKeyInput;
+			settings = await api.updateSettings(partial);
+			aaKeyInput = '';
+			aaSaved = true;
+		} catch {
+			aaError = 'Could not save Artificial Analysis settings.';
+		} finally {
+			aaSaving = false;
+		}
+	}
+
 	async function saveDiscord() {
 		discordSaving = true;
 		discordSaved = false;
@@ -1210,6 +1238,7 @@
 			| 'openai_api_key'
 			| 'gemini_api_key'
 			| 'tmdb_api_key'
+			| 'artificial_analysis_api_key'
 			| 'discord_bot_token'
 			| 'google_calendar_client_id'
 			| 'google_calendar_client_secret'
@@ -1300,6 +1329,8 @@
 		devicesError = null;
 		try {
 			await renameCurrentDevice(trimmed);
+			// renameCurrentDevice already updates $currentDevice; only admins
+			// can reload the full list (used to spot duplicate names below).
 			await loadDevices();
 			editingDeviceName = false;
 		} catch (err: unknown) {
@@ -1372,7 +1403,33 @@
 </script>
 
 <div class="settings-page">
-	<button class="back" onclick={() => goto('/')}>{$_('common.back')}</button>
+	<div class="settings-header">
+		<button class="back" onclick={() => goto('/')}>{$_('common.back')}</button>
+		<a
+			href="https://andyg-0.github.io/tilora/"
+			target="_blank"
+			rel="noreferrer"
+			class="help-link"
+			aria-label={$_('settings.help_documentation')}
+		>
+			<svg
+				viewBox="0 0 24 24"
+				width="16"
+				height="16"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				aria-hidden="true"
+			>
+				<circle cx="12" cy="12" r="10" />
+				<path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+				<line x1="12" y1="17" x2="12.01" y2="17" />
+			</svg>
+			<span>{$_('settings.help_documentation')}</span>
+		</a>
+	</div>
 	<h1>{$_('settings.page.title')}</h1>
 
 	{#if $user?.role === 'admin'}
@@ -1473,10 +1530,7 @@
 						</select>
 					</label>
 					<p class="hint">
-						Only affects models that support tunable reasoning (OpenAI o-series/gpt-5.x, Anthropic extended thinking,
-						Gemini thinking) — ignored otherwise. Some OpenAI gpt-5.x models reject tool calls unless this is set to at
-						least "None". Tilora caps assistant replies at a fixed token budget so requests stay well within typical
-						provider rate limits, regardless of this setting.
+						{$_('settings.ai.reasoning_hint')}
 					</p>
 
 					<label>
@@ -1566,18 +1620,7 @@
 				<section>
 					<h3>Voice output</h3>
 					<p class="hint">
-						Controls which text-to-speech options household members can choose from in "Your settings". The browser's
-						built-in voice is always available and needs no setup.
-					</p>
-					<p class="hint">
-						OpenAI and Piper voices play through an audio element that Chromium-based browsers block from making sound
-						until the page has received a tap, click, or key press. For a normal mic-button press this happens
-						automatically, but on a client using "Always-on microphone" (see "Your settings") that boots straight into
-						the dashboard, playback stays silent until someone taps the screen once — the dashboard shows a one-time
-						prompt asking for that tap. To skip the prompt entirely on a client you control, launch that browser with
-						<code>--autoplay-policy=no-user-gesture-required</code>
-						(already set by <code>deploy/kiosk.sh</code> for barebones Pi installs) or apply the Chromium enterprise
-						<code>AutoplayAllowlist</code> policy.
+						{$_('settings.voice_output.hint')}
 					</p>
 
 					<label class="checkbox-label">
@@ -1663,8 +1706,10 @@
 						</button>
 					{/if}
 					<p class="hint">
-						From an OAuth 2.0 Client ID (console.cloud.google.com). Once saved, connect your account from the Calendar
-						widget's detail view.
+						{$_('settings.google_calendar.hint')}
+						<a href="https://andyg-0.github.io/tilora/admin-guide/calendar-oauth/" target="_blank" rel="noreferrer"
+							>{$_('settings.docs_guide_link')}</a
+						>.
 					</p>
 
 					{#if googleCalendarError}
@@ -1718,9 +1763,10 @@
 						</button>
 					{/if}
 					<p class="hint">
-						From an app registration (portal.azure.com -> Microsoft Entra ID -> App registrations). Once saved, connect
-						your account from a Calendar widget's detail view whose
-						<code>provider</code> is <code>microsoft</code>.
+						{$_('settings.microsoft_calendar.hint')}
+						<a href="https://andyg-0.github.io/tilora/admin-guide/calendar-oauth/" target="_blank" rel="noreferrer"
+							>{$_('settings.docs_guide_link')}</a
+						>.
 					</p>
 
 					{#if microsoftCalendarError}
@@ -1803,6 +1849,39 @@
 					{/if}
 					<button class="save" disabled={tmdbSaving} onclick={saveTmdb}>
 						{tmdbSaving ? 'Saving…' : 'Save TMDB'}
+					</button>
+				</section>
+
+				<section>
+					<h3>Artificial Analysis</h3>
+					<label>
+						API key
+						<input
+							type="password"
+							bind:value={aaKeyInput}
+							placeholder={settings.has_artificial_analysis_api_key
+								? 'Set — enter a new value to replace it'
+								: 'Not set'}
+						/>
+					</label>
+					{#if settings.has_artificial_analysis_api_key}
+						<button class="clear" onclick={() => clearKey('artificial_analysis_api_key', (m) => (aaError = m))}>
+							Clear API key
+						</button>
+					{/if}
+					<p class="hint">
+						Used by the Artificial Analysis widget (artificialanalysis.ai/data-api) for AI model
+						coding/intelligence/cost/speed leaderboards. Enter your free-tier API key.
+					</p>
+
+					{#if aaError}
+						<p class="hint error">{aaError}</p>
+					{/if}
+					{#if aaSaved}
+						<p class="hint">Saved.</p>
+					{/if}
+					<button class="save" disabled={aaSaving} onclick={saveArtificialAnalysis}>
+						{aaSaving ? 'Saving…' : 'Save Artificial Analysis'}
 					</button>
 				</section>
 
@@ -2271,82 +2350,83 @@
 				<p class="hint error">{devicesError}</p>
 			{/if}
 
-			{#if devices.length > 0}
-				<ul class="device-list">
-					{#each devices as d (d.id)}
-						{@const isCurrent = d.id === $currentDevice?.id}
+			<ul class="device-list">
+				<li>
+					{#if editingDeviceName}
+						<form
+							class="device-rename-form"
+							onsubmit={(e) => {
+								e.preventDefault();
+								saveDeviceName();
+							}}
+						>
+							<input
+								type="text"
+								bind:value={deviceNameInput}
+								maxlength="40"
+								aria-label={$_('settings.devices.rename')}
+								disabled={savingDeviceName}
+								onkeydown={(e) => {
+									if (e.key === 'Escape') cancelEditingDeviceName();
+								}}
+							/>
+							<span class="confirm-actions">
+								<button type="button" class="cancel" onclick={cancelEditingDeviceName} disabled={savingDeviceName}>
+									{$_('common.cancel')}
+								</button>
+								<button type="submit" class="save" disabled={savingDeviceName || !deviceNameInput.trim()}>
+									{savingDeviceName ? $_('common.saving') : $_('common.save')}
+								</button>
+							</span>
+						</form>
+					{:else}
+						<span class="device-info">
+							<span class="device-name">{$currentDevice?.name}</span>
+							<span class="device-badge">{$_('settings.devices.this_device_badge')}</span>
+						</span>
+						<span class="device-actions">
+							<button type="button" class="action-link" onclick={startEditingDeviceName}>
+								{$_('settings.devices.rename_device')}
+							</button>
+						</span>
+					{/if}
+				</li>
+				{#if isAdmin}
+					{#each devices.filter((d) => d.id !== $currentDevice?.id) as d (d.id)}
 						<li>
-							{#if isCurrent && editingDeviceName}
-								<form
-									class="device-rename-form"
-									onsubmit={(e) => {
-										e.preventDefault();
-										saveDeviceName();
-									}}
-								>
-									<input
-										type="text"
-										bind:value={deviceNameInput}
-										maxlength="40"
-										aria-label={$_('settings.devices.rename')}
-										disabled={savingDeviceName}
-										onkeydown={(e) => {
-											if (e.key === 'Escape') cancelEditingDeviceName();
-										}}
-									/>
+							<span class="device-info">
+								<span class="device-name">{d.name}</span>
+							</span>
+							<span class="device-actions">
+								{#if confirmingForgetDeviceId === d.id}
 									<span class="confirm-actions">
-										<button type="button" class="cancel" onclick={cancelEditingDeviceName} disabled={savingDeviceName}>
+										<button
+											type="button"
+											class="cancel"
+											onclick={() => (confirmingForgetDeviceId = null)}
+											disabled={forgettingDeviceId === d.id}
+										>
 											{$_('common.cancel')}
 										</button>
-										<button type="submit" class="save" disabled={savingDeviceName || !deviceNameInput.trim()}>
-											{savingDeviceName ? $_('common.saving') : $_('common.save')}
+										<button
+											type="button"
+											class="danger"
+											onclick={() => forgetDevice(d.id)}
+											disabled={forgettingDeviceId === d.id}
+										>
+											{forgettingDeviceId === d.id ? $_('settings.devices.forgetting') : $_('settings.devices.forget')}
 										</button>
 									</span>
-								</form>
-							{:else}
-								<span class="device-info">
-									<span class="device-name">{d.name}</span>
-									{#if isCurrent}
-										<span class="device-badge">{$_('settings.devices.this_device_badge')}</span>
-									{/if}
-								</span>
-								<span class="device-actions">
-									{#if isCurrent}
-										<button type="button" class="action-link" onclick={startEditingDeviceName}>
-											{$_('settings.devices.rename_device')}
-										</button>
-									{:else if confirmingForgetDeviceId === d.id}
-										<span class="confirm-actions">
-											<button
-												type="button"
-												class="cancel"
-												onclick={() => (confirmingForgetDeviceId = null)}
-												disabled={forgettingDeviceId === d.id}
-											>
-												{$_('common.cancel')}
-											</button>
-											<button
-												type="button"
-												class="danger"
-												onclick={() => forgetDevice(d.id)}
-												disabled={forgettingDeviceId === d.id}
-											>
-												{forgettingDeviceId === d.id
-													? $_('settings.devices.forgetting')
-													: $_('settings.devices.forget')}
-											</button>
-										</span>
-									{:else}
-										<button type="button" class="danger-link" onclick={() => (confirmingForgetDeviceId = d.id)}>
-											{$_('settings.devices.forget_device')}
-										</button>
-									{/if}
-								</span>
-							{/if}
+								{:else}
+									<button type="button" class="danger-link" onclick={() => (confirmingForgetDeviceId = d.id)}>
+										{$_('settings.devices.forget_device')}
+									</button>
+								{/if}
+							</span>
 						</li>
 					{/each}
-				</ul>
-			{/if}
+				{/if}
+			</ul>
 		</section>
 
 		<section>
@@ -2760,7 +2840,7 @@
 					{#if version.update_running || updatingNow}
 						<p class="hint">{$_('settings.update.update_in_progress')}</p>
 					{:else if version.update_available}
-						<button id="update-now-btn" onclick={triggerUpdate} disabled={updatingNow}>
+						<button id="update-now-btn" class="save" onclick={triggerUpdate} disabled={updatingNow}>
 							{$_('settings.update.update_now')}
 						</button>
 						{#if updateError}
@@ -2870,7 +2950,8 @@
 		gap: 0.75rem;
 	}
 
-	.test {
+	.test,
+	.secondary {
 		align-self: flex-start;
 		background: none;
 		border: 1px solid var(--color-border);
@@ -3005,6 +3086,8 @@
 	}
 
 	.save:disabled,
+	.test:disabled,
+	.secondary:disabled,
 	.danger:disabled {
 		opacity: 0.5;
 		cursor: default;
@@ -3228,5 +3311,32 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 0.5rem;
+	}
+
+	.settings-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		margin-bottom: 0.5rem;
+	}
+
+	.help-link {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		font-size: 0.85rem;
+		color: var(--color-accent);
+		text-decoration: none;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 999px;
+		padding: 0.35rem 0.75rem;
+		transition: all 0.15s ease;
+	}
+
+	.help-link:hover {
+		background: var(--color-surface-hover);
+		border-color: var(--color-accent);
 	}
 </style>

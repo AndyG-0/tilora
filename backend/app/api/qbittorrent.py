@@ -10,21 +10,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
 from app.auth import get_current_user, require_write_access
 from app.integrations import qbittorrent_client
-from app.plugins.base import registry
+from app.plugins.base import get_typed_plugin
 from app.plugins.qbittorrent.plugin import QBittorrentPlugin
 
 router = APIRouter(prefix="/api/qbittorrent", tags=["qbittorrent"], dependencies=[Depends(get_current_user)])
 
 
 def _get_plugin(widget_id: str) -> QBittorrentPlugin:
-    plugin = registry.get(widget_id)
-    if not isinstance(plugin, QBittorrentPlugin):
-        raise HTTPException(status_code=404, detail=f"Unknown qBittorrent widget '{widget_id}'")
-    return plugin
+    return get_typed_plugin(widget_id, QBittorrentPlugin, "qBittorrent")
 
 
 @router.post("/{widget_id}/test-connection")

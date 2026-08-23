@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { api, type CityResult } from '$lib/api';
 	import WeatherIcon from '$lib/components/WeatherIcon.svelte';
+	import WeatherMap from '$lib/components/WeatherMap.svelte';
 	import { user } from '$lib/stores/user';
 	import { _ } from 'svelte-i18n';
 	import { get } from 'svelte/store';
@@ -30,6 +31,8 @@
 		condition: string;
 		weather_code: number;
 		is_day: boolean;
+		latitude: number;
+		longitude: number;
 		daily_forecast: DailyForecast[];
 		severe_weather_alerts: boolean;
 		air_quality?: AirQuality;
@@ -191,6 +194,8 @@
 	</div>
 	<p class="current-text">{Math.round(weather.temperature)}° · {weather.condition}</p>
 </div>
+
+<WeatherMap latitude={weather.latitude} longitude={weather.longitude} />
 
 <div class="forecast">
 	{#each weather.daily_forecast as day (day.date)}

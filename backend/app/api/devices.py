@@ -8,7 +8,14 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
-from app.auth import DEVICE_COOKIE_NAME, get_current_device, get_current_user, new_token, set_device_cookie
+from app.auth import (
+    DEVICE_COOKIE_NAME,
+    _hash_token,
+    get_current_admin,
+    get_current_device,
+    new_token,
+    set_device_cookie,
+)
 from app.storage.db import create_device, delete_device, get_device, list_devices, update_device
 
 router = APIRouter(prefix="/api/devices", tags=["devices"])
@@ -38,18 +45,21 @@ async def register_device(request: Request, response: Response):
     # existing device back unchanged, rather than minting a new one on every
     # reload.
     existing_id = request.cookies.get(DEVICE_COOKIE_NAME)
-    existing = await asyncio.to_thread(get_device, existing_id) if existing_id else None
+    existing = await asyncio.to_thread(get_device, _hash_token(existing_id)) if existing_id else None
     if existing is not None:
-        set_device_cookie(response, existing["id"])
+        # Re-set the cookie to the raw token already presented — `existing["id"]`
+        # is the hash stored at rest, not something a cookie can be minted from.
+        set_device_cookie(response, existing_id)
         return {**_shape(existing), "is_new": False}
 
     device_id = new_token()
     now = datetime.now(UTC).isoformat()
     all_devices = await asyncio.to_thread(list_devices)
     device_name = _generate_unique_device_name(d["name"] for d in all_devices)
-    await asyncio.to_thread(create_device, device_id, device_name, now, now)
+    hashed_id = _hash_token(device_id)
+    await asyncio.to_thread(create_device, hashed_id, device_name, now, now)
     set_device_cookie(response, device_id)
-    return {"id": device_id, "name": device_name, "is_new": True}
+    return {"id": hashed_id, "name": device_name, "is_new": True}
 
 
 @router.get("/me")
@@ -75,7 +85,7 @@ async def rename_current_device(payload: RenameDeviceRequest, device: dict[str, 
 
 
 @router.get("")
-async def list_all_devices(user: dict[str, Any] = Depends(get_current_user)):
+async def list_all_devices(user: dict[str, Any] = Depends(get_current_admin)):
     devices = await asyncio.to_thread(list_devices)
     return [{"id": d["id"], "name": d["name"], "last_seen_at": d["last_seen_at"]} for d in devices]
 
@@ -83,7 +93,7 @@ async def list_all_devices(user: dict[str, Any] = Depends(get_current_user)):
 @router.delete("/{device_id}")
 async def forget_device(
     device_id: str,
-    user: dict[str, Any] = Depends(get_current_user),
+    user: dict[str, Any] = Depends(get_current_admin),
     current_device: dict[str, Any] = Depends(get_current_device),
 ):
     if device_id == current_device["id"]:

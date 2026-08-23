@@ -7,6 +7,20 @@
 		"done": "Done"
 	},
 	"settings": {
+		"help_documentation": "Help & Documentation",
+		"docs_guide_link": "Setup guide in documentation",
+		"ai": {
+			"reasoning_hint": "Controls thinking budget for models that support tunable reasoning (OpenAI o-series, Claude extended thinking, Gemini thinking)."
+		},
+		"voice_output": {
+			"hint": "Controls text-to-speech options available to household members. Browser built-in voices are always available without setup."
+		},
+		"google_calendar": {
+			"hint": "From an OAuth 2.0 Client ID (console.cloud.google.com). Requires adding your backend callback URL and test users."
+		},
+		"microsoft_calendar": {
+			"hint": "From an app registration in Microsoft Entra ID (portal.azure.com). Requires configuring your backend redirect URI."
+		},
 		"language": {
 			"title": "Language",
 			"save_error": "Could not save language.",
@@ -198,6 +212,11 @@
 			"no_cities_found": "No cities found.",
 			"update_failed": "Could not update the location.",
 			"severe_weather_alerts": "Severe weather alerts",
+			"radar_map_label": "Precipitation radar",
+			"radar_play": "Play",
+			"radar_pause": "Pause",
+			"radar_step_back": "Previous frame",
+			"radar_step_forward": "Next frame",
 			"air_quality_title": "Air Quality",
 			"pollen_title": "Pollen",
 			"pollen": {
@@ -246,7 +265,8 @@
 		"tile": {
 			"loading": "Loading flights…",
 			"count": "{count} nearby",
-			"empty": "No aircraft nearby"
+			"empty": "No aircraft nearby",
+			"truncated": "Showing {shown} of {total}"
 		},
 		"detail": {
 			"change_location": "Change location",
@@ -267,8 +287,11 @@
 			"column_altitude": "Altitude",
 			"column_speed": "Speed",
 			"column_distance": "Distance",
+			"route_unavailable": "Route unavailable",
+			"route_local_flight": "Local flight",
 			"no_photo": "No photo available",
-			"photo_by": "Photo by {name}"
+			"photo_by": "Photo by {name}",
+			"truncated": "Showing the nearest {shown} of {total} flights nearby."
 		},
 		"screensaver": {
 			"no_aircraft": "NO AIRCRAFT NEARBY"
@@ -387,6 +410,7 @@
 	},
 	"packages": {
 		"tile": {
+			"default_title": "Packages",
 			"arriving_today": "Arriving today",
 			"in_transit": "{count} on the way",
 			"nothing_tracked": "Nothing tracked"
@@ -409,12 +433,33 @@
 			"stale_badge": "Cached"
 		},
 		"detail": {
+			"default_title": "Astronomy Picture of the Day",
 			"unavailable": "Picture of the day is unavailable right now.",
 			"stale_notice": "Couldn't fetch today's picture — showing the one from {date}."
 		}
 	},
+	"artificial_analysis": {
+		"category": {
+			"coding": "Coding",
+			"intelligence": "Intelligence",
+			"cost": "Cost",
+			"speed": "Speed"
+		},
+		"tile": {
+			"title": "AI Model Leaderboard",
+			"stale_badge": "Cached"
+		},
+		"detail": {
+			"title": "AI Model Leaderboard",
+			"search_placeholder": "Search models or creators…",
+			"default_category_label": "Default leaderboard shown on the tile",
+			"save_error": "Could not update settings.",
+			"stale_data": "Couldn't refresh data — showing results from {fetched_at}."
+		}
+	},
 	"bookmarks": {
 		"tile": {
+			"default_title": "Bookmarks",
 			"loading": "Loading bookmarks…",
 			"empty": "No bookmarks yet"
 		},
@@ -428,7 +473,23 @@
 			"empty_editing_hint": "No bookmarks yet — add one below.",
 			"add_bookmark": "+ Add bookmark",
 			"save_error": "Could not update the bookmarks.",
-			"empty_hint": "No bookmarks configured yet — tap \"Edit bookmarks\" to add one."
+			"empty_hint": "No bookmarks configured yet — tap \"Edit bookmarks\" to add one.",
+			"search_placeholder": "Search bookmarks…",
+			"search_clear": "Clear search",
+			"no_search_results": "No bookmarks match \"{query}\"",
+			"showing_results": "Showing {count} of {total} bookmarks",
+			"sort_az": "Sort A–Z",
+			"sort_za": "Sort Z–A",
+			"import_bookmarks": "Import bookmarks",
+			"import_success": "Imported {count} bookmarks.",
+			"import_error": "Could not import bookmarks from file.",
+			"import_replace": "Replace all",
+			"import_append": "Add to existing",
+			"import_prompt_title": "Import Bookmarks",
+			"import_prompt_body": "Found {count} bookmarks. How would you like to import them?",
+			"move_up": "Move up",
+			"move_down": "Move down",
+			"drag_handle": "Drag to reorder"
 		}
 	},
 	"alert": {
@@ -464,6 +525,7 @@
 			"connected_result": "✓ Connected (Pi-hole {version})",
 			"clear_password_error": "Could not clear the password.",
 			"not_connected_hint": "Not connected yet — set up Pi-hole in Network Settings.",
+			"admin_only_hint": "Only an admin can change blocking.",
 			"blocking_enabled": "● Blocking enabled",
 			"blocking_paused": "⏸ Blocking paused",
 			"pause_30s": "Pause 30s",
@@ -502,6 +564,7 @@
 	},
 	"container": {
 		"tile": {
+			"default_title": "Container",
 			"running": "{count} running",
 			"stopped": "{count} stopped"
 		},
@@ -621,7 +684,11 @@
 			"empty_hint": "No books on this shelf yet."
 		}
 	},
+	"chores": {
+		"default_title": "To-Do"
+	},
 	"shopping": {
+		"default_title": "Shopping List",
 		"detail": {
 			"checked_by": "checked off by {name}",
 			"added_by": "added by {name}"
@@ -629,6 +696,7 @@
 	},
 	"rss": {
 		"tile": {
+			"default_title": "Headlines",
 			"loading": "Loading headlines…"
 		},
 		"detail": {
@@ -647,7 +715,8 @@
 			"name_placeholder": "Name (optional)",
 			"add_feed": "+ Add feed",
 			"no_feeds_selected_hint": "No feeds selected yet — tap \"Edit feeds\" to choose one.",
-			"no_items": "No items yet."
+			"no_items": "No items yet.",
+			"comments": "Comments"
 		},
 		"screensaver": {
 			"no_headlines": "No headlines yet."
@@ -1032,6 +1101,7 @@
 	"message": {
 		"empty_placeholder": "(empty message)",
 		"detail": {
+			"default_title": "Message",
 			"edit_message": "Edit message",
 			"title_label": "Title",
 			"text_label": "Text",
@@ -1044,16 +1114,20 @@
 		"update_available": "Update available",
 		"change_theme": "Change theme",
 		"done_rearranging": "Done rearranging",
-		"rearrange_widgets": "Rearrange widgets",
+		"rearrange_tiles": "Rearrange tiles",
 		"switch_profile": "Switch profile",
 		"log_out": "Log out",
 		"listening": "Listening…",
 		"listening_cloud_stt": "Listening (Cloud STT)…",
 		"transcribing": "Transcribing audio…",
 		"thinking": "Thinking…",
-		"remove_widget": "Remove widget",
-		"resize_widget": "Resize widget",
-		"add_widget": "+ Add widget",
+		"remove_tile": "Remove tile",
+		"resize_tile": "Resize tile",
+		"add_tile": "+ Add tile",
+		"auto_arrange": "Auto arrange",
+		"auto_arrange_confirm_title": "Auto arrange tiles?",
+		"auto_arrange_confirm_text": "This repositions every tile on this tab to remove empty gaps. It may undo any manual arrangement you've made.",
+		"auto_arrange_confirm_action": "Arrange",
 		"mic_no_match": "Didn't catch that.",
 		"mic_permission_denied": "Microphone permission was denied. Check your browser permissions.",
 		"mic_not_found": "No microphone detected. Check your audio input device.",

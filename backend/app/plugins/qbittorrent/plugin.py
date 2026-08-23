@@ -36,18 +36,7 @@ class QBittorrentPlugin(Plugin):
         "username": "admin",
         "password": "",
     }
-
-    def _safe_settings(self) -> dict[str, Any]:
-        # Secrets are write-only: callers get a boolean "is it set", never
-        # the raw value (same pattern as PiholePlugin._safe_settings).
-        s = self.config["settings"]
-        return {
-            "host": s.get("host", ""),
-            "port": s.get("port", 8080),
-            "use_https": bool(s.get("use_https", False)),
-            "username": s.get("username", "admin"),
-            "has_password": bool(s.get("password")),
-        }
+    secret_setting_keys = frozenset({"password"})
 
     def _is_connected(self) -> bool:
         return qbittorrent_client.is_configured(self.config["settings"])

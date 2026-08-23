@@ -11,30 +11,45 @@ from app.storage.cache import cache
 router = APIRouter(prefix="/api/calendar", tags=["calendar"], dependencies=[Depends(get_current_admin)])
 
 
+_OAUTH_STATE_TTL_SECONDS = 600
+
+
 @router.get("/auth/start")
 async def start_auth():
-    if not settings.google_calendar_client_id:
+    creds = effective_settings()
+    if not creds["google_calendar_client_id"]:
         raise HTTPException(status_code=400, detail="Google Calendar client id is not configured")
-    return RedirectResponse(google_oauth.build_auth_url())
+    url, state = google_oauth.build_auth_url()
+    cache.set(f"oauth_state:google:{state}", True, _OAUTH_STATE_TTL_SECONDS)
+    return RedirectResponse(url)
 
 
 @router.get("/auth/callback")
-async def auth_callback(code: str):
+async def auth_callback(code: str, state: str):
+    if cache.get(f"oauth_state:google:{state}") is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
+    cache.delete(f"oauth_state:google:{state}")
     await google_oauth.exchange_code(code)
-    cache.delete("summary:calendar")
-    cache.delete("detail:calendar")
+    cache.delete_prefix("summary:calendar:")
+    cache.delete_prefix("detail:calendar:")
     return RedirectResponse(f"{settings.cors_origin}/settings")
 
 
 @router.get("/auth/microsoft/start")
 async def start_microsoft_auth():
-    if not settings.microsoft_calendar_client_id:
+    creds = effective_settings()
+    if not creds["microsoft_calendar_client_id"]:
         raise HTTPException(status_code=400, detail="Microsoft Calendar client id is not configured")
-    return RedirectResponse(microsoft_oauth.build_auth_url())
+    url, state = microsoft_oauth.build_auth_url()
+    cache.set(f"oauth_state:microsoft:{state}", True, _OAUTH_STATE_TTL_SECONDS)
+    return RedirectResponse(url)
 
 
 @router.get("/auth/microsoft/callback")
-async def microsoft_auth_callback(code: str):
+async def microsoft_auth_callback(code: str, state: str):
+    if cache.get(f"oauth_state:microsoft:{state}") is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
+    cache.delete(f"oauth_state:microsoft:{state}")
     await microsoft_oauth.exchange_code(code)
     # "calendar" is the dashboard.yaml-defined widget id (used when that
     # widget's own `provider` setting is switched to "microsoft");
@@ -42,10 +57,10 @@ async def microsoft_auth_callback(code: str):
     # convention (the type a UI-added "Outlook Calendar" widget starts
     # from) — clear both so either configuration picks up the fresh
     # connection immediately rather than waiting out the cache TTL.
-    cache.delete("summary:calendar")
-    cache.delete("detail:calendar")
-    cache.delete("summary:calendar_microsoft")
-    cache.delete("detail:calendar_microsoft")
+    cache.delete_prefix("summary:calendar:")
+    cache.delete_prefix("detail:calendar:")
+    cache.delete_prefix("summary:calendar_microsoft:")
+    cache.delete_prefix("detail:calendar_microsoft:")
     return RedirectResponse(f"{settings.cors_origin}/settings")
 
 

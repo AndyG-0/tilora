@@ -9,7 +9,11 @@
 	let summary = $state<ContainerSummary | null>(null);
 
 	const ENGINE_LABELS: Record<string, string> = { docker: 'Docker', podman: 'Podman' };
-	const title = $derived(summary ? (ENGINE_LABELS[summary.engine] ?? 'Container') : 'Container');
+	const title = $derived(
+		summary
+			? (ENGINE_LABELS[summary.engine] ?? $_('container.tile.default_title'))
+			: $_('container.tile.default_title'),
+	);
 
 	async function refresh() {
 		try {

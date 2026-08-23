@@ -9,13 +9,14 @@ short-lived and refreshed on demand via `get_valid_access_token`.
 from __future__ import annotations
 
 import asyncio
+import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
 import httpx
 
-from app.config import settings
+from app.config import effective_settings, settings
 from app.storage import db
 
 _AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -28,27 +29,33 @@ def redirect_uri() -> str:
     return f"{settings.backend_public_url}/api/calendar/auth/callback"
 
 
-def build_auth_url() -> str:
+def build_auth_url() -> tuple[str, str]:
+    """Returns (authorization_url, state) — the caller is responsible for
+    persisting `state` and verifying it on the callback (CSRF protection)."""
+    creds = effective_settings()
+    state = secrets.token_urlsafe(32)
     params = {
-        "client_id": settings.google_calendar_client_id or "",
+        "client_id": creds["google_calendar_client_id"] or "",
         "redirect_uri": redirect_uri(),
         "response_type": "code",
         "scope": _SCOPE,
         "access_type": "offline",
         "prompt": "consent",
+        "state": state,
     }
-    return f"{_AUTH_URL}?{urlencode(params)}"
+    return f"{_AUTH_URL}?{urlencode(params)}", state
 
 
 async def exchange_code(code: str) -> None:
     """Exchange an auth code for tokens and persist the refresh token."""
+    creds = effective_settings()
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.post(
             _TOKEN_URL,
             data={
                 "code": code,
-                "client_id": settings.google_calendar_client_id or "",
-                "client_secret": settings.google_calendar_client_secret or "",
+                "client_id": creds["google_calendar_client_id"] or "",
+                "client_secret": creds["google_calendar_client_secret"] or "",
                 "redirect_uri": redirect_uri(),
                 "grant_type": "authorization_code",
             },
@@ -66,13 +73,14 @@ async def exchange_code(code: str) -> None:
 
 
 async def _refresh_access_token(refresh_token: str) -> dict[str, Any]:
+    creds = effective_settings()
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.post(
             _TOKEN_URL,
             data={
                 "refresh_token": refresh_token,
-                "client_id": settings.google_calendar_client_id or "",
-                "client_secret": settings.google_calendar_client_secret or "",
+                "client_id": creds["google_calendar_client_id"] or "",
+                "client_secret": creds["google_calendar_client_secret"] or "",
                 "grant_type": "refresh_token",
             },
         )

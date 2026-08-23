@@ -66,21 +66,13 @@ class SteamPlugin(Plugin):
         "api_key": "",
     }
     default_layout: ClassVar[dict[str, int]] = {"colSpan": 2, "rowSpan": 1}
+    secret_setting_keys: ClassVar[frozenset[str]] = frozenset({"api_key"})
 
     def _settings(self) -> dict[str, Any]:
         return self.config["settings"]
 
     def _is_configured(self) -> bool:
         return steam_client.is_configured(self._settings())
-
-    def _safe_settings(self) -> dict[str, Any]:
-        # api_key is write-only: callers get a boolean "is it set", never the
-        # raw value (same pattern as PiholePlugin._safe_settings).
-        s = self._settings()
-        return {
-            "steamid": s.get("steamid", ""),
-            "has_api_key": bool(s.get("api_key")),
-        }
 
     async def _player_and_recent(self) -> tuple[dict[str, Any] | None, list[dict[str, Any]], str | None]:
         settings = self._settings()
