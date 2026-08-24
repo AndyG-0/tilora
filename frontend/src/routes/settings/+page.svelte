@@ -17,7 +17,9 @@
 	import ContainerHostRow from '$lib/components/settings/ContainerHostRow.svelte';
 	import { user, logout } from '$lib/stores/user';
 	import { device as currentDevice, renameDevice as renameCurrentDevice } from '$lib/stores/device';
+	import { pwaState, promptInstall } from '$lib/stores/pwa';
 	import { widgets } from '$lib/stores/widgets';
+
 	import { screensaverSettings, persistScreensaverSettings, forceScreensaverPreview } from '$lib/stores/screensaver';
 	import {
 		isScreensaverAllowedType,
@@ -2430,7 +2432,36 @@
 		</section>
 
 		<section>
+			<h3>{$_('pwa.install_title')}</h3>
+			<p class="hint">{$_('pwa.install_description')}</p>
+
+			<div class="pwa-settings-content">
+				<div class="pwa-status-row">
+					<span class="pwa-status-label">{$_('settings.devices.status_label', { default: 'Status' })}</span>
+					{#if $pwaState.isStandalone}
+						<span class="device-badge pwa-badge-installed">{$_('pwa.installed_badge')}</span>
+					{:else}
+						<span class="device-badge pwa-badge-browser">{$_('pwa.running_in_browser')}</span>
+					{/if}
+				</div>
+
+				{#if $pwaState.canInstall}
+					<div class="pwa-install-action">
+						<button type="button" class="action-btn" onclick={promptInstall}>
+							{$_('pwa.install_app')}
+						</button>
+					</div>
+				{:else if !$pwaState.isStandalone}
+					<p class="hint pwa-help-hint">
+						{$_('pwa.ios_install_hint')}
+					</p>
+				{/if}
+			</div>
+		</section>
+
+		<section>
 			<h3>{$_('settings.icloud.heading')}</h3>
+
 			<label>
 				{$_('settings.icloud.apple_id_label')}
 				<input type="text" bind:value={icloudUsernameInput} />
@@ -3338,5 +3369,47 @@
 	.help-link:hover {
 		background: var(--color-surface-hover);
 		border-color: var(--color-accent);
+	}
+
+	.pwa-settings-content {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		margin-top: 0.5rem;
+	}
+
+	.pwa-status-row {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.pwa-status-label {
+		font-weight: 500;
+		color: var(--color-text);
+		font-size: 0.95rem;
+	}
+
+	.pwa-badge-installed {
+		background: rgba(34, 197, 94, 0.15);
+		color: #22c55e;
+		border: 1px solid rgba(34, 197, 94, 0.3);
+	}
+
+	.pwa-badge-browser {
+		background: rgba(148, 163, 184, 0.15);
+		color: var(--color-text-muted);
+		border: 1px solid var(--color-border);
+	}
+
+	.pwa-install-action {
+		margin-top: 0.25rem;
+	}
+
+	.pwa-help-hint {
+		margin-top: 0.25rem;
+		font-size: 0.85rem;
+		color: var(--color-text-muted);
+		line-height: 1.4;
 	}
 </style>

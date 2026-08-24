@@ -1260,5 +1260,17 @@
 		"add_confirm": "Añadir mosaico",
 		"add_saving": "Añadiendo…",
 		"add_error": "No se pudo añadir el mosaico."
+	},
+	"pwa": {
+		"update_available": "Hay una nueva versión de Tilora disponible.",
+		"update_button": "Actualizar",
+		"install_app": "Instalar aplicación Tilora",
+		"install_title": "Personal Web App (PWA)",
+		"install_description": "Instala Tilora en tu pantalla de inicio o escritorio para una experiencia de panel a pantalla completa con carga instantánea.",
+		"installed_badge": "Instalado (PWA independiente)",
+		"running_in_browser": "Ejecutándose en el navegador",
+		"ios_install_hint": "Para instalar en iOS / iPadOS: toca el botón Compartir en Safari y elige 'Añadir a pantalla de inicio'.",
+		"desktop_install_hint": "Para instalar en escritorio: haz clic en el icono de instalación en la barra de direcciones de tu navegador.",
+		"offline_status": "Actualmente estás sin conexión. Mostrando panel en caché."
 	}
 }

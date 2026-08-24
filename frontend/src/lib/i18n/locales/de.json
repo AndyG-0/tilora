@@ -1260,5 +1260,17 @@
 		"add_confirm": "Kachel hinzufügen",
 		"add_saving": "Wird hinzugefügt…",
 		"add_error": "Kachel konnte nicht hinzugefügt werden."
+	},
+	"pwa": {
+		"update_available": "Eine neue Version von Tilora ist verfügbar.",
+		"update_button": "Aktualisieren",
+		"install_app": "Tilora App installieren",
+		"install_title": "Personal Web App (PWA)",
+		"install_description": "Installieren Sie Tilora auf Ihrem Startbildschirm oder Desktop für ein eigenständiges Vollbild-Dashboard mit sofortigem Laden.",
+		"installed_badge": "Installiert (Eigenständige PWA)",
+		"running_in_browser": "Wird im Browser ausgeführt",
+		"ios_install_hint": "Zur Installation unter iOS / iPadOS: Tippen Sie in Safari auf die Teilen-Schaltfläche und wählen Sie 'Zum Home-Bildschirm'.",
+		"desktop_install_hint": "Zur Installation auf dem Desktop: Klicken Sie auf das Installationssymbol in der Adressleiste Ihres Browsers.",
+		"offline_status": "Sie sind derzeit offline. Zwischengespeichertes Dashboard wird angezeigt."
 	}
 }

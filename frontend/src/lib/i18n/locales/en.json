@@ -1281,5 +1281,17 @@
 		"add_confirm": "Add Tile",
 		"add_saving": "Adding…",
 		"add_error": "Could not add tile."
+	},
+	"pwa": {
+		"update_available": "A new version of Tilora is available.",
+		"update_button": "Update",
+		"install_app": "Install Tilora App",
+		"install_title": "Personal Web App (PWA)",
+		"install_description": "Install Tilora on your home screen or desktop for a fullscreen, standalone dashboard experience with instant loading.",
+		"installed_badge": "Installed (Standalone PWA)",
+		"running_in_browser": "Running in Browser",
+		"ios_install_hint": "To install on iOS / iPadOS: tap the Share button in Safari and choose 'Add to Home Screen'.",
+		"desktop_install_hint": "To install on Desktop: click the install icon in your browser's address bar.",
+		"offline_status": "You are currently offline. Displaying cached dashboard shell."
 	}
 }
