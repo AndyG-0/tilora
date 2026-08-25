@@ -128,4 +128,23 @@ describe('pwa store', () => {
 		expect(getRegistrationMock).toHaveBeenCalled();
 		expect(postMessageMock).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
 	});
+
+	it('registers service worker with scope and module type options in secure context', () => {
+		const registerMock = vi.fn().mockReturnValue(new Promise(() => {}));
+		Object.defineProperty(navigator, 'serviceWorker', {
+			value: {
+				register: registerMock,
+				addEventListener: vi.fn(),
+				removeEventListener: vi.fn(),
+			},
+			configurable: true,
+		});
+
+		const cleanup = initPwa();
+		expect(registerMock).toHaveBeenCalledWith('/service-worker.js', {
+			scope: '/',
+			type: expect.stringMatching(/module|classic/),
+		});
+		cleanup();
+	});
 });

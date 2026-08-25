@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import { browser } from '$app/environment';
+import { browser, dev } from '$app/environment';
 
 export interface PWAState {
 	canInstall: boolean;
@@ -119,7 +119,7 @@ export function initPwa(): () => void {
 		navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
 
 		navigator.serviceWorker
-			.register('/service-worker.js', { scope: '/' })
+			.register('/service-worker.js', { scope: '/', type: dev ? 'module' : 'classic' })
 			.then((registration) => {
 				activeRegistration = registration;
 
