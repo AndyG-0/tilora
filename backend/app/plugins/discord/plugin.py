@@ -29,13 +29,11 @@ class DiscordPlugin(Plugin):
     name = "Discord"
     refresh_interval_seconds = 60
 
-    @property
-    def _is_configured(self) -> bool:
-        return bool(effective_settings().get("discord_bot_token"))
+    async def _is_configured(self) -> bool:
+        return bool((await effective_settings()).get("discord_bot_token"))
 
-    @property
-    def _headers(self) -> dict[str, str]:
-        return {"Authorization": f"Bot {effective_settings().get('discord_bot_token') or ''}"}
+    async def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bot {(await effective_settings()).get('discord_bot_token') or ''}"}
 
     @property
     def _channel_id(self) -> str | None:
@@ -63,7 +61,8 @@ class DiscordPlugin(Plugin):
 
     async def _fetch_channel_name(self, client: httpx.AsyncClient) -> str:
         try:
-            response = await client.get(f"{DISCORD_API_BASE}/channels/{self._channel_id}", headers=self._headers)
+            headers = await self._headers()
+            response = await client.get(f"{DISCORD_API_BASE}/channels/{self._channel_id}", headers=headers)
             response.raise_for_status()
             return response.json().get("name") or t("discord.unknown_channel", self.locale)
         except httpx.HTTPError as exc:
@@ -72,9 +71,10 @@ class DiscordPlugin(Plugin):
 
     async def _fetch_messages(self, client: httpx.AsyncClient, limit: int) -> list[dict[str, Any]]:
         try:
+            headers = await self._headers()
             response = await client.get(
                 f"{DISCORD_API_BASE}/channels/{self._channel_id}/messages",
-                headers=self._headers,
+                headers=headers,
                 params={"limit": limit},
             )
             response.raise_for_status()
@@ -122,9 +122,9 @@ class DiscordPlugin(Plugin):
         raw_messages = [m for m in raw_messages if datetime.fromisoformat(m["timestamp"]) >= cutoff]
         return channel_name, [self._message_view(m) for m in raw_messages]
 
-    def _payload(self, channel_name: str, messages: list[dict[str, Any]]) -> dict[str, Any]:
+    def _payload(self, channel_name: str, messages: list[dict[str, Any]], *, is_configured: bool) -> dict[str, Any]:
         return {
-            "configured": self._is_configured,
+            "configured": is_configured,
             "channel_id": self._channel_id or "",
             "channel_name": channel_name,
             "display_mode": self._display_mode,
@@ -139,28 +139,31 @@ class DiscordPlugin(Plugin):
         # A UI-added Discord widget has no channel_id until it's configured
         # separately (dashboard.yaml or settings editor) — show an empty channel
         # rather than raising.
-        if not self._is_configured or not self._channel_id:
-            return self._payload("", [])
+        is_configured = await self._is_configured()
+        if not is_configured or not self._channel_id:
+            return self._payload("", [], is_configured=is_configured)
         channel_name, messages = await self._fetch()
-        return self._payload(channel_name, messages[-_SUMMARY_MESSAGE_COUNT:])
+        return self._payload(channel_name, messages[-_SUMMARY_MESSAGE_COUNT:], is_configured=is_configured)
 
     async def get_detail(self) -> dict[str, Any]:
-        if not self._is_configured or not self._channel_id:
-            return self._payload("", [])
+        is_configured = await self._is_configured()
+        if not is_configured or not self._channel_id:
+            return self._payload("", [], is_configured=is_configured)
         channel_name, messages = await self._fetch()
-        return self._payload(channel_name, messages)
+        return self._payload(channel_name, messages, is_configured=is_configured)
 
     def get_ai_tools(self) -> list[ToolDef]:
         async def get_recent_discord_messages() -> dict[str, Any]:
             return await self.get_summary()
 
         async def get_todays_discord_messages() -> dict[str, Any]:
-            if not self._is_configured or not self._channel_id:
-                return self._payload("", [])
-            tz = resolve_timezone(effective_settings()["timezone"])
+            is_configured = await self._is_configured()
+            if not is_configured or not self._channel_id:
+                return self._payload("", [], is_configured=is_configured)
+            tz = resolve_timezone((await effective_settings())["timezone"])
             midnight_local = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
             channel_name, messages = await self._fetch_since(midnight_local.astimezone(UTC))
-            return self._payload(channel_name, messages)
+            return self._payload(channel_name, messages, is_configured=is_configured)
 
         return [
             ToolDef(

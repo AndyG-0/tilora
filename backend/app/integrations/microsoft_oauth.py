@@ -55,10 +55,10 @@ def redirect_uri() -> str:
     return f"{settings.backend_public_url}/api/calendar/auth/microsoft/callback"
 
 
-def build_auth_url() -> tuple[str, str]:
+async def build_auth_url() -> tuple[str, str]:
     """Returns (authorization_url, state) — the caller is responsible for
     persisting `state` and verifying it on the callback (CSRF protection)."""
-    creds = effective_settings()
+    creds = await effective_settings()
     state = secrets.token_urlsafe(32)
     params = {
         "client_id": creds["microsoft_calendar_client_id"] or "",
@@ -73,7 +73,7 @@ def build_auth_url() -> tuple[str, str]:
 
 async def exchange_code(code: str) -> None:
     """Exchange an auth code for tokens and persist the refresh token."""
-    creds = effective_settings()
+    creds = await effective_settings()
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.post(
             _TOKEN_URL,
@@ -99,7 +99,7 @@ async def exchange_code(code: str) -> None:
 
 
 async def _refresh_access_token(refresh_token: str) -> dict[str, Any]:
-    creds = effective_settings()
+    creds = await effective_settings()
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.post(
             _TOKEN_URL,

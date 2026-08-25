@@ -70,16 +70,12 @@
 		await waitLocale();
 		i18nReady = true;
 
-		const registered = await ensureDevice().catch(() => null);
+		// None of these three reads another's result, so run them concurrently.
+		const [registered] = await Promise.all([ensureDevice().catch(() => null), loadSetupStatus(), loadCurrentUser()]);
 		if (registered?.is_new) {
 			namingDevice = true;
 			deviceNameInput = registered.name;
 		}
-
-		// Resolved before loadCurrentUser() so the redirect effect below can
-		// decide setup-vs-login before either store's data actually matters.
-		await loadSetupStatus();
-		await loadCurrentUser();
 	});
 
 	// Three-way redirect: unreachable backend gets its own message (below),

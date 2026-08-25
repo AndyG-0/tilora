@@ -16,10 +16,10 @@ _OAUTH_STATE_TTL_SECONDS = 600
 
 @router.get("/auth/start")
 async def start_auth():
-    creds = effective_settings()
+    creds = await effective_settings()
     if not creds["google_calendar_client_id"]:
         raise HTTPException(status_code=400, detail="Google Calendar client id is not configured")
-    url, state = google_oauth.build_auth_url()
+    url, state = await google_oauth.build_auth_url()
     cache.set(f"oauth_state:google:{state}", True, _OAUTH_STATE_TTL_SECONDS)
     return RedirectResponse(url)
 
@@ -37,10 +37,10 @@ async def auth_callback(code: str, state: str):
 
 @router.get("/auth/microsoft/start")
 async def start_microsoft_auth():
-    creds = effective_settings()
+    creds = await effective_settings()
     if not creds["microsoft_calendar_client_id"]:
         raise HTTPException(status_code=400, detail="Microsoft Calendar client id is not configured")
-    url, state = microsoft_oauth.build_auth_url()
+    url, state = await microsoft_oauth.build_auth_url()
     cache.set(f"oauth_state:microsoft:{state}", True, _OAUTH_STATE_TTL_SECONDS)
     return RedirectResponse(url)
 
@@ -71,7 +71,7 @@ async def calendar_status():
 
 @router.get("/caldav/calendars")
 async def list_caldav_calendars():
-    creds = effective_settings()
+    creds = await effective_settings()
     if not caldav_client.is_configured(creds):
         raise HTTPException(status_code=400, detail="CalDAV is not configured")
     return await caldav_client.list_calendars(creds["caldav_url"], creds["caldav_username"], creds["caldav_password"])

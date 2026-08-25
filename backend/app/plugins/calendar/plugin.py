@@ -81,9 +81,9 @@ class CalendarPlugin(Plugin):
     def days_ahead(self) -> int:
         return int(self.config["settings"].get("days_ahead", 7))
 
-    def _is_connected(self) -> bool:
+    async def _is_connected(self) -> bool:
         if self.provider == "caldav":
-            return caldav_client.is_configured(effective_settings())
+            return caldav_client.is_configured(await effective_settings())
         if self.provider == "microsoft":
             return microsoft_oauth.is_connected()
         return google_oauth.is_connected()
@@ -96,7 +96,7 @@ class CalendarPlugin(Plugin):
         return await self._fetch_google_events()
 
     async def _fetch_caldav_events(self) -> list[dict[str, Any]]:
-        creds = effective_settings()
+        creds = await effective_settings()
         if not caldav_client.is_configured(creds):
             return []
         events = await caldav_client.fetch_events(
@@ -201,7 +201,7 @@ class CalendarPlugin(Plugin):
     async def get_summary(self) -> dict[str, Any]:
         events = await self._fetch_events()
         return {
-            "connected": self._is_connected(),
+            "connected": await self._is_connected(),
             "provider": self.provider,
             "events": events[:_SUMMARY_EVENT_COUNT],
         }
@@ -209,7 +209,7 @@ class CalendarPlugin(Plugin):
     async def get_detail(self) -> dict[str, Any]:
         events = await self._fetch_events()
         return {
-            "connected": self._is_connected(),
+            "connected": await self._is_connected(),
             "provider": self.provider,
             "events": events,
             "calendar_ids": self.calendar_ids,
@@ -221,9 +221,9 @@ class CalendarPlugin(Plugin):
 
         async def get_todays_events() -> dict[str, Any]:
             events = await self._fetch_events()
-            tz = resolve_timezone(effective_settings()["timezone"])
+            tz = resolve_timezone((await effective_settings())["timezone"])
             todays_events = [event for event in events if _event_is_today(event, tz)]
-            return {"connected": self._is_connected(), "provider": self.provider, "events": todays_events}
+            return {"connected": await self._is_connected(), "provider": self.provider, "events": todays_events}
 
         return [
             ToolDef(

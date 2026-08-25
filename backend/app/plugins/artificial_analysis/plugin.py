@@ -67,9 +67,8 @@ class ArtificialAnalysisPlugin(Plugin):
         if category is not None and category not in _ALLOWED_CATEGORIES:
             raise ValueError(f"category must be one of {_ALLOWED_CATEGORIES}")
 
-    @property
-    def _is_configured(self) -> bool:
-        return bool(effective_settings().get("artificial_analysis_api_key"))
+    async def _is_configured(self) -> bool:
+        return bool((await effective_settings()).get("artificial_analysis_api_key"))
 
     @staticmethod
     def _should_refetch(last: dict[str, Any] | None) -> bool:
@@ -95,7 +94,7 @@ class ArtificialAnalysisPlugin(Plugin):
 
         try:
             models = await artificial_analysis_client.get_language_models(
-                effective_settings().get("artificial_analysis_api_key")
+                (await effective_settings()).get("artificial_analysis_api_key")
             )
         except artificial_analysis_client.ArtificialAnalysisError as exc:
             logger.warning("Could not fetch Artificial Analysis leaderboard: %s", exc)
@@ -113,7 +112,7 @@ class ArtificialAnalysisPlugin(Plugin):
         return sorted(eligible, key=lambda m: m[sort_key], reverse=reverse)
 
     async def get_summary(self) -> dict[str, Any]:
-        if not self._is_configured:
+        if not await self._is_configured():
             return {"configured": False, "category": self.category, "models": []}
 
         fetched = await self._fetch()
@@ -129,7 +128,7 @@ class ArtificialAnalysisPlugin(Plugin):
         }
 
     async def get_detail(self) -> dict[str, Any]:
-        if not self._is_configured:
+        if not await self._is_configured():
             return {"configured": False, "category": self.category, "models": []}
 
         fetched = await self._fetch()
@@ -149,7 +148,7 @@ class ArtificialAnalysisPlugin(Plugin):
 
     def get_ai_tools(self) -> list[ToolDef]:
         async def leaderboard(category: str, limit: int) -> dict[str, Any]:
-            if not self._is_configured:
+            if not await self._is_configured():
                 return {"models": [], "configured": False}
             fetched = await self._fetch()
             if fetched is None:

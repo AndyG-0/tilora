@@ -54,7 +54,7 @@ async def test_get_summary_only_counts_the_requesting_users_packages(tmp_db):
 async def test_get_summary_flags_packages_arriving_today(tmp_db, monkeypatch):
     monkeypatch.setattr(settings, "timezone", "UTC")
     plugin = make_plugin()
-    today = plugin._today()
+    today = await plugin._today()
     package = db.add_package("packages", "alice", "today-one")
     db.update_package_status(package["id"], eta_date=today)
     other = db.add_package("packages", "alice", "later-one")
@@ -68,7 +68,7 @@ async def test_get_summary_flags_packages_arriving_today(tmp_db, monkeypatch):
 
 async def test_get_summary_excludes_delivered_packages_from_arriving_today(tmp_db):
     plugin = make_plugin()
-    today = plugin._today()
+    today = await plugin._today()
     package = db.add_package("packages", "alice", "delivered-today")
     db.update_package_status(package["id"], eta_date=today, delivered=True)
 
