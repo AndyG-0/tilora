@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import httpx
+import pytest
 import respx
 
 from app.plugins.flights.aircraft import lookup_aircraft
@@ -754,7 +755,7 @@ def test_get_ai_tools_default_and_custom_instances():
 
 
 @respx.mock
-async def test_get_summary_handles_fetch_connect_timeout_gracefully():
+async def test_get_summary_falls_back_to_empty_when_never_fetched_successfully():
     respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
         side_effect=httpx.ConnectTimeout("Connection timed out")
     )
@@ -764,12 +765,12 @@ async def test_get_summary_handles_fetch_connect_timeout_gracefully():
 
     assert summary["count"] == 0
     assert summary["flights"] == []
-    assert summary["location_name"] == "Fort Worth, TX"
-    assert summary["radius_nm"] == 15
+    assert not summary["stale"]
+    assert summary["fetched_at"] is None
 
 
 @respx.mock
-async def test_get_summary_handles_fetch_http_error_gracefully():
+async def test_get_summary_falls_back_to_empty_on_fetch_http_error():
     respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(return_value=httpx.Response(503))
     plugin = make_plugin()
 
@@ -777,11 +778,11 @@ async def test_get_summary_handles_fetch_http_error_gracefully():
 
     assert summary["count"] == 0
     assert summary["flights"] == []
-    assert summary["location_name"] == "Fort Worth, TX"
+    assert not summary["stale"]
 
 
 @respx.mock
-async def test_get_detail_handles_fetch_http_error_gracefully():
+async def test_get_detail_falls_back_to_empty_on_fetch_http_error():
     respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
         side_effect=httpx.ConnectError("Connection refused")
     )
@@ -791,9 +792,73 @@ async def test_get_detail_handles_fetch_http_error_gracefully():
 
     assert detail["count"] == 0
     assert detail["flights"] == []
-    assert detail["location_name"] == "Fort Worth, TX"
-    assert detail["latitude"] == 32.7555
-    assert detail["longitude"] == -97.3308
+    assert not detail["stale"]
+    assert detail["fetched_at"] is None
+
+
+@respx.mock
+async def test_get_summary_falls_back_to_last_good_when_fetch_fails():
+    route = respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        return_value=httpx.Response(200, json=FAKE_RESPONSE)
+    )
+    mock_external_apis()
+    mock_routeset()
+    plugin = make_plugin()
+
+    first = await plugin.get_summary()
+    assert first["count"] == 3
+    assert not first["stale"]
+
+    route.side_effect = httpx.ConnectTimeout("Connection timed out")
+    second = await plugin.get_summary()
+
+    assert second["count"] == 3
+    assert second["flights"] == first["flights"]
+    assert second["stale"] is True
+    assert second["fetched_at"] == first["fetched_at"]
+
+
+@respx.mock
+async def test_get_detail_falls_back_to_last_good_when_fetch_fails():
+    route = respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        return_value=httpx.Response(200, json=FAKE_RESPONSE)
+    )
+    mock_external_apis()
+    mock_routeset()
+    plugin = make_plugin()
+
+    first = await plugin.get_detail()
+    assert first["count"] == 3
+
+    route.mock(return_value=httpx.Response(503))
+    second = await plugin.get_detail()
+
+    assert second["count"] == 3
+    assert second["flights"] == first["flights"]
+    assert second["stale"] is True
+    assert second["fetched_at"] == first["fetched_at"]
+
+
+@respx.mock
+async def test_get_summary_clears_staleness_after_successful_refetch():
+    route = respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        return_value=httpx.Response(200, json=FAKE_RESPONSE)
+    )
+    mock_external_apis()
+    mock_routeset()
+    plugin = make_plugin()
+
+    await plugin.get_summary()
+
+    route.side_effect = httpx.ConnectTimeout("Connection timed out")
+    stale = await plugin.get_summary()
+    assert stale["stale"] is True
+
+    route.mock(return_value=httpx.Response(200, json=FAKE_RESPONSE))
+    fresh = await plugin.get_summary()
+
+    assert fresh["stale"] is False
+    assert fresh["fetched_at"] != stale["fetched_at"]
 
 
 def test_normalize_falls_back_to_registration_when_flight_is_missing_or_empty():
@@ -848,3 +913,75 @@ async def test_get_summary_includes_aircraft_without_flight_callsigns():
     assert summary["flights"][0]["hex"] == "a00001"
     assert summary["flights"][1]["callsign"] == "A00002"
     assert summary["flights"][1]["hex"] == "a00002"
+
+
+@respx.mock
+async def test_get_summary_handles_empty_routeset_response_gracefully():
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        return_value=httpx.Response(200, json=FAKE_RESPONSE)
+    )
+    mock_external_apis()
+    # adsb.lol returning 201 with an empty body (or invalid JSON)
+    respx.post(ROUTESET_URL).mock(return_value=httpx.Response(201, text=""))
+    plugin = make_plugin()
+
+    summary = await plugin.get_summary()
+    assert summary["count"] == 3
+    assert len(summary["flights"]) == 3
+
+
+@respx.mock
+async def test_get_summary_handles_dict_routeset_response_gracefully():
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        return_value=httpx.Response(200, json=FAKE_RESPONSE)
+    )
+    mock_external_apis()
+    # adsb.lol returning an error dict rather than a list
+    respx.post(ROUTESET_URL).mock(return_value=httpx.Response(200, json={"error": "Rate limit exceeded"}))
+    plugin = make_plugin()
+
+    summary = await plugin.get_summary()
+    assert summary["count"] == 3
+    assert len(summary["flights"]) == 3
+
+
+@respx.mock
+async def test_get_detail_handles_missing_settings_keys():
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        return_value=httpx.Response(200, json=FAKE_RESPONSE)
+    )
+    mock_external_apis()
+    mock_routeset()
+    # Plugin initialized with minimal settings missing lat/lon
+    plugin = FlightsPlugin({"id": "flights", "settings": {}})
+
+    detail = await plugin.get_detail()
+    assert detail["latitude"] == 32.7555
+    assert detail["longitude"] == -97.3308
+    assert detail["radius_nm"] == 15
+    assert detail["count"] == 3
+
+
+@respx.mock
+async def test_fetch_raises_and_logs_on_http_error(caplog: pytest.LogCaptureFixture):
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(return_value=httpx.Response(500))
+    plugin = make_plugin()
+
+    async with httpx.AsyncClient() as client:
+        with pytest.raises(httpx.HTTPStatusError):
+            await plugin._fetch(client)
+
+    assert "Could not fetch nearby flights from ADS-B feed" in caplog.text
+    assert "HTTPStatusError" in caplog.text
+
+
+@respx.mock
+async def test_fetch_logs_exception_type_on_timeout_with_empty_str(caplog: pytest.LogCaptureFixture):
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(side_effect=httpx.ConnectTimeout(""))
+    plugin = make_plugin()
+
+    async with httpx.AsyncClient() as client:
+        with pytest.raises(httpx.ConnectTimeout):
+            await plugin._fetch(client)
+
+    assert "Could not fetch nearby flights from ADS-B feed for widget 'flights': ConnectTimeout" in caplog.text

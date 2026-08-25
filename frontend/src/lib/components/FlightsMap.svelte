@@ -203,7 +203,7 @@
 
 	function allFlightsBounds(L: Leaflet, current: FlightsMapData): LatLngBounds {
 		const bounds = L.latLngBounds([[current.latitude, current.longitude]]);
-		for (const flight of current.flights) {
+		for (const flight of current.flights ?? []) {
 			if (flight.latitude === null || flight.longitude === null) continue;
 			bounds.extend([flight.latitude, flight.longitude]);
 		}
@@ -226,7 +226,7 @@
 			fillOpacity: 0.05,
 		}).addTo(markerLayer);
 
-		for (const flight of current.flights) {
+		for (const flight of current.flights ?? []) {
 			if (flight.latitude === null || flight.longitude === null) continue;
 			const isSelected = flight.callsign === selectedCallsign;
 			const marker = L.marker([flight.latitude, flight.longitude], {
@@ -266,7 +266,7 @@
 
 	function selectedFlightPath(current: FlightsMapData): SelectedPathPoints | null {
 		if (!selectedCallsign) return null;
-		const flight = current.flights.find((f) => f.callsign === selectedCallsign);
+		const flight = (current.flights ?? []).find((f) => f.callsign === selectedCallsign);
 		if (!flight || !flight.origin || !flight.destination) return null;
 		if (flight.latitude === null || flight.longitude === null) return null;
 		const { origin, destination } = flight;

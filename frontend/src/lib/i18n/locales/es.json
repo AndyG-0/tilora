@@ -266,7 +266,8 @@
 			"loading": "Cargando vuelos…",
 			"count": "{count} cerca",
 			"empty": "Ninguna aeronave cerca",
-			"truncated": "Mostrando {shown} de {total}"
+			"truncated": "Mostrando {shown} de {total}",
+			"stale_badge": "En caché"
 		},
 		"detail": {
 			"change_location": "Cambiar ubicación",
@@ -291,7 +292,8 @@
 			"route_local_flight": "Vuelo local",
 			"no_photo": "Foto no disponible",
 			"photo_by": "Foto por {name}",
-			"truncated": "Mostrando los {shown} más cercanos de {total} vuelos cerca."
+			"truncated": "Mostrando los {shown} más cercanos de {total} vuelos cerca.",
+			"stale_notice": "No se pudieron actualizar los vuelos; se muestran las últimas posiciones conocidas del {date}."
 		},
 		"screensaver": {
 			"no_aircraft": "SIN AERONAVES CERCA"

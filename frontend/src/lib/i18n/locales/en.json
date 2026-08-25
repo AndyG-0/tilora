@@ -266,7 +266,8 @@
 			"loading": "Loading flights…",
 			"count": "{count} nearby",
 			"empty": "No aircraft nearby",
-			"truncated": "Showing {shown} of {total}"
+			"truncated": "Showing {shown} of {total}",
+			"stale_badge": "Cached"
 		},
 		"detail": {
 			"change_location": "Change location",
@@ -291,7 +292,8 @@
 			"route_local_flight": "Local flight",
 			"no_photo": "No photo available",
 			"photo_by": "Photo by {name}",
-			"truncated": "Showing the nearest {shown} of {total} flights nearby."
+			"truncated": "Showing the nearest {shown} of {total} flights nearby.",
+			"stale_notice": "Couldn't refresh flights — showing the last known positions from {date}."
 		},
 		"screensaver": {
 			"no_aircraft": "NO AIRCRAFT NEARBY"

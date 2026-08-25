@@ -249,4 +249,18 @@ describe('FlightsDetail', () => {
 
 		expect(screen.queryByText(/Showing the nearest/)).not.toBeInTheDocument();
 	});
+
+	it('shows a stale notice when the data falls back to a cached fetch', () => {
+		const staleData = { ...SAMPLE_DATA, stale: true, fetched_at: '2026-08-24T12:00:00Z' };
+		render(FlightsDetail, { props: { data: staleData } });
+
+		expect(screen.getByText(/Couldn't refresh flights/)).toBeInTheDocument();
+	});
+
+	it('omits the stale notice when the data is fresh', () => {
+		const freshData = { ...SAMPLE_DATA, stale: false, fetched_at: '2026-08-24T12:00:00Z' };
+		render(FlightsDetail, { props: { data: freshData } });
+
+		expect(screen.queryByText(/Couldn't refresh flights/)).not.toBeInTheDocument();
+	});
 });

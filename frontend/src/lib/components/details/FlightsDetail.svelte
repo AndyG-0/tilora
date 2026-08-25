@@ -7,7 +7,7 @@
 	import AircraftIcon from '$lib/components/AircraftIcon.svelte';
 	import AircraftPhoto from '$lib/components/AircraftPhoto.svelte';
 	import FlightsMap from '$lib/components/FlightsMap.svelte';
-	import { _ } from 'svelte-i18n';
+	import { _, locale } from 'svelte-i18n';
 	import { get } from 'svelte/store';
 
 	interface AirportRef {
@@ -69,13 +69,15 @@
 		count: number;
 		flights: FlightItem[];
 		truncated: boolean;
+		stale?: boolean;
+		fetched_at?: string | null;
 	}
 
 	let { data: initialData }: { data: FlightsDetailData } = $props();
 
 	// svelte-ignore state_referenced_locally -- seed local state from the
 	// initial load once; subsequent updates come from selectCity/saveRadius/selectSpeedUnit.
-	let flightsData = $state(initialData);
+	let flightsData = $state({ ...initialData, flights: initialData?.flights ?? [] });
 
 	let selectedCallsign = $state<string | null>(null);
 	let rowElements = $state<Record<string, HTMLElement | null>>({});
@@ -253,13 +255,21 @@
 	</div>
 </div>
 
-{#if flightsData.truncated}
-	<p class="warning">
-		{$_('flights.detail.truncated', { values: { shown: flightsData.flights.length, total: flightsData.count } })}
+{#if flightsData.stale && flightsData.fetched_at}
+	<p class="stale-note">
+		{$_('flights.detail.stale_notice', {
+			values: { date: new Date(flightsData.fetched_at).toLocaleString(get(locale) ?? undefined) },
+		})}
 	</p>
 {/if}
 
-{#if flightsData.flights.length === 0}
+{#if flightsData.truncated}
+	<p class="warning">
+		{$_('flights.detail.truncated', { values: { shown: flightsData.flights?.length ?? 0, total: flightsData.count } })}
+	</p>
+{/if}
+
+{#if !flightsData.flights || flightsData.flights.length === 0}
 	<p class="empty">{$_('flights.detail.empty')}</p>
 {:else}
 	<div class="table">
@@ -517,6 +527,12 @@
 	}
 
 	.warning {
+		color: var(--color-text-muted);
+		font-size: 0.85rem;
+		margin: 1rem 0 0;
+	}
+
+	.stale-note {
 		color: var(--color-text-muted);
 		font-size: 0.85rem;
 		margin: 1rem 0 0;
