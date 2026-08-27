@@ -14,6 +14,7 @@ import httpx
 from app.config import effective_settings, resolve_timezone
 from app.i18n import t
 from app.plugins.base import Plugin, ToolDef
+from app.storage.cache import cached_call
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,12 @@ DISCORD_API_BASE = "https://discord.com/api/v10"
 # Discord caps a single messages request at 100.
 _MAX_MESSAGE_LIMIT = 100
 _SUMMARY_MESSAGE_COUNT = 5
+
+# Matches refresh_interval_seconds -- the REST /summary and /detail routes
+# already get this TTL for free from the widgets.py response cache, but the
+# AI tools below call _fetch()/_fetch_since() directly, so without their own
+# cache they'd hit Discord fresh on every AI query.
+_FETCH_CACHE_TTL_SECONDS = 60
 
 
 class DiscordPlugin(Plugin):
@@ -103,14 +110,18 @@ class DiscordPlugin(Plugin):
         return channel_name, list(reversed(raw_messages))
 
     async def _fetch(self) -> tuple[str, list[dict[str, Any]]]:
-        channel_name, raw_messages = await self._fetch_raw(self._message_limit)
+        async def fetch() -> tuple[str, list[dict[str, Any]]]:
+            channel_name, raw_messages = await self._fetch_raw(self._message_limit)
 
-        time_window_minutes = self._time_window_minutes
-        if time_window_minutes is not None:
-            cutoff = datetime.now(UTC) - timedelta(minutes=time_window_minutes)
-            raw_messages = [m for m in raw_messages if datetime.fromisoformat(m["timestamp"]) >= cutoff]
+            time_window_minutes = self._time_window_minutes
+            if time_window_minutes is not None:
+                cutoff = datetime.now(UTC) - timedelta(minutes=time_window_minutes)
+                raw_messages = [m for m in raw_messages if datetime.fromisoformat(m["timestamp"]) >= cutoff]
 
-        return channel_name, [self._message_view(m) for m in raw_messages]
+            return channel_name, [self._message_view(m) for m in raw_messages]
+
+        key = f"discord:fetch:{self.id}:{self._channel_id}:{self._message_limit}:{self._time_window_minutes}"
+        return await cached_call(key, _FETCH_CACHE_TTL_SECONDS, fetch)
 
     async def _fetch_since(self, cutoff: datetime) -> tuple[str, list[dict[str, Any]]]:
         """Messages at or after `cutoff`, fetched at Discord's max page size.
@@ -118,9 +129,14 @@ class DiscordPlugin(Plugin):
         Used for "today"/"new" voice queries, which need full day coverage
         rather than the widget's display `message_limit`.
         """
-        channel_name, raw_messages = await self._fetch_raw(_MAX_MESSAGE_LIMIT)
-        raw_messages = [m for m in raw_messages if datetime.fromisoformat(m["timestamp"]) >= cutoff]
-        return channel_name, [self._message_view(m) for m in raw_messages]
+
+        async def fetch() -> tuple[str, list[dict[str, Any]]]:
+            channel_name, raw_messages = await self._fetch_raw(_MAX_MESSAGE_LIMIT)
+            raw_messages = [m for m in raw_messages if datetime.fromisoformat(m["timestamp"]) >= cutoff]
+            return channel_name, [self._message_view(m) for m in raw_messages]
+
+        key = f"discord:fetch_since:{self.id}:{self._channel_id}:{cutoff.isoformat()}"
+        return await cached_call(key, _FETCH_CACHE_TTL_SECONDS, fetch)
 
     def _payload(self, channel_name: str, messages: list[dict[str, Any]], *, is_configured: bool) -> dict[str, Any]:
         return {

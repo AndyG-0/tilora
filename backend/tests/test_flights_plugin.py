@@ -740,6 +740,45 @@ async def test_route_lookup_is_cached_between_polls():
     assert adsbdb_route.calls.call_count == 1
 
 
+@respx.mock
+async def test_hexdb_airport_lookup_is_cached_across_callsigns():
+    # Two distinct callsigns whose hexdb routes both resolve through DFW/MDW
+    # -- route lookups are cached per-callsign so both still hit hexdb.io's
+    # route endpoint, but the airport cache is keyed by IATA code and should
+    # be shared, so DFW/MDW are each looked up only once despite serving two
+    # different flights in the same poll.
+    respx.get(url__startswith="https://api.adsb.lol/v2/point/").mock(
+        return_value=httpx.Response(200, json=FAKE_RESPONSE)
+    )
+    respx.get("https://hexdb.io/api/v1/route/iata/UAL1698").mock(
+        return_value=httpx.Response(200, json={"route": "DFW-MDW"})
+    )
+    respx.get("https://hexdb.io/api/v1/route/iata/XYZ123").mock(
+        return_value=httpx.Response(200, json={"route": "DFW-MDW"})
+    )
+    dfw_route = respx.get("https://hexdb.io/api/v1/airport/iata/DFW").mock(
+        return_value=httpx.Response(
+            200, json={"iata": "DFW", "icao": "KDFW", "latitude": 32.8998, "longitude": -97.0403}
+        )
+    )
+    mdw_route = respx.get("https://hexdb.io/api/v1/airport/iata/MDW").mock(
+        return_value=httpx.Response(
+            200, json={"iata": "MDW", "icao": "KMDW", "latitude": 41.7868, "longitude": -87.7522}
+        )
+    )
+    mock_external_apis()
+    mock_routeset()
+    plugin = make_plugin()
+
+    summary = await plugin.get_summary()
+
+    by_callsign = {f["callsign"]: f for f in summary["flights"]}
+    assert by_callsign["UAL1698"]["origin"]["iata"] == "DFW"
+    assert by_callsign["XYZ123"]["origin"]["iata"] == "DFW"
+    assert dfw_route.calls.call_count == 1
+    assert mdw_route.calls.call_count == 1
+
+
 def test_get_ai_tools_default_and_custom_instances():
     default_plugin = FlightsPlugin({"id": "flights", "settings": {"location_name": "Austin, TX"}})
     default_tools = default_plugin.get_ai_tools()

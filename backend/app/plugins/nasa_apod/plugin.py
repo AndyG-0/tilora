@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC, datetime
 from typing import Any, ClassVar
 
 from app.config import settings
@@ -33,6 +34,10 @@ class NASAApodPlugin(Plugin):
         return self.config["settings"].get("title", self.name)
 
     async def _fetch(self) -> dict[str, Any] | None:
+        todays = await self._todays_persisted_fetch()
+        if todays is not None:
+            return todays
+
         try:
             apod = await nasa_client.get_apod(settings.nasa_api_key)
         except nasa_client.NASAError as exc:
@@ -41,6 +46,18 @@ class NASAApodPlugin(Plugin):
 
         await self._persist(apod)
         return {**apod, "stale": False}
+
+    async def _todays_persisted_fetch(self) -> dict[str, Any] | None:
+        """Today's APOD, if we already fetched and persisted it earlier —
+        APOD only changes once/day, so once we have today's picture there's
+        no reason to call the live API again, even across a backend restart
+        (which wipes the in-memory response cache but not this SQLite row).
+        """
+        last_good = await asyncio.to_thread(db.latest_nasa_apod_fetch, self.id)
+        if last_good is None or last_good.get("date") != datetime.now(UTC).date().isoformat():
+            return None
+        last_good.pop("fetched_at")
+        return {**last_good, "stale": False}
 
     async def _persist(self, apod: dict[str, Any]) -> None:
         try:

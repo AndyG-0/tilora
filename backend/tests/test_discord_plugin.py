@@ -193,6 +193,39 @@ async def test_unconfigured_discord_plugin_returns_empty_and_not_configured(monk
 
 
 @respx.mock
+async def test_get_summary_is_cached_between_the_rest_and_ai_tool_paths():
+    channel_route = respx.get(f"{DISCORD_API_BASE}/channels/{CHANNEL_ID}").mock(
+        return_value=httpx.Response(200, json=CHANNEL_RESPONSE)
+    )
+    messages_route = respx.get(f"{DISCORD_API_BASE}/channels/{CHANNEL_ID}/messages").mock(
+        return_value=httpx.Response(200, json=[_message("1", minutes_ago=0)])
+    )
+    plugin = make_plugin()
+    tools = {t.name: t for t in plugin.get_ai_tools()}
+
+    await plugin.get_summary()
+    await tools["get_recent_discord_messages"].handler()
+
+    assert channel_route.calls.call_count == 1
+    assert messages_route.calls.call_count == 1
+
+
+@respx.mock
+async def test_get_todays_messages_is_cached_between_calls(tmp_db, frozen_now):
+    messages_route = respx.get(f"{DISCORD_API_BASE}/channels/{CHANNEL_ID}/messages").mock(
+        return_value=httpx.Response(200, json=[_message("today", minutes_ago=1, now=frozen_now)])
+    )
+    respx.get(f"{DISCORD_API_BASE}/channels/{CHANNEL_ID}").mock(return_value=httpx.Response(200, json=CHANNEL_RESPONSE))
+    plugin = make_plugin()
+    tools = plugin.get_ai_tools()
+
+    await tools[1].handler()
+    await tools[1].handler()
+
+    assert messages_route.calls.call_count == 1
+
+
+@respx.mock
 async def test_discord_plugin_handles_http_errors_gracefully():
     respx.get(f"{DISCORD_API_BASE}/channels/{CHANNEL_ID}").mock(return_value=httpx.Response(401))
     respx.get(f"{DISCORD_API_BASE}/channels/{CHANNEL_ID}/messages").mock(return_value=httpx.Response(500))

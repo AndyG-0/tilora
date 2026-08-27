@@ -87,6 +87,9 @@ _ROUTE_CACHE_TTL_NOT_FOUND_SECONDS = 30 * 60  # 30min — retry routeless flight
 _PHOTO_CACHE_TTL_FOUND_SECONDS = 7 * 24 * 60 * 60  # 7 days — aircraft registration photos rarely change
 _PHOTO_CACHE_TTL_NOT_FOUND_SECONDS = 24 * 60 * 60  # 24h — retry unfound photos after a day
 
+_AIRPORT_CACHE_TTL_FOUND_SECONDS = 30 * 24 * 60 * 60  # 30 days — airport coordinates don't move
+_AIRPORT_CACHE_TTL_NOT_FOUND_SECONDS = 24 * 60 * 60  # 24h — retry unfound airports after a day
+
 # How long a last-known-good flight list stays usable as a fallback when the
 # ADS-B feed itself (not just route/photo enrichment) is unreachable. Kept
 # in the same in-memory `cache` singleton as everything else above rather
@@ -156,6 +159,10 @@ def _route_cache_key(callsign: str) -> str:
 
 def _photo_cache_key(reg_or_hex: str) -> str:
     return f"flights:photo:{reg_or_hex.upper()}"
+
+
+def _airport_cache_key(iata: str) -> str:
+    return f"flights:airport:{iata.upper()}"
 
 
 def _last_good_cache_key(widget_id: str, requesting_user_id: str | None) -> str:
@@ -276,28 +283,41 @@ async def _fetch_single_adsbdb_route(
     return None
 
 
+_AIRPORT_NOT_FOUND: dict[str, Any] = {"iata": None, "icao": None, "latitude": None, "longitude": None}
+
+
 async def _fetch_hexdb_airport(client: httpx.AsyncClient, iata: str) -> dict[str, Any] | None:
+    cache_key = _airport_cache_key(iata)
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached if cached["latitude"] is not None else None
+
     try:
         url = HEXDB_AIRPORT_URL.format(iata=iata)
         async with _HEXDB_SEMAPHORE:
             resp = await client.get(url, headers=_HEADERS, timeout=_SINGLE_REQUEST_TIMEOUT)
         if resp.status_code != 200:
+            cache.set(cache_key, _AIRPORT_NOT_FOUND, _AIRPORT_CACHE_TTL_NOT_FOUND_SECONDS)
             return None
         payload = resp.json()
         if not isinstance(payload, dict):
+            cache.set(cache_key, _AIRPORT_NOT_FOUND, _AIRPORT_CACHE_TTL_NOT_FOUND_SECONDS)
             return None
         lat, lon = payload.get("latitude"), payload.get("longitude")
         if not isinstance(lat, int | float) or not isinstance(lon, int | float):
+            cache.set(cache_key, _AIRPORT_NOT_FOUND, _AIRPORT_CACHE_TTL_NOT_FOUND_SECONDS)
             return None
         # No city/municipality field in hexdb.io's payload -- `_airport_summary`
         # reads "location" for that, which is absent here, so city comes out
         # None for hexdb-sourced airports. Acceptable: city is optional.
-        return {
+        result = {
             "iata": payload.get("iata") or iata,
             "icao": payload.get("icao"),
             "latitude": float(lat),
             "longitude": float(lon),
         }
+        cache.set(cache_key, result, _AIRPORT_CACHE_TTL_FOUND_SECONDS)
+        return result
     except Exception as exc:
         logger.debug("hexdb.io airport lookup failed for %s: %s", iata, exc)
         return None
