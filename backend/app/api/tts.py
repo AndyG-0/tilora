@@ -34,7 +34,7 @@ class SynthesizeRequest(BaseModel):
 
 @router.get("/voices")
 async def voices(user: dict[str, Any] = Depends(get_current_user)):
-    return [{"id": v.id, "label": v.label, "provider": v.provider} for v in list_available_voices()]
+    return [{"id": v.id, "label": v.label, "provider": v.provider} for v in await list_available_voices()]
 
 
 @router.post("/synthesize")

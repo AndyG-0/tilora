@@ -23,8 +23,8 @@ class TTSError(Exception):
     """Raised when a synthesize request names a disabled provider or unknown voice."""
 
 
-def list_available_voices() -> list[VoiceInfo]:
-    settings = effective_settings()
+async def list_available_voices() -> list[VoiceInfo]:
+    settings = await effective_settings()
     voices: list[VoiceInfo] = []
     for module in _PROVIDERS.values():
         voices.extend(module.list_voices(settings))
@@ -41,7 +41,7 @@ async def synthesize(provider: TTSProvider, voice_id: str, text: str) -> tuple[b
     module = _PROVIDERS.get(provider)
     if module is None:
         raise TTSError(f"Unknown TTS provider '{provider}'")
-    settings = effective_settings()
+    settings = await effective_settings()
     if not module.is_configured(settings):
         raise TTSError(f"TTS provider '{provider}' is not enabled")
     valid_ids = {v.id for v in module.list_voices(settings)}

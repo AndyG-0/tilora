@@ -74,7 +74,7 @@ async def select_relevant_topics(text: str, topics: list[dict[str, str]], model:
     # start for installs that never use the AI assistant.
     import litellm
 
-    settings = effective_settings()
+    settings = await effective_settings()
     resolved_model = model or settings["ai_model"]
     api_key = api_key_for_model(resolved_model, settings)
     topic_list = "\n".join(f"- {topic['id']}: {topic['name']}" for topic in topics)

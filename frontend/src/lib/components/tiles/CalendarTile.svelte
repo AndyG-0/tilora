@@ -52,7 +52,7 @@
 		<div class="empty">{$_('common.not_connected')}</div>
 	{:else if summary.events.length}
 		<ul class="events">
-			{#each summary.events as event (event.id)}
+			{#each summary.events as event (event.id + event.start)}
 				<li>
 					<span class="dot" style:background={event.color ?? 'transparent'}></span>
 					<span class="time">{formatEventTime(event)}</span>

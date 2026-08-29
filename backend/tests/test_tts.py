@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import litellm
 import pytest
 
@@ -138,44 +140,46 @@ async def test_piper_synthesize_delegates_to_piper_client(monkeypatch):
 # --- app/tts/__init__.py aggregator ---
 
 
-def test_list_available_voices_merges_every_enabled_provider(monkeypatch):
-    monkeypatch.setattr(tts, "effective_settings", lambda: {**_OPENAI_SETTINGS, **_PIPER_SETTINGS})
+async def test_list_available_voices_merges_every_enabled_provider(monkeypatch):
+    monkeypatch.setattr(tts, "effective_settings", AsyncMock(return_value={**_OPENAI_SETTINGS, **_PIPER_SETTINGS}))
 
-    voices = tts.list_available_voices()
+    voices = await tts.list_available_voices()
 
     providers = {v.provider for v in voices}
     assert providers == {"openai", "piper"}
 
 
-def test_list_available_voices_empty_when_nothing_enabled(monkeypatch):
-    monkeypatch.setattr(tts, "effective_settings", lambda: {})
+async def test_list_available_voices_empty_when_nothing_enabled(monkeypatch):
+    monkeypatch.setattr(tts, "effective_settings", AsyncMock(return_value={}))
 
-    assert tts.list_available_voices() == []
+    assert await tts.list_available_voices() == []
 
 
 async def test_synthesize_raises_for_unknown_provider(monkeypatch):
-    monkeypatch.setattr(tts, "effective_settings", lambda: {})
+    monkeypatch.setattr(tts, "effective_settings", AsyncMock(return_value={}))
 
     with pytest.raises(tts.TTSError, match="Unknown TTS provider"):
         await tts.synthesize("bogus", "voice", "hi")  # type: ignore[arg-type]
 
 
 async def test_synthesize_raises_when_provider_not_enabled(monkeypatch):
-    monkeypatch.setattr(tts, "effective_settings", lambda: {"openai_tts_enabled": "", "openai_api_key": None})
+    monkeypatch.setattr(
+        tts, "effective_settings", AsyncMock(return_value={"openai_tts_enabled": "", "openai_api_key": None})
+    )
 
     with pytest.raises(tts.TTSError, match="not enabled"):
         await tts.synthesize("openai", "nova", "hi")
 
 
 async def test_synthesize_raises_for_unknown_voice_id(monkeypatch):
-    monkeypatch.setattr(tts, "effective_settings", lambda: _OPENAI_SETTINGS)
+    monkeypatch.setattr(tts, "effective_settings", AsyncMock(return_value=_OPENAI_SETTINGS))
 
     with pytest.raises(tts.TTSError, match="Unknown voice"):
         await tts.synthesize("openai", "not-a-real-voice", "hi")
 
 
 async def test_synthesize_returns_audio_and_content_type(monkeypatch):
-    monkeypatch.setattr(tts, "effective_settings", lambda: _OPENAI_SETTINGS)
+    monkeypatch.setattr(tts, "effective_settings", AsyncMock(return_value=_OPENAI_SETTINGS))
 
     async def fake_synthesize(text, voice_id, settings):
         return b"audio-bytes"

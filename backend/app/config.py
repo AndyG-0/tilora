@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import yaml
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.storage.cache import cached_call
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 # Overridable via env for the same reason as DB_PATH below — also lets the
@@ -260,7 +263,17 @@ SECRET_APP_SETTINGS_KEYS = (
 )
 
 
-def effective_settings() -> dict[str, Any]:
+# .env-backed keys never change at runtime; only DB overrides (the
+# app_settings table) can, and PATCH /api/settings invalidates this key
+# immediately on write (see app.api.settings.update_settings). This TTL is
+# just a safety net against staleness from a write made outside that
+# endpoint, not a bound on normal-path staleness — mirrors
+# _LOCALE_CACHE_TTL_SECONDS in app.api.widgets.
+EFFECTIVE_SETTINGS_CACHE_KEY = "effective-settings"
+_EFFECTIVE_SETTINGS_CACHE_TTL_SECONDS = 3600
+
+
+async def effective_settings() -> dict[str, Any]:
     """`.env`-backed defaults with runtime (DB-persisted) overrides layered on top.
 
     Mirrors how `load_plugins` in `main.py` layers `get_widget_settings`
@@ -269,8 +282,12 @@ def effective_settings() -> dict[str, Any]:
     """
     from app.storage.db import get_app_settings
 
-    base = {key: getattr(settings, key) for key in APP_SETTINGS_KEYS}
-    return {**base, **get_app_settings()}
+    async def fetch() -> dict[str, Any]:
+        base = {key: getattr(settings, key) for key in APP_SETTINGS_KEYS}
+        overrides = await asyncio.to_thread(get_app_settings)
+        return {**base, **overrides}
+
+    return await cached_call(EFFECTIVE_SETTINGS_CACHE_KEY, _EFFECTIVE_SETTINGS_CACHE_TTL_SECONDS, fetch)
 
 
 def resolve_timezone(timezone_name: str) -> ZoneInfo:

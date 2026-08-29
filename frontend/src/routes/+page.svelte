@@ -32,6 +32,8 @@
 	import { voiceSelection } from '$lib/stores/voice';
 	import { agentName, alwaysOnMic, sttAvailable } from '$lib/stores/assistant';
 	import { TILE_COMPONENTS } from '$lib/widgetComponents';
+	import { loadComponent, getResolvedComponent } from '$lib/lazyWidgetComponent';
+	import TileSkeleton from '$lib/components/TileSkeleton.svelte';
 	import { tooltip } from '$lib/tooltip';
 	import { _ } from 'svelte-i18n';
 	import { get } from 'svelte/store';
@@ -117,6 +119,25 @@
 		})),
 	);
 	const clampedIndex = $derived(Math.min($activeTabIndex, Math.max(grouped.length - 1, 0)));
+
+	// Resolves every widget type present on the dashboard (not just the
+	// active tab, so switching tabs never pops in a skeleton) as soon as it
+	// appears, and tracks which have finished so the render loop below can
+	// gate on it. loadComponent's own cache means a type already resolved
+	// this session (e.g. from a previous visit to a detail page) resolves
+	// this Set synchronously on the next microtask, not a fresh fetch.
+	let resolvedTileTypes = $state(new Set<string>());
+	$effect(() => {
+		const types = new Set($widgets.map((w) => w.type));
+		for (const type of types) {
+			if (resolvedTileTypes.has(type)) continue;
+			const loader = TILE_COMPONENTS[type];
+			if (!loader) continue;
+			loadComponent(loader).then(() => {
+				resolvedTileTypes = new Set(resolvedTileTypes).add(type);
+			});
+		}
+	});
 
 	function goToTab(index: number) {
 		activeTabIndex.set(Math.min(Math.max(index, 0), grouped.length - 1));
@@ -974,7 +995,9 @@
 					style="--resize-scroll-buffer: {MAX_ROW_SPAN * 13}rem"
 				>
 					{#each tab.widgets as widget (widget.id)}
-						{@const Tile = TILE_COMPONENTS[widget.type]}
+						{@const Tile = resolvedTileTypes.has(widget.type)
+							? getResolvedComponent(TILE_COMPONENTS[widget.type])
+							: undefined}
 						{@const layout = resizePreviewLayouts.get(widget.id) ?? widget.layout}
 						<div
 							class="cell"
@@ -997,6 +1020,8 @@
 						>
 							{#if Tile}
 								<Tile widgetId={widget.id} refreshIntervalSeconds={widget.refresh_interval_seconds} />
+							{:else if TILE_COMPONENTS[widget.type]}
+								<TileSkeleton />
 							{/if}
 							{#if editMode}
 								<div class="edit-overlay" aria-hidden="true"></div>

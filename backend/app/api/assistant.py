@@ -102,7 +102,7 @@ async def transcribe(
     device: dict[str, Any] = Depends(get_current_device),
 ):
     """Transcribe audio recorded from the client via configured STT."""
-    settings_dict = await asyncio.to_thread(effective_settings)
+    settings_dict = await effective_settings()
     if not stt.is_stt_available(settings_dict):
         raise HTTPException(
             status_code=400,
@@ -161,7 +161,7 @@ async def _visible_topic_plugins(user: dict[str, Any], device: dict[str, Any]) -
 async def config(
     user: dict[str, Any] = Depends(get_current_user),
 ):
-    settings_dict = await asyncio.to_thread(effective_settings)
+    settings_dict = await effective_settings()
     agent_name = (settings_dict.get("ai_agent_name") or "").strip() or "Tilora"
     stt_available = stt.is_stt_available(settings_dict)
     stt_provider = stt.get_active_provider(settings_dict)

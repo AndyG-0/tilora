@@ -266,7 +266,8 @@
 			"loading": "Chargement des vols…",
 			"count": "{count} à proximité",
 			"empty": "Aucun avion à proximité",
-			"truncated": "Affichage de {shown} sur {total}"
+			"truncated": "Affichage de {shown} sur {total}",
+			"stale_badge": "En cache"
 		},
 		"detail": {
 			"change_location": "Changer d'emplacement",
@@ -291,7 +292,8 @@
 			"route_local_flight": "Vol local",
 			"no_photo": "Photo non disponible",
 			"photo_by": "Photo par {name}",
-			"truncated": "Affichage des {shown} vols les plus proches sur {total} à proximité."
+			"truncated": "Affichage des {shown} vols les plus proches sur {total} à proximité.",
+			"stale_notice": "Impossible d'actualiser les vols — affichage des dernières positions connues du {date}."
 		},
 		"screensaver": {
 			"no_aircraft": "AUCUN AVION À PROXIMITÉ"
@@ -1050,7 +1052,16 @@
 		}
 	},
 	"screensaver": {
-		"empty": "Économiseur d'écran"
+		"loading": "Chargement de {name}…",
+		"no_widgets": "Aucun widget d'économiseur d'écran configuré",
+		"list_unavailable": "Impossible de charger la liste des widgets ({error})",
+		"widget_id_label": "Widget : {id}",
+		"all_missing": "Aucun des widgets d'économiseur d'écran configurés n'a été trouvé",
+		"detail_failed": "Impossible de charger {name} ({error})",
+		"display_failed": "Impossible de charger l'affichage pour {type}",
+		"error_network": "réseau injoignable",
+		"error_server": "erreur serveur",
+		"device_label": "Appareil : {name}"
 	},
 	"player": {
 		"close": "Fermer le lecteur",
@@ -1260,5 +1271,17 @@
 		"add_confirm": "Ajouter une tuile",
 		"add_saving": "Ajout en cours…",
 		"add_error": "Impossible d'ajouter la tuile."
+	},
+	"pwa": {
+		"update_available": "Une nouvelle version de Tilora est disponible.",
+		"update_button": "Mettre à jour",
+		"install_app": "Installer l'application Tilora",
+		"install_title": "Personal Web App (PWA)",
+		"install_description": "Installez Tilora sur votre écran d'accueil ou votre bureau pour une expérience plein écran autonome avec chargement instantané.",
+		"installed_badge": "Installé (PWA autonome)",
+		"running_in_browser": "En cours d'exécution dans le navigateur",
+		"ios_install_hint": "Pour installer sur iOS / iPadOS : appuyez sur le bouton Partager dans Safari et choisissez 'Sur l'écran d'accueil'.",
+		"desktop_install_hint": "Pour installer sur le bureau : cliquez sur l'icône d'installation dans la barre d'adresse de votre navigateur.",
+		"offline_status": "Vous êtes actuellement hors ligne. Affichage du tableau de bord mis en cache."
 	}
 }

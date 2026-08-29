@@ -76,4 +76,31 @@ describe('CalendarTile', () => {
 		expect(screen.getByText(timedFormatted)).toBeInTheDocument();
 		expect(screen.getByText(allDayFormatted)).toBeInTheDocument();
 	});
+
+	it('renders recurring events sharing the same event id', async () => {
+		widgetSummary.mockResolvedValue({
+			connected: true,
+			events: [
+				{
+					id: '4FDBD098-5027-444B-A945-1CEFF12F66E9',
+					title: 'Daily Standup',
+					start: '2026-01-01T09:00:00Z',
+					all_day: false,
+					location: null,
+				},
+				{
+					id: '4FDBD098-5027-444B-A945-1CEFF12F66E9',
+					title: 'Daily Standup',
+					start: '2026-01-02T09:00:00Z',
+					all_day: false,
+					location: null,
+				},
+			],
+		});
+
+		render(CalendarTile, { props: { widgetId: 'calendar', refreshIntervalSeconds: 60 } });
+
+		const standupItems = await screen.findAllByText('Daily Standup');
+		expect(standupItems).toHaveLength(2);
+	});
 });

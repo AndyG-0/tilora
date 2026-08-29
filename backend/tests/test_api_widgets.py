@@ -827,6 +827,27 @@ def test_add_widget_appears_in_list_widgets(client, dashboard_yaml, tmp_db):
     assert widget_id in ids
 
 
+def test_self_added_widget_is_not_visible_on_a_different_device(client, dashboard_yaml, tmp_db):
+    # A plain self-add (no owner_user_id in the request body) is private to
+    # the (user, device) pair that created it — it must not appear when the
+    # same user fetches their widget list from a different device.
+    add_response = client.post(
+        "/api/widgets",
+        json={"type": "clock", "layout": {"col": 2, "row": 1, "colSpan": 1, "rowSpan": 1}, "tab": "default"},
+    )
+    widget_id = add_response.json()["id"]
+
+    other_app = FastAPI()
+    other_app.include_router(widgets.router)
+    other_app.dependency_overrides[get_current_user] = lambda: {"id": TEST_USER_ID, "role": "admin"}
+    other_app.dependency_overrides[get_current_device] = lambda: {"id": "a-different-device"}
+    other_device_client = TestClient(other_app)
+
+    response = other_device_client.get("/api/widgets?breakpoint=wide")
+
+    assert widget_id not in [w["id"] for w in response.json()]
+
+
 def test_add_widget_persists_default_settings(client, dashboard_yaml, tmp_db):
     try:
         response = client.post(

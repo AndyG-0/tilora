@@ -21,15 +21,13 @@ class STTError(Exception):
     """Raised when transcription fails or no STT provider is configured."""
 
 
-def is_stt_available(settings: dict[str, Any] | None = None) -> bool:
-    s = settings if settings is not None else effective_settings()
-    return any(module.is_configured(s) for module in _PROVIDERS.values())
+def is_stt_available(settings: dict[str, Any]) -> bool:
+    return any(module.is_configured(settings) for module in _PROVIDERS.values())
 
 
-def get_active_provider(settings: dict[str, Any] | None = None) -> str | None:
-    s = settings if settings is not None else effective_settings()
+def get_active_provider(settings: dict[str, Any]) -> str | None:
     for name, module in _PROVIDERS.items():
-        if module.is_configured(s):
+        if module.is_configured(settings):
             return name
     return None
 
@@ -41,7 +39,7 @@ async def transcribe(
     settings: dict[str, Any] | None = None,
 ) -> str:
     """Transcribe audio bytes to text using the configured STT provider."""
-    s = settings if settings is not None else effective_settings()
+    s = settings if settings is not None else await effective_settings()
     for name, module in _PROVIDERS.items():
         if module.is_configured(s):
             try:

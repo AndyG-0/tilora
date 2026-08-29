@@ -44,20 +44,41 @@ def test_widget_config_raises_for_unknown_id(dashboard_yaml):
         config.widget_config("nonexistent")
 
 
-def test_effective_settings_falls_back_to_env_defaults(tmp_db):
-    result = config.effective_settings()
+async def test_effective_settings_falls_back_to_env_defaults(tmp_db):
+    result = await config.effective_settings()
     assert result["timezone"] == config.settings.timezone
     assert result["ai_model"] == config.settings.ai_model
 
 
-def test_effective_settings_layers_db_overrides_on_top(tmp_db, monkeypatch):
+async def test_effective_settings_layers_db_overrides_on_top(tmp_db, monkeypatch):
     from app.storage import db
 
     db.save_app_settings({"timezone": "America/Chicago"})
 
-    result = config.effective_settings()
+    result = await config.effective_settings()
     assert result["timezone"] == "America/Chicago"
     assert result["ai_model"] == config.settings.ai_model
+
+
+async def test_effective_settings_does_not_block_the_event_loop(tmp_db, monkeypatch):
+    import threading
+
+    from app.storage import db
+
+    recorded_thread: threading.Thread | None = None
+    real_get_app_settings = db.get_app_settings
+
+    def spy():
+        nonlocal recorded_thread
+        recorded_thread = threading.current_thread()
+        return real_get_app_settings()
+
+    monkeypatch.setattr(db, "get_app_settings", spy)
+
+    await config.effective_settings()
+
+    assert recorded_thread is not None
+    assert recorded_thread is not threading.main_thread()
 
 
 def test_resolve_tabs_defaults_when_unconfigured():

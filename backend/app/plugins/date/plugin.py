@@ -46,14 +46,14 @@ class DatePlugin(Plugin):
     refresh_interval_seconds = 3600
 
     async def get_summary(self) -> dict[str, Any]:
-        return {"timezone": effective_settings()["timezone"]}
+        return {"timezone": (await effective_settings())["timezone"]}
 
     async def get_detail(self) -> dict[str, Any]:
         return await self.get_summary()
 
     def get_ai_tools(self) -> list[ToolDef]:
         async def get_current_date() -> dict[str, Any]:
-            timezone_name = effective_settings()["timezone"]
+            timezone_name = (await effective_settings())["timezone"]
             now = datetime.now(resolve_timezone(timezone_name))
             weekday = t(f"date.weekday.{_WEEKDAY_KEYS[now.weekday()]}", self.locale)
             month = t(f"date.month.{_MONTH_KEYS[now.month - 1]}", self.locale)

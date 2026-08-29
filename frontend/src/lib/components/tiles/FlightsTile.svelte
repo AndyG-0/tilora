@@ -34,6 +34,7 @@
 		count: number;
 		flights: FlightItem[];
 		truncated: boolean;
+		stale?: boolean;
 	}
 
 	const LED_COLOR = '#ff8a00';
@@ -68,6 +69,9 @@
 						: $_('flights.tile.empty')}
 				</span>
 			</div>
+			{#if summary.stale}
+				<div class="stale-badge">{$_('flights.tile.stale_badge')}</div>
+			{/if}
 			<ul class="rows">
 				{#each summary.flights as flight (flight.hex ?? flight.callsign)}
 					{@const airlineTitle = formatAirlineTooltip(flight)}
@@ -148,6 +152,12 @@
 	}
 
 	.count {
+		color: var(--color-text-muted);
+		flex-shrink: 0;
+	}
+
+	.stale-badge {
+		font-size: 0.7em;
 		color: var(--color-text-muted);
 		flex-shrink: 0;
 	}

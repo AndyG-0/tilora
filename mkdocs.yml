@@ -73,10 +73,12 @@ nav:
       - Quick Start: getting-started/quick-start.md
   - User Guide:
       - Dashboard Overview: user-guide/overview.md
+      - Personal Web App (PWA): user-guide/pwa.md
       - Profiles & Security: user-guide/profiles.md
       - Voice Assistant: user-guide/voice-assistant.md
       - Screensaver: user-guide/screensaver.md
       - Personal Settings: user-guide/personal-settings.md
+
       - Widgets:
           - Overview: user-guide/widgets/overview.md
           - AI Daily Briefing: user-guide/widgets/ai-insights.md

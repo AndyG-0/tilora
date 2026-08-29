@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.auth import get_current_admin
-from app.config import APP_SETTINGS_KEYS, SECRET_APP_SETTINGS_KEYS, effective_settings
+from app.config import APP_SETTINGS_KEYS, EFFECTIVE_SETTINGS_CACHE_KEY, SECRET_APP_SETTINGS_KEYS, effective_settings
 from app.storage.cache import cache
 from app.storage.db import save_app_settings
 
@@ -100,7 +100,7 @@ def _public_shape(current: dict[str, Any]) -> dict[str, Any]:
 
 @router.get("")
 async def get_settings():
-    return _public_shape(effective_settings())
+    return _public_shape(await effective_settings())
 
 
 @router.patch("")
@@ -111,6 +111,7 @@ async def update_settings(payload: UpdateSettingsRequest):
     # partial update — a key the client never sent stays untouched.
     overrides = {key: (value if value != "" else None) for key, value in payload.model_dump(exclude_unset=True).items()}
     await asyncio.to_thread(save_app_settings, overrides)
+    cache.delete(EFFECTIVE_SETTINGS_CACHE_KEY)
     for widget_id in _GLOBAL_SETTINGS_WIDGET_IDS:
         cache.delete_prefix(f"summary:{widget_id}:")
         cache.delete_prefix(f"detail:{widget_id}:")
@@ -124,4 +125,4 @@ async def update_settings(payload: UpdateSettingsRequest):
     if "discord_bot_token" in overrides:
         cache.delete_prefix("summary:discord")
         cache.delete_prefix("detail:discord")
-    return _public_shape(effective_settings())
+    return _public_shape(await effective_settings())

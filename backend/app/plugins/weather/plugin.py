@@ -10,11 +10,18 @@ import httpx
 from app.i18n import t
 from app.integrations import nws_client
 from app.plugins.base import Plugin, ToolDef
+from app.storage.cache import cached_call
 
 logger = logging.getLogger(__name__)
 
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
+
+# The severe-weather scheduler job (every 15min per widget, see
+# scheduler.run_severe_weather_check) fetches the same forecast as
+# get_summary/get_detail's request path -- cache it briefly so the two don't
+# double the Open-Meteo call volume when both happen close together.
+_FORECAST_CACHE_TTL_SECONDS = 300
 
 # Open-Meteo's pollen fields only cover Europe — requested anyway since the
 # API just omits/nulls them elsewhere, which _fetch_air_quality() filters out.
@@ -163,10 +170,15 @@ class WeatherPlugin(Plugin):
             "timezone": "auto",
             "forecast_days": 5,
         }
-        async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.get(FORECAST_URL, params=params)
-            response.raise_for_status()
-            return response.json()
+
+        async def fetch() -> dict[str, Any]:
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get(FORECAST_URL, params=params)
+                response.raise_for_status()
+                return response.json()
+
+        key = f"weather:forecast:{settings['latitude']}:{settings['longitude']}:{temp_unit}"
+        return await cached_call(key, _FORECAST_CACHE_TTL_SECONDS, fetch)
 
     def _build_summary(self, current: dict[str, Any]) -> dict[str, Any]:
         return {

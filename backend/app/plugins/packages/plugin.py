@@ -35,8 +35,8 @@ class PackagesPlugin(Plugin):
     def title(self) -> str:
         return self.config["settings"].get("title", self.name)
 
-    def _today(self) -> str:
-        tz = resolve_timezone(effective_settings()["timezone"])
+    async def _today(self) -> str:
+        tz = resolve_timezone((await effective_settings())["timezone"])
         return datetime.now(tz).date().isoformat()
 
     async def _packages(self) -> list[dict[str, Any]]:
@@ -46,7 +46,7 @@ class PackagesPlugin(Plugin):
 
     async def get_summary(self) -> dict[str, Any]:
         packages = await self._packages()
-        today = self._today()
+        today = await self._today()
         active = [p for p in packages if not p["delivered"]]
         arriving_today = [p for p in active if p["eta_date"] == today]
         return {

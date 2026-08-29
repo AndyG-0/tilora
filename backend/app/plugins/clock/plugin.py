@@ -35,14 +35,14 @@ class ClockPlugin(Plugin):
         return self.config["settings"].get("style", "digital")
 
     async def get_summary(self) -> dict[str, Any]:
-        return {"timezone": effective_settings()["timezone"], "style": self._style}
+        return {"timezone": (await effective_settings())["timezone"], "style": self._style}
 
     async def get_detail(self) -> dict[str, Any]:
         return await self.get_summary()
 
     def get_ai_tools(self) -> list[ToolDef]:
         async def get_current_time() -> dict[str, Any]:
-            timezone_name = effective_settings()["timezone"]
+            timezone_name = (await effective_settings())["timezone"]
             now = datetime.now(resolve_timezone(timezone_name))
             period_key = "clock.period.am" if now.strftime("%p") == "AM" else "clock.period.pm"
             time_str = f"{now.strftime('%I:%M').lstrip('0')} {t(period_key, self.locale)}"

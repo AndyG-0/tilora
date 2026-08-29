@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { fade } from 'svelte/transition';
-	import { api, type ScreensaverSettings } from '$lib/api';
-	import { widgets } from '$lib/stores/widgets';
+	import { api, describeFetchError, type FetchErrorKind, type ScreensaverSettings } from '$lib/api';
+	import { widgets, widgetsLoadError } from '$lib/stores/widgets';
+	import { device } from '$lib/stores/device';
 	import { isScreensaverAllowedType } from '$lib/screensaverTypes';
 	import ScreensaverContent from '$lib/components/screensaver/ScreensaverContent.svelte';
 	import { getRotationIndex, setRotationIndex } from '$lib/stores/screensaverProgress';
@@ -12,16 +13,41 @@
 	let index = $state(getRotationIndex());
 	let detail = $state<Record<string, unknown> | null>(null);
 	let currentId = $state<string | null>(null);
+	let detailError = $state<FetchErrorKind | null>(null);
 	let rotationTimer: ReturnType<typeof setInterval> | undefined;
 
 	const currentWidget = $derived($widgets.find((w) => w.id === currentId));
 	const isCurrentWidgetRenderable = $derived(currentWidget ? isScreensaverAllowedType(currentWidget.type) : false);
+
+	// Drives the fallback panel shown whenever the widget above isn't ready to
+	// render. 'loading' also covers the (usually instant) window while its
+	// detail fetch is in flight, so a slow-but-working backend still names the
+	// widget instead of a bare "Screensaver".
+	type FallbackKind = 'none-configured' | 'list-unavailable' | 'all-missing' | 'detail-failed' | 'loading';
+	const fallbackKind = $derived.by((): FallbackKind => {
+		if (settings.widget_ids.length === 0) return 'none-configured';
+		if (currentId && !currentWidget && $widgetsLoadError) return 'list-unavailable';
+		if (!currentId) return 'all-missing';
+		if (detailError) return 'detail-failed';
+		return 'loading';
+	});
 
 	async function showCurrent() {
 		const ids = settings.widget_ids;
 		if (ids.length === 0) {
 			currentId = null;
 			detail = null;
+			detailError = null;
+			return;
+		}
+
+		if ($widgetsLoadError) {
+			// The widget list itself failed to load, so no id can be verified
+			// against it — show the one at the current rotation position as-is
+			// rather than cycling through every id treating them all as removed.
+			currentId = ids[index % ids.length];
+			detail = null;
+			detailError = null;
 			return;
 		}
 
@@ -37,10 +63,12 @@
 				// with the previous widget's (differently-shaped) detail data.
 				currentId = id;
 				detail = null;
+				detailError = null;
 				try {
 					detail = await api.widgetDetail(id);
-				} catch {
+				} catch (error) {
 					detail = null;
+					detailError = describeFetchError(error);
 				}
 				return;
 			}
@@ -49,6 +77,7 @@
 		}
 		currentId = null;
 		detail = null;
+		detailError = null;
 	}
 
 	function advance() {
@@ -84,7 +113,30 @@
 			</div>
 		{/key}
 	{:else}
-		<div class="empty">{$_('screensaver.empty')}</div>
+		<div class="empty">
+			{#if fallbackKind === 'none-configured'}
+				<div class="empty-message">{$_('screensaver.no_widgets')}</div>
+			{:else if fallbackKind === 'list-unavailable'}
+				<div class="empty-message">
+					{$_('screensaver.list_unavailable', { values: { error: $_(`screensaver.error_${$widgetsLoadError}`) } })}
+				</div>
+				<div class="empty-detail">{$_('screensaver.widget_id_label', { values: { id: currentId } })}</div>
+			{:else if fallbackKind === 'all-missing'}
+				<div class="empty-message">{$_('screensaver.all_missing')}</div>
+			{:else if fallbackKind === 'detail-failed'}
+				<div class="empty-message">
+					{$_('screensaver.detail_failed', {
+						values: { name: currentWidget?.name, error: $_(`screensaver.error_${detailError}`) },
+					})}
+				</div>
+				<div class="empty-detail">{currentWidget?.type}</div>
+			{:else}
+				<div class="empty-message">{$_('screensaver.loading', { values: { name: currentWidget?.name } })}</div>
+			{/if}
+			{#if fallbackKind !== 'loading' && $device?.name}
+				<div class="empty-footer">{$_('screensaver.device_label', { values: { name: $device.name } })}</div>
+			{/if}
+		</div>
 	{/if}
 </div>
 
@@ -108,9 +160,31 @@
 	.empty {
 		height: 100%;
 		display: flex;
+		flex-direction: column;
 		align-items: center;
 		justify-content: center;
+		gap: 0.5rem;
+		padding: 2rem;
+		text-align: center;
 		color: var(--color-text-muted);
+	}
+
+	.empty-message {
 		font-size: 1.5rem;
+	}
+
+	.empty-detail {
+		font-size: 1rem;
+		opacity: 0.8;
+	}
+
+	.empty-footer {
+		position: absolute;
+		bottom: 1rem;
+		left: 0;
+		right: 0;
+		font-size: 0.8rem;
+		opacity: 0.6;
+		text-align: center;
 	}
 </style>

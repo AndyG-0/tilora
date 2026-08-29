@@ -127,13 +127,11 @@ class MoviesPlugin(Plugin):
         # Empty (default) means on_streaming stays generic/unfiltered.
         return [int(p) for p in self.config["settings"].get("providers", [])]
 
-    @property
-    def _is_configured(self) -> bool:
-        return bool(effective_settings().get("tmdb_api_key"))
+    async def _is_configured(self) -> bool:
+        return bool((await effective_settings()).get("tmdb_api_key"))
 
-    @property
-    def _params(self) -> dict[str, str]:
-        return {"api_key": effective_settings().get("tmdb_api_key") or "", "language": "en-US"}
+    async def _params(self) -> dict[str, str]:
+        return {"api_key": (await effective_settings()).get("tmdb_api_key") or "", "language": "en-US"}
 
     def _list_request(self, response_key: str) -> tuple[str, dict[str, str]]:
         if response_key == "popular_movies":
@@ -162,10 +160,12 @@ class MoviesPlugin(Plugin):
     async def _fetch_path(
         self, client: httpx.AsyncClient, path: str, extra_params: dict[str, str] | None = None
     ) -> list[dict[str, Any]]:
-        if not self._is_configured:
+        if not await self._is_configured():
             return []
         try:
-            response = await client.get(f"{TMDB_BASE_URL}/{path}", params={**self._params, **(extra_params or {})})
+            response = await client.get(
+                f"{TMDB_BASE_URL}/{path}", params={**(await self._params()), **(extra_params or {})}
+            )
             response.raise_for_status()
             return response.json().get("results", [])
         except httpx.HTTPError as exc:
@@ -179,12 +179,12 @@ class MoviesPlugin(Plugin):
     async def _fetch_providers_uncached(
         self, client: httpx.AsyncClient, media_type: str, item_id: int
     ) -> list[dict[str, Any]]:
-        if not self._is_configured:
+        if not await self._is_configured():
             return []
         try:
             response = await client.get(
                 f"{TMDB_BASE_URL}/{media_type}/{item_id}/watch/providers",
-                params={"api_key": effective_settings().get("tmdb_api_key") or ""},
+                params={"api_key": (await effective_settings()).get("tmdb_api_key") or ""},
             )
             response.raise_for_status()
         except httpx.HTTPError as exc:
@@ -227,7 +227,7 @@ class MoviesPlugin(Plugin):
 
     async def get_summary(self) -> dict[str, Any]:
         keys = self._enabled_response_keys()
-        if not self._is_configured:
+        if not await self._is_configured():
             return {
                 "configured": False,
                 **{key: [] for key in keys},
@@ -246,7 +246,7 @@ class MoviesPlugin(Plugin):
 
     async def get_detail(self) -> dict[str, Any]:
         keys = self._enabled_response_keys()
-        if not self._is_configured:
+        if not await self._is_configured():
             return {
                 "configured": False,
                 "region": self.region,

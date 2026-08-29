@@ -224,4 +224,35 @@ describe('FlightsTile', () => {
 
 		expect(await screen.findByText('Showing 1 of 150')).toBeInTheDocument();
 	});
+
+	it('shows a stale badge when the summary falls back to cached data', async () => {
+		widgetSummary.mockResolvedValue({
+			location_name: 'Fort Worth, TX',
+			radius_nm: 15,
+			count: 0,
+			truncated: false,
+			flights: [],
+			stale: true,
+		});
+
+		render(FlightsTile, { props: { widgetId: 'flights', refreshIntervalSeconds: 60 } });
+
+		expect(await screen.findByText('Cached')).toBeInTheDocument();
+	});
+
+	it('omits the stale badge when the summary is fresh', async () => {
+		widgetSummary.mockResolvedValue({
+			location_name: 'Fort Worth, TX',
+			radius_nm: 15,
+			count: 0,
+			truncated: false,
+			flights: [],
+			stale: false,
+		});
+
+		render(FlightsTile, { props: { widgetId: 'flights', refreshIntervalSeconds: 60 } });
+
+		await screen.findByText('No aircraft nearby');
+		expect(screen.queryByText('Cached')).not.toBeInTheDocument();
+	});
 });

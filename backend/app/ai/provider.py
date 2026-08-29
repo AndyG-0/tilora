@@ -63,9 +63,9 @@ class PromptResult:
 
 
 class AIProvider:
-    def __init__(self, tool_bridge: ToolBridge, model: str | None = None):
+    def __init__(self, tool_bridge: ToolBridge, model: str):
         self._tools = tool_bridge
-        self._model = model or effective_settings()["ai_model"]
+        self._model = model
 
     async def run_prompt(self, prompt: str, max_tool_rounds: int = 4, system_prompt: str | None = None) -> PromptResult:
         """Run a prompt to completion, letting the model call tools as needed.
@@ -86,7 +86,7 @@ class AIProvider:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
         tool_schemas = self._tools.schemas()
-        settings = effective_settings()
+        settings = await effective_settings()
         api_key = api_key_for_model(self._model, settings)
         # `drop_params=True` scopes the leniency to just this one param: if the
         # configured model doesn't support reasoning_effort, litellm drops it

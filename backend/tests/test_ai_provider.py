@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import litellm
 import pytest
 
@@ -275,12 +277,14 @@ async def test_run_prompt_passes_provider_matched_key_to_litellm(monkeypatch):
     monkeypatch.setattr(litellm, "acompletion", fake_acompletion)
     monkeypatch.setattr(
         "app.ai.provider.effective_settings",
-        lambda: {
-            "ai_model": "gemini/gemini-2.5-flash",
-            "anthropic_api_key": None,
-            "openai_api_key": None,
-            "gemini_api_key": "sk-gemini",
-        },
+        AsyncMock(
+            return_value={
+                "ai_model": "gemini/gemini-2.5-flash",
+                "anthropic_api_key": None,
+                "openai_api_key": None,
+                "gemini_api_key": "sk-gemini",
+            }
+        ),
     )
 
     provider = AIProvider(empty_bridge(), model="gemini/gemini-2.5-flash")
@@ -299,7 +303,13 @@ async def test_run_prompt_omits_reasoning_effort_when_not_configured(monkeypatch
     monkeypatch.setattr(litellm, "acompletion", fake_acompletion)
     monkeypatch.setattr(
         "app.ai.provider.effective_settings",
-        lambda: {"ai_model": "openai/gpt-5.6-luna", "openai_api_key": "sk-openai", "ai_reasoning_effort": None},
+        AsyncMock(
+            return_value={
+                "ai_model": "openai/gpt-5.6-luna",
+                "openai_api_key": "sk-openai",
+                "ai_reasoning_effort": None,
+            }
+        ),
     )
 
     provider = AIProvider(empty_bridge(), model="openai/gpt-5.6-luna")
@@ -328,7 +338,13 @@ async def test_run_prompt_passes_configured_reasoning_effort_to_litellm(monkeypa
     monkeypatch.setattr(litellm, "acompletion", fake_acompletion)
     monkeypatch.setattr(
         "app.ai.provider.effective_settings",
-        lambda: {"ai_model": "openai/gpt-5.6-terra", "openai_api_key": "sk-openai", "ai_reasoning_effort": "none"},
+        AsyncMock(
+            return_value={
+                "ai_model": "openai/gpt-5.6-terra",
+                "openai_api_key": "sk-openai",
+                "ai_reasoning_effort": "none",
+            }
+        ),
     )
 
     provider = AIProvider(bridge, model="openai/gpt-5.6-terra")

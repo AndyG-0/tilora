@@ -128,7 +128,7 @@ class SportsPlugin(Plugin):
         leagues = self._trending_leagues()
         if not leagues:
             return [], []
-        timezone_name = effective_settings()["timezone"]
+        timezone_name = (await effective_settings())["timezone"]
         return await trending.fetch_trending_games(leagues, timezone_name, limit)
 
     async def _fetch_entry(self, entry: dict[str, Any]) -> dict[str, Any]:
@@ -180,7 +180,7 @@ class SportsPlugin(Plugin):
         both sources and deduping by game id so a followed team's game that's
         also nationally televised isn't listed twice.
         """
-        tz = resolve_timezone(effective_settings()["timezone"])
+        tz = resolve_timezone((await effective_settings())["timezone"])
         games: list[dict[str, Any]] = []
 
         if self._is_configured():
@@ -218,7 +218,7 @@ class SportsPlugin(Plugin):
             for entry in entries:
                 if entry.get("error"):
                     errors.append({"league": entry["league"], "team": entry["team"], "error": entry["error"]})
-            tz = resolve_timezone(effective_settings()["timezone"])
+            tz = resolve_timezone((await effective_settings())["timezone"])
             todays_games, upcoming_games = _split_followed_games(entries, tz, _SUMMARY_GAMES_PER_TEAM)
 
         trending_games, trending_errors = await self._fetch_trending(_SUMMARY_TRENDING_GAMES)
@@ -255,7 +255,7 @@ class SportsPlugin(Plugin):
                 if entry.get("error"):
                     team_out["error"] = entry["error"]
                 teams.append(team_out)
-            tz = resolve_timezone(effective_settings()["timezone"])
+            tz = resolve_timezone((await effective_settings())["timezone"])
             todays_games, upcoming_games = _split_followed_games(entries, tz, _DETAIL_GAMES_PER_TEAM)
 
         trending_games, trending_errors = await self._fetch_trending(_DETAIL_TRENDING_GAMES)

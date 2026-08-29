@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from app.auth import _hash_token
 from app.storage import db
 
 
@@ -75,7 +76,9 @@ def test_migration_reseats_pre_existing_single_user_layout_under_default_user_de
     everything under "wide". Migration 009 re-adds device_id, seeding every
     currently-registered device with a copy of that shared "wide" layout —
     since the pre-existing "default" device is the only one, it ends up
-    right back where migration 001 first put it.
+    right back where migration 001 first put it. Migration 019 then rehashes
+    that device's id (and this row's device_id) to match app.auth._hash_token,
+    same as it would for any other pre-v0.15.0 device.
     """
     db_path = tmp_path / "legacy.db"
     conn = sqlite3.connect(db_path)
@@ -102,13 +105,14 @@ def test_migration_reseats_pre_existing_single_user_layout_under_default_user_de
     monkeypatch.setattr(db, "DB_PATH", db_path)
     db.init_db()
 
-    assert db.get_widget_layout("default", "default", "wide", "clock") == {
+    default_device_id = _hash_token("default")
+    assert db.get_widget_layout("default", default_device_id, "wide", "clock") == {
         "col": 1,
         "row": 1,
         "colSpan": 1,
         "rowSpan": 1,
     }
-    assert db.get_widget_layout("default", "default", "wide", "weather") == {
+    assert db.get_widget_layout("default", default_device_id, "wide", "weather") == {
         "col": 2,
         "row": 1,
         "colSpan": 2,
@@ -118,7 +122,7 @@ def test_migration_reseats_pre_existing_single_user_layout_under_default_user_de
 
     # Idempotent: re-running against an already-migrated DB doesn't error or duplicate data.
     db.init_db()
-    assert db.list_widget_layouts("default", "default", "wide") == {
+    assert db.list_widget_layouts("default", default_device_id, "wide") == {
         "clock": {"col": 1, "row": 1, "colSpan": 1, "rowSpan": 1},
         "weather": {"col": 2, "row": 1, "colSpan": 2, "rowSpan": 1},
     }
@@ -132,7 +136,9 @@ def test_migration_008_collapses_multiple_device_rows_into_a_single_wide_row(tmp
     breakpoint "wide"; migration 009 then re-expands that shared "wide" row
     across every currently-registered device (both "phone" and "tablet" here,
     since both already have session/layout history), landing back at a
-    per-device row rather than staying collapsed.
+    per-device row rather than staying collapsed. Migration 019 then rehashes
+    both devices' ids (and their widget_layout.device_id rows) to match
+    app.auth._hash_token, same as it would for any other pre-v0.15.0 device.
     """
     db_path = tmp_path / "legacy.db"
     conn = sqlite3.connect(db_path)
@@ -176,7 +182,7 @@ def test_migration_008_collapses_multiple_device_rows_into_a_single_wide_row(tmp
 
     # Both devices end up seeded with the same post-008 "wide" layout —
     # neither is silently dropped, and "narrow" stays unset for either.
-    for device_id in ("phone", "tablet"):
+    for device_id in (_hash_token("phone"), _hash_token("tablet")):
         layouts = db.list_widget_layouts("alice", device_id, "wide")
         assert layouts.keys() == {"clock"}
         assert db.get_widget_layout("alice", device_id, "narrow", "clock") is None

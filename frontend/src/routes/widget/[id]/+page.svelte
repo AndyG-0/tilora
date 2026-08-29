@@ -2,12 +2,29 @@
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api';
 	import { DETAIL_COMPONENTS } from '$lib/widgetComponents';
+	import { loadComponent } from '$lib/lazyWidgetComponent';
 	import { _ } from 'svelte-i18n';
+	import type { Component } from 'svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
-	const Detail = $derived(data.type ? DETAIL_COMPONENTS[data.type] : undefined);
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- see lazyWidgetComponent.ts
+	let Detail = $state<Component<any> | undefined>(undefined);
+	$effect(() => {
+		const loader = data.type ? DETAIL_COMPONENTS[data.type] : undefined;
+		if (!loader) {
+			Detail = undefined;
+			return;
+		}
+		let cancelled = false;
+		loadComponent(loader).then((component) => {
+			if (!cancelled) Detail = component;
+		});
+		return () => {
+			cancelled = true;
+		};
+	});
 
 	// SvelteKit reuses this component instance across navigations between two
 	// widget detail pages (only `load()` re-runs), so `name` must resync

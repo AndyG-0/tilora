@@ -1,5 +1,8 @@
 import '@testing-library/jest-dom/vitest';
+import { vi } from 'vitest';
 import { register, init, waitLocale } from 'svelte-i18n';
+
+vi.mock('$env/dynamic/public', () => ({ env: { PUBLIC_API_BASE_URL: 'http://api.test' } }));
 
 // All four locales are registered (mirroring the real app's bootstrap) so
 // tests that explicitly switch locale can assert on translated text.
@@ -21,6 +24,31 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
 		unobserve() {}
 		disconnect() {}
 	};
+}
+
+if (!globalThis.localStorage || typeof globalThis.localStorage.clear !== 'function') {
+	let store: Record<string, string> = {};
+	const mockStorage: Storage = {
+		getItem: (key: string) => store[key] ?? null,
+		setItem: (key: string, value: string) => {
+			store[key] = String(value);
+		},
+		removeItem: (key: string) => {
+			delete store[key];
+		},
+		clear: () => {
+			store = {};
+		},
+		key: (index: number) => Object.keys(store)[index] ?? null,
+		get length() {
+			return Object.keys(store).length;
+		},
+	};
+	Object.defineProperty(globalThis, 'localStorage', {
+		value: mockStorage,
+		configurable: true,
+		writable: true,
+	});
 }
 
 // jsdom doesn't implement the Web Animations API, which Svelte's transition

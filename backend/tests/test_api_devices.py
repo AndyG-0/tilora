@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -35,6 +37,30 @@ def test_register_is_idempotent_for_an_existing_valid_device_cookie(client, tmp_
     body = second.json()
     assert body["is_new"] is False
     assert body["id"] == first["id"]
+
+
+def test_register_recognizes_a_pre_upgrade_device_cookie_without_duplicating(client, tmp_db_pre_token_hashing):
+    # Simulates a browser with a device cookie set before v0.15.0 added
+    # token hashing (migration 019 rehashes the stored id in place; the
+    # cookie value itself never changes). Registering must recognize it as
+    # the same device rather than silently minting a duplicate.
+    conn = sqlite3.connect(tmp_db_pre_token_hashing)
+    conn.execute(
+        "INSERT INTO devices (id, name, created_at, last_seen_at) VALUES (?, ?, ?, ?)",
+        ("dev1", "Kitchen", "2020-01-01T00:00:00Z", "2020-01-01T00:00:00Z"),
+    )
+    conn.commit()
+    conn.close()
+    db.init_db()
+
+    client.cookies.set(DEVICE_COOKIE_NAME, "dev1")
+    response = client.post("/api/devices/register")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["is_new"] is False
+    assert body["id"] == _hash_token("dev1")
+    assert len(db.list_devices()) == 1
 
 
 def test_me_requires_a_device_cookie(client, tmp_db):
