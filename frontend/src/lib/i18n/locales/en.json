@@ -1070,7 +1070,16 @@
 		}
 	},
 	"screensaver": {
-		"empty": "Screensaver"
+		"loading": "Loading {name}…",
+		"no_widgets": "No screensaver widgets configured",
+		"list_unavailable": "Couldn't load the widget list ({error})",
+		"widget_id_label": "Widget: {id}",
+		"all_missing": "None of the configured screensaver widgets could be found",
+		"detail_failed": "Couldn't load {name} ({error})",
+		"display_failed": "Couldn't load the display for {type}",
+		"error_network": "network unreachable",
+		"error_server": "server error",
+		"device_label": "Device: {name}"
 	},
 	"player": {
 		"close": "Close player",

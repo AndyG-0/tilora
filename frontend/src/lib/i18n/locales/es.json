@@ -1052,7 +1052,16 @@
 		}
 	},
 	"screensaver": {
-		"empty": "Salvapantallas"
+		"loading": "Cargando {name}…",
+		"no_widgets": "No hay widgets de salvapantallas configurados",
+		"list_unavailable": "No se pudo cargar la lista de widgets ({error})",
+		"widget_id_label": "Widget: {id}",
+		"all_missing": "No se encontró ninguno de los widgets de salvapantallas configurados",
+		"detail_failed": "No se pudo cargar {name} ({error})",
+		"display_failed": "No se pudo cargar la pantalla de {type}",
+		"error_network": "red no disponible",
+		"error_server": "error del servidor",
+		"device_label": "Dispositivo: {name}"
 	},
 	"player": {
 		"close": "Cerrar reproductor",

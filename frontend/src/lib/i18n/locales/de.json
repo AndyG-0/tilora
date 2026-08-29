@@ -1052,7 +1052,16 @@
 		}
 	},
 	"screensaver": {
-		"empty": "Bildschirmschoner"
+		"loading": "{name} wird geladen…",
+		"no_widgets": "Keine Bildschirmschoner-Widgets konfiguriert",
+		"list_unavailable": "Widget-Liste konnte nicht geladen werden ({error})",
+		"widget_id_label": "Widget: {id}",
+		"all_missing": "Keines der konfigurierten Bildschirmschoner-Widgets wurde gefunden",
+		"detail_failed": "{name} konnte nicht geladen werden ({error})",
+		"display_failed": "Anzeige für {type} konnte nicht geladen werden",
+		"error_network": "Netzwerk nicht erreichbar",
+		"error_server": "Serverfehler",
+		"device_label": "Gerät: {name}"
 	},
 	"player": {
 		"close": "Player schließen",

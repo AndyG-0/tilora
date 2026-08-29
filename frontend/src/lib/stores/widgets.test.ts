@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WidgetSummaryMeta } from '$lib/api';
 
 const { listWidgets } = vi.hoisted(() => ({ listWidgets: vi.fn() }));
-vi.mock('$lib/api', () => ({ api: { listWidgets } }));
+vi.mock('$lib/api', () => ({
+	api: { listWidgets },
+	describeFetchError: (error: unknown) => (error instanceof TypeError ? 'network' : 'server'),
+}));
 
 beforeEach(() => {
 	vi.resetModules();
@@ -30,15 +33,19 @@ describe('widgets store', () => {
 		unsubscribe();
 	});
 
-	it('falls back to an empty array when the request fails', async () => {
+	it('falls back to an empty array and records the error when the request fails', async () => {
 		listWidgets.mockRejectedValue(new Error('network error'));
 
-		const { widgets } = await import('./widgets');
+		const { widgets, widgetsLoadError } = await import('./widgets');
 		let value: unknown[] | undefined;
+		let error: string | null = null;
 		const unsubscribe = widgets.subscribe((v) => (value = v));
+		const unsubscribeError = widgetsLoadError.subscribe((v) => (error = v));
 
 		await vi.waitFor(() => expect(value).toEqual([]));
+		expect(error).toBe('server');
 		unsubscribe();
+		unsubscribeError();
 	});
 
 	it('applyLayoutUpdates patches matching widgets in place without a refetch', async () => {

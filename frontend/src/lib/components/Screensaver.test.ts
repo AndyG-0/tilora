@@ -14,7 +14,10 @@ const { widgetDetail, listWidgets } = vi.hoisted(() => ({
 	widgetDetail: vi.fn(),
 	listWidgets: vi.fn().mockResolvedValue([]),
 }));
-vi.mock('$lib/api', () => ({ api: { widgetDetail, listWidgets } }));
+vi.mock('$lib/api', () => ({
+	api: { widgetDetail, listWidgets },
+	describeFetchError: (error: unknown) => (error instanceof TypeError ? 'network' : 'server'),
+}));
 
 // Stub the dispatcher (with a real, compiled Svelte component) so this file
 // stays focused on Screensaver.svelte's own orchestration (id/type selection,
@@ -163,6 +166,6 @@ describe('Screensaver', () => {
 	it('shows a fallback when there are no widget ids to rotate through', () => {
 		render(Screensaver, { props: { settings: settings({ widget_ids: [] }), ondismiss: vi.fn() } });
 
-		expect(screen.getByText('Screensaver')).toBeInTheDocument();
+		expect(screen.getByText('No screensaver widgets configured')).toBeInTheDocument();
 	});
 });

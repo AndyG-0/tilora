@@ -1052,7 +1052,16 @@
 		}
 	},
 	"screensaver": {
-		"empty": "Économiseur d'écran"
+		"loading": "Chargement de {name}…",
+		"no_widgets": "Aucun widget d'économiseur d'écran configuré",
+		"list_unavailable": "Impossible de charger la liste des widgets ({error})",
+		"widget_id_label": "Widget : {id}",
+		"all_missing": "Aucun des widgets d'économiseur d'écran configurés n'a été trouvé",
+		"detail_failed": "Impossible de charger {name} ({error})",
+		"display_failed": "Impossible de charger l'affichage pour {type}",
+		"error_network": "réseau injoignable",
+		"error_server": "erreur serveur",
+		"device_label": "Appareil : {name}"
 	},
 	"player": {
 		"close": "Fermer le lecteur",
