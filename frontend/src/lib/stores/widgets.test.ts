@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WidgetSummaryMeta } from '$lib/api';
 
 const { listWidgets } = vi.hoisted(() => ({ listWidgets: vi.fn() }));
-vi.mock('$lib/api', () => ({ api: { listWidgets } }));
+vi.mock('$lib/api', () => ({
+	api: { listWidgets },
+	describeFetchError: (error: unknown) => (error instanceof TypeError ? 'network' : 'server'),
+}));
 
 beforeEach(() => {
 	vi.resetModules();
@@ -30,15 +33,19 @@ describe('widgets store', () => {
 		unsubscribe();
 	});
 
-	it('falls back to an empty array when the request fails', async () => {
+	it('falls back to an empty array and records the error when the request fails', async () => {
 		listWidgets.mockRejectedValue(new Error('network error'));
 
-		const { widgets } = await import('./widgets');
+		const { widgets, widgetsLoadError } = await import('./widgets');
 		let value: unknown[] | undefined;
+		let error: string | null = null;
 		const unsubscribe = widgets.subscribe((v) => (value = v));
+		const unsubscribeError = widgetsLoadError.subscribe((v) => (error = v));
 
 		await vi.waitFor(() => expect(value).toEqual([]));
+		expect(error).toBe('server');
 		unsubscribe();
+		unsubscribeError();
 	});
 
 	it('applyLayoutUpdates patches matching widgets in place without a refetch', async () => {
@@ -83,6 +90,31 @@ describe('widgets store', () => {
 		expect(value).toEqual([
 			{ id: 'new', type: 'weather', name: 'Weather', layout, tab: 'default', refresh_interval_seconds: 600 },
 		]);
+		unsubscribe();
+	});
+
+	it('addWidgetLocal is idempotent when a widget with the same id already exists', async () => {
+		const layout = { col: 1, row: 1, colSpan: 1, rowSpan: 1 };
+		const widget: WidgetSummaryMeta = {
+			id: 'new',
+			type: 'weather',
+			name: 'Weather',
+			layout,
+			tab: 'default',
+			refresh_interval_seconds: 600,
+		};
+		// Simulates a reload (e.g. a breakpoint change) racing ahead of the
+		// addWidget response and already picking up the server-persisted widget.
+		listWidgets.mockResolvedValue([widget]);
+
+		const { widgets, addWidgetLocal } = await import('./widgets');
+		let value: WidgetSummaryMeta[] = [];
+		const unsubscribe = widgets.subscribe((v) => (value = v));
+		await vi.waitFor(() => expect(value).toEqual([widget]));
+
+		addWidgetLocal(widget);
+
+		expect(value).toEqual([widget]);
 		unsubscribe();
 	});
 

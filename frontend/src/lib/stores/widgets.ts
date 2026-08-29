@@ -1,15 +1,23 @@
 import { get, writable } from 'svelte/store';
-import { api, type WidgetLayout, type WidgetSummaryMeta } from '$lib/api';
+import { api, describeFetchError, type FetchErrorKind, type WidgetLayout, type WidgetSummaryMeta } from '$lib/api';
 import { breakpoint } from './breakpoint';
 
 export const widgets = writable<WidgetSummaryMeta[]>([]);
 
+// Lets the screensaver's fallback UI distinguish "widget list hasn't loaded
+// yet" from "it failed to load" instead of both looking like an empty list.
+export const widgetsLoadError = writable<FetchErrorKind | null>(null);
+
 export function reloadWidgets() {
 	return api
 		.listWidgets(get(breakpoint))
-		.then(widgets.set)
-		.catch(() => {
+		.then((result) => {
+			widgets.set(result);
+			widgetsLoadError.set(null);
+		})
+		.catch((error) => {
 			// keep whatever was last loaded successfully
+			widgetsLoadError.set(describeFetchError(error));
 		});
 }
 
@@ -27,7 +35,7 @@ export function applyLayoutUpdates(updates: { id: string; layout: WidgetLayout }
 }
 
 export function addWidgetLocal(widget: WidgetSummaryMeta) {
-	widgets.update((current) => [...current, widget]);
+	widgets.update((current) => (current.some((w) => w.id === widget.id) ? current : [...current, widget]));
 }
 
 export function removeWidgetLocal(id: string) {

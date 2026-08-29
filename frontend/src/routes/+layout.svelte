@@ -16,6 +16,7 @@
 	import { loadVoiceSelectionFromServer } from '$lib/stores/voice';
 	import { loadAssistantConfigFromServer, loadAlwaysOnMicFromServer } from '$lib/stores/assistant';
 	import { reloadWidgets } from '$lib/stores/widgets';
+	import { pwaState, initPwa, applyUpdate, dismissUpdate } from '$lib/stores/pwa';
 	import Screensaver from '$lib/components/Screensaver.svelte';
 
 	let { children } = $props();
@@ -69,16 +70,12 @@
 		await waitLocale();
 		i18nReady = true;
 
-		const registered = await ensureDevice().catch(() => null);
+		// None of these three reads another's result, so run them concurrently.
+		const [registered] = await Promise.all([ensureDevice().catch(() => null), loadSetupStatus(), loadCurrentUser()]);
 		if (registered?.is_new) {
 			namingDevice = true;
 			deviceNameInput = registered.name;
 		}
-
-		// Resolved before loadCurrentUser() so the redirect effect below can
-		// decide setup-vs-login before either store's data actually matters.
-		await loadSetupStatus();
-		await loadCurrentUser();
 	});
 
 	// Three-way redirect: unreachable backend gets its own message (below),
@@ -126,9 +123,11 @@
 	});
 
 	onMount(() => {
+		const cleanupPwa = initPwa();
 		const events = ['pointerdown', 'pointermove', 'keydown', 'touchstart', 'wheel'] as const;
 		for (const evt of events) window.addEventListener(evt, handleActivity, { passive: true });
 		return () => {
+			cleanupPwa();
 			for (const evt of events) window.removeEventListener(evt, handleActivity);
 			clearIdleTimer();
 		};
@@ -147,6 +146,12 @@
 </svelte:head>
 
 {#if i18nReady}
+	{#if !$pwaState.isOnline}
+		<div class="pwa-offline-banner" role="alert">
+			<span>{$_('pwa.offline_status')}</span>
+		</div>
+	{/if}
+
 	{#if $setupStatusError}
 		<div class="fatal-error">
 			<h2>{$_('layout.fatal_title')}</h2>
@@ -166,6 +171,14 @@
 
 		{@render children()}
 
+		{#if $pwaState.updateAvailable}
+			<div class="pwa-update-toast" role="status">
+				<span class="pwa-toast-text">{$_('pwa.update_available')}</span>
+				<button class="pwa-update-btn" onclick={applyUpdate}>{$_('pwa.update_button')}</button>
+				<button class="pwa-dismiss-btn" onclick={dismissUpdate} aria-label="Dismiss">✕</button>
+			</div>
+		{/if}
+
 		{#if (idle || $forceScreensaverPreview) && $screensaverSettings}
 			<Screensaver
 				settings={$screensaverSettings}
@@ -179,6 +192,84 @@
 {/if}
 
 <style>
+	.pwa-offline-banner {
+		position: fixed;
+		top: var(--safe-area-top);
+		left: 0;
+		right: 0;
+		background: rgba(220, 38, 38, 0.92);
+		color: #ffffff;
+		text-align: center;
+		font-size: 0.85rem;
+		font-weight: 500;
+		padding: 0.4rem 1rem;
+		z-index: 1200;
+		backdrop-filter: blur(4px);
+	}
+
+	.pwa-update-toast {
+		position: fixed;
+		bottom: calc(1.5rem + var(--safe-area-bottom));
+		right: calc(1.5rem + var(--safe-area-right));
+		max-width: calc(100vw - 3rem);
+		background: var(--color-surface);
+		border: 1px solid var(--color-accent);
+		color: var(--color-text);
+		padding: 0.75rem 1rem;
+		border-radius: 0.75rem;
+		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		z-index: 1100;
+		animation: pwa-slide-up 0.25s ease-out;
+	}
+
+	@keyframes pwa-slide-up {
+		from {
+			opacity: 0;
+			transform: translateY(1rem);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	.pwa-toast-text {
+		font-size: 0.9rem;
+		font-weight: 500;
+	}
+
+	.pwa-update-btn {
+		background: var(--color-accent);
+		color: var(--color-surface);
+		border: none;
+		border-radius: 0.4rem;
+		padding: 0.35rem 0.75rem;
+		font-size: 0.85rem;
+		font-weight: 600;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+
+	.pwa-dismiss-btn {
+		background: transparent;
+		border: none;
+		color: var(--color-text-muted);
+		cursor: pointer;
+		padding: 0.25rem 0.4rem;
+		font-size: 0.9rem;
+		border-radius: 0.25rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.pwa-dismiss-btn:hover {
+		color: var(--color-text);
+	}
+
 	.fatal-error {
 		min-height: 100vh;
 		display: flex;

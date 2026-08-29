@@ -138,6 +138,22 @@ def test_patch_settings_invalidates_clock_and_date_widget_cache(client, tmp_db):
     assert cache.get("detail:date:en") is None
 
 
+def test_patch_settings_invalidates_effective_settings_cache(client, tmp_db):
+    from app.config import EFFECTIVE_SETTINGS_CACHE_KEY
+    from app.storage.cache import cache
+
+    # A stale cache entry (as if fetched before this save) must not survive
+    # the write — the PATCH response itself re-reads effective_settings(),
+    # which legitimately repopulates the cache, so the observable proof of
+    # invalidation is that the repopulated value reflects the new write, not
+    # that the key is bare afterwards.
+    cache.set(EFFECTIVE_SETTINGS_CACHE_KEY, {"timezone": "stale-value"}, 3600)
+
+    client.patch("/api/settings", json={"timezone": "America/New_York"})
+
+    assert cache.get(EFFECTIVE_SETTINGS_CACHE_KEY)["timezone"] == "America/New_York"
+
+
 def test_patch_settings_persists_agent_name_and_searxng_url(client, tmp_db):
     response = client.patch(
         "/api/settings",

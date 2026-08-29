@@ -266,7 +266,8 @@
 			"loading": "Loading flights…",
 			"count": "{count} nearby",
 			"empty": "No aircraft nearby",
-			"truncated": "Showing {shown} of {total}"
+			"truncated": "Showing {shown} of {total}",
+			"stale_badge": "Cached"
 		},
 		"detail": {
 			"change_location": "Change location",
@@ -291,7 +292,8 @@
 			"route_local_flight": "Local flight",
 			"no_photo": "No photo available",
 			"photo_by": "Photo by {name}",
-			"truncated": "Showing the nearest {shown} of {total} flights nearby."
+			"truncated": "Showing the nearest {shown} of {total} flights nearby.",
+			"stale_notice": "Couldn't refresh flights — showing the last known positions from {date}."
 		},
 		"screensaver": {
 			"no_aircraft": "NO AIRCRAFT NEARBY"
@@ -1068,7 +1070,16 @@
 		}
 	},
 	"screensaver": {
-		"empty": "Screensaver"
+		"loading": "Loading {name}…",
+		"no_widgets": "No screensaver widgets configured",
+		"list_unavailable": "Couldn't load the widget list ({error})",
+		"widget_id_label": "Widget: {id}",
+		"all_missing": "None of the configured screensaver widgets could be found",
+		"detail_failed": "Couldn't load {name} ({error})",
+		"display_failed": "Couldn't load the display for {type}",
+		"error_network": "network unreachable",
+		"error_server": "server error",
+		"device_label": "Device: {name}"
 	},
 	"player": {
 		"close": "Close player",
@@ -1281,5 +1292,17 @@
 		"add_confirm": "Add Tile",
 		"add_saving": "Adding…",
 		"add_error": "Could not add tile."
+	},
+	"pwa": {
+		"update_available": "A new version of Tilora is available.",
+		"update_button": "Update",
+		"install_app": "Install Tilora App",
+		"install_title": "Personal Web App (PWA)",
+		"install_description": "Install Tilora on your home screen or desktop for a fullscreen, standalone dashboard experience with instant loading.",
+		"installed_badge": "Installed (Standalone PWA)",
+		"running_in_browser": "Running in Browser",
+		"ios_install_hint": "To install on iOS / iPadOS: tap the Share button in Safari and choose 'Add to Home Screen'.",
+		"desktop_install_hint": "To install on Desktop: click the install icon in your browser's address bar.",
+		"offline_status": "You are currently offline. Displaying cached dashboard shell."
 	}
 }

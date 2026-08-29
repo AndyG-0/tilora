@@ -14,7 +14,7 @@ export const SCREENSAVER_VISUAL_TYPES = [
 	'flights',
 ] as const;
 
-export const SCREENSAVER_WORDY_TYPES = ['rss', 'sports', 'ai', 'discord', 'message'] as const;
+export const SCREENSAVER_WORDY_TYPES = ['rss', 'sports', 'ai', 'discord', 'message', 'artificial_analysis'] as const;
 
 export const SCREENSAVER_ALLOWED_TYPES: string[] = [...SCREENSAVER_VISUAL_TYPES, ...SCREENSAVER_WORDY_TYPES];
 

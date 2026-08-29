@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import httpx
 import respx
 
@@ -155,3 +157,36 @@ async def test_get_detail_falls_back_to_last_good_fetch_on_failure(monkeypatch, 
     assert detail["explanation"] == "Some nebula."
     assert detail["hdurl"] == "https://apod.nasa.gov/apod/image/nebula_hd.jpg"
     assert "fetched_at" in detail
+
+
+@respx.mock
+async def test_get_summary_does_not_refetch_when_todays_picture_is_already_persisted(monkeypatch, tmp_db):
+    monkeypatch.setattr(settings, "nasa_api_key", "test-key")
+    todays_response = {**IMAGE_RESPONSE, "date": datetime.now(UTC).date().isoformat()}
+    route = respx.get("https://api.nasa.gov/planetary/apod").mock(
+        return_value=httpx.Response(200, json=todays_response)
+    )
+    plugin = make_plugin()
+
+    first = await plugin.get_summary()
+    second = await plugin.get_detail()
+
+    assert route.call_count == 1
+    assert first["apod_title"] == "A Beautiful Nebula"
+    assert second["stale"] is False
+
+
+@respx.mock
+async def test_get_summary_refetches_when_persisted_picture_is_from_a_prior_day(monkeypatch, tmp_db):
+    monkeypatch.setattr(settings, "nasa_api_key", "test-key")
+    db.record_nasa_apod_fetch("nasa_apod", {**IMAGE_RESPONSE, "date": "2020-01-01"})
+    todays_response = {**VIDEO_RESPONSE, "date": datetime.now(UTC).date().isoformat()}
+    route = respx.get("https://api.nasa.gov/planetary/apod").mock(
+        return_value=httpx.Response(200, json=todays_response)
+    )
+    plugin = make_plugin()
+
+    summary = await plugin.get_summary()
+
+    assert route.call_count == 1
+    assert summary["apod_title"] == "A Cool Video"

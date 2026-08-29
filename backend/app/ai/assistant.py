@@ -20,8 +20,8 @@ from app.plugins.scoping import scoped_plugin
 from app.storage.db import get_user_preferences
 
 
-def _build_system_prompt(system_prompt: str | None = None, user: dict[str, Any] | None = None) -> str:
-    settings = effective_settings()
+async def _build_system_prompt(system_prompt: str | None = None, user: dict[str, Any] | None = None) -> str:
+    settings = await effective_settings()
     agent_name = (settings.get("ai_agent_name") or "").strip() or "Tilora"
     tz_name = settings.get("timezone") or "UTC"
     tz = resolve_timezone(tz_name)
@@ -68,7 +68,7 @@ async def ask(
         if user is not None and device is not None:
             plugins = [await scoped_plugin(plugin, user, device) for plugin in plugins]
 
-        settings = effective_settings()
+        settings = await effective_settings()
         searxng_url = settings.get("searxng_url")
         web_tools = get_web_tools(searxng_url) if (allowed_widget_ids is None and searxng_url) else []
 
@@ -87,6 +87,6 @@ async def ask(
             + await mcp_source.tools()
             + web_tools
         )
-        provider = AIProvider(ToolBridge(tools))
-        full_system_prompt = _build_system_prompt(system_prompt, user=user)
+        provider = AIProvider(ToolBridge(tools), model=settings["ai_model"])
+        full_system_prompt = await _build_system_prompt(system_prompt, user=user)
         return await provider.run_prompt(text, system_prompt=full_system_prompt)

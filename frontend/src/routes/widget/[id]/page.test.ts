@@ -10,10 +10,9 @@ vi.mock('$app/navigation', () => ({ goto }));
 
 import Page from './+page.svelte';
 
-vi.mock('$lib/widgetComponents', async () => {
-	const { default: StubDetail } = await import('./widget-detail.test-stub.svelte');
-	return { DETAIL_COMPONENTS: { stub: StubDetail } };
-});
+vi.mock('$lib/widgetComponents', () => ({
+	DETAIL_COMPONENTS: { stub: () => import('./widget-detail.test-stub.svelte') },
+}));
 
 const baseData = {
 	widgetId: 'weather-b',
@@ -103,10 +102,10 @@ describe('widget detail page — remounting the Detail component on navigation',
 		const tileB = { widgetId: 'photos-b', type: 'stub', name: 'Tile B', detail: { label: 'Tile B photos' } };
 
 		const { rerender } = render(Page, { props: { data: tileA } });
-		expect(screen.getByTestId('detail-label')).toHaveTextContent('Tile A photos');
+		expect(await screen.findByTestId('detail-label')).toHaveTextContent('Tile A photos');
 
 		await rerender({ data: tileB });
 
-		expect(screen.getByTestId('detail-label')).toHaveTextContent('Tile B photos');
+		expect(await screen.findByTestId('detail-label')).toHaveTextContent('Tile B photos');
 	});
 });

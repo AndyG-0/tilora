@@ -173,6 +173,19 @@ async def test_get_severe_weather_signals_swallows_nws_errors():
     assert any(signal["key"].startswith("forecast:") for signal in signals)
 
 
+@respx.mock
+async def test_get_severe_weather_signals_reuses_the_cached_forecast_fetch():
+    respx.get(nws_client.ALERTS_URL).mock(return_value=httpx.Response(200, json=FAKE_NWS_RESPONSE))
+    response = {**FAKE_FORECAST_RESPONSE, "current": {**FAKE_FORECAST_RESPONSE["current"], "is_day": 1}}
+    forecast_route = respx.get(FORECAST_URL).mock(return_value=httpx.Response(200, json=response))
+    plugin = make_plugin()
+
+    await plugin.get_summary()
+    await plugin.get_severe_weather_signals()
+
+    assert forecast_route.calls.call_count == 1
+
+
 # --- scheduler.run_severe_weather_check --------------------------------------
 
 

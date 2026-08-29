@@ -289,3 +289,43 @@ async def test_search_location_returns_error_for_no_matches():
     result = await tools["search_location"].handler(query="Nowhereville")
 
     assert "error" in result
+
+
+@respx.mock
+async def test_search_location_is_cached_between_calls():
+    route = respx.get(SEARCH_URL).mock(return_value=httpx.Response(200, json=FAKE_ORIGIN_SEARCH))
+    plugin = make_plugin()
+    tools = {t.name: t for t in plugin.get_ai_tools()}
+
+    await tools["search_location"].handler(query="Fort Worth")
+    await tools["search_location"].handler(query="Fort Worth")
+
+    assert route.calls.call_count == 1
+
+
+@respx.mock
+async def test_find_nearby_places_is_cached_between_calls():
+    route = respx.post(OVERPASS_URL).mock(return_value=httpx.Response(200, json=FAKE_OVERPASS_RESPONSE))
+    plugin = make_plugin()
+    tools = {t.name: t for t in plugin.get_ai_tools()}
+
+    await tools["find_nearby_places"].handler(category="cafe")
+    await tools["find_nearby_places"].handler(category="cafe")
+
+    assert route.calls.call_count == 1
+
+
+@respx.mock
+async def test_get_directions_is_cached_between_calls():
+    respx.post(OVERPASS_URL).mock(return_value=httpx.Response(200, json={"elements": []}))
+    respx.get(SEARCH_URL).mock(return_value=httpx.Response(200, json=FAKE_DEST_SEARCH))
+    osrm_route = respx.get(url__startswith=OSRM_BASE_URL).mock(
+        return_value=httpx.Response(200, json=FAKE_OSRM_RESPONSE)
+    )
+    plugin = make_plugin()
+    tools = {t.name: t for t in plugin.get_ai_tools()}
+
+    await tools["get_directions"].handler(destination="Dallas, TX")
+    await tools["get_directions"].handler(destination="Dallas, TX")
+
+    assert osrm_route.calls.call_count == 1

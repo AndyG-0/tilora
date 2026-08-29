@@ -25,7 +25,7 @@ router = APIRouter(prefix="/api/movies", tags=["movies"])
 
 
 async def _fetch_providers(client: httpx.AsyncClient, media_type: str, region: str) -> list[dict[str, Any]]:
-    api_key = effective_settings().get("tmdb_api_key")
+    api_key = (await effective_settings()).get("tmdb_api_key")
     if not api_key:
         return []
     try:

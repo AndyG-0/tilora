@@ -14,9 +14,18 @@ from typing import Any, ClassVar
 from app.integrations import geocode, nominatim_client, osrm_client, overpass_client
 from app.integrations.overpass_client import CATEGORY_TAGS
 from app.plugins.base import Plugin, ToolDef
+from app.storage.cache import cached_call
 from app.storage.db import get_user_preferences
 
 _NO_LOCATION_ERROR = "No location is configured -- set a home location on the Mapping tile or in your profile."
+
+# Same TTLs as app.api.mapping's REST endpoints -- Nominatim's usage policy
+# explicitly asks callers to cache results rather than throttle client-side,
+# and these AI tools previously called the integration clients directly with
+# no caching at all.
+_GEOCODE_TTL_SECONDS = 24 * 60 * 60
+_DIRECTIONS_TTL_SECONDS = 10 * 60
+_NEARBY_TTL_SECONDS = 30 * 60
 
 
 class MappingPlugin(Plugin):
@@ -89,25 +98,34 @@ class MappingPlugin(Plugin):
         async def search_location(query: str) -> dict[str, Any]:
             near_origin = self._default_origin()
             near = (near_origin["latitude"], near_origin["longitude"]) if near_origin else None
-            matches = await nominatim_client.search(query, limit=5, near=near)
+
+            async def fetch() -> list[dict[str, Any]]:
+                return await nominatim_client.search(query, limit=5, near=near)
+
+            key = f"mapping:ai_search:{query.lower()}:{near}"
+            matches = await cached_call(key, _GEOCODE_TTL_SECONDS, fetch)
             if not matches:
                 return {"error": f"Could not find a location for '{query}'."}
             return {"matches": matches}
 
         async def get_directions(destination: str, origin: str | None = None, mode: str = "driving") -> dict[str, Any]:
-            orig = await self._resolve_point(origin)
-            if orig is None:
-                return {"error": _NO_LOCATION_ERROR if not origin else f"Could not find a location for '{origin}'."}
-            dest = await self._resolve_point(destination, near=(orig["latitude"], orig["longitude"]))
-            if dest is None:
-                return {"error": f"Could not find a location for '{destination}'."}
-            try:
-                result = await osrm_client.route(
-                    (orig["latitude"], orig["longitude"]), (dest["latitude"], dest["longitude"]), mode
-                )
-            except osrm_client.OSRMError as exc:
-                return {"error": str(exc)}
-            return {"origin": orig["name"], "destination": dest["name"], "mode": mode, **result}
+            async def fetch() -> dict[str, Any]:
+                orig = await self._resolve_point(origin)
+                if orig is None:
+                    return {"error": _NO_LOCATION_ERROR if not origin else f"Could not find a location for '{origin}'."}
+                dest = await self._resolve_point(destination, near=(orig["latitude"], orig["longitude"]))
+                if dest is None:
+                    return {"error": f"Could not find a location for '{destination}'."}
+                try:
+                    result = await osrm_client.route(
+                        (orig["latitude"], orig["longitude"]), (dest["latitude"], dest["longitude"]), mode
+                    )
+                except osrm_client.OSRMError as exc:
+                    return {"error": str(exc)}
+                return {"origin": orig["name"], "destination": dest["name"], "mode": mode, **result}
+
+            key = f"mapping:ai_directions:{mode}:{origin or ''}:{destination}"
+            return await cached_call(key, _DIRECTIONS_TTL_SECONDS, fetch)
 
         async def show_mapping_detail(
             panel: str | None = None, destination: str | None = None, origin: str | None = None
@@ -120,14 +138,18 @@ class MappingPlugin(Plugin):
             return result
 
         async def find_nearby_places(category: str, near: str | None = None, radius_m: int = 40234) -> dict[str, Any]:
-            point = await self._resolve_point(near)
-            if point is None:
-                return {"error": _NO_LOCATION_ERROR if not near else f"Could not find a location for '{near}'."}
-            try:
-                places = await overpass_client.nearby(point["latitude"], point["longitude"], category, radius_m)
-            except overpass_client.OverpassError as exc:
-                return {"error": str(exc)}
-            return {"near": point["name"], "category": category, "places": places}
+            async def fetch() -> dict[str, Any]:
+                point = await self._resolve_point(near)
+                if point is None:
+                    return {"error": _NO_LOCATION_ERROR if not near else f"Could not find a location for '{near}'."}
+                try:
+                    places = await overpass_client.nearby(point["latitude"], point["longitude"], category, radius_m)
+                except overpass_client.OverpassError as exc:
+                    return {"error": str(exc)}
+                return {"near": point["name"], "category": category, "places": places}
+
+            key = f"mapping:ai_nearby:{category}:{near or ''}:{radius_m}"
+            return await cached_call(key, _NEARBY_TTL_SECONDS, fetch)
 
         suffix = "" if self.id == "mapping" else f"_{self.id.replace('-', '_')}"
         return [

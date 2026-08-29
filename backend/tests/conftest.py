@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 from app import auth, config, crypto
@@ -50,4 +52,27 @@ def tmp_db(tmp_path, monkeypatch):
     monkeypatch.setattr(crypto, "SECRET_KEY_PATH", tmp_path / "secret.key")
     crypto.reset_key_cache()
     db.init_db()
+    return db_path
+
+
+@pytest.fixture
+def tmp_db_pre_token_hashing(tmp_path, monkeypatch):
+    """Like `tmp_db`, but stops one migration short of migration 019 (the
+    one that rehashes `devices.id`/`sessions.id` to match
+    `app.auth._hash_token`), so a test can seed rows the old, pre-v0.15.0
+    way — the raw bearer token as the primary key, as every row was before
+    that release added hashing — and then call `db.init_db()` itself to
+    exercise the migration.
+    """
+    db_path = tmp_path / "test.db"
+    monkeypatch.setattr(db, "DB_PATH", db_path)
+    monkeypatch.setattr(crypto, "SECRET_KEY_PATH", tmp_path / "secret.key")
+    crypto.reset_key_cache()
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.executescript(db._SCHEMA)
+        conn.execute(f"PRAGMA user_version = {len(db._MIGRATIONS) - 1}")
+        conn.commit()
+    finally:
+        conn.close()
     return db_path

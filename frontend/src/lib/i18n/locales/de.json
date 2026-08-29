@@ -266,7 +266,8 @@
 			"loading": "Flüge werden geladen…",
 			"count": "{count} in der Nähe",
 			"empty": "Keine Flugzeuge in der Nähe",
-			"truncated": "{shown} von {total} werden angezeigt"
+			"truncated": "{shown} von {total} werden angezeigt",
+			"stale_badge": "Zwischengespeichert"
 		},
 		"detail": {
 			"change_location": "Standort ändern",
@@ -291,7 +292,8 @@
 			"route_local_flight": "Lokalflug",
 			"no_photo": "Kein Foto verfügbar",
 			"photo_by": "Foto von {name}",
-			"truncated": "Die nächsten {shown} von {total} Flügen in der Nähe werden angezeigt."
+			"truncated": "Die nächsten {shown} von {total} Flügen in der Nähe werden angezeigt.",
+			"stale_notice": "Flüge konnten nicht aktualisiert werden – letzte bekannte Position vom {date}."
 		},
 		"screensaver": {
 			"no_aircraft": "KEINE FLUGZEUGE IN DER NÄHE"
@@ -1050,7 +1052,16 @@
 		}
 	},
 	"screensaver": {
-		"empty": "Bildschirmschoner"
+		"loading": "{name} wird geladen…",
+		"no_widgets": "Keine Bildschirmschoner-Widgets konfiguriert",
+		"list_unavailable": "Widget-Liste konnte nicht geladen werden ({error})",
+		"widget_id_label": "Widget: {id}",
+		"all_missing": "Keines der konfigurierten Bildschirmschoner-Widgets wurde gefunden",
+		"detail_failed": "{name} konnte nicht geladen werden ({error})",
+		"display_failed": "Anzeige für {type} konnte nicht geladen werden",
+		"error_network": "Netzwerk nicht erreichbar",
+		"error_server": "Serverfehler",
+		"device_label": "Gerät: {name}"
 	},
 	"player": {
 		"close": "Player schließen",
@@ -1260,5 +1271,17 @@
 		"add_confirm": "Kachel hinzufügen",
 		"add_saving": "Wird hinzugefügt…",
 		"add_error": "Kachel konnte nicht hinzugefügt werden."
+	},
+	"pwa": {
+		"update_available": "Eine neue Version von Tilora ist verfügbar.",
+		"update_button": "Aktualisieren",
+		"install_app": "Tilora App installieren",
+		"install_title": "Personal Web App (PWA)",
+		"install_description": "Installieren Sie Tilora auf Ihrem Startbildschirm oder Desktop für ein eigenständiges Vollbild-Dashboard mit sofortigem Laden.",
+		"installed_badge": "Installiert (Eigenständige PWA)",
+		"running_in_browser": "Wird im Browser ausgeführt",
+		"ios_install_hint": "Zur Installation unter iOS / iPadOS: Tippen Sie in Safari auf die Teilen-Schaltfläche und wählen Sie 'Zum Home-Bildschirm'.",
+		"desktop_install_hint": "Zur Installation auf dem Desktop: Klicken Sie auf das Installationssymbol in der Adressleiste Ihres Browsers.",
+		"offline_status": "Sie sind derzeit offline. Zwischengespeichertes Dashboard wird angezeigt."
 	}
 }
