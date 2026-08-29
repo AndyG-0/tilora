@@ -28,29 +28,25 @@ test.describe('auth and setup flows', () => {
 		const context = await browser.newContext({ storageState: undefined });
 		const page = await context.newPage();
 
-		// Mock setup status as needs_setup: true
-		await page.route('**/api/setup/status', (route) => {
-			route.fulfill({
-				status: 200,
-				contentType: 'application/json',
-				body: JSON.stringify({ needs_setup: true }),
-			});
-		});
-
-		await page.route('**/api/setup/admin', (route) => {
-			route.fulfill({
-				status: 200,
-				contentType: 'application/json',
-				body: JSON.stringify({ id: 'new-admin-id', name: 'Admin User', role: 'admin' }),
-			});
-		});
-
-		await page.route('**/api/users/me', (route) => {
-			route.fulfill({
-				status: 200,
-				contentType: 'application/json',
-				body: JSON.stringify({ id: 'new-admin-id', name: 'Admin User', role: 'admin' }),
-			});
+		// Mock setup endpoints via init script so it works across all browser engines
+		await page.addInitScript(() => {
+			const originalFetch = window.fetch;
+			window.fetch = async (input, init) => {
+				const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
+				if (url.includes('/api/setup/status')) {
+					return new Response(JSON.stringify({ needs_setup: true }), {
+						status: 200,
+						headers: { 'Content-Type': 'application/json' },
+					});
+				}
+				if (url.includes('/api/setup/admin')) {
+					return new Response(JSON.stringify({ id: 'new-admin-id', name: 'Admin User', role: 'admin' }), {
+						status: 200,
+						headers: { 'Content-Type': 'application/json' },
+					});
+				}
+				return originalFetch(input, init);
+			};
 		});
 
 		await page.goto('/setup');
