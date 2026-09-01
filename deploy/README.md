@@ -346,7 +346,9 @@ Notes:
   (`http://localhost:5173`), add it there too (comma-separated for more
   than one).
 - `backend/config/dashboard.yaml` and `backend/.env` are bind-mounted in, so
-  edit them in place and restart the `backend` service to pick up changes.
+  edit them in place and restart the `backend` service to pick up changes —
+  including `LOG_LEVEL`, which works the same way here as on a native
+  install (see `docs/deployment/troubleshooting.md`).
   `storage.db` lives in a named volume (`backend-storage`) so it survives
   `docker compose down`/container recreation.
 - Validated with `docker compose config` (via `podman-compose`) and a live
