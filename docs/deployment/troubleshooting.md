@@ -68,3 +68,38 @@ journalctl -u tilora-backend -f
 # Docker installations
 docker compose logs -f backend
 ```
+
+---
+
+## 7. Changing the Log Level
+
+### Solution
+The backend's log level is controlled by `LOG_LEVEL` in `backend/.env`
+(`DEBUG`, `INFO`, `WARNING`, or `ERROR` — see `backend/app/logging_config.py`).
+Both native and Docker installs read the same file, so the change and the
+restart step are the only things that differ:
+
+```bash
+# Native (systemd)
+tilora config set LOG_LEVEL DEBUG   # or edit backend/.env directly
+tilora restart                      # or: sudo systemctl restart tilora-backend
+
+# Docker
+# edit LOG_LEVEL in backend/.env, then:
+docker compose restart backend      # add -f docker-compose.prod.yml for prod
+```
+
+To change the level for a Docker container only, without touching the
+shared `backend/.env`, add it directly to the compose file's `backend`
+service instead (same pattern `docker-compose.override.yml` uses for local
+dev):
+
+```yaml
+services:
+  backend:
+    environment:
+      - LOG_LEVEL=DEBUG
+```
+
+`DEBUG` also raises the level of normally-quiet third-party loggers
+(`httpx`, `asyncssh`, `icloudpy`, `uvicorn.access`).
