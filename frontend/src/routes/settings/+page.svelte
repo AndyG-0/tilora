@@ -759,6 +759,33 @@
 		}
 	}
 
+	function previewSingleScreensaver(widgetId: string) {
+		forceScreensaverPreview.set({
+			enabled: true,
+			idle_timeout_seconds: ssIdleTimeoutInput,
+			rotation_interval_seconds: ssRotationIntervalInput,
+			widget_ids: [widgetId],
+			text_animation_style: ssTextAnimationStyle,
+			led_color: ssLedColor,
+			text_pause_seconds: ssTextPauseInput,
+			flipboard_pattern: ssFlipboardPattern,
+		});
+	}
+
+	function previewAllScreensavers() {
+		const ids = ssSelectedIds.size > 0 ? Array.from(ssSelectedIds) : screensaverEligibleWidgets.map((w) => w.id);
+		forceScreensaverPreview.set({
+			enabled: true,
+			idle_timeout_seconds: ssIdleTimeoutInput,
+			rotation_interval_seconds: ssRotationIntervalInput,
+			widget_ids: ids,
+			text_animation_style: ssTextAnimationStyle,
+			led_color: ssLedColor,
+			text_pause_seconds: ssTextPauseInput,
+			flipboard_pattern: ssFlipboardPattern,
+		});
+	}
+
 	// Voice choice for the AI assistant/read-aloud, scoped to this user's
 	// account (not this device) — see stores/voice.ts. Seeded independently
 	// (rather than relying on +layout.svelte's fire-and-forget load having
@@ -2366,15 +2393,23 @@
 						<p class="hint">{$_('settings.screensaver.widgets_hint')}</p>
 						<ul class="widget-picker">
 							{#each screensaverEligibleWidgets as w (w.id)}
-								<li>
+								<li class="widget-picker-item">
 									<label class="checkbox-label">
 										<input
 											type="checkbox"
 											checked={ssSelectedIds.has(w.id)}
 											onchange={() => toggleScreensaverWidget(w.id)}
 										/>
-										{w.name}
+										<span>{w.name}</span>
 									</label>
+									<button
+										type="button"
+										class="action-link"
+										onclick={() => previewSingleScreensaver(w.id)}
+										aria-label={$_('settings.screensaver.test_widget_aria', { values: { name: w.name } })}
+									>
+										{$_('settings.screensaver.test_single')}
+									</button>
 								</li>
 							{/each}
 						</ul>
@@ -2393,11 +2428,7 @@
 					<button class="save" disabled={ssSaving} onclick={saveScreensaverSettings}>
 						{ssSaving ? $_('common.saving') : $_('settings.screensaver.save')}
 					</button>
-					<button
-						class="clear"
-						disabled={screensaverEligibleWidgets.length === 0}
-						onclick={() => forceScreensaverPreview.set(true)}
-					>
+					<button class="clear" disabled={screensaverEligibleWidgets.length === 0} onclick={previewAllScreensavers}>
 						{$_('settings.screensaver.test')}
 					</button>
 				</div>
@@ -3391,6 +3422,13 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.4rem;
+	}
+
+	.widget-picker-item {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
 	}
 
 	.cert-tips {

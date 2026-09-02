@@ -102,7 +102,9 @@
 			"no_widgets_hint": "Add some widgets to your dashboard first to include them here.",
 			"save": "Save screensaver settings",
 			"save_error": "Could not save screensaver settings.",
-			"test": "Test screensaver"
+			"test": "Test screensaver",
+			"test_single": "Test",
+			"test_widget_aria": "Test screensaver for {name}"
 		},
 		"voice": {
 			"heading": "Voice",
