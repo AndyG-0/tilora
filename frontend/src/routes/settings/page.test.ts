@@ -1083,3 +1083,37 @@ describe('settings +page.svelte — TMDB and Discord sections', () => {
 		expect(updateSettings).toHaveBeenCalledWith({ discord_bot_token: '' });
 	});
 });
+
+describe('settings +page.svelte — responsive layout', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		user.set({ id: 'u1', name: 'Admin', role: 'admin', avatar: '🐱' });
+		settings.mockResolvedValue({ ...BASE_SETTINGS });
+		getPreferences.mockResolvedValue({ ...DEFAULT_PREFERENCES });
+		listHouseholdUsers.mockResolvedValue([{ id: 'u1', name: 'Admin', role: 'admin', avatar: '🐱' }]);
+		listUsers.mockResolvedValue([{ id: 'u1', name: 'Admin', role: 'admin', avatar: '🐱', has_pin: false }]);
+		listDevices.mockResolvedValue([]);
+		version.mockResolvedValue({
+			current_version: '0.1.0',
+			latest_version: null,
+			update_available: false,
+			release_url: null,
+			install_method: '',
+			update_running: false,
+		});
+		icloudCredentials.mockResolvedValue({ username: '', has_password: false });
+	});
+
+	it('renders settings groups with settings-grid container', async () => {
+		const { container } = render(Page);
+
+		await screen.findByText('Admin settings');
+		const grids = container.querySelectorAll('.settings-grid');
+		expect(grids.length).toBeGreaterThanOrEqual(2);
+
+		grids.forEach((grid) => {
+			const sections = grid.querySelectorAll('section');
+			expect(sections.length).toBeGreaterThan(0);
+		});
+	});
+});
