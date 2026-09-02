@@ -36,3 +36,25 @@ def test_delete_removes_entry():
 def test_delete_missing_key_is_a_noop():
     cache = TTLCache()
     cache.delete("missing")  # should not raise
+
+
+def test_sweep_expired_drops_only_expired_keys(monkeypatch):
+    cache = TTLCache()
+    monkeypatch.setattr("app.storage.cache.time.monotonic", lambda: 100.0)
+    cache.set("expiring", "value", ttl_seconds=10)  # expires_at = 110.0
+    cache.set("fresh", "value", ttl_seconds=1000)  # expires_at = 1100.0
+
+    monkeypatch.setattr("app.storage.cache.time.monotonic", lambda: 200.0)
+    dropped = cache.sweep_expired()
+
+    assert dropped == 1
+    assert "expiring" not in cache._store
+    assert cache._store["fresh"][1] == "value"
+
+
+def test_sweep_expired_with_nothing_expired_returns_zero():
+    cache = TTLCache()
+    cache.set("key", "value", ttl_seconds=1000)
+
+    assert cache.sweep_expired() == 0
+    assert cache.get("key") == "value"

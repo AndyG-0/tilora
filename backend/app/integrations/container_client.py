@@ -29,6 +29,8 @@ call per container.
 
 from __future__ import annotations
 
+import asyncio
+from collections import OrderedDict
 from typing import Any
 
 import httpx
@@ -51,8 +53,12 @@ def is_configured(settings: dict[str, Any]) -> bool:
 # single global client won't do — pool one client per distinct connection
 # target instead, keyed off the settings that determine that target, and
 # reuse it across polls (this plugin's default refresh_interval_seconds is
-# 30s) rather than paying a fresh connection per request.
-_clients: dict[str, httpx.AsyncClient] = {}
+# 30s) rather than paying a fresh connection per request. Capped and
+# LRU-evicted (via move_to_end/popitem), same pattern as hdhomerun.py's
+# _probe_cache, so a widget that's been repointed at many different hosts
+# over time doesn't accumulate an open connection per host forever.
+_MAX_CLIENTS = 20
+_clients: OrderedDict[str, httpx.AsyncClient] = OrderedDict()
 
 
 def _client_key(settings: dict[str, Any]) -> str:
@@ -68,6 +74,7 @@ def _client(settings: dict[str, Any]) -> httpx.AsyncClient:
     key = _client_key(settings)
     client = _clients.get(key)
     if client is not None:
+        _clients.move_to_end(key)
         return client
 
     if settings.get("connection", "socket") == "tcp":
@@ -83,6 +90,13 @@ def _client(settings: dict[str, Any]) -> httpx.AsyncClient:
         client = httpx.AsyncClient(transport=transport, base_url="http://container", timeout=10)
 
     _clients[key] = client
+    _clients.move_to_end(key)
+    while len(_clients) > _MAX_CLIENTS:
+        _evicted_key, evicted = _clients.popitem(last=False)
+        # _client() only ever runs on the event loop (called from the async
+        # fetch_containers/test_connection below), so a loop is always
+        # running here to hand this off to.
+        asyncio.create_task(evicted.aclose())
     return client
 
 

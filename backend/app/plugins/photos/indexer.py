@@ -10,6 +10,7 @@ app.scheduler — rather than per request.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 
 from app.plugins.photos.plugin import PhotosPlugin
@@ -50,11 +51,18 @@ async def _run_scan(plugin: PhotosPlugin) -> None:
     generation = db.begin_photo_index_scan(plugin.id, user_id)
     position = 0
     try:
-        async for chunk in plugin._enumerate_photo_ids_chunks():
-            if not chunk:
-                continue
-            await asyncio.to_thread(db.upsert_photo_index_chunk, plugin.id, generation, chunk, position, user_id)
-            position += len(chunk)
+        # aclosing() ensures the enumeration generator (and, transitively,
+        # any generator it wraps — e.g. icloud_photos.iter_photo_chunks) is
+        # promptly, deterministically closed if this loop body raises
+        # (e.g. a `database is locked` error from upsert_photo_index_chunk),
+        # instead of being silently dropped and left to async-generator GC
+        # finalization at some later, unpredictable time.
+        async with contextlib.aclosing(plugin._enumerate_photo_ids_chunks()) as chunks:
+            async for chunk in chunks:
+                if not chunk:
+                    continue
+                await asyncio.to_thread(db.upsert_photo_index_chunk, plugin.id, generation, chunk, position, user_id)
+                position += len(chunk)
         await asyncio.to_thread(db.finish_photo_index_scan, plugin.id, generation, user_id)
         logger.info("Indexed %d photos for widget '%s' (user=%s)", position, plugin.id, user_id or "shared")
     except Exception as exc:
