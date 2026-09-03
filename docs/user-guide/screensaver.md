@@ -17,7 +17,7 @@ Navigate to **Settings → Your Settings → Screensaver**:
 | **Reading pause (seconds)** | How long fully revealed text holds still before advancing. | `4` seconds |
 | **Widget Selection** | Checkboxes to choose which enabled widgets participate in the rotation. | All eligible |
 
-Tap **Test screensaver** to instantly preview your settings without waiting for the idle timer.
+Tap **Test** next to any widget in the list to immediately preview that individual screensaver with your active animation and color settings, or tap **Test screensaver** to preview the entire rotation loop without waiting for the idle timer.
 
 ---
 

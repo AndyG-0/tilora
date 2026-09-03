@@ -9,7 +9,7 @@ export const screensaverSettings = writable<ScreensaverSettings | null>(null);
 // Lets Settings' "Test screensaver" button show the overlay immediately,
 // bypassing armIdleTimer()'s enabled/route checks entirely — useful for
 // previewing unsaved changes without waiting out the idle timeout.
-export const forceScreensaverPreview = writable(false);
+export const forceScreensaverPreview = writable<boolean | ScreensaverSettings>(false);
 
 export function loadScreensaverSettings() {
 	return api

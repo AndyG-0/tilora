@@ -102,7 +102,9 @@
 			"no_widgets_hint": "Füge zuerst Widgets zu deinem Dashboard hinzu, um sie hier einzuschließen.",
 			"save": "Bildschirmschoner-Einstellungen speichern",
 			"save_error": "Bildschirmschoner-Einstellungen konnten nicht gespeichert werden.",
-			"test": "Bildschirmschoner testen"
+			"test": "Bildschirmschoner testen",
+			"test_single": "Testen",
+			"test_widget_aria": "Bildschirmschoner für {name} testen"
 		},
 		"voice": {
 			"heading": "Stimme",

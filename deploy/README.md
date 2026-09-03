@@ -159,6 +159,19 @@ sudo systemctl status tilora-backend tilora-frontend
 journalctl -u tilora-backend -u tilora-frontend -f
 ```
 
+Both services log to stdout/stderr only — there's no log file of their own, and no
+rotation configured by this project. journald captures it and applies its own default
+size cap, which is usually fine but is worth checking on a small root filesystem (e.g. a
+Raspberry Pi's SD card):
+
+```bash
+journalctl --disk-usage
+```
+
+To set an explicit cap instead of relying on the default, add e.g. `SystemMaxUse=200M` to
+`/etc/systemd/journald.conf` (or a drop-in under `/etc/systemd/journald.conf.d/`) and
+restart with `sudo systemctl restart systemd-journald`.
+
 The installer intentionally does not install `ffmpeg`. Add it only for the
 HDHomeRun widget's `server_transcode` playback mode:
 

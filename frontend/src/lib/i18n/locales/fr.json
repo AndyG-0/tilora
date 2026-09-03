@@ -102,7 +102,9 @@
 			"no_widgets_hint": "Ajoutez d'abord des widgets à votre tableau de bord pour les inclure ici.",
 			"save": "Enregistrer les paramètres de l'économiseur d'écran",
 			"save_error": "Impossible d'enregistrer les paramètres de l'économiseur d'écran.",
-			"test": "Tester l'économiseur d'écran"
+			"test": "Tester l'économiseur d'écran",
+			"test_single": "Tester",
+			"test_widget_aria": "Tester l'économiseur d'écran pour {name}"
 		},
 		"voice": {
 			"heading": "Voix",

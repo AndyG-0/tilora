@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
@@ -91,13 +92,14 @@ from app.plugins.network_settings import ensure_network_integration_defaults, re
 from app.plugins.registry_types import PLUGIN_CLASSES_BY_TYPE
 from app.scheduler import (
     schedule_ai_widgets,
+    schedule_cache_sweep,
     schedule_package_refresh_widgets,
     schedule_photo_index_widgets,
     schedule_severe_weather_widgets,
     schedule_speedtest_widgets,
     scheduler,
 )
-from app.storage.db import init_db, list_widget_settings
+from app.storage.db import init_db, list_widget_settings, ping
 from app.update_check import check_for_update, schedule_update_check
 
 configure_logging()
@@ -138,6 +140,7 @@ async def lifespan(app: FastAPI):
     schedule_speedtest_widgets()
     schedule_severe_weather_widgets()
     schedule_package_refresh_widgets()
+    schedule_cache_sweep()
     schedule_update_check(scheduler)
     scheduler.start()
     await check_for_update()
@@ -214,4 +217,13 @@ app.include_router(reports_api.router)
 
 @app.get("/api/health")
 async def health():
+    # A real DB round-trip (not just "the process is alive") — see
+    # app.storage.db.ping — so a wedged shared thread pool (the class of bug
+    # that motivated this) actually flips the Docker/systemd healthcheck
+    # instead of staying green.
+    try:
+        await asyncio.wait_for(asyncio.to_thread(ping), timeout=2)
+    except Exception:
+        logger.exception("Health check DB ping failed")
+        raise HTTPException(status_code=503, detail="database unavailable") from None
     return {"status": "ok"}

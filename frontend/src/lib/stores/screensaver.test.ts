@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
+import type { ScreensaverSettings } from '$lib/api';
 
 const { getScreensaverSettings, updateScreensaverSettings } = vi.hoisted(() => ({
 	getScreensaverSettings: vi.fn(),
@@ -13,7 +14,7 @@ beforeEach(() => {
 	updateScreensaverSettings.mockReset();
 });
 
-const DEFAULTS = {
+const DEFAULTS: ScreensaverSettings = {
 	enabled: false,
 	idle_timeout_seconds: 300,
 	rotation_interval_seconds: 25,
@@ -21,6 +22,7 @@ const DEFAULTS = {
 	text_animation_style: 'marquee',
 	led_color: '#ff8a00',
 	text_pause_seconds: 8,
+	flipboard_pattern: 'top_to_bottom',
 };
 
 describe('screensaver store', () => {
@@ -66,13 +68,19 @@ describe('screensaver store', () => {
 		await expect(persistScreensaverSettings({ enabled: true })).rejects.toThrow('network error');
 	});
 
-	it('forceScreensaverPreview starts false and can be toggled', async () => {
+	it('forceScreensaverPreview starts false and can be set to boolean or settings object', async () => {
 		const { forceScreensaverPreview } = await import('./screensaver');
 
 		expect(get(forceScreensaverPreview)).toBe(false);
 
 		forceScreensaverPreview.set(true);
-
 		expect(get(forceScreensaverPreview)).toBe(true);
+
+		const customPreview = { ...DEFAULTS, widget_ids: ['w-test'] };
+		forceScreensaverPreview.set(customPreview);
+		expect(get(forceScreensaverPreview)).toEqual(customPreview);
+
+		forceScreensaverPreview.set(false);
+		expect(get(forceScreensaverPreview)).toBe(false);
 	});
 });

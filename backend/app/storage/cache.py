@@ -34,6 +34,19 @@ class TTLCache:
         for key in [k for k in self._store if k.startswith(prefix)]:
             del self._store[key]
 
+    def sweep_expired(self) -> int:
+        """Actively drop every entry past its TTL, regardless of whether
+        it's ever looked up again. `get()`'s lazy eviction alone leaves a
+        high-cardinality, looked-up-once key (a flight callsign, a free-text
+        geocode query) sitting in memory for the life of the process — this
+        is what actually bounds that. Returns the number of keys dropped.
+        """
+        now = time.monotonic()
+        expired = [key for key, (expires_at, _value) in self._store.items() if now > expires_at]
+        for key in expired:
+            del self._store[key]
+        return len(expired)
+
 
 cache = TTLCache()
 

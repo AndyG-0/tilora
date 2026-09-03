@@ -87,6 +87,15 @@ services:
     #     reports no driver, add LIBVA_DRIVER_NAME=iHD (Intel Gen8+),
     #     i965 (older Intel) or radeonsi (AMD) to the environment above.
     restart: unless-stopped
+    # The default json-file driver has no size cap on its own — an unbounded
+    # log volume (verbose logging, a long-running deployment) would otherwise
+    # grow this file forever. 10MB x 3 files caps it at 30MB total per
+    # container, rotating the oldest out automatically.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 30s
@@ -110,6 +119,11 @@ services:
       backend:
         condition: service_healthy
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s

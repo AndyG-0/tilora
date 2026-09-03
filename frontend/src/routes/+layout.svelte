@@ -18,6 +18,18 @@
 	import { reloadWidgets } from '$lib/stores/widgets';
 	import { pwaState, initPwa, applyUpdate, dismissUpdate } from '$lib/stores/pwa';
 	import Screensaver from '$lib/components/Screensaver.svelte';
+	import type { ScreensaverSettings } from '$lib/api';
+
+	const DEFAULT_PREVIEW_SETTINGS: ScreensaverSettings = {
+		enabled: true,
+		idle_timeout_seconds: 300,
+		rotation_interval_seconds: 25,
+		widget_ids: [],
+		text_animation_style: 'marquee',
+		led_color: '#ff8a00',
+		text_pause_seconds: 8,
+		flipboard_pattern: 'top_to_bottom',
+	};
 
 	let { children } = $props();
 
@@ -179,9 +191,13 @@
 			</div>
 		{/if}
 
-		{#if (idle || $forceScreensaverPreview) && $screensaverSettings}
+		{#if (idle && $screensaverSettings?.enabled) || $forceScreensaverPreview}
+			{@const activeSettings =
+				typeof $forceScreensaverPreview === 'object' && $forceScreensaverPreview !== null
+					? $forceScreensaverPreview
+					: ($screensaverSettings ?? DEFAULT_PREVIEW_SETTINGS)}
 			<Screensaver
-				settings={$screensaverSettings}
+				settings={activeSettings}
 				ondismiss={() => {
 					idle = false;
 					forceScreensaverPreview.set(false);

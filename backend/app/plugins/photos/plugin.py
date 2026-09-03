@@ -26,6 +26,7 @@ TODO.md.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -169,8 +170,16 @@ class PhotosPlugin(Plugin):
             username, password = creds.get("username"), creds.get("password")
             if not icloud_photos.is_configured(username, password):
                 return
-            async for chunk in icloud_photos.iter_photo_chunks(user_id, username, password, self.album_name):
-                yield [photo["id"] for photo in chunk]
+            # aclosing() here (not just at the _run_scan call site) matters:
+            # a bare `async for` never calls .aclose() on its iterable when
+            # abandoned, so without this, closing the *outer* generator
+            # (this one) promptly still wouldn't promptly close *this*
+            # inner iter_photo_chunks() generator — see its docstring.
+            async with contextlib.aclosing(
+                icloud_photos.iter_photo_chunks(user_id, username, password, self.album_name)
+            ) as chunks:
+                async for chunk in chunks:
+                    yield [photo["id"] for photo in chunk]
             return
         if self.provider == "immich":
             settings = self.config["settings"]

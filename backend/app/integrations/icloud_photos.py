@@ -27,6 +27,7 @@ call — reused across the auth check and every photo list/download.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
 import shutil
 from collections.abc import AsyncIterator
@@ -45,6 +46,20 @@ _SERVICE_CACHE_TTL_SECONDS = 30 * 60
 _PENDING_SERVICE_TTL_SECONDS = 10 * 60
 _PHOTO_LIST_CACHE_TTL_SECONDS = 5 * 60
 _DEFAULT_ALBUM = "All Photos"
+# Bounds how long the producer thread in iter_photo_chunks will wait for the
+# consumer to drain the queue before giving up and exiting on its own. If a
+# consumer abandons the `async for` over this generator without it being
+# aclose()'d (e.g. a DB error mid-loop in app.plugins.photos.indexer._run_scan),
+# nobody calls queue.get() again — without this bound, the producer thread
+# blocks in run_coroutine_threadsafe(...).result() *forever*, permanently
+# occupying one worker slot in asyncio's shared default ThreadPoolExecutor
+# (the same pool every asyncio.to_thread(db.*) call in this app uses). 30s is
+# comfortably above the ~10s worst case for a single *live* consumer
+# iteration (bounded by sqlite's busy_timeout, see app.storage.db._connect)
+# plus scheduling overhead, so a merely-slow-but-alive consumer never trips
+# it, while a truly abandoned one is bounded to roughly this long instead of
+# indefinitely.
+_QUEUE_PUT_TIMEOUT_SECONDS = 30
 
 
 def _service_cache_key(user_id: str) -> str:
@@ -245,6 +260,13 @@ async def iter_photo_chunks(
     performs blocking HTTP as it's pulled) via a producer thread feeding a
     small bounded queue, so at most a couple of chunks are ever in memory
     regardless of album size.
+
+    Callers MUST ensure this generator is promptly `aclose()`'d if abandoned
+    before exhaustion (e.g. via `contextlib.aclosing()`), not just dropped —
+    see app.plugins.photos.plugin._enumerate_photo_ids_chunks for the
+    required pattern. Even so, the producer thread's queue.put() calls are
+    independently bounded by `_QUEUE_PUT_TIMEOUT_SECONDS` so it can never
+    block forever regardless of when (or whether) aclose() runs.
     """
     service, _ = await _get_or_build_service(user_id, username, password)
     if service is None or service.requires_2fa:
@@ -254,13 +276,41 @@ async def iter_photo_chunks(
     queue: asyncio.Queue = asyncio.Queue(maxsize=2)
     sentinel = object()
 
+    def _put(item: Any) -> bool:
+        """Puts `item` onto `queue` from the producer thread, bounded so a
+        consumer that's gone away for good can't pin this thread (and its
+        shared default-executor slot) forever. Returns False if the item
+        couldn't be delivered within the timeout, in which case the caller
+        should stop producing.
+        """
+        future = asyncio.run_coroutine_threadsafe(queue.put(item), loop)
+        try:
+            future.result(timeout=_QUEUE_PUT_TIMEOUT_SECONDS)
+            return True
+        except concurrent.futures.TimeoutError:
+            # Safe from this thread: run_coroutine_threadsafe bridges `future`
+            # to the underlying queue.put() Task via asyncio's internal
+            # future-chaining, whose cancel-propagation already dispatches
+            # through loop.call_soon_threadsafe — cancelling `future` here
+            # correctly injects CancelledError into queue.put()'s await point
+            # on the loop thread and unblocks it.
+            future.cancel()
+            logger.warning(
+                "iCloud iter_photo_chunks producer for user %s timed out after %ss waiting for the "
+                "consumer to drain the queue — abandoning this scan.",
+                user_id,
+                _QUEUE_PUT_TIMEOUT_SECONDS,
+            )
+            return False
+
     def _produce() -> None:
         try:
             album = service.photos.albums.get(album_name)
             if album is not None:
                 for chunk in album.iter_chunks(chunk_size=chunk_size):
                     dicts = [_photo_dict(asset) for asset in chunk]
-                    asyncio.run_coroutine_threadsafe(queue.put(dicts), loop).result()
+                    if not _put(dicts):
+                        return
         except ICloudPyAPIResponseException as exc:
             logger.warning("iCloud API error in iter_photo_chunks for user %s: %s", user_id, exc)
             if _is_auth_error(exc):
@@ -268,7 +318,7 @@ async def iter_photo_chunks(
         except Exception as exc:
             logger.warning("iCloud iter_photo_chunks failed for user %s: %s", user_id, exc, exc_info=True)
         finally:
-            asyncio.run_coroutine_threadsafe(queue.put(sentinel), loop).result()
+            _put(sentinel)
 
     producer = asyncio.create_task(asyncio.to_thread(_produce))
     try:

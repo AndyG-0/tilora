@@ -102,7 +102,9 @@
 			"no_widgets_hint": "Agrega algunos widgets a tu panel primero para incluirlos aquí.",
 			"save": "Guardar ajustes del salvapantallas",
 			"save_error": "No se pudieron guardar los ajustes del salvapantallas.",
-			"test": "Probar salvapantallas"
+			"test": "Probar salvapantallas",
+			"test_single": "Probar",
+			"test_widget_aria": "Probar salvapantallas para {name}"
 		},
 		"voice": {
 			"heading": "Voz",
