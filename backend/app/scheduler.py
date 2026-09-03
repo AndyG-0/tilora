@@ -39,6 +39,11 @@ _SEVERE_WEATHER_ALERT_EXPIRES_MINUTES = 360
 # a slow interval rather than on every dashboard poll — see PackagesPlugin.
 _PACKAGE_REFRESH_INTERVAL_MINUTES = 90
 
+# Cheap enough (one in-memory dict scan) that more frequent sweeping isn't
+# warranted — this just bounds worst-case growth between the lazy,
+# lookup-triggered eviction TTLCache.get() already does.
+_CACHE_SWEEP_INTERVAL_MINUTES = 15
+
 
 async def _resolve_ai_widget_user(plugin_id: str) -> dict[str, Any] | None:
     custom_widgets = await asyncio.to_thread(db.list_custom_widgets)
@@ -266,6 +271,26 @@ def schedule_package_refresh_widgets() -> None:
     for plugin in registry.all():
         if isinstance(plugin, PackagesPlugin):
             schedule_package_refresh(plugin)
+
+
+def run_cache_sweep() -> None:
+    try:
+        dropped = cache.sweep_expired()
+        if dropped:
+            logger.info("Cache sweep dropped %d expired entr%s", dropped, "y" if dropped == 1 else "ies")
+    except Exception:
+        logger.exception("Cache sweep failed")
+
+
+def schedule_cache_sweep() -> None:
+    scheduler.add_job(
+        run_cache_sweep,
+        trigger=IntervalTrigger(minutes=_CACHE_SWEEP_INTERVAL_MINUTES),
+        id="cache-sweep",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
 
 
 def unschedule_widget(widget_id: str) -> None:

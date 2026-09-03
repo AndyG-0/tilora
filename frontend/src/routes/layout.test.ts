@@ -54,6 +54,7 @@ import Layout from './+layout.svelte';
 import { user, userLoaded } from '$lib/stores/user';
 import { needsSetup, setupStatusLoaded, setupStatusError } from '$lib/stores/setup';
 import { device } from '$lib/stores/device';
+import { forceScreensaverPreview } from '$lib/stores/screensaver';
 
 function emptyChildren() {
 	return createRawSnippet(() => ({ render: () => '<div data-testid="app-content"></div>' }));
@@ -131,5 +132,26 @@ describe('+layout.svelte', () => {
 		expect(screen.getByText('Could not reach the Tilora backend')).toBeInTheDocument();
 		expect(screen.queryByTestId('app-content')).not.toBeInTheDocument();
 		expect(goto).not.toHaveBeenCalled();
+	});
+
+	it('renders the screensaver overlay when forceScreensaverPreview contains a custom preview settings object', async () => {
+		setupStatus.mockResolvedValue({ needs_setup: false });
+		currentUser.mockResolvedValue({ id: 'u1', name: 'Alice', avatar: null, role: 'admin' });
+		forceScreensaverPreview.set({
+			enabled: true,
+			idle_timeout_seconds: 300,
+			rotation_interval_seconds: 25,
+			widget_ids: ['w1'],
+			text_animation_style: 'matrix',
+			led_color: '#00ff00',
+			text_pause_seconds: 5,
+			flipboard_pattern: 'random',
+		});
+
+		render(Layout, { props: { children: emptyChildren() } });
+		await flush();
+
+		expect(document.querySelector('.screensaver')).toBeInTheDocument();
+		forceScreensaverPreview.set(false);
 	});
 });

@@ -8,11 +8,12 @@ device.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import sqlite3
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -366,7 +367,31 @@ CREATE TABLE IF NOT EXISTS user_credentials (
 """
 
 
-def _connect() -> sqlite3.Connection:
+# How long a connection will wait on a lock held by another connection
+# (e.g. a concurrent write from a different, independently-scheduled
+# APScheduler job) before raising "database is locked", set explicitly via
+# sqlite's own busy-handler rather than left to sqlite3.connect()'s implicit
+# `timeout=5.0` default. Every call into this module already runs off the
+# event loop via `asyncio.to_thread`, so a connection blocked here only ties
+# up one thread-pool worker for a bounded span — it never stalls request
+# handling directly — so it's safe to wait longer than the 5s default in
+# exchange for turning more transient cross-job lock contention into a
+# short wait instead of an outright error (which several call sites — e.g.
+# the photo index scan's per-chunk write — don't otherwise retry).
+_BUSY_TIMEOUT_MS = 10_000
+
+
+@contextlib.contextmanager
+def _connect() -> Iterator[sqlite3.Connection]:
+    """Opens a connection for exactly the `with` block's duration.
+
+    `sqlite3.Connection` is itself usable as `with conn:`, but its
+    `__exit__` only commits/rolls back — it never closes the connection
+    (documented stdlib behavior). Every call site in this module already
+    writes `with _connect() as conn: ...` expecting
+    open + commit-or-rollback + close in one statement, so the fix belongs
+    here rather than at each of those sites.
+    """
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     # WAL lets reads (the common case here) proceed without waiting on a
@@ -377,7 +402,24 @@ def _connect() -> sqlite3.Connection:
     # means re-fetching from the source on next refresh, not data corruption.
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
-    return conn
+    conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
+    try:
+        yield conn
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def ping() -> None:
+    """Cheapest possible round-trip through `_connect()` — used by
+    /api/health to verify the DB (and, transitively, the shared
+    asyncio.to_thread pool nearly every DB call in this app runs on) is
+    actually responsive, not just that the process is alive."""
+    with _connect() as conn:
+        conn.execute("SELECT 1")
 
 
 def _upsert(conn: sqlite3.Connection, table: str, row: dict[str, Any], key_columns: tuple[str, ...]) -> None:

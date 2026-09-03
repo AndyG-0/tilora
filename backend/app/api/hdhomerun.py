@@ -473,7 +473,9 @@ async def handle_delete_recording_rule(widget_id: str, rule_id: str):
 
 
 @router.get("/{widget_id}/recording-stream")
-async def handle_stream_recording(widget_id: str, url: str, start: float | None = None, audio_index: int | None = None):
+async def handle_stream_recording(
+    widget_id: str, url: str, request: Request, start: float | None = None, audio_index: int | None = None
+):
     plugin = _get_plugin(widget_id)
     settings = plugin.config["settings"]
     target_url = hdhomerun_client.resolve_recording_url(settings, url)
@@ -551,7 +553,22 @@ async def handle_stream_recording(widget_id: str, url: str, start: float | None 
             try:
                 yield first_chunk
                 while True:
-                    chunk = await process.stdout.read(_STREAM_CHUNK_BYTES)
+                    # Same rationale as stream_channel.body(): actively poll
+                    # for client disconnect on a bounded read timeout instead
+                    # of relying solely on Starlette's cancel-on-disconnect,
+                    # which has proven unreliable in practice. Without this,
+                    # a dropped client leaves ffmpeg (and this transcode's
+                    # _ffmpeg_semaphore slot, capacity 2) running/held
+                    # indefinitely, since nothing else here can ever return
+                    # from process.stdout.read() or reach the `finally`.
+                    if await request.is_disconnected():
+                        break
+                    try:
+                        chunk = await asyncio.wait_for(
+                            process.stdout.read(_STREAM_CHUNK_BYTES), timeout=_DISCONNECT_POLL_INTERVAL_SECONDS
+                        )
+                    except TimeoutError:
+                        continue
                     if not chunk:
                         break
                     yield chunk

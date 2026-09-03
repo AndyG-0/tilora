@@ -535,7 +535,46 @@ describe('settings +page.svelte — screensaver test button', () => {
 
 		await fireEvent.click(button);
 
-		expect(get(forceScreensaverPreview)).toBe(true);
+		const previewState = get(forceScreensaverPreview);
+		expect(previewState).toBeTruthy();
+		if (typeof previewState === 'object' && previewState !== null) {
+			expect(previewState.widget_ids).toEqual(['w1']);
+		}
+	});
+
+	it('triggers forceScreensaverPreview for a single widget when its Test button is clicked', async () => {
+		widgets.set([
+			{
+				id: 'w1',
+				type: 'rss',
+				name: 'RSS News',
+				layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 },
+				tab: 'default',
+				refresh_interval_seconds: 60,
+			},
+			{
+				id: 'w2',
+				type: 'clock',
+				name: 'Living Room Clock',
+				layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 },
+				tab: 'default',
+				refresh_interval_seconds: 60,
+			},
+		]);
+		render(Page);
+
+		await fireEvent.click(await screen.findByLabelText('Enable on this device'));
+
+		const singleTestBtn = await screen.findByRole('button', { name: 'Test screensaver for Living Room Clock' });
+		expect(singleTestBtn).toBeInTheDocument();
+
+		await fireEvent.click(singleTestBtn);
+
+		const previewState = get(forceScreensaverPreview);
+		expect(typeof previewState).toBe('object');
+		if (typeof previewState === 'object' && previewState !== null) {
+			expect(previewState.widget_ids).toEqual(['w2']);
+		}
 	});
 
 	it('renders each eligible widget’s backend-provided name directly in the picker, unmodified', async () => {
@@ -1081,5 +1120,39 @@ describe('settings +page.svelte — TMDB and Discord sections', () => {
 		await fireEvent.click(clearBtn);
 
 		expect(updateSettings).toHaveBeenCalledWith({ discord_bot_token: '' });
+	});
+});
+
+describe('settings +page.svelte — responsive layout', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		user.set({ id: 'u1', name: 'Admin', role: 'admin', avatar: '🐱' });
+		settings.mockResolvedValue({ ...BASE_SETTINGS });
+		getPreferences.mockResolvedValue({ ...DEFAULT_PREFERENCES });
+		listHouseholdUsers.mockResolvedValue([{ id: 'u1', name: 'Admin', role: 'admin', avatar: '🐱' }]);
+		listUsers.mockResolvedValue([{ id: 'u1', name: 'Admin', role: 'admin', avatar: '🐱', has_pin: false }]);
+		listDevices.mockResolvedValue([]);
+		version.mockResolvedValue({
+			current_version: '0.1.0',
+			latest_version: null,
+			update_available: false,
+			release_url: null,
+			install_method: '',
+			update_running: false,
+		});
+		icloudCredentials.mockResolvedValue({ username: '', has_password: false });
+	});
+
+	it('renders settings groups with settings-grid container', async () => {
+		const { container } = render(Page);
+
+		await screen.findByText('Admin settings');
+		const grids = container.querySelectorAll('.settings-grid');
+		expect(grids.length).toBeGreaterThanOrEqual(2);
+
+		grids.forEach((grid) => {
+			const sections = grid.querySelectorAll('section');
+			expect(sections.length).toBeGreaterThan(0);
+		});
 	});
 });
