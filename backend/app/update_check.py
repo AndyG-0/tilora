@@ -29,6 +29,17 @@ VERSION_PATH = BACKEND_ROOT.parent / "VERSION"
 
 CURRENT_VERSION = VERSION_PATH.read_text().strip()
 
+# subprocess.run's own timeout= actually terminates the child process and
+# raises TimeoutExpired, unlike asyncio.wait_for around an already-blocking
+# call — that's what makes these real bounds rather than just giving up on
+# an already-permanently-stuck asyncio.to_thread worker (same shared pool as
+# every other to_thread call in the app; see icloud_photos.py for the fuller
+# writeup of that risk).
+_GIT_TIMEOUT_SECONDS = 60
+_GIT_MERGE_TIMEOUT_SECONDS = 30
+_BUILD_STEP_TIMEOUT_SECONDS = 300
+_RESTART_TIMEOUT_SECONDS = 30
+
 # Set to "native" by deploy/install.sh in backend/.env; absent (empty) on
 # Docker and manual setups.  Determines whether the "Update now" UI button
 # and /api/system/update endpoint are available.
@@ -109,12 +120,14 @@ async def run_update() -> None:
             ["git", "-C", str(INSTALL_DIR), "fetch", "--quiet", "origin", repository_ref],
             check=True,
             capture_output=True,
+            timeout=_GIT_TIMEOUT_SECONDS,
         )
         await asyncio.to_thread(
             subprocess.run,
             ["git", "-C", str(INSTALL_DIR), "merge", "--ff-only", f"origin/{repository_ref}"],
             check=True,
             capture_output=True,
+            timeout=_GIT_MERGE_TIMEOUT_SECONDS,
         )
 
         uv_bin = os.path.expanduser("~/.local/bin/uv")
@@ -126,6 +139,7 @@ async def run_update() -> None:
             check=True,
             capture_output=True,
             env=env,
+            timeout=_BUILD_STEP_TIMEOUT_SECONDS,
         )
 
         await asyncio.to_thread(
@@ -134,6 +148,7 @@ async def run_update() -> None:
             cwd=str(INSTALL_DIR / "frontend"),
             check=True,
             capture_output=True,
+            timeout=_BUILD_STEP_TIMEOUT_SECONDS,
         )
         await asyncio.to_thread(
             subprocess.run,
@@ -141,14 +156,19 @@ async def run_update() -> None:
             cwd=str(INSTALL_DIR / "frontend"),
             check=True,
             capture_output=True,
+            timeout=_BUILD_STEP_TIMEOUT_SECONDS,
         )
 
         logger.info("Build complete — restarting services via %s", restart_script)
-        # This kills the process; systemd brings it back up.
+        # This kills the process on success, so this await normally never
+        # returns; the timeout only guards against restart.sh itself hanging
+        # (e.g. a sudoers misconfiguration) instead of blocking a shared
+        # thread-pool worker forever.
         await asyncio.to_thread(
             subprocess.run,
             ["sudo", restart_script],
             check=True,
+            timeout=_RESTART_TIMEOUT_SECONDS,
         )
     except Exception:
         logger.exception("In-place update failed")

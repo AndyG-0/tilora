@@ -22,6 +22,12 @@ from app.update_check import CURRENT_VERSION
 _TOKEN_TTL_SECONDS = 12 * 60 * 60
 _DEVICE_NAME = "Tilora"
 
+# httpx's `read` timeout bounds the gap between reads/chunks, not total
+# stream duration, so this doesn't limit how long a video may play — only how
+# long a genuinely stalled upstream read is tolerated before the proxy gives
+# up instead of hanging indefinitely.
+_STREAM_READ_TIMEOUT_SECONDS = 60
+
 
 class JellyfinError(Exception):
     """Raised when a Jellyfin server can't be reached or rejects a request."""
@@ -344,7 +350,7 @@ async def open_video_stream(
     if range_header:
         headers["Range"] = range_header
 
-    client = httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=None, write=10, pool=10))
+    client = httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=_STREAM_READ_TIMEOUT_SECONDS, write=10, pool=10))
     request = client.build_request(
         "GET", f"{conn.base_url}/Videos/{item_id}/stream", headers=headers, params={"static": "true"}
     )
@@ -407,7 +413,7 @@ async def open_hls_resource(
     proxy rather than an open one.
     """
     conn = await resolve_connection(settings, widget_id)
-    client = httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=None, write=10, pool=10))
+    client = httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=_STREAM_READ_TIMEOUT_SECONDS, write=10, pool=10))
     request = client.build_request(
         "GET", f"{conn.base_url}{path}", headers=conn.headers, params=httpx.QueryParams(query)
     )

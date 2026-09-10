@@ -1,3 +1,4 @@
+from icloudpy.base import ICloudPySession
 from icloudpy.exceptions import ICloudPyAPIResponseException, ICloudPyFailedLoginException
 
 from app.integrations import icloud_photos
@@ -397,6 +398,36 @@ async def test_iter_photo_chunks_handles_421_and_invalidates_cache(monkeypatch):
 
     assert seen == []
     assert cache.get(icloud_photos._service_cache_key(USER_ID)) is None
+
+
+def test_icloud_session_request_is_patched_at_import_time():
+    assert getattr(ICloudPySession.request, "_tilora_patched", False) is True
+
+
+def test_icloud_session_request_defaults_to_bounded_timeout(monkeypatch):
+    captured: dict = {}
+
+    def _fake_original(self, method, url, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(icloud_photos, "_original_icloud_session_request", _fake_original)
+
+    ICloudPySession.request(object(), "GET", "http://example.com")
+
+    assert captured["timeout"] == (10, 30)
+
+
+def test_icloud_session_request_respects_caller_supplied_timeout(monkeypatch):
+    captured: dict = {}
+
+    def _fake_original(self, method, url, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(icloud_photos, "_original_icloud_session_request", _fake_original)
+
+    ICloudPySession.request(object(), "GET", "http://example.com", timeout=5)
+
+    assert captured["timeout"] == 5
 
 
 async def test_get_or_build_service_handles_api_response_exception(monkeypatch):
