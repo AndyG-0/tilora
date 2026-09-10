@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('$env/dynamic/public', () => ({ env: { PUBLIC_API_BASE_URL: 'http://api.test' } }));
 
-const { api, apiUrl } = await import('./api');
+const { api, apiUrl, describeFetchError } = await import('./api');
 
 describe('api', () => {
 	beforeEach(() => {
@@ -17,7 +17,10 @@ describe('api', () => {
 
 		const result = await api.listWidgets('wide');
 
-		expect(fetch).toHaveBeenCalledWith('http://api.test/api/widgets?breakpoint=wide', { credentials: 'include' });
+		expect(fetch).toHaveBeenCalledWith('http://api.test/api/widgets?breakpoint=wide', {
+			signal: expect.any(AbortSignal),
+			credentials: 'include',
+		});
 		expect(result).toEqual(widgets);
 	});
 
@@ -27,6 +30,7 @@ describe('api', () => {
 		const result = await api.widgetSummary('weather');
 
 		expect(fetch).toHaveBeenCalledWith('http://api.test/api/widgets/weather/summary', {
+			signal: expect.any(AbortSignal),
 			credentials: 'include',
 		});
 		expect(result).toEqual({ temp: 72 });
@@ -38,6 +42,7 @@ describe('api', () => {
 		await api.widgetDetail('ai-insights');
 
 		expect(fetch).toHaveBeenCalledWith('http://api.test/api/widgets/ai-insights/detail', {
+			signal: expect.any(AbortSignal),
 			credentials: 'include',
 		});
 	});
@@ -50,7 +55,10 @@ describe('api', () => {
 
 		const result = await api.themes();
 
-		expect(fetch).toHaveBeenCalledWith('http://api.test/api/theme', { credentials: 'include' });
+		expect(fetch).toHaveBeenCalledWith('http://api.test/api/theme', {
+			signal: expect.any(AbortSignal),
+			credentials: 'include',
+		});
 		expect(result).toEqual({ themes: [], default: 'dark' });
 	});
 
@@ -60,7 +68,10 @@ describe('api', () => {
 
 		const result = await api.tabs();
 
-		expect(fetch).toHaveBeenCalledWith('http://api.test/api/tabs', { credentials: 'include' });
+		expect(fetch).toHaveBeenCalledWith('http://api.test/api/tabs', {
+			signal: expect.any(AbortSignal),
+			credentials: 'include',
+		});
 		expect(result).toEqual(tabs);
 	});
 
@@ -73,6 +84,7 @@ describe('api', () => {
 		const result = await api.searchCities('Fort Worth');
 
 		expect(fetch).toHaveBeenCalledWith('http://api.test/api/weather/search?q=Fort%20Worth', {
+			signal: expect.any(AbortSignal),
 			credentials: 'include',
 		});
 		expect(result).toEqual(results);
@@ -85,6 +97,7 @@ describe('api', () => {
 		const result = await api.updateWidgetSettings('weather', updated);
 
 		expect(fetch).toHaveBeenCalledWith('http://api.test/api/widgets/weather/settings', {
+			signal: expect.any(AbortSignal),
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(updated),
@@ -100,6 +113,7 @@ describe('api', () => {
 		const response = await api.runAiWidget('ai-insights');
 
 		expect(fetch).toHaveBeenCalledWith('http://api.test/api/widgets/ai-insights/run', {
+			signal: expect.any(AbortSignal),
 			method: 'POST',
 			credentials: 'include',
 		});
@@ -118,7 +132,10 @@ describe('api', () => {
 
 		const result = await api.settings();
 
-		expect(fetch).toHaveBeenCalledWith('http://api.test/api/settings', { credentials: 'include' });
+		expect(fetch).toHaveBeenCalledWith('http://api.test/api/settings', {
+			signal: expect.any(AbortSignal),
+			credentials: 'include',
+		});
 		expect(result).toEqual(settings);
 	});
 
@@ -129,6 +146,7 @@ describe('api', () => {
 		await api.updateSettings(partial);
 
 		expect(fetch).toHaveBeenCalledWith('http://api.test/api/settings', {
+			signal: expect.any(AbortSignal),
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(partial),
@@ -147,7 +165,10 @@ describe('api', () => {
 
 		const result = await api.version();
 
-		expect(fetch).toHaveBeenCalledWith('http://api.test/api/version', { credentials: 'include' });
+		expect(fetch).toHaveBeenCalledWith('http://api.test/api/version', {
+			signal: expect.any(AbortSignal),
+			credentials: 'include',
+		});
 		expect(result).toEqual(info);
 	});
 
@@ -164,6 +185,7 @@ describe('api', () => {
 		const response = await api.registerDevice();
 
 		expect(fetch).toHaveBeenCalledWith('http://api.test/api/devices/register', {
+			signal: expect.any(AbortSignal),
 			method: 'POST',
 			credentials: 'include',
 		});
@@ -176,7 +198,10 @@ describe('api', () => {
 
 		const result = await api.currentDevice();
 
-		expect(fetch).toHaveBeenCalledWith('http://api.test/api/devices/me', { credentials: 'include' });
+		expect(fetch).toHaveBeenCalledWith('http://api.test/api/devices/me', {
+			signal: expect.any(AbortSignal),
+			credentials: 'include',
+		});
 		expect(result).toEqual(device);
 	});
 
@@ -187,6 +212,7 @@ describe('api', () => {
 		const result = await api.renameDevice('Kitchen Tablet');
 
 		expect(fetch).toHaveBeenCalledWith('http://api.test/api/devices/me', {
+			signal: expect.any(AbortSignal),
 			method: 'PATCH',
 			credentials: 'include',
 			headers: { 'Content-Type': 'application/json' },
@@ -201,7 +227,10 @@ describe('api', () => {
 
 		const result = await api.listDevices();
 
-		expect(fetch).toHaveBeenCalledWith('http://api.test/api/devices', { credentials: 'include' });
+		expect(fetch).toHaveBeenCalledWith('http://api.test/api/devices', {
+			signal: expect.any(AbortSignal),
+			credentials: 'include',
+		});
 		expect(result).toEqual(devices);
 	});
 
@@ -211,6 +240,7 @@ describe('api', () => {
 		await api.deleteDevice('dev1');
 
 		expect(fetch).toHaveBeenCalledWith('http://api.test/api/devices/dev1', {
+			signal: expect.any(AbortSignal),
 			method: 'DELETE',
 			credentials: 'include',
 		});
@@ -223,6 +253,7 @@ describe('api', () => {
 		await api.updateWidgetsLayout(widgets, 'narrow');
 
 		expect(fetch).toHaveBeenCalledWith('http://api.test/api/widgets/layout', {
+			signal: expect.any(AbortSignal),
 			method: 'PUT',
 			credentials: 'include',
 			headers: { 'Content-Type': 'application/json' },
@@ -236,7 +267,10 @@ describe('api', () => {
 
 		const result = await api.listUsers();
 
-		expect(fetch).toHaveBeenCalledWith('http://api.test/api/users', { credentials: 'include' });
+		expect(fetch).toHaveBeenCalledWith('http://api.test/api/users', {
+			signal: expect.any(AbortSignal),
+			credentials: 'include',
+		});
 		expect(result).toEqual(profiles);
 	});
 
@@ -247,6 +281,7 @@ describe('api', () => {
 		const result = await api.createUser('Alice');
 
 		expect(fetch).toHaveBeenCalledWith('http://api.test/api/users', {
+			signal: expect.any(AbortSignal),
 			method: 'POST',
 			credentials: 'include',
 			headers: { 'Content-Type': 'application/json' },
@@ -262,6 +297,7 @@ describe('api', () => {
 		await api.createUser('Alice', '🐱', '1234');
 
 		expect(fetch).toHaveBeenCalledWith('http://api.test/api/users', {
+			signal: expect.any(AbortSignal),
 			method: 'POST',
 			credentials: 'include',
 			headers: { 'Content-Type': 'application/json' },
@@ -276,6 +312,7 @@ describe('api', () => {
 		const result = await api.loginUser('u1');
 
 		expect(fetch).toHaveBeenCalledWith('http://api.test/api/users/u1/login', {
+			signal: expect.any(AbortSignal),
 			method: 'POST',
 			credentials: 'include',
 			headers: { 'Content-Type': 'application/json' },
@@ -291,6 +328,7 @@ describe('api', () => {
 		await api.loginUser('u1', '1234');
 
 		expect(fetch).toHaveBeenCalledWith('http://api.test/api/users/u1/login', {
+			signal: expect.any(AbortSignal),
 			method: 'POST',
 			credentials: 'include',
 			headers: { 'Content-Type': 'application/json' },
@@ -304,6 +342,7 @@ describe('api', () => {
 		await api.logoutUser();
 
 		expect(fetch).toHaveBeenCalledWith('http://api.test/api/users/logout', {
+			signal: expect.any(AbortSignal),
 			method: 'POST',
 			credentials: 'include',
 		});
@@ -315,7 +354,10 @@ describe('api', () => {
 
 		const result = await api.currentUser();
 
-		expect(fetch).toHaveBeenCalledWith('http://api.test/api/users/me', { credentials: 'include' });
+		expect(fetch).toHaveBeenCalledWith('http://api.test/api/users/me', {
+			signal: expect.any(AbortSignal),
+			credentials: 'include',
+		});
 		expect(result).toEqual(me);
 	});
 
@@ -326,6 +368,7 @@ describe('api', () => {
 		const result = await api.updateUser({ name: 'Alicia' });
 
 		expect(fetch).toHaveBeenCalledWith('http://api.test/api/users/me', {
+			signal: expect.any(AbortSignal),
 			method: 'PATCH',
 			credentials: 'include',
 			headers: { 'Content-Type': 'application/json' },
@@ -340,6 +383,7 @@ describe('api', () => {
 		await api.deleteUser();
 
 		expect(fetch).toHaveBeenCalledWith('http://api.test/api/users/me', {
+			signal: expect.any(AbortSignal),
 			method: 'DELETE',
 			credentials: 'include',
 		});
@@ -351,7 +395,10 @@ describe('api', () => {
 
 		const result = await api.getPreferences();
 
-		expect(fetch).toHaveBeenCalledWith('http://api.test/api/users/me/preferences', { credentials: 'include' });
+		expect(fetch).toHaveBeenCalledWith('http://api.test/api/users/me/preferences', {
+			signal: expect.any(AbortSignal),
+			credentials: 'include',
+		});
 		expect(result).toEqual(prefs);
 	});
 
@@ -362,6 +409,7 @@ describe('api', () => {
 		const result = await api.updatePreferences({ theme: 'sepia' });
 
 		expect(fetch).toHaveBeenCalledWith('http://api.test/api/users/me/preferences', {
+			signal: expect.any(AbortSignal),
 			method: 'PATCH',
 			credentials: 'include',
 			headers: { 'Content-Type': 'application/json' },
@@ -376,7 +424,10 @@ describe('api', () => {
 
 		const result = await api.ttsVoices();
 
-		expect(fetch).toHaveBeenCalledWith('http://api.test/api/tts/voices', { credentials: 'include' });
+		expect(fetch).toHaveBeenCalledWith('http://api.test/api/tts/voices', {
+			signal: expect.any(AbortSignal),
+			credentials: 'include',
+		});
 		expect(result).toEqual(voices);
 	});
 
@@ -387,6 +438,7 @@ describe('api', () => {
 		const result = await api.synthesizeSpeech('openai', 'nova', 'hello there');
 
 		expect(fetch).toHaveBeenCalledWith('http://api.test/api/tts/synthesize', {
+			signal: expect.any(AbortSignal),
 			method: 'POST',
 			credentials: 'include',
 			headers: { 'Content-Type': 'application/json' },
@@ -424,7 +476,10 @@ describe('api', () => {
 
 		const result = await api.assistantConfig();
 
-		expect(fetch).toHaveBeenCalledWith('http://api.test/api/assistant/config', { credentials: 'include' });
+		expect(fetch).toHaveBeenCalledWith('http://api.test/api/assistant/config', {
+			signal: expect.any(AbortSignal),
+			credentials: 'include',
+		});
 		expect(result).toEqual(config);
 	});
 
@@ -435,6 +490,7 @@ describe('api', () => {
 		const result = await api.createSetupAdmin('Alice', 'cat.png', '1234', false);
 
 		expect(fetch).toHaveBeenCalledWith('http://api.test/api/setup/admin', {
+			signal: expect.any(AbortSignal),
 			method: 'POST',
 			credentials: 'include',
 			headers: { 'Content-Type': 'application/json' },
@@ -445,5 +501,27 @@ describe('api', () => {
 
 	it('apiUrl prepends configured base URL or falls back to relative path', () => {
 		expect(apiUrl('/api/widgets')).toBe('http://api.test/api/widgets');
+	});
+});
+
+describe('describeFetchError', () => {
+	it('classifies a TypeError (fetch never reached the server) as network', () => {
+		expect(describeFetchError(new TypeError('Failed to fetch'))).toBe('network');
+	});
+
+	it('classifies an AbortSignal.timeout() rejection (TimeoutError) as network', () => {
+		expect(describeFetchError(new DOMException('signal timed out', 'TimeoutError'))).toBe('network');
+	});
+
+	it('classifies a manual AbortController abort (AbortError) as network', () => {
+		expect(describeFetchError(new DOMException('The user aborted a request.', 'AbortError'))).toBe('network');
+	});
+
+	it('classifies any other DOMException as server', () => {
+		expect(describeFetchError(new DOMException('not allowed', 'NotAllowedError'))).toBe('server');
+	});
+
+	it('classifies a plain Error as server', () => {
+		expect(describeFetchError(new Error('boom'))).toBe('server');
 	});
 });

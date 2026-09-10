@@ -1103,7 +1103,15 @@ export interface HouseholdUser {
 export type FetchErrorKind = 'network' | 'server';
 
 export function describeFetchError(error: unknown): FetchErrorKind {
-	return error instanceof TypeError ? 'network' : 'server';
+	if (error instanceof TypeError) return 'network';
+	// AbortSignal.timeout() rejects with a DOMException named 'TimeoutError';
+	// a manually-triggered AbortController.abort() (not currently used
+	// anywhere in this app) would be 'AbortError' — treat both as
+	// unreachable-backend rather than a valid-but-failed server response.
+	if (error instanceof DOMException && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+		return 'network';
+	}
+	return 'server';
 }
 
 // Carries the HTTP status alongside the message so callers can distinguish
@@ -1124,11 +1132,23 @@ export function apiUrl(path: string): string {
 	return `${base}${path}`;
 }
 
+// Default bound on how long any single API call may hang before it's given
+// up on and surfaces as a network-kind error, so a stalled backend request
+// (e.g. one queued behind a stuck server-side thread pool slot) doesn't
+// leave a tile or the screensaver waiting forever. Comfortably above what a
+// normal round trip needs, since nearly every backend integration already
+// enforces its own 10-20s timeout server-side.
+const DEFAULT_TIMEOUT_MS = 20_000;
+
 // `credentials: 'include'` on every request so the device/session cookies
 // (set by the backend as httponly, so JS can't attach them manually) round-trip
 // even when the frontend and backend are on different ports/origins.
-async function getJSON<T>(path: string): Promise<T> {
-	const response = await fetch(apiUrl(path), { credentials: 'include' });
+async function _fetchWithTimeout(path: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+	return fetch(apiUrl(path), { ...init, signal: AbortSignal.timeout(timeoutMs) });
+}
+
+async function getJSON<T>(path: string, timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<T> {
+	const response = await _fetchWithTimeout(path, { credentials: 'include' }, timeoutMs);
 	if (!response.ok) {
 		const message = await _errorMessage(path, response);
 		logger.warn(`Request to ${path} failed: ${response.status}`);
@@ -1137,13 +1157,21 @@ async function getJSON<T>(path: string): Promise<T> {
 	return response.json();
 }
 
-async function patchJSON<T>(path: string, body: Record<string, unknown>): Promise<T> {
-	const response = await fetch(apiUrl(path), {
-		method: 'PATCH',
-		credentials: 'include',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body),
-	});
+async function patchJSON<T>(
+	path: string,
+	body: Record<string, unknown>,
+	timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<T> {
+	const response = await _fetchWithTimeout(
+		path,
+		{
+			method: 'PATCH',
+			credentials: 'include',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body),
+		},
+		timeoutMs,
+	);
 	if (!response.ok) {
 		const message = await _errorMessage(path, response);
 		logger.warn(`Request to ${path} failed: ${response.status}`);
@@ -1175,15 +1203,23 @@ async function _errorMessage(path: string, response: Response): Promise<string> 
 	return `Request to ${path} failed: ${response.status}`;
 }
 
-async function postJSON<T>(path: string, body?: Record<string, unknown>): Promise<T> {
-	const response = await fetch(apiUrl(path), {
-		method: 'POST',
-		credentials: 'include',
-		...(body !== undefined && {
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(body),
-		}),
-	});
+async function postJSON<T>(
+	path: string,
+	body?: Record<string, unknown>,
+	timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<T> {
+	const response = await _fetchWithTimeout(
+		path,
+		{
+			method: 'POST',
+			credentials: 'include',
+			...(body !== undefined && {
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body),
+			}),
+		},
+		timeoutMs,
+	);
 	if (!response.ok) {
 		const message = await _errorMessage(path, response);
 		logger.warn(`Request to ${path} failed: ${response.status}`);
@@ -1192,12 +1228,16 @@ async function postJSON<T>(path: string, body?: Record<string, unknown>): Promis
 	return response.json();
 }
 
-async function postFormData<T>(path: string, formData: FormData): Promise<T> {
-	const response = await fetch(apiUrl(path), {
-		method: 'POST',
-		credentials: 'include',
-		body: formData,
-	});
+async function postFormData<T>(path: string, formData: FormData, timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<T> {
+	const response = await _fetchWithTimeout(
+		path,
+		{
+			method: 'POST',
+			credentials: 'include',
+			body: formData,
+		},
+		timeoutMs,
+	);
 	if (!response.ok) {
 		const message = await _errorMessage(path, response);
 		logger.warn(`Request to ${path} failed: ${response.status}`);
@@ -1209,13 +1249,21 @@ async function postFormData<T>(path: string, formData: FormData): Promise<T> {
 // Like postJSON, but for an endpoint that returns raw audio bytes rather
 // than JSON (/api/tts/synthesize) — used to fetch cloud/Piper speech audio
 // for playback via an <audio> element.
-async function postForBlob(path: string, body: Record<string, unknown>): Promise<Blob> {
-	const response = await fetch(apiUrl(path), {
-		method: 'POST',
-		credentials: 'include',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body),
-	});
+async function postForBlob(
+	path: string,
+	body: Record<string, unknown>,
+	timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<Blob> {
+	const response = await _fetchWithTimeout(
+		path,
+		{
+			method: 'POST',
+			credentials: 'include',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body),
+		},
+		timeoutMs,
+	);
 	if (!response.ok) {
 		logger.warn(`Request to ${path} failed: ${response.status}`);
 		throw new Error(`Request to ${path} failed: ${response.status}`);
@@ -1223,11 +1271,15 @@ async function postForBlob(path: string, body: Record<string, unknown>): Promise
 	return response.blob();
 }
 
-async function deleteJSON<T>(path: string): Promise<T> {
-	const response = await fetch(apiUrl(path), {
-		method: 'DELETE',
-		credentials: 'include',
-	});
+async function deleteJSON<T>(path: string, timeoutMs: number = DEFAULT_TIMEOUT_MS): Promise<T> {
+	const response = await _fetchWithTimeout(
+		path,
+		{
+			method: 'DELETE',
+			credentials: 'include',
+		},
+		timeoutMs,
+	);
 	if (!response.ok) {
 		const message = await _errorMessage(path, response);
 		logger.warn(`Request to ${path} failed: ${response.status}`);
@@ -1236,13 +1288,21 @@ async function deleteJSON<T>(path: string): Promise<T> {
 	return response.json();
 }
 
-async function putJSON<T>(path: string, body: Record<string, unknown>): Promise<T> {
-	const response = await fetch(apiUrl(path), {
-		method: 'PUT',
-		credentials: 'include',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body),
-	});
+async function putJSON<T>(
+	path: string,
+	body: Record<string, unknown>,
+	timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<T> {
+	const response = await _fetchWithTimeout(
+		path,
+		{
+			method: 'PUT',
+			credentials: 'include',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body),
+		},
+		timeoutMs,
+	);
 	if (!response.ok) {
 		logger.warn(`Request to ${path} failed: ${response.status}`);
 		throw new Error(`Request to ${path} failed: ${response.status}`);
@@ -1333,11 +1393,11 @@ export const api = {
 		postJSON<{
 			text: string;
 			action: { widget_id: string; panel: string | null; destination?: string; origin?: string } | null;
-		}>('/api/assistant/ask', { text }),
+		}>('/api/assistant/ask', { text }, 60_000),
 	transcribeAudio: (audioBlob: Blob, filename = 'audio.webm') => {
 		const fd = new FormData();
 		fd.append('file', audioBlob, filename);
-		return postFormData<{ text: string }>('/api/assistant/transcribe', fd);
+		return postFormData<{ text: string }>('/api/assistant/transcribe', fd, 60_000);
 	},
 	assistantConfig: () => getJSON<AssistantConfig>('/api/assistant/config'),
 	assistantTopics: () => getJSON<{ id: string; name: string }[]>('/api/assistant/topics'),
@@ -1546,7 +1606,7 @@ export const api = {
 		patchJSON<ScreensaverSettings>('/api/screensaver/settings', partial),
 	ttsVoices: () => getJSON<TTSVoice[]>('/api/tts/voices'),
 	synthesizeSpeech: (provider: 'openai' | 'piper', voiceId: string, text: string) =>
-		postForBlob('/api/tts/synthesize', { provider, voice_id: voiceId, text }),
+		postForBlob('/api/tts/synthesize', { provider, voice_id: voiceId, text }, 45_000),
 	setupStatus: () => getJSON<SetupStatus>('/api/setup/status'),
 	createSetupAdmin: (name: string, avatar?: string, pin?: string, includeStarterTiles: boolean = true) =>
 		postJSON<CurrentUser>('/api/setup/admin', {

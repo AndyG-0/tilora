@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import subprocess
+from unittest.mock import Mock
+
 import httpx
 import pytest
 import respx
 
 from app import update_check
 from app.config import settings
-from app.update_check import check_for_update, get_update_status
+from app.update_check import check_for_update, get_update_status, run_update
 
 RELEASE_URL = f"https://api.github.com/repos/{settings.github_repo}/releases/latest"
 
@@ -96,6 +99,52 @@ async def test_polls_the_configured_github_repo(monkeypatch):
     await check_for_update()
 
     assert route.called
+
+
+@pytest.fixture(autouse=True)
+def _reset_update_state():
+    update_check._update_state["running"] = False
+    update_check._update_state["error"] = None
+    yield
+    update_check._update_state["running"] = False
+    update_check._update_state["error"] = None
+
+
+async def test_run_update_passes_a_timeout_to_every_subprocess_call(monkeypatch):
+    calls = []
+
+    def fake_run(*args, **kwargs):
+        calls.append((args, kwargs))
+        return Mock(returncode=0)
+
+    monkeypatch.setattr(update_check.subprocess, "run", fake_run)
+
+    await run_update()
+
+    assert len(calls) == 6
+    timeouts = [kwargs["timeout"] for _, kwargs in calls]
+    assert timeouts == [
+        update_check._GIT_TIMEOUT_SECONDS,
+        update_check._GIT_MERGE_TIMEOUT_SECONDS,
+        update_check._BUILD_STEP_TIMEOUT_SECONDS,
+        update_check._BUILD_STEP_TIMEOUT_SECONDS,
+        update_check._BUILD_STEP_TIMEOUT_SECONDS,
+        update_check._RESTART_TIMEOUT_SECONDS,
+    ]
+    assert update_check._update_state["error"] is None
+    assert update_check._update_state["running"] is False
+
+
+async def test_run_update_handles_a_stalled_step_timing_out(monkeypatch):
+    def fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs.get("timeout", 0))
+
+    monkeypatch.setattr(update_check.subprocess, "run", fake_run)
+
+    await run_update()
+
+    assert update_check._update_state["error"] == "Update failed — check the service logs for details."
+    assert update_check._update_state["running"] is False
 
 
 def test_get_update_status_includes_install_method(monkeypatch):

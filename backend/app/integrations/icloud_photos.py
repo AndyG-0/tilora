@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import functools
 import logging
 import shutil
 from collections.abc import AsyncIterator
@@ -35,12 +36,42 @@ from pathlib import Path
 from typing import Any
 
 from icloudpy import ICloudPyService
+from icloudpy.base import ICloudPySession
 from icloudpy.exceptions import ICloudPyAPIResponseException, ICloudPyException, ICloudPyFailedLoginException
 
 from app.config import ICLOUD_SESSION_DIR
 from app.storage.cache import cache
 
 logger = logging.getLogger(__name__)
+
+# icloudpy's ICloudPySession (a requests.Session subclass) never passes a
+# `timeout=` to the underlying requests call anywhere in the package — a
+# stalled Apple server that accepts a TCP connection but never responds
+# blocks the calling thread forever. Every call in this module runs via
+# asyncio.to_thread on the process-wide shared default executor, so one such
+# hang permanently pins a pool slot every other asyncio.to_thread(...) call in
+# the app depends on (including unrelated DB lookups in app.auth, run on
+# every request) — this is the same class of bug already fixed for
+# caldav.DAVClient (see caldav_client.py) and speedtest.Speedtest (see
+# speedtest_runner.py), just without a constructor-level timeout= to lean on.
+#
+# ICloudPyService.__init__ calls self.authenticate() immediately after
+# constructing self.session = ICloudPySession(self) — the first network call
+# happens *during construction*, before _build_service() below ever gets to
+# touch the returned instance. Patching the *class* here, once, at import
+# time is the only way to cover that first call along with every later one.
+_ICLOUD_REQUEST_TIMEOUT = (10, 30)  # (connect, read) seconds
+
+if not getattr(ICloudPySession.request, "_tilora_patched", False):
+    _original_icloud_session_request = ICloudPySession.request
+
+    @functools.wraps(_original_icloud_session_request)
+    def _icloud_session_request_with_timeout(self, method, url, **kwargs):
+        kwargs.setdefault("timeout", _ICLOUD_REQUEST_TIMEOUT)
+        return _original_icloud_session_request(self, method, url, **kwargs)
+
+    _icloud_session_request_with_timeout._tilora_patched = True
+    ICloudPySession.request = _icloud_session_request_with_timeout
 
 _SERVICE_CACHE_TTL_SECONDS = 30 * 60
 _PENDING_SERVICE_TTL_SECONDS = 10 * 60
