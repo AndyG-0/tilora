@@ -101,3 +101,68 @@ describe('WordyScreensaver — rss', () => {
 		expect(container.querySelector('.dots')?.textContent).toBe('No headlines yet.');
 	});
 });
+
+describe('WordyScreensaver — sports', () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+		localStorage.clear();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('renders games from todays_games/trending/upcoming_games (real SportsDetail shape, no teams[].games)', () => {
+		const data = {
+			configured: true,
+			teams: [{ league: 'mlb', league_label: 'MLB', team: 'NYY', team_name: 'Yankees' }],
+			todays_games: [
+				{
+					id: '1',
+					league: 'mlb',
+					league_label: 'MLB',
+					team: 'NYY',
+					date: null,
+					state: 'in',
+					completed: false,
+					status_detail: 'Q3 7:45',
+					home_team: 'Red Sox',
+					home_abbreviation: 'BOS',
+					away_team: 'Yankees',
+					away_abbreviation: 'NYY',
+					home_score: '2',
+					away_score: '4',
+					broadcasts: [],
+					broadcast_links: [],
+					venue: null,
+					is_home: false,
+					opponent: 'BOS',
+				},
+			],
+			trending: [],
+			upcoming_games: [],
+			trending_leagues: [],
+		};
+		const { container } = render(WordyScreensaver, {
+			props: { id: 'test', type: 'sports', data, animationStyle: 'led_dots' },
+		});
+
+		expect(container.querySelector('.dots')?.textContent).toBe('NYY 4-2 @ BOS — Q3 7:45');
+	});
+
+	it('shows a placeholder when there are no games scheduled', () => {
+		const data = {
+			configured: true,
+			teams: [],
+			todays_games: [],
+			trending: [],
+			upcoming_games: [],
+			trending_leagues: [],
+		};
+		const { container } = render(WordyScreensaver, {
+			props: { id: 'test', type: 'sports', data, animationStyle: 'led_dots' },
+		});
+
+		expect(container.querySelector('.dots')?.textContent).toBe('No games scheduled.');
+	});
+});

@@ -26,10 +26,6 @@
 		date: string | null;
 	}
 
-	interface SportsTeamDetail {
-		games: SportsGame[];
-	}
-
 	interface DiscordMessage {
 		author: string;
 		content: string;
@@ -72,9 +68,12 @@
 			return items.flatMap((item) => toLines(item.source ? `${item.title} — ${item.source}` : item.title));
 		}
 		if (type === 'sports') {
-			const teams = (data as { teams?: SportsTeamDetail[] })?.teams ?? [];
-			const trending = (data as { trending?: SportsGame[] })?.trending ?? [];
-			const games = [...teams.flatMap((t) => t.games), ...trending];
+			const detail = data as {
+				todays_games?: SportsGame[];
+				upcoming_games?: SportsGame[];
+				trending?: SportsGame[];
+			};
+			const games = [...(detail?.todays_games ?? []), ...(detail?.trending ?? []), ...(detail?.upcoming_games ?? [])];
 			if (games.length === 0) return [[{ text: $_('sports.screensaver.no_games') }]];
 			return games.slice(0, 20).flatMap((game) => toLines(formatGame(game)));
 		}
