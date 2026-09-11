@@ -1,6 +1,6 @@
 [project]
 name = "tilora-cli"
-version = "0.15.3"
+version = "0.15.4"
 description = "Management CLI for a native Tilora installation"
 readme = "README.md"
 license = "MIT"
