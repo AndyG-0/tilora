@@ -81,6 +81,17 @@ def test_session_dir_rejects_a_path_traversal_user_id(tmp_path, monkeypatch):
         raise AssertionError("expected a ValueError for a path-traversal user_id")
 
 
+def test_session_dir_rejects_a_user_id_with_disallowed_characters(tmp_path, monkeypatch):
+    monkeypatch.setattr(icloud_photos, "ICLOUD_SESSION_DIR", tmp_path)
+
+    try:
+        icloud_photos._session_dir("alice; rm -rf /")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected a ValueError for a user_id with disallowed characters")
+
+
 def test_session_dir_accepts_a_normal_user_id(tmp_path, monkeypatch):
     monkeypatch.setattr(icloud_photos, "ICLOUD_SESSION_DIR", tmp_path)
 

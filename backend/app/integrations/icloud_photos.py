@@ -30,6 +30,7 @@ import asyncio
 import concurrent.futures
 import functools
 import logging
+import re
 import shutil
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -105,7 +106,21 @@ def _photo_list_cache_key(user_id: str) -> str:
     return f"icloud_photos:list:{user_id}"
 
 
+# Every caller passes `user["id"]` straight from `get_current_user` — always
+# a server-generated `uuid4().hex` (see app.api.users.create_profile), never
+# text a client can choose the content of — but validate the charset before
+# it ever touches a path expression anyway, rather than only after the fact
+# via the resolve()+is_relative_to() containment check below: that check
+# still matters as defense in depth against a symlink planted at
+# `ICLOUD_SESSION_DIR/<user_id>` (resolve() would otherwise follow it), but
+# on its own it lets tainted data reach a filesystem-touching call
+# (`.resolve()`) before being rejected.
+_USER_ID_FORMAT = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
 def _session_dir(user_id: str) -> Path:
+    if not _USER_ID_FORMAT.fullmatch(user_id):
+        raise ValueError(f"Invalid user_id: {user_id!r}")
     session_dir = (ICLOUD_SESSION_DIR / user_id).resolve()
     if not session_dir.is_relative_to(ICLOUD_SESSION_DIR.resolve()):
         raise ValueError(f"Invalid user_id: {user_id!r}")
