@@ -537,3 +537,24 @@ async def test_raises_when_command_fails(monkeypatch):
 
     with pytest.raises(asus_router_client.AsusRouterError, match="Could not read status"):
         await asus_router_client.test_connection(SETTINGS, "test-widget")
+
+
+async def test_connect_error_does_not_leak_the_raw_os_error_text(monkeypatch):
+    fake = _fake_connect(connect_error=OSError("[Errno 61] Connection refused to 10.9.8.7:22"))
+    monkeypatch.setattr(asyncssh, "connect", fake)
+
+    with pytest.raises(asus_router_client.AsusRouterError) as exc_info:
+        await asus_router_client.test_connection(SETTINGS, "test-widget")
+
+    assert "10.9.8.7" not in str(exc_info.value)
+    assert "Errno" not in str(exc_info.value)
+
+
+async def test_run_error_does_not_leak_the_raw_asyncssh_error_text(monkeypatch):
+    fake = _fake_connect(stdout="", run_error=asyncssh.Error(0, "internal detail: session id abc123"))
+    monkeypatch.setattr(asyncssh, "connect", fake)
+
+    with pytest.raises(asus_router_client.AsusRouterError) as exc_info:
+        await asus_router_client.test_connection(SETTINGS, "test-widget")
+
+    assert "abc123" not in str(exc_info.value)

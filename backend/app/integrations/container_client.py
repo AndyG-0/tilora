@@ -30,10 +30,13 @@ call per container.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections import OrderedDict
 from typing import Any
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_SOCKET_PATH = "/var/run/docker.sock"
 _DEFAULT_TCP_PORT = 2375
@@ -122,7 +125,8 @@ async def fetch_containers(settings: dict[str, Any]) -> list[dict[str, Any]]:
     try:
         response = await client.get("/containers/json", params={"all": "true"})
     except httpx.HTTPError as exc:
-        raise ContainerError(f"Could not reach the container API: {exc}") from exc
+        logger.warning("Container API request failed: %s", exc)
+        raise ContainerError("Could not reach the container API") from exc
 
     if response.status_code >= 400:
         raise ContainerError(f"Container API request failed (HTTP {response.status_code}).")
@@ -130,7 +134,8 @@ async def fetch_containers(settings: dict[str, Any]) -> list[dict[str, Any]]:
     try:
         data = response.json()
     except ValueError as exc:
-        raise ContainerError(f"Unexpected (non-JSON) response from the container API: {exc}") from exc
+        logger.warning("Unexpected (non-JSON) response from the container API: %s", exc)
+        raise ContainerError("Unexpected (non-JSON) response from the container API") from exc
     if not isinstance(data, list):
         raise ContainerError("Unexpected response shape from the container API.")
 

@@ -14,12 +14,15 @@ retry-once-after-reauth signal, mirroring the 401-triggers-reauth shape of
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
 
 from app.storage.cache import cache
+
+logger = logging.getLogger(__name__)
 
 _SESSION_TTL_SECONDS = 1800
 
@@ -57,7 +60,8 @@ async def _authenticate(base_url: str, widget_id: str, username: str, password: 
             headers={"Referer": base_url},
         )
     except httpx.HTTPError as exc:
-        raise QBittorrentError(f"Could not reach the qBittorrent server: {exc}") from exc
+        logger.warning("qBittorrent login request failed: %s", exc)
+        raise QBittorrentError("Could not reach the qBittorrent server") from exc
 
     if response.status_code == 403:
         raise QBittorrentError("qBittorrent has temporarily banned this IP after too many failed logins.")
@@ -116,7 +120,8 @@ async def _request(
     try:
         response = await send(session)
     except httpx.HTTPError as exc:
-        raise QBittorrentError(f"Could not reach the qBittorrent server: {exc}") from exc
+        logger.warning("qBittorrent request failed: %s", exc)
+        raise QBittorrentError("Could not reach the qBittorrent server") from exc
 
     if response.status_code == 403:
         # The cached session expired/was revoked server-side — re-auth once
@@ -125,7 +130,8 @@ async def _request(
         try:
             response = await send(session)
         except httpx.HTTPError as exc:
-            raise QBittorrentError(f"Could not reach the qBittorrent server: {exc}") from exc
+            logger.warning("qBittorrent request failed after re-auth: %s", exc)
+            raise QBittorrentError("Could not reach the qBittorrent server") from exc
 
     if response.status_code >= 400:
         raise QBittorrentError(f"qBittorrent request failed (HTTP {response.status_code}).")

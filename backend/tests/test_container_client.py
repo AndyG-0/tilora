@@ -84,6 +84,19 @@ async def test_fetch_containers_raises_on_connect_error():
 
 
 @respx.mock
+async def test_fetch_containers_error_does_not_leak_the_raw_connection_exception():
+    respx.get("http://docker.local:2375/containers/json").mock(
+        side_effect=httpx.ConnectError("[Errno 61] Connection refused to 10.9.8.7:2375")
+    )
+
+    with pytest.raises(container_client.ContainerError) as exc_info:
+        await container_client.fetch_containers(TCP_SETTINGS)
+
+    assert "10.9.8.7" not in str(exc_info.value)
+    assert "Errno" not in str(exc_info.value)
+
+
+@respx.mock
 async def test_fetch_containers_raises_on_server_error():
     respx.get("http://docker.local:2375/containers/json").mock(return_value=httpx.Response(500))
 

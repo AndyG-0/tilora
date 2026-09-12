@@ -63,6 +63,19 @@ async def test_authenticate_raises_when_session_invalid():
 
 
 @respx.mock
+async def test_authenticate_error_does_not_leak_the_raw_connection_exception():
+    respx.post("http://pi.local:80/api/auth").mock(
+        side_effect=httpx.ConnectError("[Errno 61] Connection refused to 10.9.8.7:80")
+    )
+
+    with pytest.raises(pihole_client.PiholeError) as exc_info:
+        await pihole_client._resolve_session(SETTINGS, "w5")
+
+    assert "10.9.8.7" not in str(exc_info.value)
+    assert "Errno" not in str(exc_info.value)
+
+
+@respx.mock
 async def test_test_connection_returns_core_version():
     respx.post("http://pi.local:80/api/auth").mock(return_value=httpx.Response(200, json=AUTH_OK))
     respx.get("http://pi.local:80/api/info/version").mock(

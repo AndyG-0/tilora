@@ -18,9 +18,21 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import math
+import re
 from pathlib import Path
 
 from app.config import HDHOMERUN_MEDIA_CACHE_DIR
+
+# `recording_id` is a client-supplied query param (see app/api/hdhomerun.py)
+# interpolated directly into cache filenames below - restrict it to a safe,
+# separator-free charset so it can never escape HDHOMERUN_MEDIA_CACHE_DIR via
+# `..`/`/` traversal, regardless of what the DVR's own id format looks like.
+_SAFE_RECORDING_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+
+def _is_safe_recording_id(recording_id: str) -> bool:
+    return bool(_SAFE_RECORDING_ID.fullmatch(recording_id)) and ".." not in recording_id
+
 
 # Caption extraction decodes the whole file (no way to sample a prefix like
 # the ffprobe detection pass does, since we don't know where in the
@@ -86,6 +98,9 @@ async def generate_captions_vtt(url: str, recording_id: str) -> Path | None:
     effectively empty subtitle stream), so a missing/empty result is
     treated as "no captions" rather than surfaced as an error.
     """
+    if not _is_safe_recording_id(recording_id):
+        return None
+
     cache_path = _cache_dir() / f"{recording_id}.vtt"
     if cache_path.exists():
         return cache_path if cache_path.stat().st_size > 0 else None
@@ -160,6 +175,9 @@ async def generate_thumbnail_sprite(url: str, recording_id: str, duration_second
     at a fixed interval, so a long recording doesn't lose thumbnail
     coverage past the first few minutes.
     """
+    if not _is_safe_recording_id(recording_id):
+        return None
+
     jpg_path, vtt_path = _sprite_paths(recording_id)
     if jpg_path.exists() and vtt_path.exists():
         return jpg_path, vtt_path

@@ -44,6 +44,30 @@ def test_is_dvr_configured_false_without_host():
     assert not hdhomerun_client.is_dvr_configured(TUNER_SETTINGS)
 
 
+def test_resolve_recording_url_accepts_an_absolute_url_on_the_configured_dvr_host():
+    url = "http://dvr.local:59090/recorded/play?id=abc"
+
+    assert hdhomerun_client.resolve_recording_url(DVR_SETTINGS, url) == url
+
+
+def test_resolve_recording_url_accepts_an_absolute_url_on_the_configured_tuner_host():
+    url = "http://hdhr.local:5004/auto/v4.1"
+
+    assert hdhomerun_client.resolve_recording_url(TUNER_SETTINGS, url) == url
+
+
+def test_resolve_recording_url_rejects_an_absolute_url_on_an_unrelated_host():
+    # Without this check, a client-supplied absolute play_url could point
+    # anywhere and turn this backend into an open proxy (SSRF).
+    with pytest.raises(hdhomerun_client.HDHomeRunError):
+        hdhomerun_client.resolve_recording_url(DVR_SETTINGS, "http://169.254.169.254/latest/meta-data/")
+
+
+def test_resolve_recording_url_rejects_an_absolute_url_on_a_different_lan_host():
+    with pytest.raises(hdhomerun_client.HDHomeRunError):
+        hdhomerun_client.resolve_recording_url(DVR_SETTINGS, "http://some-other-device.local:8080/file")
+
+
 @respx.mock
 async def test_fetch_discover_returns_json():
     respx.get("http://hdhr.local:80/discover.json").mock(return_value=httpx.Response(200, json=DISCOVER_RESPONSE))

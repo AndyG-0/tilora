@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import re
 import secrets
 import time
 from datetime import UTC, datetime, timedelta
@@ -102,7 +103,21 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+_TOKEN_FORMAT = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _assert_valid_token(token: str) -> None:
+    # Every caller passes a value straight from `new_token()`
+    # (`secrets.token_urlsafe`), never anything attacker-controlled - but
+    # assert the charset explicitly at the cookie-write sink anyway, so
+    # nothing here could ever inject cookie-header syntax regardless of
+    # where the value came from.
+    if not _TOKEN_FORMAT.fullmatch(token):
+        raise ValueError(f"Invalid token format: {token!r}")
+
+
 def set_device_cookie(response: Response, device_id: str) -> None:
+    _assert_valid_token(device_id)
     response.set_cookie(
         DEVICE_COOKIE_NAME,
         device_id,
@@ -114,6 +129,7 @@ def set_device_cookie(response: Response, device_id: str) -> None:
 
 
 def set_session_cookie(response: Response, session_id: str) -> None:
+    _assert_valid_token(session_id)
     response.set_cookie(
         SESSION_COOKIE_NAME,
         session_id,

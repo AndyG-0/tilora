@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import httpx
 import pytest
+import respx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -231,6 +233,24 @@ def test_test_connection_reports_failure_without_raising(admin_client, tmp_db, m
     assert response.json() == {"ok": False, "detail": None, "error": "boom"}
 
 
+@respx.mock
+def test_test_connection_error_does_not_leak_the_raw_connection_exception(admin_client, tmp_db):
+    db.save_network_integration(
+        "pihole", "pihole", "Pi-hole", {"host": "pi.local", "port": 80, "use_https": False, "password": "secret"}
+    )
+    respx.post("http://pi.local:80/api/auth").mock(
+        side_effect=httpx.ConnectError("[Errno 61] Connection refused to 10.9.8.7:80")
+    )
+
+    response = admin_client.post("/api/network-settings/pihole/test-connection", json={})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is False
+    assert "10.9.8.7" not in body["error"]
+    assert "Errno" not in body["error"]
+
+
 def test_test_connection_uses_payload_override_onto_saved_settings(admin_client, tmp_db, monkeypatch):
     db.save_network_integration(
         "pihole", "pihole", "Pi-hole", {"host": "pi.local", "port": 80, "use_https": False, "password": "secret"}
@@ -287,6 +307,27 @@ def test_hdhomerun_dvr_test_connection_reports_failure(admin_client, tmp_db, mon
 
     assert response.status_code == 200
     assert response.json() == {"ok": False, "detail": None, "error": "unreachable"}
+
+
+@respx.mock
+def test_hdhomerun_dvr_test_connection_error_does_not_leak_the_raw_connection_exception(admin_client, tmp_db):
+    db.save_network_integration(
+        "hdhomerun",
+        "hdhomerun",
+        "HDHomeRun",
+        {"tuner_host": "hdhr.local", "tuner_port": 80, "dvr_host": "dvr.local", "dvr_port": 59090, "epg_url": ""},
+    )
+    respx.get("http://dvr.local:59090/discover.json").mock(
+        side_effect=httpx.ConnectError("[Errno 61] Connection refused to 10.9.8.7:59090")
+    )
+
+    response = admin_client.post("/api/network-settings/hdhomerun/test-dvr-connection", json={})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is False
+    assert "10.9.8.7" not in body["error"]
+    assert "Errno" not in body["error"]
 
 
 # --- Container CRUD ----------------------------------------------------------

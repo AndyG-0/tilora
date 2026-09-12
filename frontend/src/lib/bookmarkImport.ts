@@ -1,3 +1,4 @@
+import DOMPurify from 'dompurify';
 import type { BookmarkItem } from '$lib/api';
 import { isSafeUrl } from '$lib/url';
 
@@ -38,7 +39,7 @@ export function parseNetscapeHtml(html: string): BookmarkItem[] {
 	let match: RegExpExecArray | null;
 	while ((match = linkRegex.exec(html)) !== null) {
 		const url = (match[1] || match[2] || match[3] || '').trim();
-		const rawName = (match[4] || '').replace(/<[^>]+>/g, '').trim();
+		const rawName = DOMPurify.sanitize(match[4] || '', { ALLOWED_TAGS: [], ALLOWED_ATTR: [] }).trim();
 		if (!url || !rawName || !isSafeUrl(url)) continue;
 
 		const fullTag = match[0];

@@ -28,6 +28,7 @@ import re
 import time
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import urlsplit
 from xml.etree import ElementTree
 
 import httpx
@@ -111,6 +112,15 @@ def resolve_recording_url(settings: dict[str, Any], url: str) -> str:
         dvr_host = _normalize_host(settings.get("dvr_host", ""))
         dvr_port = settings.get("dvr_port", 50000)
         return f"http://{dvr_host}:{dvr_port}/{url}"
+
+    # `url` is a client-supplied query param, not a value we generated - an
+    # already-absolute URL must point at this widget's own configured tuner
+    # or DVR device, or the backend becomes an open proxy for any host the
+    # caller names (SSRF).
+    allowed_hosts = {_normalize_host(settings.get("tuner_host", "")), _normalize_host(settings.get("dvr_host", ""))}
+    allowed_hosts.discard("")
+    if urlsplit(url).hostname not in allowed_hosts:
+        raise HDHomeRunError("Recording URL does not point at the configured tuner/DVR device")
     return url
 
 
@@ -119,7 +129,8 @@ async def _get_json(url: str) -> Any:
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.get(url)
     except httpx.HTTPError as exc:
-        raise HDHomeRunError(f"Could not reach {url}: {exc}") from exc
+        logger.warning("HDHomeRun request to %s failed: %s", url, exc)
+        raise HDHomeRunError(f"Could not reach {url}") from exc
     if response.status_code >= 400:
         raise HDHomeRunError(f"Request to {url} failed (HTTP {response.status_code}).")
     try:
@@ -127,7 +138,8 @@ async def _get_json(url: str) -> Any:
     except ValueError as exc:
         # e.g. the wrong port is configured and it's returning something
         # other than JSON (a video stream, an HTML error page, etc).
-        raise HDHomeRunError(f"Unexpected (non-JSON) response from {url}: {exc}") from exc
+        logger.warning("Unexpected (non-JSON) response from %s: %s", url, exc)
+        raise HDHomeRunError(f"Unexpected (non-JSON) response from {url}") from exc
 
 
 async def fetch_discover(settings: dict[str, Any]) -> dict[str, Any]:
@@ -611,7 +623,8 @@ async def add_recording_rule(settings: dict[str, Any], rule_data: dict[str, Any]
             raise HDHomeRunError(f"Add recording rule failed (HTTP {response.status_code})")
         rules = response.json()
     except (httpx.HTTPError, ValueError) as exc:
-        raise HDHomeRunError(f"Could not post recording rule: {exc}") from exc
+        logger.warning("Could not post recording rule: %s", exc)
+        raise HDHomeRunError("Could not post recording rule") from exc
 
     rules = _rules_or_raise(rules)
     await trigger_dvr_sync(settings)
@@ -640,7 +653,8 @@ async def delete_recording_rule(settings: dict[str, Any], rule_id: str) -> list[
             raise HDHomeRunError(f"Delete recording rule failed (HTTP {response.status_code})")
         rules = response.json()
     except (httpx.HTTPError, ValueError) as exc:
-        raise HDHomeRunError(f"Could not delete recording rule: {exc}") from exc
+        logger.warning("Could not delete recording rule: %s", exc)
+        raise HDHomeRunError("Could not delete recording rule") from exc
 
     rules = _rules_or_raise(rules)
     await trigger_dvr_sync(settings)

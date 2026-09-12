@@ -68,6 +68,38 @@ class FakeService:
 def test_is_configured():
     assert icloud_photos.is_configured("user@example.com", "hunter2") is True
     assert icloud_photos.is_configured(None, "hunter2") is False
+
+
+def test_session_dir_rejects_a_path_traversal_user_id(tmp_path, monkeypatch):
+    monkeypatch.setattr(icloud_photos, "ICLOUD_SESSION_DIR", tmp_path)
+
+    try:
+        icloud_photos._session_dir("../../etc")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected a ValueError for a path-traversal user_id")
+
+
+def test_session_dir_accepts_a_normal_user_id(tmp_path, monkeypatch):
+    monkeypatch.setattr(icloud_photos, "ICLOUD_SESSION_DIR", tmp_path)
+
+    session_dir = icloud_photos._session_dir("alice")
+
+    assert session_dir == (tmp_path / "alice").resolve()
+
+
+def test_clear_session_dir_does_not_escape_the_base_dir_via_traversal(tmp_path, monkeypatch):
+    monkeypatch.setattr(icloud_photos, "ICLOUD_SESSION_DIR", tmp_path)
+    sibling = tmp_path.parent / "sibling_marker.txt"
+    sibling.write_text("do not delete me")
+
+    try:
+        icloud_photos.clear_session_dir("../sibling_marker.txt")
+    except ValueError:
+        pass
+
+    assert sibling.exists()
     assert icloud_photos.is_configured("user@example.com", None) is False
     assert icloud_photos.is_configured("", "") is False
 

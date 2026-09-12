@@ -106,7 +106,10 @@ def _photo_list_cache_key(user_id: str) -> str:
 
 
 def _session_dir(user_id: str) -> Path:
-    return ICLOUD_SESSION_DIR / user_id
+    session_dir = (ICLOUD_SESSION_DIR / user_id).resolve()
+    if not session_dir.is_relative_to(ICLOUD_SESSION_DIR.resolve()):
+        raise ValueError(f"Invalid user_id: {user_id!r}")
+    return session_dir
 
 
 def is_configured(username: str | None, password: str | None) -> bool:
