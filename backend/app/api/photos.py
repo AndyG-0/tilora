@@ -30,6 +30,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/photos", tags=["photos"], dependencies=[Depends(get_current_user)])
 
+# Bounds the HTTP response itself, on top of icloud_photos.py's own internal
+# per-call/total-duration timeouts. Mirrors app.main.health's
+# asyncio.wait_for(asyncio.to_thread(ping), timeout=2) pattern.
+_ICLOUD_CALL_TIMEOUT_SECONDS = 45
+
 
 def _get_plugin(widget_id: str) -> PhotosPlugin:
     return get_typed_plugin(widget_id, PhotosPlugin, "photos")
@@ -108,7 +113,13 @@ async def _get_icloud_private_photo(user_id: str, settings: dict, photo_id: str)
     # unlike the Shared Album's public CDN links, so bytes must be proxied
     # through the backend rather than redirected to.
     try:
-        result = await icloud_photos.fetch_photo_bytes(user_id, username, password, photo_id, album_name)
+        result = await asyncio.wait_for(
+            icloud_photos.fetch_photo_bytes(user_id, username, password, photo_id, album_name),
+            timeout=_ICLOUD_CALL_TIMEOUT_SECONDS,
+        )
+    except TimeoutError:
+        logger.warning("Timed out fetching iCloud private photo '%s' for user '%s'", photo_id, user_id)
+        raise HTTPException(status_code=504, detail="Photo request timed out") from None
     except Exception:
         logger.warning("Failed to fetch iCloud private photo '%s' for user '%s'", photo_id, user_id, exc_info=True)
         raise HTTPException(status_code=404, detail="Photo not found") from None

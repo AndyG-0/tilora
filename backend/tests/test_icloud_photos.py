@@ -1,3 +1,6 @@
+import asyncio
+import time
+
 from icloudpy.base import ICloudPySession
 from icloudpy.exceptions import ICloudPyAPIResponseException, ICloudPyFailedLoginException
 
@@ -12,6 +15,14 @@ class FakeResponse:
     def __init__(self, content: bytes, content_type: str = "image/jpeg"):
         self.content = content
         self.headers = {"content-type": content_type}
+        self.closed = False
+
+    def iter_content(self, chunk_size: int = 1):
+        for i in range(0, len(self.content), chunk_size):
+            yield self.content[i : i + chunk_size]
+
+    def close(self) -> None:
+        self.closed = True
 
 
 class FakeAsset:
@@ -484,3 +495,69 @@ async def test_get_or_build_service_handles_api_response_exception(monkeypatch):
     assert service is None
     assert err is not None
     assert cache.get(icloud_photos._service_cache_key(USER_ID)) is None
+
+
+async def test_get_or_build_service_coalesces_concurrent_calls_for_same_user(monkeypatch):
+    service = FakeService()
+    calls = 0
+
+    def _build(user_id, u, p):
+        nonlocal calls
+        calls += 1
+        time.sleep(0.05)
+        return service
+
+    monkeypatch.setattr(icloud_photos, "_build_service", _build)
+
+    results = await asyncio.gather(
+        icloud_photos._get_or_build_service(USER_ID, "user@example.com", "hunter2"),
+        icloud_photos._get_or_build_service(USER_ID, "user@example.com", "hunter2"),
+    )
+
+    assert calls == 1
+    assert results[0] == (service, None)
+    assert results[1] == (service, None)
+
+
+async def test_get_or_build_service_does_not_coalesce_across_different_users(monkeypatch):
+    calls = 0
+
+    def _build(user_id, u, p):
+        nonlocal calls
+        calls += 1
+        time.sleep(0.05)
+        return FakeService()
+
+    monkeypatch.setattr(icloud_photos, "_build_service", _build)
+
+    await asyncio.gather(
+        icloud_photos._get_or_build_service(USER_ID, "user@example.com", "hunter2"),
+        icloud_photos._get_or_build_service(OTHER_USER_ID, "other@example.com", "hunter3"),
+    )
+
+    assert calls == 2
+
+
+async def test_fetch_photo_bytes_aborts_a_download_that_exceeds_the_total_deadline(monkeypatch):
+    monkeypatch.setattr(icloud_photos, "_DOWNLOAD_TOTAL_TIMEOUT_SECONDS", 0.05)
+
+    class SlowResponse(FakeResponse):
+        def iter_content(self, chunk_size: int = 1):
+            for _ in range(3):
+                time.sleep(0.05)
+                yield b"slow-chunk"
+
+    slow_response = SlowResponse(b"irrelevant")
+
+    class SlowAsset(FakeAsset):
+        def download(self, version: str = "original"):
+            return slow_response
+
+    asset = SlowAsset("id-1", "photo.jpg")
+    service = FakeService(albums={"All Photos": FakeAlbum([asset])})
+    monkeypatch.setattr(icloud_photos, "_build_service", lambda user_id, u, p: service)
+
+    result = await icloud_photos.fetch_photo_bytes(USER_ID, "user@example.com", "hunter2", "id-1")
+
+    assert result is None
+    assert slow_response.closed is True

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -204,6 +206,39 @@ def test_clear_credentials_removes_them_and_invalidates_session(client, monkeypa
     assert response.status_code == 200
     assert db.get_user_credentials(USER_ID, "icloud") is None
     assert invalidated == [USER_ID]
+
+
+def test_start_auth_returns_clean_error_on_timeout(client, monkeypatch):
+    _save_credentials()
+    monkeypatch.setattr(icloud_auth, "_ICLOUD_CALL_TIMEOUT_SECONDS", 0.05)
+
+    async def _hang(user_id, username, password):
+        await asyncio.sleep(1)
+
+    monkeypatch.setattr(icloud_photos, "start_auth", _hang)
+
+    response = client.post("/api/icloud/auth/start")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "connected": False,
+        "requires_2fa": False,
+        "error": "Timed out connecting to Apple ID.",
+    }
+
+
+def test_verify_auth_returns_clean_error_on_timeout(client, monkeypatch):
+    monkeypatch.setattr(icloud_auth, "_ICLOUD_CALL_TIMEOUT_SECONDS", 0.05)
+
+    async def _hang(user_id, code):
+        await asyncio.sleep(1)
+
+    monkeypatch.setattr(icloud_photos, "verify_2fa", _hang)
+
+    response = client.post("/api/icloud/auth/verify", json={"code": "123456"})
+
+    assert response.status_code == 200
+    assert response.json() == {"connected": False}
 
 
 def test_icloud_routes_require_a_logged_in_user(tmp_db):
