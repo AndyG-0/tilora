@@ -1,7 +1,7 @@
 # Build context is the repo root (not backend/) so this can also pick up the
 # top-level VERSION file that app/update_check.py reads at import time — see
 # docker-compose.yml's `build.context`.
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 # Required for the HDHomeRun widget's server_transcode playback mode, which
 # shells out to a bare `ffmpeg` on PATH (see app/api/hdhomerun.py) — the
