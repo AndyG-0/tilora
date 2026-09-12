@@ -1,5 +1,9 @@
 # Tilora
 
+[![CI](https://github.com/AndyG-0/tilora/actions/workflows/ci.yml/badge.svg)](https://github.com/AndyG-0/tilora/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/AndyG-0/tilora)](https://github.com/AndyG-0/tilora/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](backend/pyproject.toml)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue.svg)](https://andyg-0.github.io/tilora/)
 
 A customizable smart-display dashboard and home server for Raspberry Pi, Debian,
