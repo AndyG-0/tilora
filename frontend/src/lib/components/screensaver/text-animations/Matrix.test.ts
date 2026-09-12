@@ -117,7 +117,7 @@ describe('Matrix', () => {
 			},
 		});
 
-		const normalize = (text: string | null | undefined) => text?.replace(/ /g, ' ').trim();
+		const normalize = (text: string | null | undefined) => text?.replace(/\u00A0/g, ' ').trim();
 		const firstBatch = Array.from(container.querySelectorAll('.line')).map((el) => normalize(el.textContent));
 
 		// Both lines are 5 characters (redacted spoiler placeholder sized to

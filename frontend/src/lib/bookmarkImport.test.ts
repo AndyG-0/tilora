@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
 	parseNetscapeHtml,
 	parseChromiumJson,
@@ -43,6 +43,28 @@ describe('bookmarkImport', () => {
 `;
 			const result = parseNetscapeHtml(html);
 			expect(result).toEqual([{ name: 'Safe Link', url: 'https://safe.com' }]);
+		});
+
+		describe('fallback regex parser (no DOMParser available)', () => {
+			afterEach(() => {
+				vi.unstubAllGlobals();
+			});
+
+			it('fully sanitizes malformed, nested tags in a bookmark name', () => {
+				// A naive single-pass `<[^>]+>` strip leaves fragments behind on
+				// overlapping/malformed tags (e.g. "<a<script>b>evil</script c>"
+				// strips down to "b>evil" instead of nothing) -- DOMPurify parses
+				// the fragment as real HTML instead, so nothing tag-shaped survives.
+				vi.stubGlobal('DOMParser', undefined);
+				const html = '<a href="https://safe.example"><a<script>b>evil</script c></a>';
+
+				const result = parseNetscapeHtml(html);
+
+				expect(result).toHaveLength(1);
+				expect(result[0].url).toBe('https://safe.example');
+				expect(result[0].name).not.toContain('<');
+				expect(result[0].name).not.toContain('>');
+			});
 		});
 	});
 

@@ -11,6 +11,7 @@ and gets their own 2FA session.
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -23,7 +24,18 @@ from app.scheduler import schedule_immediate_user_photo_index
 from app.storage import db
 from app.storage.cache import cache
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/icloud", tags=["icloud"], dependencies=[Depends(get_current_user)])
+
+# Bounds the HTTP response itself, on top of icloud_photos.py's own internal
+# per-call/total-duration timeouts — without this, a call that somehow slips
+# past those (or just runs close to their worst case) leaves the request
+# pending for the caller with no feedback. Mirrors app.main.health's
+# asyncio.wait_for(asyncio.to_thread(ping), timeout=2) pattern. Doesn't free
+# the underlying OS thread if it's still blocked — see icloud_photos.py's
+# module comment on why that needs its own dedicated executor instead.
+_ICLOUD_CALL_TIMEOUT_SECONDS = 45
 
 
 async def _credentials(user_id: str) -> tuple[str, str]:
@@ -59,7 +71,13 @@ def _reindex_private_photo_widgets(user_id: str) -> None:
 @router.post("/auth/start")
 async def start_auth(user: dict[str, Any] = Depends(get_current_user)):
     username, password = await _credentials(user["id"])
-    result = await icloud_photos.start_auth(user["id"], username, password)
+    try:
+        result = await asyncio.wait_for(
+            icloud_photos.start_auth(user["id"], username, password), timeout=_ICLOUD_CALL_TIMEOUT_SECONDS
+        )
+    except TimeoutError:
+        logger.warning("iCloud start_auth timed out for user %s", user["id"])
+        return {"connected": False, "requires_2fa": False, "error": "Timed out connecting to Apple ID."}
     if result["connected"]:
         _invalidate_photo_widgets(user["id"])
         _reindex_private_photo_widgets(user["id"])
@@ -72,7 +90,13 @@ async def verify_auth(payload: dict[str, str], user: dict[str, Any] = Depends(ge
     if not code:
         raise HTTPException(status_code=400, detail="code is required")
 
-    verified = await icloud_photos.verify_2fa(user["id"], code)
+    try:
+        verified = await asyncio.wait_for(
+            icloud_photos.verify_2fa(user["id"], code), timeout=_ICLOUD_CALL_TIMEOUT_SECONDS
+        )
+    except TimeoutError:
+        logger.warning("iCloud verify_2fa timed out for user %s", user["id"])
+        return {"connected": False}
     if verified:
         _invalidate_photo_widgets(user["id"])
         _reindex_private_photo_widgets(user["id"])

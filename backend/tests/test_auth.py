@@ -4,7 +4,7 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 
 from app import auth
 from app.storage import db
@@ -37,6 +37,28 @@ def test_new_token_returns_distinct_unguessable_values():
 def test_hash_token_is_deterministic_and_not_the_raw_value():
     assert auth._hash_token("abc") == auth._hash_token("abc")
     assert auth._hash_token("abc") != "abc"
+
+
+def test_set_device_cookie_accepts_a_normal_token():
+    response = Response()
+    auth.set_device_cookie(response, auth.new_token())
+    assert response.headers["set-cookie"]
+
+
+def test_set_device_cookie_rejects_a_malformed_value():
+    with pytest.raises(ValueError):
+        auth.set_device_cookie(Response(), "abc; Domain=evil.example")
+
+
+def test_set_session_cookie_accepts_a_normal_token():
+    response = Response()
+    auth.set_session_cookie(response, auth.new_token())
+    assert response.headers["set-cookie"]
+
+
+def test_set_session_cookie_rejects_a_malformed_value():
+    with pytest.raises(ValueError):
+        auth.set_session_cookie(Response(), "abc\r\nSet-Cookie: evil=1")
 
 
 def test_device_and_session_rows_store_a_hash_not_the_raw_cookie_value(tmp_db):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -197,6 +199,19 @@ def test_get_photo_proxies_private_photo_bytes(client, icloud_private_widget, mo
     assert response.status_code == 200
     assert response.content == b"private-jpeg-bytes"
     assert response.headers["content-type"] == "image/jpeg"
+
+
+def test_get_photo_504s_when_private_fetch_photo_bytes_times_out(client, icloud_private_widget, monkeypatch):
+    monkeypatch.setattr(photos, "_ICLOUD_CALL_TIMEOUT_SECONDS", 0.05)
+
+    async def fake_fetch_photo_bytes(user_id, username, password, photo_id, album_name):
+        await asyncio.sleep(1)
+
+    monkeypatch.setattr(icloud_photos, "fetch_photo_bytes", fake_fetch_photo_bytes)
+
+    response = client.get("/api/photos/photos/id-1")
+
+    assert response.status_code == 504
 
 
 def test_get_photo_404s_for_unknown_private_photo_id(client, icloud_private_widget, monkeypatch):

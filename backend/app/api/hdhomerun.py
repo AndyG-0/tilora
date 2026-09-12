@@ -478,7 +478,10 @@ async def handle_stream_recording(
 ):
     plugin = _get_plugin(widget_id)
     settings = plugin.config["settings"]
-    target_url = hdhomerun_client.resolve_recording_url(settings, url)
+    try:
+        target_url = hdhomerun_client.resolve_recording_url(settings, url)
+    except hdhomerun_client.HDHomeRunError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     mode = settings.get("playback_mode", "server_transcode")
     if mode == "server_transcode":
@@ -626,7 +629,10 @@ async def handle_recording_detail(
         }
 
     if recording_id not in _probe_cache:
-        target_url = hdhomerun_client.resolve_recording_url(settings, url)
+        try:
+            target_url = hdhomerun_client.resolve_recording_url(settings, url)
+        except hdhomerun_client.HDHomeRunError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         result = await media_probe.probe(target_url)
         _probe_cache_set(
             recording_id,
@@ -649,7 +655,10 @@ async def handle_recording_captions(widget_id: str, url: str, recording_id: str,
 
     plugin = _get_plugin(widget_id)
     settings = plugin.config["settings"]
-    target_url = hdhomerun_client.resolve_recording_url(settings, url)
+    try:
+        target_url = hdhomerun_client.resolve_recording_url(settings, url)
+    except hdhomerun_client.HDHomeRunError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     vtt_path = await media_cache.generate_captions_vtt(target_url, recording_id)
     if vtt_path is None:
@@ -672,7 +681,10 @@ async def _resolved_thumbnail_sprite(
     if record_end is None or record_end > time.time():
         raise HTTPException(status_code=404, detail="Thumbnails are only available for completed recordings")
 
-    target_url = hdhomerun_client.resolve_recording_url(settings, url)
+    try:
+        target_url = hdhomerun_client.resolve_recording_url(settings, url)
+    except hdhomerun_client.HDHomeRunError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     duration = await _resolved_duration(target_url, recording_id)
     if duration is None:
         raise HTTPException(status_code=404, detail="Could not determine recording duration")

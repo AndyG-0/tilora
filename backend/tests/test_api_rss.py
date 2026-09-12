@@ -141,6 +141,53 @@ def test_remove_feed_cannot_touch_another_users_feed(client, tmp_db):
     assert db.list_rss_feeds("user-2") == [feed]
 
 
+@pytest.mark.parametrize(
+    "host",
+    [
+        "127.0.0.1",
+        "169.254.169.254",
+        "::1",
+        "224.0.0.1",
+    ],
+)
+def test_is_blocked_address_blocks_loopback_link_local_and_multicast(host):
+    assert rss._is_blocked_address(host) is True
+
+
+@pytest.mark.parametrize("host", ["192.168.1.5", "10.0.0.5", "172.16.0.5"])
+def test_is_blocked_address_leaves_private_lan_ranges_unblocked(host):
+    # Tilora already trusts LAN IPs for other integrations (Pi-hole,
+    # Jellyfin, HDHomeRun, etc), so RFC1918 ranges are deliberately not
+    # blocked for RSS feeds either - only cloud-metadata/loopback/
+    # link-local/multicast targets are.
+    assert rss._is_blocked_address(host) is False
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1/feed.xml",
+        "http://169.254.169.254/latest/meta-data/",
+        "ftp://a.example/feed.xml",
+    ],
+)
+def test_add_feed_rejects_a_loopback_link_local_or_non_http_url(client, tmp_db, url):
+    response = client.post("/api/rss/feeds", json={"url": url})
+
+    assert response.status_code == 400
+    assert db.list_rss_feeds("user-1") == []
+
+
+@respx.mock
+def test_add_feed_accepts_a_lan_hosted_feed(client, tmp_db):
+    respx.get("http://192.168.1.5/feed.xml").mock(return_value=httpx.Response(200, content=VALID_FEED))
+
+    response = client.post("/api/rss/feeds", json={"url": "http://192.168.1.5/feed.xml"})
+
+    assert response.status_code == 200
+    assert db.list_rss_feeds("user-1")[0]["url"] == "http://192.168.1.5/feed.xml"
+
+
 def test_rss_routes_require_a_session():
     app = FastAPI()
     app.include_router(rss.router)

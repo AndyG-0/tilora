@@ -30,7 +30,10 @@ import asyncio
 import concurrent.futures
 import functools
 import logging
+import os.path
+import re
 import shutil
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -47,13 +50,21 @@ logger = logging.getLogger(__name__)
 # icloudpy's ICloudPySession (a requests.Session subclass) never passes a
 # `timeout=` to the underlying requests call anywhere in the package — a
 # stalled Apple server that accepts a TCP connection but never responds
-# blocks the calling thread forever. Every call in this module runs via
-# asyncio.to_thread on the process-wide shared default executor, so one such
-# hang permanently pins a pool slot every other asyncio.to_thread(...) call in
-# the app depends on (including unrelated DB lookups in app.auth, run on
-# every request) — this is the same class of bug already fixed for
-# caldav.DAVClient (see caldav_client.py) and speedtest.Speedtest (see
-# speedtest_runner.py), just without a constructor-level timeout= to lean on.
+# blocks the calling thread forever. Every call in this module runs on the
+# dedicated _ICLOUD_EXECUTOR below (not the process-wide shared default
+# executor), so a slow/stuck iCloud call can no longer pin a slot that
+# unrelated asyncio.to_thread(...) calls elsewhere in the app depend on
+# (including DB lookups in app.auth, run on every request) — this is the same
+# class of bug already fixed for caldav.DAVClient (see caldav_client.py) and
+# speedtest.Speedtest (see speedtest_runner.py), just without a
+# constructor-level timeout= to lean on. Even so, `requests`' timeout= only
+# bounds each individual blocking recv()/poll() call, not the total duration
+# of a streamed read — a connection trickling data just under that per-call
+# threshold can run for minutes. _download() below enforces a real wall-clock
+# ceiling on the one read loop we can fully control; iCloudPySession's
+# pagination internals can't get the same treatment without vendoring
+# icloudpy, so isolating them onto their own bounded executor (rather than
+# the shared default one) is the practical mitigation there.
 #
 # ICloudPyService.__init__ calls self.authenticate() immediately after
 # constructing self.session = ICloudPySession(self) — the first network call
@@ -73,6 +84,17 @@ if not getattr(ICloudPySession.request, "_tilora_patched", False):
     _icloud_session_request_with_timeout._tilora_patched = True
     ICloudPySession.request = _icloud_session_request_with_timeout
 
+# Isolated from asyncio's shared default ThreadPoolExecutor (see comment
+# above) — small on purpose, since its job is to cap how many threads iCloud
+# work can ever occupy, not to add parallelism.
+_ICLOUD_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="icloud")
+
+
+async def _run_in_icloud_executor(func, *args):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_ICLOUD_EXECUTOR, func, *args)
+
+
 _SERVICE_CACHE_TTL_SECONDS = 30 * 60
 _PENDING_SERVICE_TTL_SECONDS = 10 * 60
 _PHOTO_LIST_CACHE_TTL_SECONDS = 5 * 60
@@ -91,6 +113,12 @@ _DEFAULT_ALBUM = "All Photos"
 # it, while a truly abandoned one is bounded to roughly this long instead of
 # indefinitely.
 _QUEUE_PUT_TIMEOUT_SECONDS = 30
+# Total wall-clock budget for downloading one photo's bytes, enforced by
+# manually walking response.iter_content() below rather than relying on
+# `requests`' timeout= (a per-recv()/poll() stall bound, not a total-duration
+# one — see the module-level comment above). Comfortably above what a
+# healthy connection needs for a single "medium"-size asset.
+_DOWNLOAD_TOTAL_TIMEOUT_SECONDS = 60
 
 
 def _service_cache_key(user_id: str) -> str:
@@ -105,8 +133,25 @@ def _photo_list_cache_key(user_id: str) -> str:
     return f"icloud_photos:list:{user_id}"
 
 
+# Every caller passes `user["id"]` straight from `get_current_user` — always
+# a server-generated `uuid4().hex` (see app.api.users.create_profile), never
+# text a client can choose the content of — but validate the charset before
+# it ever touches a path expression anyway, and use the os.path.realpath +
+# str.startswith containment idiom (rather than Path.resolve() +
+# Path.is_relative_to(), which static analysis doesn't credit as a
+# sanitizing barrier) so a symlink planted at `ICLOUD_SESSION_DIR/<user_id>`
+# still can't escape the session root.
+_USER_ID_FORMAT = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
 def _session_dir(user_id: str) -> Path:
-    return ICLOUD_SESSION_DIR / user_id
+    if not _USER_ID_FORMAT.fullmatch(user_id):
+        raise ValueError(f"Invalid user_id: {user_id!r}")
+    base = os.path.realpath(ICLOUD_SESSION_DIR)
+    candidate = os.path.realpath(os.path.join(base, user_id))
+    if candidate != base and not candidate.startswith(base + os.sep):
+        raise ValueError(f"Invalid user_id: {user_id!r}")
+    return Path(candidate)
 
 
 def is_configured(username: str | None, password: str | None) -> bool:
@@ -137,6 +182,23 @@ def _build_service(user_id: str, username: str, password: str) -> ICloudPyServic
     return ICloudPyService(username, password, cookie_directory=str(session_dir))
 
 
+# Keyed by user_id so a second concurrent cache-miss for the same user awaits
+# the first build's result instead of kicking off its own redundant
+# _build_service (each its own full authenticate() call) — without this, two
+# requests racing a cold cache (e.g. multiple tabs/devices, or a tile poll
+# racing the post-connect immediate index scan) double the pool pressure at
+# exactly the moment a user is actively interacting with the widget.
+_service_build_locks: dict[str, asyncio.Lock] = {}
+
+
+def _get_service_build_lock(user_id: str) -> asyncio.Lock:
+    lock = _service_build_locks.get(user_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _service_build_locks[user_id] = lock
+    return lock
+
+
 async def _get_or_build_service(
     user_id: str, username: str, password: str
 ) -> tuple[ICloudPyService | None, str | None]:
@@ -145,21 +207,28 @@ async def _get_or_build_service(
     if cached is not None:
         return cached, None
 
-    try:
-        service = await asyncio.to_thread(_build_service, user_id, username, password)
-    except ICloudPyFailedLoginException as exc:
-        logger.warning("iCloud login failed for account '%s': %s", username, exc)
-        return None, _format_auth_error(exc)
-    except ICloudPyAPIResponseException as exc:
-        logger.warning("iCloud API error initializing service for account '%s': %s", username, exc)
-        return None, _format_auth_error(exc)
-    except (ICloudPyException, Exception) as exc:
-        logger.warning("iCloud service initialization failed for account '%s'", username, exc_info=True)
-        return None, _format_auth_error(exc)
+    async with _get_service_build_lock(user_id):
+        # Re-check: another caller may have finished building (and cached)
+        # the service while we were waiting for the lock.
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached, None
 
-    if not service.requires_2fa:
-        cache.set(cache_key, service, _SERVICE_CACHE_TTL_SECONDS)
-    return service, None
+        try:
+            service = await _run_in_icloud_executor(_build_service, user_id, username, password)
+        except ICloudPyFailedLoginException as exc:
+            logger.warning("iCloud login failed for account '%s': %s", username, exc)
+            return None, _format_auth_error(exc)
+        except ICloudPyAPIResponseException as exc:
+            logger.warning("iCloud API error initializing service for account '%s': %s", username, exc)
+            return None, _format_auth_error(exc)
+        except (ICloudPyException, Exception) as exc:
+            logger.warning("iCloud service initialization failed for account '%s'", username, exc_info=True)
+            return None, _format_auth_error(exc)
+
+        if not service.requires_2fa:
+            cache.set(cache_key, service, _SERVICE_CACHE_TTL_SECONDS)
+        return service, None
 
 
 async def start_auth(user_id: str, username: str, password: str) -> dict[str, Any]:
@@ -174,7 +243,7 @@ async def start_auth(user_id: str, username: str, password: str) -> dict[str, An
         return {"connected": False, "requires_2fa": False, "error": error_msg}
     if service.requires_2fa:
         try:
-            pushed = await asyncio.to_thread(service.trigger_2fa_push_notification)
+            pushed = await _run_in_icloud_executor(service.trigger_2fa_push_notification)
             if not pushed:
                 logger.warning("iCloud 2FA push notification trigger failed for account '%s'", username)
         except Exception:
@@ -197,7 +266,7 @@ async def verify_2fa(user_id: str, code: str) -> bool:
         return True
 
     try:
-        verified = await asyncio.to_thread(_verify)
+        verified = await _run_in_icloud_executor(_verify)
     except Exception:
         logger.warning("iCloud 2FA verification failed for user %s", user_id, exc_info=True)
         return False
@@ -264,7 +333,7 @@ async def list_photos(
         return list(album.photos)
 
     try:
-        assets = await asyncio.to_thread(_list)
+        assets = await _run_in_icloud_executor(_list)
     except ICloudPyAPIResponseException as exc:
         logger.warning("iCloud API error in list_photos for user %s: %s", user_id, exc)
         if _is_auth_error(exc):
@@ -351,7 +420,10 @@ async def iter_photo_chunks(
         finally:
             _put(sentinel)
 
-    producer = asyncio.create_task(asyncio.to_thread(_produce))
+    # run_in_executor already returns a scheduled asyncio.Future (unlike
+    # asyncio.to_thread's coroutine), so it's awaited directly below rather
+    # than wrapped in create_task, which requires a coroutine.
+    producer = loop.run_in_executor(_ICLOUD_EXECUTOR, _produce)
     try:
         while True:
             item = await queue.get()
@@ -383,10 +455,27 @@ async def fetch_photo_bytes(
         response = asset.download("medium")
         if response is None:
             return None
-        return response.content, response.headers.get("content-type", "image/jpeg")
+        # response.content (b"".join(self.iter_content(...))) has no total
+        # duration cap — a connection trickling small chunks in under
+        # `requests`' per-recv() timeout can run for minutes. Walk the chunks
+        # ourselves against a wall-clock deadline instead, so a slow-trickle
+        # stall is actually aborted rather than just outlasting the caller's
+        # timeout while still pinning this thread.
+        deadline = time.monotonic() + _DOWNLOAD_TOTAL_TIMEOUT_SECONDS
+        chunks: list[bytes] = []
+        try:
+            for chunk in response.iter_content(chunk_size=65536):
+                chunks.append(chunk)
+                if time.monotonic() > deadline:
+                    raise TimeoutError(
+                        f"iCloud photo download for {photo_id} exceeded {_DOWNLOAD_TOTAL_TIMEOUT_SECONDS}s total"
+                    )
+        finally:
+            response.close()
+        return b"".join(chunks), response.headers.get("content-type", "image/jpeg")
 
     try:
-        return await asyncio.to_thread(_download)
+        return await _run_in_icloud_executor(_download)
     except ICloudPyAPIResponseException as exc:
         logger.warning("iCloud API error downloading photo %s for user %s: %s", photo_id, user_id, exc)
         if _is_auth_error(exc):

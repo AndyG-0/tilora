@@ -10,12 +10,15 @@ cache-until-401 shape `jellyfin_client` uses for its password auth mode.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
 
 from app.storage.cache import cache
+
+logger = logging.getLogger(__name__)
 
 # Safety margin below Pi-hole's reported session `validity` (default 1800s)
 # so a request doesn't race a session that's about to expire server-side.
@@ -53,7 +56,8 @@ async def _authenticate(base_url: str, widget_id: str, password: str) -> PiholeS
     try:
         response = await _client.post(f"{base_url}/api/auth", json={"password": password})
     except httpx.HTTPError as exc:
-        raise PiholeError(f"Could not reach the Pi-hole server: {exc}") from exc
+        logger.warning("Pi-hole login request failed: %s", exc)
+        raise PiholeError("Could not reach the Pi-hole server") from exc
 
     if response.status_code == 401:
         raise PiholeError("Pi-hole rejected that password.")
@@ -104,7 +108,8 @@ async def _request(
     try:
         response = await send(session)
     except httpx.HTTPError as exc:
-        raise PiholeError(f"Could not reach the Pi-hole server: {exc}") from exc
+        logger.warning("Pi-hole request failed: %s", exc)
+        raise PiholeError("Could not reach the Pi-hole server") from exc
 
     if response.status_code == 401:
         # The cached session expired/was revoked server-side — re-auth once
@@ -113,7 +118,8 @@ async def _request(
         try:
             response = await send(session)
         except httpx.HTTPError as exc:
-            raise PiholeError(f"Could not reach the Pi-hole server: {exc}") from exc
+            logger.warning("Pi-hole request failed after re-auth: %s", exc)
+            raise PiholeError("Could not reach the Pi-hole server") from exc
 
     if response.status_code >= 400:
         raise PiholeError(f"Pi-hole request failed (HTTP {response.status_code}).")

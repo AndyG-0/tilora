@@ -74,6 +74,19 @@ async def test_authenticate_raises_on_http_error_status():
 
 
 @respx.mock
+async def test_authenticate_error_does_not_leak_the_raw_connection_exception():
+    respx.get("http://syno.local:5000/webapi/auth.cgi").mock(
+        side_effect=httpx.ConnectError("[Errno 61] Connection refused to 10.9.8.7:5000")
+    )
+
+    with pytest.raises(synology_client.SynologyError) as exc_info:
+        await synology_client._resolve_session(SETTINGS, "s5")
+
+    assert "10.9.8.7" not in str(exc_info.value)
+    assert "Errno" not in str(exc_info.value)
+
+
+@respx.mock
 async def test_test_connection_returns_model():
     respx.get("http://syno.local:5000/webapi/auth.cgi").mock(return_value=httpx.Response(200, json=AUTH_OK))
     respx.get("http://syno.local:5000/webapi/entry.cgi").mock(

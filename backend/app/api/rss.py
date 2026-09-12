@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
+import socket
 from typing import Any
+from urllib.parse import urlsplit
 
 import feedparser
 import httpx
@@ -15,14 +18,56 @@ from app.storage.cache import cache
 
 router = APIRouter(prefix="/api/rss", tags=["rss"], dependencies=[Depends(get_current_user)])
 
+_MAX_REDIRECTS = 5
+
+
+def _is_blocked_address(host: str) -> bool:
+    # A feed URL is otherwise free to point anywhere, including a LAN IP
+    # (Tilora already trusts admins to point other integrations - Pi-hole,
+    # Jellyfin, HDHomeRun, etc - straight at LAN devices) - but loopback,
+    # link-local (which covers the 169.254.169.254-style cloud metadata
+    # endpoint), and multicast/reserved addresses are never a legitimate
+    # feed source, so resolving to one is always rejected regardless of
+    # what the URL's own hostname claims to be.
+    try:
+        addrs = {info[4][0] for info in socket.getaddrinfo(host, None)}
+    except OSError:
+        # Can't resolve it at all - not a block in itself (the fetch below
+        # will just fail with its own "could not load a feed" error), only
+        # a resolvable loopback/link-local/etc target is a confirmed block.
+        return False
+    return any(
+        ipaddress.ip_address(addr).is_loopback
+        or ipaddress.ip_address(addr).is_link_local
+        or ipaddress.ip_address(addr).is_multicast
+        or ipaddress.ip_address(addr).is_reserved
+        for addr in addrs
+    )
+
+
+async def _assert_safe_feed_url(url: str) -> None:
+    parsed = urlsplit(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise HTTPException(status_code=400, detail="Feed url must be a valid http(s) URL")
+    if await asyncio.to_thread(_is_blocked_address, parsed.hostname):
+        raise HTTPException(status_code=400, detail="That URL is not allowed as a feed source")
+
 
 async def _validate_feed_url(url: str) -> None:
     # Catch a bad feed at add time rather than letting it 500 the widget on
     # every later refresh — the settings editor is the only place a user can
     # fix or remove a broken url, so it needs to reject one up front.
+    await _assert_safe_feed_url(url)
     try:
-        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-            response = await client.get(url)
+        async with httpx.AsyncClient(timeout=10, follow_redirects=False) as client:
+            current_url = url
+            for _ in range(_MAX_REDIRECTS + 1):
+                response = await client.get(current_url)
+                if response.is_redirect:
+                    current_url = str(response.next_request.url) if response.next_request else current_url
+                    await _assert_safe_feed_url(current_url)
+                    continue
+                break
         response.raise_for_status()
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=400, detail="Could not load a feed from that URL") from exc

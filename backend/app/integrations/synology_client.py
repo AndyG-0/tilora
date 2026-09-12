@@ -110,7 +110,8 @@ async def _authenticate(base_url: str, widget_id: str, username: str, password: 
             },
         )
     except httpx.HTTPError as exc:
-        raise SynologyError(f"Could not reach the Synology NAS: {exc}") from exc
+        logger.warning("Synology login request failed: %s", exc)
+        raise SynologyError("Could not reach the Synology NAS") from exc
 
     if response.status_code >= 400:
         raise SynologyError(f"Synology login failed (HTTP {response.status_code}).")
@@ -194,7 +195,8 @@ async def _request(
     try:
         response = await send(session)
     except httpx.HTTPError as exc:
-        raise SynologyError(f"Could not reach the Synology NAS: {exc}") from exc
+        logger.warning("Synology request failed: %s", exc)
+        raise SynologyError("Could not reach the Synology NAS") from exc
 
     body = response.json() if response.status_code < 400 else {}
 
@@ -213,7 +215,8 @@ async def _request(
         try:
             response = await send(session)
         except httpx.HTTPError as exc:
-            raise SynologyError(f"Could not reach the Synology NAS: {exc}") from exc
+            logger.warning("Synology request failed after re-auth: %s", exc)
+            raise SynologyError("Could not reach the Synology NAS") from exc
         body = response.json() if response.status_code < 400 else {}
 
     if response.status_code >= 400:

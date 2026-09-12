@@ -10,6 +10,7 @@ library/item endpoints instead of the personalized `/Users/{id}/...` ones.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote, urljoin, urlsplit
@@ -18,6 +19,8 @@ import httpx
 
 from app.storage.cache import cache
 from app.update_check import CURRENT_VERSION
+
+logger = logging.getLogger(__name__)
 
 _TOKEN_TTL_SECONDS = 12 * 60 * 60
 _DEVICE_NAME = "Tilora"
@@ -71,7 +74,8 @@ async def _authenticate_by_name(base_url: str, widget_id: str, username: str, pa
                 headers=_auth_header(widget_id),
             )
         except httpx.HTTPError as exc:
-            raise JellyfinError(f"Could not reach the Jellyfin server: {exc}") from exc
+            logger.warning("Jellyfin login request failed: %s", exc)
+            raise JellyfinError("Could not reach the Jellyfin server") from exc
     if response.status_code == 401:
         raise JellyfinError("Jellyfin rejected that username/password.")
     if response.status_code >= 400:
@@ -121,7 +125,8 @@ async def _request(
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.request(method, f"{conn.base_url}{path}", headers=conn.headers, params=params)
     except httpx.HTTPError as exc:
-        raise JellyfinError(f"Could not reach the Jellyfin server: {exc}") from exc
+        logger.warning("Jellyfin request failed: %s", exc)
+        raise JellyfinError("Could not reach the Jellyfin server") from exc
 
     if response.status_code == 401 and settings.get("auth_mode") == "password":
         # The cached access token expired/was revoked server-side — re-auth
@@ -131,7 +136,8 @@ async def _request(
             async with httpx.AsyncClient(timeout=10) as client:
                 response = await client.request(method, f"{conn.base_url}{path}", headers=conn.headers, params=params)
         except httpx.HTTPError as exc:
-            raise JellyfinError(f"Could not reach the Jellyfin server: {exc}") from exc
+            logger.warning("Jellyfin request failed after re-auth: %s", exc)
+            raise JellyfinError("Could not reach the Jellyfin server") from exc
 
     if response.status_code >= 400:
         raise JellyfinError(f"Jellyfin request failed (HTTP {response.status_code}).")
@@ -397,7 +403,8 @@ async def open_hls_playlist(
                 params=params,
             )
     except httpx.HTTPError as exc:
-        raise JellyfinError(f"Could not reach the Jellyfin server: {exc}") from exc
+        logger.warning("Jellyfin HLS request failed: %s", exc)
+        raise JellyfinError("Could not reach the Jellyfin server") from exc
     if response.status_code >= 400:
         raise JellyfinError(f"Jellyfin HLS request failed (HTTP {response.status_code}).")
     return response.text

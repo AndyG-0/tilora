@@ -115,6 +115,19 @@ async def test_resolve_connection_password_mode_rejects_bad_credentials():
 
 
 @respx.mock
+async def test_resolve_connection_error_does_not_leak_the_raw_connection_exception():
+    respx.post("http://jf.local:8096/Users/AuthenticateByName").mock(
+        side_effect=httpx.ConnectError("[Errno 61] Connection refused to 10.9.8.7:8096")
+    )
+
+    with pytest.raises(jellyfin_client.JellyfinError) as exc_info:
+        await jellyfin_client.resolve_connection(PASSWORD_SETTINGS, "w5")
+
+    assert "10.9.8.7" not in str(exc_info.value)
+    assert "Errno" not in str(exc_info.value)
+
+
+@respx.mock
 async def test_test_connection_returns_server_name():
     respx.get("http://jf.local:8096/System/Info").mock(
         return_value=httpx.Response(200, json={"ServerName": "Home Server"})

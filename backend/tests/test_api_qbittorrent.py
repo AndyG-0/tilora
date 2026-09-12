@@ -81,3 +81,18 @@ def test_test_connection_reports_failure_without_raising(client):
     assert response.status_code == 200
     assert response.json()["ok"] is False
     assert response.json()["error"]
+
+
+@respx.mock
+def test_test_connection_error_does_not_leak_the_raw_exception_text(client):
+    register_plugin(host="qbit.local", password="secret")
+    respx.post("http://qbit.local:8080/api/v2/auth/login").mock(
+        side_effect=httpx.ConnectError("[Errno 61] Connection refused to 10.9.8.7:8080")
+    )
+
+    response = client.post("/api/qbittorrent/qb1/test-connection", json={})
+
+    body = response.json()
+    assert body["ok"] is False
+    assert "10.9.8.7" not in body["error"]
+    assert "Errno" not in body["error"]

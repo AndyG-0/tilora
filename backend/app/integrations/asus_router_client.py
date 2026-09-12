@@ -636,7 +636,8 @@ async def _connect(settings: dict[str, Any]) -> asyncssh.SSHClientConnection:
             "check the host/port and that SSH access is enabled on the router."
         ) from exc
     except (OSError, asyncssh.Error) as exc:
-        raise AsusRouterError(f"Could not reach the router over SSH: {exc}") from exc
+        _LOGGER.warning("Could not reach the router over SSH: %s", exc)
+        raise AsusRouterError("Could not reach the router over SSH") from exc
 
 
 def _parse_sections(output: str) -> dict[str, str]:
@@ -1289,7 +1290,8 @@ async def _fetch_status(settings: dict[str, Any], widget_id: str, *, use_cache: 
         except TimeoutError as exc:
             raise AsusRouterError("Could not read status from the router: command timed out.") from exc
         except (OSError, asyncssh.Error) as exc:
-            raise AsusRouterError(f"Could not read status from the router: {exc}") from exc
+            _LOGGER.warning("Could not read status from the router: %s", exc)
+            raise AsusRouterError("Could not read status from the router") from exc
     finally:
         conn.close()
         await conn.wait_closed()

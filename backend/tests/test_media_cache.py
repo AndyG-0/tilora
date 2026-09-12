@@ -110,3 +110,37 @@ async def test_generate_captions_vtt_uses_cached_file_on_second_call(monkeypatch
     result = await media_cache.generate_captions_vtt("url", "rec1")
 
     assert result == cache_path
+
+
+async def test_generate_captions_vtt_rejects_a_path_traversal_recording_id(monkeypatch, tmp_path):
+    monkeypatch.setattr(media_cache, "HDHOMERUN_MEDIA_CACHE_DIR", tmp_path)
+
+    async def fake_exec(*argv, **kwargs):
+        raise AssertionError("should not shell out to ffmpeg for an unsafe recording_id")
+
+    monkeypatch.setattr(media_cache.asyncio, "create_subprocess_exec", fake_exec)
+
+    result = await media_cache.generate_captions_vtt("url", "../../etc/passwd")
+
+    assert result is None
+
+
+async def test_generate_thumbnail_sprite_rejects_a_path_traversal_recording_id(monkeypatch, tmp_path):
+    monkeypatch.setattr(media_cache, "HDHOMERUN_MEDIA_CACHE_DIR", tmp_path)
+
+    async def fake_exec(*argv, **kwargs):
+        raise AssertionError("should not shell out to ffmpeg for an unsafe recording_id")
+
+    monkeypatch.setattr(media_cache.asyncio, "create_subprocess_exec", fake_exec)
+
+    result = await media_cache.generate_thumbnail_sprite("url", "../../etc/passwd", 120.0)
+
+    assert result is None
+
+
+def test_is_safe_recording_id_rejects_traversal_and_separators():
+    assert media_cache._is_safe_recording_id("abc123") is True
+    assert media_cache._is_safe_recording_id("abc-123_45.6") is True
+    assert media_cache._is_safe_recording_id("../etc/passwd") is False
+    assert media_cache._is_safe_recording_id("a/b") is False
+    assert media_cache._is_safe_recording_id("") is False
