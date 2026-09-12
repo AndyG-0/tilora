@@ -81,6 +81,12 @@ class CalendarPlugin(Plugin):
     def days_ahead(self) -> int:
         return int(self.config["settings"].get("days_ahead", 7))
 
+    # Set by _fetch_caldav_events when the CalDAV server rejects the
+    # configured credentials, and read by get_summary/get_detail — kept
+    # separate from _is_connected (which only means "is it configured") so
+    # the widget can distinguish "not set up" from "set up but rejected".
+    _caldav_auth_error = False
+
     async def _is_connected(self) -> bool:
         if self.provider == "caldav":
             return caldav_client.is_configured(await effective_settings())
@@ -96,16 +102,21 @@ class CalendarPlugin(Plugin):
         return await self._fetch_google_events()
 
     async def _fetch_caldav_events(self) -> list[dict[str, Any]]:
+        self._caldav_auth_error = False
         creds = await effective_settings()
         if not caldav_client.is_configured(creds):
             return []
-        events = await caldav_client.fetch_events(
-            creds["caldav_url"],
-            creds["caldav_username"],
-            creds["caldav_password"],
-            self.calendar_ids,
-            self.days_ahead,
-        )
+        try:
+            events = await caldav_client.fetch_events(
+                creds["caldav_url"],
+                creds["caldav_username"],
+                creds["caldav_password"],
+                self.calendar_ids,
+                self.days_ahead,
+            )
+        except caldav_client.CalDAVAuthError:
+            self._caldav_auth_error = True
+            return []
         overrides = self.calendar_colors
         for event in events:
             event["color"] = overrides.get(event["calendar_id"], event["color"])
@@ -200,20 +211,26 @@ class CalendarPlugin(Plugin):
 
     async def get_summary(self) -> dict[str, Any]:
         events = await self._fetch_events()
-        return {
+        result = {
             "connected": await self._is_connected(),
             "provider": self.provider,
             "events": events[:_SUMMARY_EVENT_COUNT],
         }
+        if self._caldav_auth_error:
+            result["auth_error"] = True
+        return result
 
     async def get_detail(self) -> dict[str, Any]:
         events = await self._fetch_events()
-        return {
+        result = {
             "connected": await self._is_connected(),
             "provider": self.provider,
             "events": events,
             "calendar_ids": self.calendar_ids,
         }
+        if self._caldav_auth_error:
+            result["auth_error"] = True
+        return result
 
     def get_ai_tools(self) -> list[ToolDef]:
         async def get_upcoming_events() -> dict[str, Any]:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
+import caldav.lib.error
+import pytest
 from icalendar import Event as ICalEvent
 
 from app.integrations import caldav_client
@@ -37,6 +39,11 @@ class FakeClient:
 
     def principal(self):
         return FakePrincipal(self._calendars)
+
+
+class FakeUnauthorizedClient:
+    def principal(self):
+        raise caldav.lib.error.AuthorizationError(url="https://x", reason="Unauthorized")
 
 
 def _component(uid, summary, dtstart, location=None):
@@ -155,3 +162,26 @@ def test_fetch_events_sync_merges_and_sorts_across_calendars(monkeypatch):
     events = caldav_client._fetch_events_sync("https://x", "user", "pass", ["home-id", "work-id"], 7)
 
     assert [(e["title"], e["calendar"]) for e in events] == [("Earlier", "Work"), ("Later", "Home")]
+
+
+def test_list_calendars_sync_raises_caldav_auth_error_on_rejected_credentials(monkeypatch):
+    monkeypatch.setattr(caldav_client.caldav, "DAVClient", lambda **kwargs: FakeUnauthorizedClient())
+
+    with pytest.raises(caldav_client.CalDAVAuthError):
+        caldav_client._list_calendars_sync("https://x", "user", "wrong-pass")
+
+
+def test_fetch_events_sync_raises_caldav_auth_error_on_rejected_credentials(monkeypatch):
+    monkeypatch.setattr(caldav_client.caldav, "DAVClient", lambda **kwargs: FakeUnauthorizedClient())
+
+    with pytest.raises(caldav_client.CalDAVAuthError):
+        caldav_client._fetch_events_sync("https://x", "user", "wrong-pass", None, 7)
+
+
+def test_fingerprint_masks_short_values():
+    assert caldav_client._fingerprint("abcd") == "***"
+    assert caldav_client._fingerprint("ab") == "***"
+
+
+def test_fingerprint_shows_prefix_suffix_and_length_for_longer_values():
+    assert caldav_client._fingerprint("supersecret") == "su…et (len=11)"

@@ -16,6 +16,7 @@
 	interface CalendarSummary {
 		connected: boolean;
 		events: CalendarEvent[];
+		auth_error?: boolean;
 	}
 
 	let { widgetId, refreshIntervalSeconds }: { widgetId: string; refreshIntervalSeconds: number } = $props();
@@ -48,6 +49,8 @@
 	<div class="title">Calendar</div>
 	{#if !summary}
 		<div class="empty">{$_('calendar.tile.loading')}</div>
+	{:else if summary.auth_error}
+		<div class="empty">{$_('calendar.tile.auth_error')}</div>
 	{:else if !summary.connected}
 		<div class="empty">{$_('common.not_connected')}</div>
 	{:else if summary.events.length}

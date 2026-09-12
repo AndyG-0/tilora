@@ -10,11 +10,19 @@ matching the plugin's async interface.
 from __future__ import annotations
 
 import asyncio
+import logging
 import zlib
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import caldav
+
+logger = logging.getLogger(__name__)
+
+
+class CalDAVAuthError(Exception):
+    """Raised when the CalDAV server rejects the configured username/password."""
+
 
 # caldav.DAVClient defaults to no timeout at all — pin one so a hung/slow
 # CalDAV server can't tie up a thread-pool worker indefinitely (this runs
@@ -44,6 +52,26 @@ def is_configured(settings: dict[str, Any]) -> bool:
     return bool(settings.get("caldav_url") and settings.get("caldav_username") and settings.get("caldav_password"))
 
 
+def _fingerprint(value: str) -> str:
+    """A safe-to-log stand-in for a credential: proves which value was
+    actually used (so a "wrong password" report can be checked against what
+    was just typed into Settings) without ever writing the plaintext to
+    logs."""
+    if len(value) <= 4:
+        return "***"
+    return f"{value[:2]}…{value[-2:]} (len={len(value)})"
+
+
+def _log_auth_failure(url: str, username: str, password: str, exc: Exception) -> None:
+    logger.warning(
+        "CalDAV server rejected credentials for %s (username=%s, password=%s): %s",
+        url,
+        _fingerprint(username),
+        _fingerprint(password),
+        exc,
+    )
+
+
 def _resolve_calendars(client: caldav.DAVClient, calendar_ids: list[str] | None) -> list[caldav.Calendar]:
     calendars = client.principal().calendars()
     if not calendars:
@@ -62,7 +90,11 @@ def _calendar_dict(calendar: caldav.Calendar) -> dict[str, Any]:
 
 def _list_calendars_sync(url: str, username: str, password: str) -> list[dict[str, Any]]:
     client = caldav.DAVClient(url=url, username=username, password=password, timeout=_TIMEOUT_SECONDS)
-    calendars = client.principal().calendars()
+    try:
+        calendars = client.principal().calendars()
+    except caldav.lib.error.AuthorizationError as exc:
+        _log_auth_failure(url, username, password, exc)
+        raise CalDAVAuthError(str(exc)) from exc
     return sorted((_calendar_dict(calendar) for calendar in calendars), key=lambda c: c["name"])
 
 
@@ -90,16 +122,20 @@ def _fetch_events_sync(
     url: str, username: str, password: str, calendar_ids: list[str] | None, days_ahead: int
 ) -> list[dict[str, Any]]:
     client = caldav.DAVClient(url=url, username=username, password=password, timeout=_TIMEOUT_SECONDS)
-    calendars = _resolve_calendars(client, calendar_ids)
-    if not calendars:
-        return []
+    try:
+        calendars = _resolve_calendars(client, calendar_ids)
+        if not calendars:
+            return []
 
-    now = datetime.now(UTC)
-    events = [
-        _event_dict(event, calendar.id, calendar.name or calendar.id)
-        for calendar in calendars
-        for event in calendar.search(start=now, end=now + timedelta(days=days_ahead), event=True, expand=True)
-    ]
+        now = datetime.now(UTC)
+        events = [
+            _event_dict(event, calendar.id, calendar.name or calendar.id)
+            for calendar in calendars
+            for event in calendar.search(start=now, end=now + timedelta(days=days_ahead), event=True, expand=True)
+        ]
+    except caldav.lib.error.AuthorizationError as exc:
+        _log_auth_failure(url, username, password, exc)
+        raise CalDAVAuthError(str(exc)) from exc
     return sorted(events, key=lambda e: e["start"])
 
 

@@ -8,9 +8,13 @@ const { listCaldavCalendars, updateWidgetSettings, widgetDetail } = vi.hoisted((
 	updateWidgetSettings: vi.fn(),
 	widgetDetail: vi.fn(),
 }));
-vi.mock('$lib/api', () => ({ api: { listCaldavCalendars, updateWidgetSettings, widgetDetail } }));
+vi.mock('$lib/api', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('$lib/api')>();
+	return { ...actual, api: { listCaldavCalendars, updateWidgetSettings, widgetDetail } };
+});
 vi.mock('$app/state', () => ({ page: { params: { id: 'calendar' } } }));
 
+import { ApiError } from '$lib/api';
 import CalendarDetail from './CalendarDetail.svelte';
 
 describe('CalendarDetail', () => {
@@ -98,6 +102,42 @@ describe('CalendarDetail', () => {
 
 		expect(screen.getByText(/· Home/)).toBeInTheDocument();
 		expect(screen.getByText(/· Work/)).toBeInTheDocument();
+	});
+
+	it('shows an auth-error banner when caldav credentials were rejected on the last fetch', () => {
+		render(CalendarDetail, {
+			props: { data: { connected: true, provider: 'caldav', events: [], auth_error: true } },
+		});
+
+		expect(
+			screen.getByText('CalDAV rejected your username/password. Update it in Settings, then try again.'),
+		).toBeInTheDocument();
+	});
+
+	it('shows an auth-error message when caldav credentials are rejected while managing calendars', async () => {
+		listCaldavCalendars.mockRejectedValue(new ApiError('unauthorized', 401));
+
+		render(CalendarDetail, {
+			props: { data: { connected: true, provider: 'caldav', events: [] } },
+		});
+
+		await fireEvent.click(screen.getByText('Manage calendars'));
+
+		expect(
+			await screen.findByText('CalDAV rejected your username/password. Update it in Settings, then try again.'),
+		).toBeInTheDocument();
+	});
+
+	it('shows a generic error message when loading calendars fails for a non-auth reason', async () => {
+		listCaldavCalendars.mockRejectedValue(new ApiError('boom', 500));
+
+		render(CalendarDetail, {
+			props: { data: { connected: true, provider: 'caldav', events: [] } },
+		});
+
+		await fireEvent.click(screen.getByText('Manage calendars'));
+
+		expect(await screen.findByText('Could not load calendars.')).toBeInTheDocument();
 	});
 
 	it('lets the user pick which caldav calendars feed the widget', async () => {

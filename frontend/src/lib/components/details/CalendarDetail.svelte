@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { env } from '$env/dynamic/public';
 	import { page } from '$app/state';
-	import { api, type CaldavCalendar } from '$lib/api';
+	import { api, ApiError, type CaldavCalendar } from '$lib/api';
 	import { _, locale } from 'svelte-i18n';
 	import { get } from 'svelte/store';
 
@@ -21,6 +21,7 @@
 		events: CalendarEvent[];
 		calendar_ids?: string[];
 		calendar_colors?: Record<string, string>;
+		auth_error?: boolean;
 	}
 
 	let { data: initialData }: { data: CalendarDetailData } = $props();
@@ -51,8 +52,11 @@
 			colors = Object.fromEntries(
 				availableCalendars.map((c) => [c.id, calendarData.calendar_colors?.[c.id] ?? c.color]),
 			);
-		} catch {
-			error = get(_)('calendar.detail.load_calendars_error');
+		} catch (err) {
+			error =
+				err instanceof ApiError && err.status === 401
+					? get(_)('calendar.detail.auth_error')
+					: get(_)('calendar.detail.load_calendars_error');
 		} finally {
 			loadingCalendars = false;
 		}
@@ -94,6 +98,10 @@
 		</button>
 	{/if}
 </div>
+
+{#if calendarData.auth_error}
+	<p class="hint error">{$_('calendar.detail.auth_error')}</p>
+{/if}
 
 {#if managingCalendars}
 	<div class="calendar-picker">

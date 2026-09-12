@@ -857,12 +857,14 @@
 	"calendar": {
 		"tile": {
 			"loading": "Chargement des événements…",
-			"no_events": "Aucun événement à venir"
+			"no_events": "Aucun événement à venir",
+			"auth_error": "Échec de connexion au calendrier — vérifiez les paramètres"
 		},
 		"detail": {
 			"manage_calendars": "Gérer les agendas",
 			"loading_calendars": "Chargement des agendas…",
 			"load_calendars_error": "Impossible de charger les agendas.",
+			"auth_error": "CalDAV a rejeté votre nom d'utilisateur/mot de passe. Mettez-le à jour dans les paramètres, puis réessayez.",
 			"update_calendars_error": "Impossible de mettre à jour les agendas.",
 			"caldav_hint": "Ajoutez l'URL de votre serveur CalDAV, votre nom d'utilisateur et votre mot de passe dans les paramètres pour voir les événements à venir ici.",
 			"open_settings": "Ouvrir les paramètres",

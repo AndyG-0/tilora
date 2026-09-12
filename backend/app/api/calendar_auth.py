@@ -74,4 +74,9 @@ async def list_caldav_calendars():
     creds = await effective_settings()
     if not caldav_client.is_configured(creds):
         raise HTTPException(status_code=400, detail="CalDAV is not configured")
-    return await caldav_client.list_calendars(creds["caldav_url"], creds["caldav_username"], creds["caldav_password"])
+    try:
+        return await caldav_client.list_calendars(
+            creds["caldav_url"], creds["caldav_username"], creds["caldav_password"]
+        )
+    except caldav_client.CalDAVAuthError as exc:
+        raise HTTPException(status_code=401, detail="CalDAV rejected your username/password.") from exc

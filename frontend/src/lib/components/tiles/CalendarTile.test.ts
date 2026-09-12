@@ -16,6 +16,14 @@ describe('CalendarTile', () => {
 		expect(await screen.findByText('Not connected')).toBeInTheDocument();
 	});
 
+	it('shows an auth-error state when caldav credentials are rejected', async () => {
+		widgetSummary.mockResolvedValue({ connected: true, events: [], auth_error: true });
+
+		render(CalendarTile, { props: { widgetId: 'calendar', refreshIntervalSeconds: 60 } });
+
+		expect(await screen.findByText('Calendar sign-in failed — check Settings')).toBeInTheDocument();
+	});
+
 	it('shows a no-events state when connected', async () => {
 		widgetSummary.mockResolvedValue({ connected: true, events: [] });
 

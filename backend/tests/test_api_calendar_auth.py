@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from app.api import calendar_auth
 from app.auth import get_current_admin
 from app.config import settings
+from app.integrations import caldav_client
 from app.storage import db
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -196,6 +197,43 @@ def test_status_reports_connected(client, tmp_db):
     response = client.get("/api/calendar/status")
 
     assert response.json() == {"connected": True}
+
+
+def test_list_caldav_calendars_returns_400_when_not_configured(client, tmp_db):
+    response = client.get("/api/calendar/caldav/calendars")
+
+    assert response.status_code == 400
+
+
+def test_list_caldav_calendars_returns_401_on_rejected_credentials(client, tmp_db, monkeypatch):
+    monkeypatch.setattr(settings, "caldav_url", "https://caldav.example.com")
+    monkeypatch.setattr(settings, "caldav_username", "user")
+    monkeypatch.setattr(settings, "caldav_password", "wrong-pass")
+
+    async def fake_list_calendars(url, username, password):
+        raise caldav_client.CalDAVAuthError("Unauthorized")
+
+    monkeypatch.setattr(caldav_client, "list_calendars", fake_list_calendars)
+
+    response = client.get("/api/calendar/caldav/calendars")
+
+    assert response.status_code == 401
+
+
+def test_list_caldav_calendars_returns_calendars_when_configured(client, tmp_db, monkeypatch):
+    monkeypatch.setattr(settings, "caldav_url", "https://caldav.example.com")
+    monkeypatch.setattr(settings, "caldav_username", "user")
+    monkeypatch.setattr(settings, "caldav_password", "pass")
+
+    async def fake_list_calendars(url, username, password):
+        return [{"id": "home-id", "name": "Home", "color": "#2a78d6"}]
+
+    monkeypatch.setattr(caldav_client, "list_calendars", fake_list_calendars)
+
+    response = client.get("/api/calendar/caldav/calendars")
+
+    assert response.status_code == 200
+    assert response.json() == [{"id": "home-id", "name": "Home", "color": "#2a78d6"}]
 
 
 def test_calendar_routes_require_an_admin_session():
