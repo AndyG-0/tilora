@@ -857,12 +857,14 @@
 	"calendar": {
 		"tile": {
 			"loading": "Cargando eventos…",
-			"no_events": "Sin próximos eventos"
+			"no_events": "Sin próximos eventos",
+			"auth_error": "Error al iniciar sesión del calendario — revisa Ajustes"
 		},
 		"detail": {
 			"manage_calendars": "Gestionar calendarios",
 			"loading_calendars": "Cargando calendarios…",
 			"load_calendars_error": "No se pudieron cargar los calendarios.",
+			"auth_error": "CalDAV rechazó tu usuario/contraseña. Actualízalo en Ajustes e inténtalo de nuevo.",
 			"update_calendars_error": "No se pudieron actualizar los calendarios.",
 			"caldav_hint": "Añade la URL de tu servidor CalDAV, usuario y contraseña en Ajustes para ver aquí los próximos eventos.",
 			"open_settings": "Abrir ajustes",

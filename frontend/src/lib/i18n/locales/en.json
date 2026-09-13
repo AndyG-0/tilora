@@ -857,12 +857,14 @@
 	"calendar": {
 		"tile": {
 			"loading": "Loading events…",
-			"no_events": "No upcoming events"
+			"no_events": "No upcoming events",
+			"auth_error": "Calendar sign-in failed — check Settings"
 		},
 		"detail": {
 			"manage_calendars": "Manage calendars",
 			"loading_calendars": "Loading calendars…",
 			"load_calendars_error": "Could not load calendars.",
+			"auth_error": "CalDAV rejected your username/password. Update it in Settings, then try again.",
 			"update_calendars_error": "Could not update calendars.",
 			"caldav_hint": "Add your CalDAV server URL, username, and password in Settings to see upcoming events here.",
 			"open_settings": "Open settings",

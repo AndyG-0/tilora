@@ -857,12 +857,14 @@
 	"calendar": {
 		"tile": {
 			"loading": "Termine werden geladen…",
-			"no_events": "Keine anstehenden Termine"
+			"no_events": "Keine anstehenden Termine",
+			"auth_error": "Kalender-Anmeldung fehlgeschlagen — Einstellungen prüfen"
 		},
 		"detail": {
 			"manage_calendars": "Kalender verwalten",
 			"loading_calendars": "Kalender werden geladen…",
 			"load_calendars_error": "Die Kalender konnten nicht geladen werden.",
+			"auth_error": "CalDAV hat Benutzername/Passwort abgelehnt. Bitte in den Einstellungen aktualisieren und erneut versuchen.",
 			"update_calendars_error": "Die Kalender konnten nicht aktualisiert werden.",
 			"caldav_hint": "Füge deine CalDAV-Server-URL, Benutzername und Passwort in den Einstellungen hinzu, um hier anstehende Termine zu sehen.",
 			"open_settings": "Einstellungen öffnen",

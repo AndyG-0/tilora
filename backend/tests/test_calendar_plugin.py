@@ -247,6 +247,38 @@ async def test_get_summary_caldav_calendar_colors_override_default(tmp_db, monke
     assert colors_by_id == {"home-id": "#ff0000", "work-id": "#1baf7a"}
 
 
+async def test_get_summary_caldav_auth_error(tmp_db, monkeypatch):
+    monkeypatch.setattr(app_settings, "caldav_url", "https://caldav.example.com")
+    monkeypatch.setattr(app_settings, "caldav_username", "user")
+    monkeypatch.setattr(app_settings, "caldav_password", "wrong-pass")
+
+    async def fake_fetch_events(url, username, password, calendar_ids, days_ahead):
+        raise calendar_plugin_module.caldav_client.CalDAVAuthError("Unauthorized")
+
+    monkeypatch.setattr(calendar_plugin_module.caldav_client, "fetch_events", fake_fetch_events)
+    plugin = make_plugin(provider="caldav")
+
+    summary = await plugin.get_summary()
+
+    assert summary == {"connected": True, "provider": "caldav", "events": [], "auth_error": True}
+
+
+async def test_get_detail_caldav_auth_error(tmp_db, monkeypatch):
+    monkeypatch.setattr(app_settings, "caldav_url", "https://caldav.example.com")
+    monkeypatch.setattr(app_settings, "caldav_username", "user")
+    monkeypatch.setattr(app_settings, "caldav_password", "wrong-pass")
+
+    async def fake_fetch_events(url, username, password, calendar_ids, days_ahead):
+        raise calendar_plugin_module.caldav_client.CalDAVAuthError("Unauthorized")
+
+    monkeypatch.setattr(calendar_plugin_module.caldav_client, "fetch_events", fake_fetch_events)
+    plugin = make_plugin(provider="caldav")
+
+    detail = await plugin.get_detail()
+
+    assert detail == {"connected": True, "provider": "caldav", "events": [], "calendar_ids": [], "auth_error": True}
+
+
 def test_caldav_calendar_plugin_defaults_to_caldav_provider(tmp_db):
     plugin = CaldavCalendarPlugin({"id": "calendar_caldav", "settings": dict(CaldavCalendarPlugin.default_settings)})
 
