@@ -10,7 +10,6 @@ matching the plugin's async interface.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
 import zlib
 from datetime import UTC, datetime, timedelta
@@ -54,30 +53,24 @@ def is_configured(settings: dict[str, Any]) -> bool:
 
 
 def _fingerprint(value: str) -> str:
-    """A safe-to-log stand-in for a credential: proves which value was
-    actually used (so a "wrong password" report can be checked against what
-    was just typed into Settings) without ever writing the plaintext to
-    logs."""
+    """A safe-to-log stand-in for the CalDAV username: proves which value
+    was actually used (so a "wrong username" report can be checked against
+    what was just typed into Settings) without ever writing the plaintext
+    to logs. Never call this on a password — see `_log_auth_failure`."""
     if len(value) <= 4:
         return "***"
     return f"{value[:2]}…{value[-2:]} (len={len(value)})"
 
 
-def _password_fingerprint(value: str) -> str:
-    """A safe-to-log stand-in for a password: an irreversible hash lets a
-    failure report be compared against what was just typed into Settings
-    (same hash = same password submitted) without ever placing password
-    characters in the log, unlike `_fingerprint`'s prefix/suffix."""
-    digest = hashlib.sha256(value.encode()).hexdigest()[:8]
-    return f"sha256:{digest} (len={len(value)})"
-
-
-def _log_auth_failure(url: str, username: str, password: str, exc: Exception) -> None:
+def _log_auth_failure(url: str, username: str, exc: Exception) -> None:
+    # Deliberately never log anything derived from the password — CodeQL (and
+    # good practice) treats any log statement built from a password variable
+    # as a leak, transformed or not. Username + the server's own rejection
+    # detail is enough to tell whether a stale value is being sent.
     logger.warning(
-        "CalDAV server rejected credentials for %s (username=%s, password=%s): %s",
+        "CalDAV server rejected credentials for %s (username=%s): %s",
         url,
         _fingerprint(username),
-        _password_fingerprint(password),
         exc,
     )
 
@@ -103,7 +96,7 @@ def _list_calendars_sync(url: str, username: str, password: str) -> list[dict[st
     try:
         calendars = client.principal().calendars()
     except caldav.lib.error.AuthorizationError as exc:
-        _log_auth_failure(url, username, password, exc)
+        _log_auth_failure(url, username, exc)
         raise CalDAVAuthError(str(exc)) from exc
     return sorted((_calendar_dict(calendar) for calendar in calendars), key=lambda c: c["name"])
 
@@ -144,7 +137,7 @@ def _fetch_events_sync(
             for event in calendar.search(start=now, end=now + timedelta(days=days_ahead), event=True, expand=True)
         ]
     except caldav.lib.error.AuthorizationError as exc:
-        _log_auth_failure(url, username, password, exc)
+        _log_auth_failure(url, username, exc)
         raise CalDAVAuthError(str(exc)) from exc
     return sorted(events, key=lambda e: e["start"])
 
