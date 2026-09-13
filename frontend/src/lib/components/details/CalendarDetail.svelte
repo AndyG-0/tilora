@@ -92,7 +92,7 @@
 
 <div class="header">
 	<h1>Calendar</h1>
-	{#if calendarData.provider === 'caldav' && calendarData.connected}
+	{#if calendarData.provider === 'caldav' && calendarData.connected && !calendarData.auth_error}
 		<button class="manage-calendars" onclick={toggleManageCalendars}>
 			{managingCalendars ? $_('common.cancel') : $_('calendar.detail.manage_calendars')}
 		</button>

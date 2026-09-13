@@ -114,6 +114,14 @@ describe('CalendarDetail', () => {
 		).toBeInTheDocument();
 	});
 
+	it('hides "Manage calendars" when caldav credentials were rejected on the last fetch', () => {
+		render(CalendarDetail, {
+			props: { data: { connected: true, provider: 'caldav', events: [], auth_error: true } },
+		});
+
+		expect(screen.queryByText('Manage calendars')).not.toBeInTheDocument();
+	});
+
 	it('shows an auth-error message when caldav credentials are rejected while managing calendars', async () => {
 		listCaldavCalendars.mockRejectedValue(new ApiError('unauthorized', 401));
 
