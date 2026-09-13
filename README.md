@@ -5,6 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](backend/pyproject.toml)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue.svg)](https://andyg-0.github.io/tilora/)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-support-F16061?logo=ko-fi&logoColor=white)](https://ko-fi.com/andyg0)
 
 A customizable smart-display dashboard and home server for Raspberry Pi, Debian,
 Ubuntu, and other Linux devices. Run it as a dedicated fullscreen touchscreen
