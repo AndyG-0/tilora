@@ -10,6 +10,7 @@ matching the plugin's async interface.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import zlib
 from datetime import UTC, datetime, timedelta
@@ -62,12 +63,21 @@ def _fingerprint(value: str) -> str:
     return f"{value[:2]}…{value[-2:]} (len={len(value)})"
 
 
+def _password_fingerprint(value: str) -> str:
+    """A safe-to-log stand-in for a password: an irreversible hash lets a
+    failure report be compared against what was just typed into Settings
+    (same hash = same password submitted) without ever placing password
+    characters in the log, unlike `_fingerprint`'s prefix/suffix."""
+    digest = hashlib.sha256(value.encode()).hexdigest()[:8]
+    return f"sha256:{digest} (len={len(value)})"
+
+
 def _log_auth_failure(url: str, username: str, password: str, exc: Exception) -> None:
     logger.warning(
         "CalDAV server rejected credentials for %s (username=%s, password=%s): %s",
         url,
         _fingerprint(username),
-        _fingerprint(password),
+        _password_fingerprint(password),
         exc,
     )
 

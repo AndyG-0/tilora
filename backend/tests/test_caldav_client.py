@@ -185,3 +185,15 @@ def test_fingerprint_masks_short_values():
 
 def test_fingerprint_shows_prefix_suffix_and_length_for_longer_values():
     assert caldav_client._fingerprint("supersecret") == "su…et (len=11)"
+
+
+def test_password_fingerprint_never_contains_password_characters():
+    fingerprint = caldav_client._password_fingerprint("supersecret")
+
+    assert "supersecret" not in fingerprint
+    assert fingerprint == "sha256:f75778f7 (len=11)"
+
+
+def test_password_fingerprint_is_stable_for_same_value_and_differs_for_others():
+    assert caldav_client._password_fingerprint("supersecret") == caldav_client._password_fingerprint("supersecret")
+    assert caldav_client._password_fingerprint("supersecret") != caldav_client._password_fingerprint("othersecret")
