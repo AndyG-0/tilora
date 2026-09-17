@@ -92,6 +92,14 @@
 			"animation_matrix": "Matrix (digital rain)",
 			"animation_flipboard": "Flipboard (split-flap)",
 			"animation_led_dots": "LED dot-matrix",
+			"animation_plain": "Plain (simple reveal)",
+			"font_family_label": "Font family",
+			"font_family_default": "Default (per-style)",
+			"font_family_sans": "Sans-serif",
+			"font_family_mono": "Monospace",
+			"font_family_serif": "Serif",
+			"font_family_hint": "Applies to all text-animation styles above. \"Default\" keeps each style's own look (e.g. LED Dot-Matrix keeps its retro font).",
+			"font_scale_label": "Font size",
 			"reading_pause_label": "Reading pause (seconds)",
 			"reading_pause_hint": "How long each screenful of text holds still, once fully revealed, before advancing.",
 			"led_color_label": "LED dot-matrix color",
@@ -1083,7 +1091,8 @@
 		"display_failed": "Couldn't load the display for {type}",
 		"error_network": "network unreachable",
 		"error_server": "server error",
-		"device_label": "Device: {name}"
+		"device_label": "Device: {name}",
+		"go_to_page": "Go to page {page}"
 	},
 	"player": {
 		"close": "Close player",

@@ -17,10 +17,12 @@ class UpdateScreensaverSettingsRequest(BaseModel):
     idle_timeout_seconds: int | None = None
     rotation_interval_seconds: int | None = None
     widget_ids: list[str] | None = None
-    text_animation_style: Literal["marquee", "matrix", "flipboard", "led_dots"] | None = None
+    text_animation_style: Literal["marquee", "matrix", "flipboard", "led_dots", "plain"] | None = None
     led_color: str | None = None
     text_pause_seconds: int | None = None
     flipboard_pattern: Literal["top_to_bottom", "random"] | None = None
+    screensaver_font_family: Literal["default", "sans", "mono", "serif"] | None = None
+    screensaver_font_scale: float | None = None
 
 
 @router.get("/settings")

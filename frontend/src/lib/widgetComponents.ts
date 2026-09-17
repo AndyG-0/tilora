@@ -92,9 +92,11 @@ export const DETAIL_COMPONENTS: Record<string, ComponentLoader> = {
 	artificial_analysis: () => import('$lib/components/details/ArtificialAnalysisDetail.svelte'),
 };
 
-// 'photos' is deliberately absent here: PhotoScreensaver needs a widget `id`
-// to persist/restore its cursor, so ScreensaverContent.svelte renders it
-// directly instead of through this generic (id-less) map.
+// 'photos' and 'flights' are deliberately absent here: PhotoScreensaver needs
+// a widget `id` to persist/restore its cursor, and FlightsScreensaver needs
+// one too (to persist/restore its list/map rotation phase), so
+// ScreensaverContent.svelte renders both directly instead of through this
+// generic (id-less) map.
 export const SCREENSAVER_COMPONENTS: Record<string, ComponentLoader> = {
 	clock: () => import('$lib/components/screensaver/ClockScreensaver.svelte'),
 	date: () => import('$lib/components/screensaver/DateScreensaver.svelte'),
@@ -102,5 +104,4 @@ export const SCREENSAVER_COMPONENTS: Record<string, ComponentLoader> = {
 	calendar_caldav: () => import('$lib/components/screensaver/CalendarScreensaver.svelte'),
 	calendar_microsoft: () => import('$lib/components/screensaver/CalendarScreensaver.svelte'),
 	weather: () => import('$lib/components/screensaver/WeatherScreensaver.svelte'),
-	flights: () => import('$lib/components/screensaver/FlightsScreensaver.svelte'),
 };

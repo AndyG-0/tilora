@@ -92,6 +92,14 @@
 			"animation_matrix": "Matrix (lluvia digital)",
 			"animation_flipboard": "Flipboard (paneles giratorios)",
 			"animation_led_dots": "Matriz de puntos LED",
+			"animation_plain": "Simple (revelado directo)",
+			"font_family_label": "Tipo de letra",
+			"font_family_default": "Predeterminado (según el estilo)",
+			"font_family_sans": "Sans-serif",
+			"font_family_mono": "Monoespaciada",
+			"font_family_serif": "Serif",
+			"font_family_hint": "Se aplica a todos los estilos de animación de texto anteriores. \"Predeterminado\" mantiene el aspecto propio de cada estilo (p. ej., la matriz de puntos LED conserva su fuente retro).",
+			"font_scale_label": "Tamaño de letra",
 			"reading_pause_label": "Pausa de lectura (segundos)",
 			"reading_pause_hint": "Cuánto tiempo permanece quieta cada pantalla de texto, una vez revelada por completo, antes de avanzar.",
 			"led_color_label": "Color de la matriz de puntos LED",
@@ -1065,7 +1073,8 @@
 		"display_failed": "No se pudo cargar la pantalla de {type}",
 		"error_network": "red no disponible",
 		"error_server": "error del servidor",
-		"device_label": "Dispositivo: {name}"
+		"device_label": "Dispositivo: {name}",
+		"go_to_page": "Ir a la página {page}"
 	},
 	"player": {
 		"close": "Cerrar reproductor",

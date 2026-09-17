@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+	groupCharsByWord,
 	parseFormattedLines,
 	replaceDiscordReferences,
 	segmentsToChars,
@@ -239,6 +240,39 @@ describe('segmentsToChars', () => {
 	it('counts multi-code-unit glyphs as a single character', () => {
 		const chars = segmentsToChars([{ text: '🎉x' }]);
 		expect(chars.map((c) => c.ch)).toEqual(['🎉', 'x']);
+	});
+});
+
+describe('groupCharsByWord', () => {
+	function toWords(groups: ReturnType<typeof groupCharsByWord>): string[] {
+		return groups.map((group) => group.map((g) => g.char.ch).join(''));
+	}
+
+	it('groups consecutive non-space characters into one run per word', () => {
+		const chars = segmentsToChars([{ text: 'NYY @ BOS' }]);
+		expect(toWords(groupCharsByWord(chars))).toEqual(['NYY', ' ', '@', ' ', 'BOS']);
+	});
+
+	it('keeps a non-breaking space fused to its neighbors instead of starting a new run', () => {
+		// Simulates a time glued to its AM/PM suffix via a non-breaking space,
+		// which should never be split across a line-wrap.
+		const chars = segmentsToChars([{ text: '7:05:00 PM' }]);
+		expect(toWords(groupCharsByWord(chars))).toEqual(['7:05:00 PM']);
+	});
+
+	it('treats each plain space as its own single-character run so it stays a valid wrap point', () => {
+		const chars = segmentsToChars([{ text: 'a  b' }]);
+		expect(toWords(groupCharsByWord(chars))).toEqual(['a', ' ', ' ', 'b']);
+	});
+
+	it('preserves each character’s original flat index across the regrouping', () => {
+		const chars = segmentsToChars([{ text: 'ab cd' }]);
+		const groups = groupCharsByWord(chars);
+		expect(groups.flatMap((group) => group.map((g) => g.index))).toEqual([0, 1, 2, 3, 4]);
+	});
+
+	it('returns nothing for empty input', () => {
+		expect(groupCharsByWord([])).toEqual([]);
 	});
 });
 

@@ -15,6 +15,8 @@ Navigate to **Settings → Your Settings → Screensaver**:
 | **Rotation interval (seconds)** | Duration each widget displays before transitioning to the next. | `15` seconds |
 | **Animation Style** | The visual rendering effect for text-heavy widgets (see below). | `Marquee` |
 | **Reading pause (seconds)** | How long fully revealed text holds still before advancing. | `4` seconds |
+| **Font family** | Overrides the font used by the five text animations below (Marquee, Matrix, Flipboard, LED Dot-Matrix, Plain). Does not affect Clock, Weather, Flights, Calendar, or Date. | `Default` (each style's own look) |
+| **Font size** | Scales the text size used by the five text animations below. | `1.00×` |
 | **Widget Selection** | Checkboxes to choose which enabled widgets participate in the rotation. | All eligible |
 
 Tap **Test** next to any widget in the list to immediately preview that individual screensaver with your active animation and color settings, or tap **Test screensaver** to preview the entire rotation loop without waiting for the idle timer.
@@ -23,7 +25,7 @@ Tap **Test** next to any widget in the list to immediately preview that individu
 
 ## Animation Styles
 
-Tilora includes four animations for rendering textual information (such as AI briefings, news headlines, Discord messages, or sports scores):
+Tilora includes five animations for rendering textual information (such as AI briefings, news headlines, Discord messages, or sports scores):
 
 ### 1. Marquee (Continuous Scrolling)
 Smooth horizontal scrolling text banner across the screen, reminiscent of classic news tickers and financial boards.
@@ -39,6 +41,11 @@ Simulates mechanical split-flap departure boards found in train stations and air
 Emulates a bright retro LED display board.
 - **Custom LED Color**: Choose amber, cyan, emerald green, ruby red, or any custom hex color with the color picker.
 
+### 5. Plain (Simple Reveal)
+Text simply fades in and holds still for the reading pause — no flashy reveal effect, just a clean, easy-to-read display.
+
+Whenever more content exists than fits on one screen, all five animations page through it a screenful at a time and show a small dot indicator (bottom of the display) tracking your position in the sequence. Tap or click a dot to jump straight to that page — this doesn't count as the usual wake-up interaction, so the screensaver stays up.
+
 ---
 
 ## Screensaver-Eligible Widgets
@@ -49,6 +56,6 @@ The screensaver dynamically renders custom full-screen views for:
 - **Weather**: High-contrast temperature, condition icon, and severe weather alert banners.
 - **AI Daily Briefing**: Animated summary of the morning report.
 - **Sports**: Live scores and upcoming game schedule cards.
-- **Flights**: Live overhead radar and aircraft tracking banners.
+- **Flights**: Rotates between a departure-board-style flight list and an ambient overhead radar map, with a dot indicator (tap to switch directly) tracking which is showing.
 - **Discord & RSS**: Animated headline streams.
 - **NASA APOD**: Full-resolution Astronomy Picture of the Day.

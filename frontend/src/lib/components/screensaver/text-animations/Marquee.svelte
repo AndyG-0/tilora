@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { segmentsToHtml, type FormattedSegment } from '$lib/discordMarkdown';
 
-	let { lines }: { lines: FormattedSegment[][] } = $props();
+	let {
+		lines,
+		fontFamily,
+		fontScale = 1,
+	}: { lines: FormattedSegment[][]; fontFamily?: string; fontScale?: number } = $props();
 
 	// A fixed animation-duration paired with a track whose width scales with
 	// content length makes longer content visibly speed up to cover more
@@ -16,7 +20,12 @@
 </script>
 
 <div class="viewport">
-	<div class="track" style="animation-duration: {durationSeconds}s;">
+	<div
+		class="track"
+		style="animation-duration: {durationSeconds}s;"
+		style:--screensaver-font-family={fontFamily}
+		style:--screensaver-font-scale={fontScale}
+	>
 		<!-- eslint-disable-next-line svelte/no-at-html-tags -- segmentsToHtml only emits a hardcoded inline-tag set around escaped text, no raw markup passes through. -->
 		<span bind:clientWidth={copyWidth}>{@html joinedHtml}</span>
 		<!-- eslint-disable-next-line svelte/no-at-html-tags -- segmentsToHtml only emits a hardcoded inline-tag set around escaped text, no raw markup passes through. -->
@@ -38,7 +47,8 @@
 		animation-name: marquee-scroll;
 		animation-timing-function: linear;
 		animation-iteration-count: infinite;
-		font-size: clamp(2rem, 5vw, 4rem);
+		font-family: var(--screensaver-font-family, inherit);
+		font-size: calc(clamp(2rem, 5vw, 4rem) * var(--screensaver-font-scale, 1));
 		font-weight: 600;
 	}
 
@@ -59,7 +69,7 @@
 	}
 
 	.track :global(code) {
-		font-family: 'Courier New', monospace;
+		font-family: inherit;
 		background: rgba(255, 255, 255, 0.15);
 		border-radius: 0.2em;
 		padding: 0 0.2em;

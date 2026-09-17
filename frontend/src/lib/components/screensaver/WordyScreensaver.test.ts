@@ -166,3 +166,26 @@ describe('WordyScreensaver — sports', () => {
 		expect(container.querySelector('.dots')?.textContent).toBe('No games scheduled.');
 	});
 });
+
+describe('WordyScreensaver — plain', () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+		localStorage.clear();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('reveals a line, holds for the pause, then advances to the next line', async () => {
+		const data = { messages: [{ author: 'Andy', content: 'Line one\nLine two' }] };
+		const { container } = render(WordyScreensaver, {
+			props: { id: 'test', type: 'discord', data, animationStyle: 'plain', textPauseSeconds: 8 },
+		});
+
+		expect(container.querySelector('.text')?.textContent).toBe('Andy: Line one');
+
+		await vi.advanceTimersByTimeAsync(8000);
+		expect(container.querySelector('.text')?.textContent).toBe('Line two');
+	});
+});

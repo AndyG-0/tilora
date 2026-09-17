@@ -17,6 +17,8 @@ _DEFAULTS = {
     "led_color": "#ff8a00",
     "text_pause_seconds": 8,
     "flipboard_pattern": "top_to_bottom",
+    "screensaver_font_family": "default",
+    "screensaver_font_scale": 1.0,
 }
 
 
@@ -72,6 +74,8 @@ def test_patch_settings_persists_a_partial_update(client, tmp_db):
         "led_color": "#ff8a00",
         "text_pause_seconds": 8,
         "flipboard_pattern": "top_to_bottom",
+        "screensaver_font_family": "default",
+        "screensaver_font_scale": 1.0,
     }
     assert client.get("/api/screensaver/settings").json()["enabled"] is True
 
@@ -91,6 +95,8 @@ def test_patch_settings_merges_onto_prior_values(client, tmp_db):
         "led_color": "#ff8a00",
         "text_pause_seconds": 8,
         "flipboard_pattern": "top_to_bottom",
+        "screensaver_font_family": "default",
+        "screensaver_font_scale": 1.0,
     }
 
 

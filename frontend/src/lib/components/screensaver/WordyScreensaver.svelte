@@ -6,6 +6,7 @@
 	import Matrix from './text-animations/Matrix.svelte';
 	import Flipboard from './text-animations/Flipboard.svelte';
 	import LedDots from './text-animations/LedDots.svelte';
+	import Plain from './text-animations/Plain.svelte';
 
 	interface RSSItem {
 		title: string;
@@ -39,6 +40,8 @@
 		ledColor,
 		textPauseSeconds,
 		flipboardPattern,
+		fontFamily,
+		fontScale,
 	}: {
 		id: string;
 		type: string;
@@ -47,6 +50,8 @@
 		ledColor?: string;
 		textPauseSeconds?: number;
 		flipboardPattern?: FlipboardPattern;
+		fontFamily?: string;
+		fontScale?: number;
 	} = $props();
 
 	function toLines(text: string): FormattedSegment[][] {
@@ -105,11 +110,13 @@
 </script>
 
 {#if animationStyle === 'matrix'}
-	<Matrix {id} {lines} pauseSeconds={textPauseSeconds} />
+	<Matrix {id} {lines} pauseSeconds={textPauseSeconds} {fontFamily} {fontScale} />
 {:else if animationStyle === 'flipboard'}
-	<Flipboard {id} {lines} pauseSeconds={textPauseSeconds} pattern={flipboardPattern} />
+	<Flipboard {id} {lines} pauseSeconds={textPauseSeconds} pattern={flipboardPattern} {fontFamily} {fontScale} />
 {:else if animationStyle === 'led_dots'}
-	<LedDots {id} {lines} color={ledColor} pauseSeconds={textPauseSeconds} />
+	<LedDots {id} {lines} color={ledColor} pauseSeconds={textPauseSeconds} {fontFamily} {fontScale} />
+{:else if animationStyle === 'plain'}
+	<Plain {id} {lines} pauseSeconds={textPauseSeconds} {fontFamily} {fontScale} />
 {:else}
-	<Marquee {lines} />
+	<Marquee {lines} {fontFamily} {fontScale} />
 {/if}

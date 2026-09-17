@@ -11,6 +11,8 @@ _DEFAULTS = {
     "led_color": "#ff8a00",
     "text_pause_seconds": 8,
     "flipboard_pattern": "top_to_bottom",
+    "screensaver_font_family": "default",
+    "screensaver_font_scale": 1.0,
 }
 
 
@@ -32,6 +34,8 @@ def test_save_then_get_screensaver_settings_round_trips(tmp_db):
         "led_color": "#ff8a00",
         "text_pause_seconds": 8,
         "flipboard_pattern": "top_to_bottom",
+        "screensaver_font_family": "default",
+        "screensaver_font_scale": 1.0,
     }
 
 
@@ -49,6 +53,8 @@ def test_save_screensaver_settings_merges_partial_updates(tmp_db):
         "led_color": "#ff8a00",
         "text_pause_seconds": 8,
         "flipboard_pattern": "top_to_bottom",
+        "screensaver_font_family": "default",
+        "screensaver_font_scale": 1.0,
     }
 
 

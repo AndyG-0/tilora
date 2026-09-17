@@ -1076,10 +1076,12 @@ export interface ScreensaverSettings {
 	idle_timeout_seconds: number;
 	rotation_interval_seconds: number;
 	widget_ids: string[];
-	text_animation_style: 'marquee' | 'matrix' | 'flipboard' | 'led_dots';
+	text_animation_style: 'marquee' | 'matrix' | 'flipboard' | 'led_dots' | 'plain';
 	led_color: string;
 	text_pause_seconds: number;
 	flipboard_pattern: 'top_to_bottom' | 'random';
+	screensaver_font_family: 'default' | 'sans' | 'mono' | 'serif';
+	screensaver_font_scale: number;
 }
 
 export interface SetupStatus {

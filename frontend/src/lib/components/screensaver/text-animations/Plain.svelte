@@ -14,20 +14,18 @@
 		id,
 		lines,
 		pauseSeconds = 8,
-		color = '#ff8a00',
 		fontFamily,
 		fontScale = 1,
 	}: {
 		id: string;
 		lines: FormattedSegment[][];
 		pauseSeconds?: number;
-		color?: string;
 		fontFamily?: string;
 		fontScale?: number;
 	} = $props();
 
 	let index = $state(getCursor(id));
-	let signHeight = $state(0);
+	let panelHeight = $state(0);
 	let rowsWrapperHeight = $state(0);
 	let rowsToShow = $state(1);
 
@@ -36,18 +34,18 @@
 	// shrink-effect below trimmed it for the previous (possibly longer) tick.
 	$effect(() => {
 		void index;
-		rowsToShow = Math.max(1, Math.floor(signHeight / ROW_HEIGHT_PX));
+		rowsToShow = Math.max(1, Math.floor(panelHeight / ROW_HEIGHT_PX));
 	});
 
 	// Long lines wrap onto extra visual rows (see `.text`'s overflow-wrap
 	// below), which the estimate above can't account for. Shrink the row
-	// count until the actually-rendered rows fit within the sign, rather
-	// than truncating/ellipsizing whatever doesn't fit. `rowsToShow` itself
-	// is read/written untracked so this only reruns on a genuinely new
+	// count until the actually-rendered rows fit within the panel, rather
+	// than truncating/clipping whatever doesn't fit. `rowsToShow` itself is
+	// read/written untracked so this only reruns on a genuinely new
 	// measurement (a real resize-observer tick) instead of retriggering
 	// itself synchronously on every decrement.
 	$effect(() => {
-		if (rowsWrapperHeight > signHeight) {
+		if (rowsWrapperHeight > panelHeight) {
 			untrack(() => {
 				if (rowsToShow > 1) rowsToShow -= 1;
 			});
@@ -85,21 +83,16 @@
 </script>
 
 <div
-	class="sign"
-	style="--dotmatrix-color: {color}"
+	class="panel"
+	bind:clientHeight={panelHeight}
 	style:--screensaver-font-family={fontFamily}
 	style:--screensaver-font-scale={fontScale}
-	bind:clientHeight={signHeight}
 >
 	{#key index}
 		<div class="rows" bind:clientHeight={rowsWrapperHeight}>
 			{#each visibleHtml as html, r (r)}
-				<div class="stack">
-					<!-- eslint-disable-next-line svelte/no-at-html-tags -- segmentsToHtml only emits a hardcoded inline-tag set around escaped text, no raw markup passes through. -->
-					<p class="text glow" aria-hidden="true">{@html html}</p>
-					<!-- eslint-disable-next-line svelte/no-at-html-tags -- segmentsToHtml only emits a hardcoded inline-tag set around escaped text, no raw markup passes through. -->
-					<p class="text dots">{@html html}</p>
-				</div>
+				<!-- eslint-disable-next-line svelte/no-at-html-tags -- segmentsToHtml only emits a hardcoded inline-tag set around escaped text, no raw markup passes through. -->
+				<p class="text">{@html html}</p>
 			{/each}
 		</div>
 	{/key}
@@ -107,13 +100,13 @@
 </div>
 
 <style>
-	.sign {
+	.panel {
 		position: relative;
 		height: 100%;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		background: #0a0a0a;
+		background: #111;
 		overflow: hidden;
 	}
 
@@ -121,39 +114,17 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
-	}
-
-	.stack {
-		position: relative;
-		max-width: 90%;
+		animation: fade-in 0.6s ease-out;
 	}
 
 	.text {
-		grid-area: 1 / 1;
-		text-align: left;
+		max-width: 90%;
 		margin: 0;
-		font-family: var(--screensaver-font-family, 'Doto Variable', 'Courier New', monospace);
-		font-variation-settings: 'wght' 300;
-		font-weight: 100;
+		text-align: left;
+		color: #f2f2f2;
+		font-family: var(--screensaver-font-family, system-ui, sans-serif);
 		font-size: calc(clamp(1.5rem, 4vw, 3rem) * var(--screensaver-font-scale, 1));
-		letter-spacing: 0.05em;
 		overflow-wrap: break-word;
-
-		/* animation: flicker 3s ease-in-out infinite; */
-	}
-
-	.stack {
-		display: grid;
-	}
-
-	/* Blurred solid-color copy behind the dots — the glow's own blur must
-	   never touch the dot pattern itself, or it fills the gaps between dots
-	   and washes the grid into a solid glow (the original bug here). */
-
-	.glow {
-		color: var(--dotmatrix-color);
-		filter: blur(0.08em);
-		opacity: 0.75;
 	}
 
 	.text :global(strong) {
@@ -181,14 +152,12 @@
 		text-decoration: underline dotted;
 	}
 
-	@keyframes flicker {
-		0%,
-		92%,
-		100% {
-			opacity: 1;
+	@keyframes fade-in {
+		from {
+			opacity: 0;
 		}
-		94% {
-			opacity: 0.85;
+		to {
+			opacity: 1;
 		}
 	}
 </style>

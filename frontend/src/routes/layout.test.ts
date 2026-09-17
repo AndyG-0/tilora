@@ -146,6 +146,8 @@ describe('+layout.svelte', () => {
 			led_color: '#00ff00',
 			text_pause_seconds: 5,
 			flipboard_pattern: 'random',
+			screensaver_font_family: 'default',
+			screensaver_font_scale: 1,
 		});
 
 		render(Layout, { props: { children: emptyChildren() } });

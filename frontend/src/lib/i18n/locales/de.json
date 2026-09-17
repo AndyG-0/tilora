@@ -92,6 +92,14 @@
 			"animation_matrix": "Matrix (digitaler Regen)",
 			"animation_flipboard": "Flipboard (Klapptafel)",
 			"animation_led_dots": "LED-Punktmatrix",
+			"animation_plain": "Einfach (klare Anzeige)",
+			"font_family_label": "Schriftart",
+			"font_family_default": "Standard (je Stil)",
+			"font_family_sans": "Serifenlos",
+			"font_family_mono": "Festbreite",
+			"font_family_serif": "Serifenschrift",
+			"font_family_hint": "Gilt für alle obigen Textanimationsstile. „Standard“ behält den eigenen Look jedes Stils bei (z. B. behält LED-Punktmatrix ihre Retro-Schrift).",
+			"font_scale_label": "Schriftgröße",
 			"reading_pause_label": "Lesepause (Sekunden)",
 			"reading_pause_hint": "Wie lange jeder vollständig angezeigte Textbildschirm stillsteht, bevor es weitergeht.",
 			"led_color_label": "Farbe der LED-Punktmatrix",
@@ -1065,7 +1073,8 @@
 		"display_failed": "Anzeige für {type} konnte nicht geladen werden",
 		"error_network": "Netzwerk nicht erreichbar",
 		"error_server": "Serverfehler",
-		"device_label": "Gerät: {name}"
+		"device_label": "Gerät: {name}",
+		"go_to_page": "Zu Seite {page} wechseln"
 	},
 	"player": {
 		"close": "Player schließen",

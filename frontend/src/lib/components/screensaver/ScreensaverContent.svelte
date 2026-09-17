@@ -4,6 +4,7 @@
 	import { isScreensaverWordyType, type TextAnimationStyle, type FlipboardPattern } from '$lib/screensaverTypes';
 	import WordyScreensaver from './WordyScreensaver.svelte';
 	import PhotoScreensaver from './PhotoScreensaver.svelte';
+	import FlightsScreensaver from './FlightsScreensaver.svelte';
 	import type { Component } from 'svelte';
 	import { _ } from 'svelte-i18n';
 
@@ -15,6 +16,8 @@
 		ledColor,
 		textPauseSeconds,
 		flipboardPattern,
+		fontFamily,
+		fontScale,
 	}: {
 		id: string;
 		type: string;
@@ -23,6 +26,8 @@
 		ledColor?: string;
 		textPauseSeconds?: number;
 		flipboardPattern?: FlipboardPattern;
+		fontFamily?: string;
+		fontScale?: number;
 	} = $props();
 
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- see lazyWidgetComponent.ts
@@ -58,9 +63,13 @@
 		{ledColor}
 		{textPauseSeconds}
 		{flipboardPattern}
+		{fontFamily}
+		{fontScale}
 	/>
 {:else if type === 'photos'}
 	<PhotoScreensaver data={data as never} {id} />
+{:else if type === 'flights'}
+	<FlightsScreensaver data={data as never} {id} {ledColor} {textPauseSeconds} />
 {:else if Visual}
 	<Visual data={data as never} {ledColor} />
 {:else if loadFailed}

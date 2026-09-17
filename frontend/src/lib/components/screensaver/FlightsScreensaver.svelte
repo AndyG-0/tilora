@@ -1,12 +1,17 @@
 <script lang="ts">
 	import { airlineLogoSrc } from '$lib/airlineLogos';
 	import LedText from '$lib/components/LedText.svelte';
+	import FlightsMap from '$lib/components/FlightsMap.svelte';
+	import { getCursor, setCursor } from '$lib/stores/screensaverProgress';
+	import ScreenIndicator from './ScreenIndicator.svelte';
 	import { _ } from 'svelte-i18n';
 
 	interface AirportRef {
 		iata: string | null;
 		icao: string;
 		city: string | null;
+		latitude: number | null;
+		longitude: number | null;
 	}
 
 	interface FlightItem {
@@ -20,18 +25,60 @@
 		altitude_ft: number | null;
 		speed_kts: number | null;
 		distance_nm: number | null;
+		heading: number | null;
+		latitude: number | null;
+		longitude: number | null;
 		origin: AirportRef | null;
 		destination: AirportRef | null;
 	}
 
 	interface FlightsScreensaverData {
 		location_name: string;
+		latitude: number;
+		longitude: number;
 		radius_nm: number;
+		speed_unit?: 'mph' | 'kmh';
 		count: number;
 		flights: FlightItem[];
 	}
 
-	let { data, ledColor = '#ff8a00' }: { data: FlightsScreensaverData; ledColor?: string } = $props();
+	let {
+		id,
+		data,
+		ledColor = '#ff8a00',
+		textPauseSeconds = 8,
+	}: { id: string; data: FlightsScreensaverData; ledColor?: string; textPauseSeconds?: number } = $props();
+
+	const PHASES = ['list', 'map'] as const;
+	type Phase = (typeof PHASES)[number];
+
+	const initialCursor = getCursor(id);
+	let phaseIndex = $state(initialCursor % PHASES.length);
+	const phase = $derived<Phase>(PHASES[phaseIndex]);
+	let advanceTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function scheduleAdvance() {
+		if (advanceTimer) clearTimeout(advanceTimer);
+		advanceTimer = setTimeout(
+			() => {
+				phaseIndex = (phaseIndex + 1) % PHASES.length;
+			},
+			Math.max(1, textPauseSeconds) * 1000,
+		);
+	}
+
+	$effect(() => {
+		// Depend on phaseIndex so a new timer is scheduled every phase change.
+		void phaseIndex;
+		scheduleAdvance();
+		return () => {
+			if (advanceTimer) clearTimeout(advanceTimer);
+		};
+	});
+
+	$effect(() => {
+		setCursor(id, phaseIndex);
+	});
 
 	function kindTag(kind: string | null): string {
 		if (kind === 'helicopter') return 'HELI';
@@ -71,31 +118,37 @@
 </script>
 
 <div class="sign" style="--dotmatrix-color: {ledColor}">
-	<div class="title">
-		<LedText text={data.location_name.toUpperCase()} color={ledColor} weight={700} />
-	</div>
+	{#if phase === 'list'}
+		<div class="title">
+			<LedText text={data.location_name.toUpperCase()} color={ledColor} weight={700} />
+		</div>
 
-	{#if data.flights.length === 0}
-		<div class="empty">
-			<LedText text={$_('flights.screensaver.no_aircraft')} color={ledColor} />
-		</div>
-	{:else}
-		<div class="rows">
-			{#each data.flights as flight (flight.hex ?? flight.callsign)}
-				{@const logo = airlineLogoSrc(flight.airline_code)}
-				<div class="row">
-					{#if logo}
-						<img class="logo" src={logo} alt="" />
-					{:else}
-						<span class="logo-spacer"></span>
-					{/if}
-					<div class="row-text">
-						<LedText text={formatRow(flight)} color={ledColor} />
+		{#if data.flights.length === 0}
+			<div class="empty">
+				<LedText text={$_('flights.screensaver.no_aircraft')} color={ledColor} />
+			</div>
+		{:else}
+			<div class="rows">
+				{#each data.flights as flight (flight.hex ?? flight.callsign)}
+					{@const logo = airlineLogoSrc(flight.airline_code)}
+					<div class="row">
+						{#if logo}
+							<img class="logo" src={logo} alt="" />
+						{:else}
+							<span class="logo-spacer"></span>
+						{/if}
+						<div class="row-text">
+							<LedText text={formatRow(flight)} color={ledColor} />
+						</div>
 					</div>
-				</div>
-			{/each}
-		</div>
+				{/each}
+			</div>
+		{/if}
+	{:else}
+		<FlightsMap {data} interactive={false} fillHeight={true} />
 	{/if}
+
+	<ScreenIndicator current={phaseIndex} total={PHASES.length} onselect={(page) => (phaseIndex = page)} />
 </div>
 
 <style>
@@ -111,6 +164,7 @@
 		overflow: hidden;
 		padding: 2rem;
 		box-sizing: border-box;
+		position: relative;
 	}
 
 	.rows {

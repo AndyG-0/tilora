@@ -42,6 +42,8 @@ function settings(overrides: Partial<ScreensaverSettings> = {}): ScreensaverSett
 		led_color: '#ff8a00',
 		text_pause_seconds: 8,
 		flipboard_pattern: 'top_to_bottom',
+		screensaver_font_family: 'default',
+		screensaver_font_scale: 1,
 		...overrides,
 	};
 }
@@ -167,5 +169,32 @@ describe('Screensaver', () => {
 		render(Screensaver, { props: { settings: settings({ widget_ids: [] }), ondismiss: vi.fn() } });
 
 		expect(screen.getByText('No screensaver widgets configured')).toBeInTheDocument();
+	});
+
+	it('keeps showing the same widget without an unmount gap while a same-widget refresh is in flight', async () => {
+		widgetDetail.mockResolvedValue({ label: 'first' });
+
+		render(Screensaver, {
+			props: { settings: settings({ widget_ids: ['w1'], rotation_interval_seconds: 10 }), ondismiss: vi.fn() },
+		});
+		await vi.waitFor(() => expect(screen.getByText(/first/)).toBeInTheDocument());
+
+		// A single-widget rotation still re-fetches the same widget's detail on
+		// every rotation tick (e.g. a per-widget "Test" preview). Hold that
+		// refetch pending so we can inspect what's rendered while it's in
+		// flight, before it resolves.
+		let resolveSecond!: (value: { label: string }) => void;
+		widgetDetail.mockImplementationOnce(() => new Promise((resolve) => (resolveSecond = resolve)));
+
+		await vi.advanceTimersByTimeAsync(10_000);
+
+		// The previous detail should still be on screen -- not the "loading"
+		// fallback -- because the same widget id is just refreshing in place,
+		// not being replaced by a different widget.
+		expect(screen.getByTestId('screensaver-content')).toBeInTheDocument();
+		expect(screen.getByText(/first/)).toBeInTheDocument();
+
+		resolveSecond({ label: 'second' });
+		await vi.waitFor(() => expect(screen.getByText(/second/)).toBeInTheDocument());
 	});
 });

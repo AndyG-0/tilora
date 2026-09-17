@@ -140,6 +140,44 @@ export function segmentsToChars(segments: FormattedSegment[]): FormattedChar[] {
 	);
 }
 
+export interface IndexedChar {
+	char: FormattedChar;
+	index: number;
+}
+
+/**
+ * Groups a flat, per-character array (from `segmentsToChars`) into runs that
+ * should never be split across a line-wrap: consecutive non-space
+ * characters form one run, and each plain space (U+0020) is its own
+ * single-character run so the browser can still wrap there. Any other
+ * whitespace-like character (e.g. a non-breaking space gluing a time to its
+ * AM/PM suffix) is treated as ordinary content and stays fused to its
+ * neighbors, since it's whitespace specifically chosen not to be a wrap
+ * point. Each character keeps its original flat index so per-character
+ * animation delays (keyed by that index) are unaffected by the regrouping.
+ * Renderers that animate character-by-character (Matrix, Flipboard) wrap
+ * each run's characters in one inline-flex/inline-block element so the
+ * per-character reveal stagger is preserved within a run while line-wraps
+ * can only fall between runs, not mid-word.
+ */
+export function groupCharsByWord(chars: FormattedChar[]): IndexedChar[][] {
+	const groups: IndexedChar[][] = [];
+	let current: IndexedChar[] = [];
+	chars.forEach((char, index) => {
+		if (char.ch === ' ') {
+			if (current.length) {
+				groups.push(current);
+				current = [];
+			}
+			groups.push([{ char, index }]);
+			return;
+		}
+		current.push({ char, index });
+	});
+	if (current.length) groups.push(current);
+	return groups;
+}
+
 /**
  * Renders formatted segments to a small, hardcoded set of inline tags
  * around explicitly-escaped text — safe by construction (no raw markdown

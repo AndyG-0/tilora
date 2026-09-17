@@ -30,7 +30,7 @@ export function isScreensaverAllowedType(type: string): boolean {
 	return SCREENSAVER_ALLOWED_TYPES.includes(type);
 }
 
-export const TEXT_ANIMATION_STYLES = ['marquee', 'matrix', 'flipboard', 'led_dots'] as const;
+export const TEXT_ANIMATION_STYLES = ['marquee', 'matrix', 'flipboard', 'led_dots', 'plain'] as const;
 
 export type TextAnimationStyle = (typeof TEXT_ANIMATION_STYLES)[number];
 
