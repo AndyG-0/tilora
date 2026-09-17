@@ -1433,6 +1433,8 @@ _DEFAULT_SCREENSAVER_SETTINGS: dict[str, Any] = {
     "led_color": "#ff8a00",
     "text_pause_seconds": 8,
     "flipboard_pattern": "top_to_bottom",
+    "screensaver_font_family": "default",
+    "screensaver_font_scale": 1.0,
 }
 
 

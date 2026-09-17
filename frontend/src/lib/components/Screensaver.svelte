@@ -4,6 +4,7 @@
 	import { widgets, widgetsLoadError } from '$lib/stores/widgets';
 	import { device } from '$lib/stores/device';
 	import { isScreensaverAllowedType } from '$lib/screensaverTypes';
+	import { resolveScreensaverFontFamily } from '$lib/screensaverFonts';
 	import ScreensaverContent from '$lib/components/screensaver/ScreensaverContent.svelte';
 	import { getRotationIndex, setRotationIndex } from '$lib/stores/screensaverProgress';
 	import { _ } from 'svelte-i18n';
@@ -58,12 +59,22 @@
 			const id = ids[index % ids.length];
 			const widget = $widgets.find((w) => w.id === id);
 			if (widget && isScreensaverAllowedType(widget.type)) {
-				// Clear detail in the same tick as currentId so a render between
-				// here and the await below never pairs the new widget's type
-				// with the previous widget's (differently-shaped) detail data.
+				// Only clear detail when actually switching to a different widget --
+				// clearing it on every periodic re-fetch of the *same* widget (e.g.
+				// a single-widget "Test" preview, or rotation wrapping back around)
+				// momentarily fails the `detail` check in the template below, which
+				// unmounts and remounts the widget's whole animation subtree every
+				// `rotation_interval_seconds`. That resets each animation's page
+				// index and (for Photos) its auto-advance timer before either ever
+				// gets a chance to fire, which looked like "stuck on page 1" /
+				// "not rotating". When it's the same widget, keep showing the last
+				// detail in place until the refetch resolves instead.
+				const widgetChanged = id !== currentId;
 				currentId = id;
-				detail = null;
-				detailError = null;
+				if (widgetChanged) {
+					detail = null;
+					detailError = null;
+				}
 				try {
 					detail = await api.widgetDetail(id);
 				} catch (error) {
@@ -109,6 +120,8 @@
 					ledColor={settings.led_color}
 					textPauseSeconds={settings.text_pause_seconds}
 					flipboardPattern={settings.flipboard_pattern}
+					fontFamily={resolveScreensaverFontFamily(settings.screensaver_font_family)}
+					fontScale={settings.screensaver_font_scale}
 				/>
 			</div>
 		{/key}

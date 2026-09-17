@@ -41,6 +41,14 @@ def test_plausible_at_origin_and_destination_airports():
     assert is_route_plausible(*SAN, *DFW, *SAN) is True
 
 
+def test_implausible_when_origin_and_destination_are_the_same_airport():
+    # Real bug case: ENY3929 reported as PHX->PHX -- a same-airport "route"
+    # is itself a symptom of the callsign-reuse problem (a stale/wrong
+    # lookup), not a real flight, so it must be rejected rather than
+    # accepted via the degenerate-great-circle fallback.
+    assert is_route_plausible(*PHX_AIRCRAFT, *DFW, *DFW) is False
+
+
 def test_plausible_near_route_midpoint():
     assert is_route_plausible(32.8, -107.0, *DFW, *SAN) is True
 

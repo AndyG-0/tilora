@@ -10,6 +10,7 @@ The **Flights** widget (`type: flights`) tracks aircraft flying overhead in real
 - **Aircraft Telemetry**: Shows callsign, flight route (origin/destination), altitude, ground speed, and heading.
 - **Visual Aircraft Icons & Photos**: Automatically determines aircraft category (Jet, Propeller, Helicopter) and renders high-quality aircraft photos and commercial airline logos.
 - **Interactive Map View**: Tap the tile to view an interactive Leaflet radar map tracking live flight paths.
+- **Screensaver List/Map Rotation**: When shown in the ambient screensaver, this widget automatically rotates between the departure-board-style flight list and an ambient (non-interactive, auto-fit) map view, with a dot indicator tracking which is showing.
 
 ---
 

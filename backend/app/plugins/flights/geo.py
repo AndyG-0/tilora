@@ -76,9 +76,12 @@ def is_route_plausible(
     normal = _cross(origin_vec, dest_vec)
     normal_magnitude = _norm(normal)
     if normal_magnitude < 1e-9:
-        # Origin and destination are (anti)podal/identical -- degenerate great
-        # circle, no meaningful line to check against.
-        return True
+        # Origin and destination are (anti)podal/identical -- there's no
+        # meaningful great-circle line to check the aircraft against, but a
+        # same-airport (or antipodal) "route" is itself a symptom of the
+        # callsign-reuse problem this function exists to catch (e.g. ENY3929
+        # reported as PHX->PHX), so it's rejected rather than waved through.
+        return False
     normal_unit = (normal[0] / normal_magnitude, normal[1] / normal_magnitude, normal[2] / normal_magnitude)
 
     cross_track_nm = abs(math.asin(max(-1.0, min(1.0, _dot(ac_vec, normal_unit))))) * _EARTH_RADIUS_NM

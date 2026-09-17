@@ -1,13 +1,15 @@
 <script lang="ts">
-	import { segmentsToChars, type FormattedSegment } from '$lib/discordMarkdown';
+	import { untrack } from 'svelte';
+	import { groupCharsByWord, segmentsToChars, type FormattedSegment } from '$lib/discordMarkdown';
 	import { getCursor, setCursor } from '$lib/stores/screensaverProgress';
+	import ScreenIndicator from '../ScreenIndicator.svelte';
 
 	// Conservative estimate of one flap row's rendered height (the .flap
 	// rule's clamp(1.6rem, 3.2vw, 2.6rem) height plus its 0.1rem top+bottom
 	// margin) -- not pixel-perfect, just enough to size how many rows fit.
-	// A line longer than one row's worth of flaps wraps onto extra rows via
-	// `.row`'s flex-wrap rather than being truncated, so this is only used
-	// to size how far `index` advances per tick, not a hard content limit.
+	// A line longer than one row's worth of flaps wraps onto extra sub-rows
+	// via `.row`'s flex-wrap, which this estimate can't account for -- see
+	// the shrink-effect below that corrects for it.
 	const ROW_HEIGHT_PX = 48;
 
 	// Per-character flap delay, and the extra pause between one row finishing
@@ -25,22 +27,63 @@
 		lines,
 		pauseSeconds = 8,
 		pattern = 'top_to_bottom',
+		fontFamily,
+		fontScale = 1,
 	}: {
 		id: string;
 		lines: FormattedSegment[][];
 		pauseSeconds?: number;
 		pattern?: 'top_to_bottom' | 'random';
+		fontFamily?: string;
+		fontScale?: number;
 	} = $props();
 
 	let index = $state(getCursor(id));
 	let boardHeight = $state(0);
+	let rowsWrapperHeight = $state(0);
+	let rowsToShow = $state(1);
 
-	const rowsToShow = $derived(Math.max(1, Math.floor(boardHeight / ROW_HEIGHT_PX)));
+	// Optimistic starting guess for each new tick's content -- a fresh
+	// estimate rather than something that has to grow back after the
+	// shrink-effect below trimmed it for the previous (possibly longer) tick.
+	$effect(() => {
+		void index;
+		rowsToShow = Math.max(1, Math.floor(boardHeight / ROW_HEIGHT_PX));
+	});
 
+	// Long lines wrap onto extra visual sub-rows (see the `ROW_HEIGHT_PX`
+	// comment above), which the estimate above can't account for. Shrink the
+	// row count until the actually-rendered rows fit within the board,
+	// rather than truncating/clipping whatever doesn't fit via `.board`'s
+	// `overflow: hidden`. `rowsToShow` itself is read/written untracked so
+	// this only reruns on a genuinely new measurement (a real resize-observer
+	// tick) instead of retriggering itself synchronously on every decrement.
+	$effect(() => {
+		if (rowsWrapperHeight > boardHeight) {
+			untrack(() => {
+				if (rowsToShow > 1) rowsToShow -= 1;
+			});
+		}
+	});
+
+	// Capped at `lines.length` -- when there's less content than fits the
+	// screen (rowsToShow > lines.length), show each line once instead of
+	// wrapping the modulo back around to pad out the remaining rows with
+	// repeats of content already on screen.
 	const visibleLines = $derived(
-		Array.from({ length: rowsToShow }, (_, r) => (lines.length ? lines[(index + r) % lines.length] : []) ?? []),
+		Array.from(
+			{ length: Math.min(rowsToShow, lines.length) },
+			(_, r) => (lines.length ? lines[(index + r) % lines.length] : []) ?? [],
+		),
 	);
 	const visibleChars = $derived(visibleLines.map(segmentsToChars));
+
+	const totalPages = $derived(Math.max(1, Math.ceil(lines.length / rowsToShow)));
+	const currentPage = $derived(Math.floor(index / rowsToShow) % totalPages);
+
+	function goToPage(page: number) {
+		index = (page * rowsToShow) % lines.length;
+	}
 
 	const rowStartDelays = $derived(
 		visibleChars.reduce<number[]>((delays, chars, r) => {
@@ -71,10 +114,21 @@
 		}
 	}
 
+	// Tracks only `index`/`totalPages` (both primitives, safe to compare by
+	// value) so a background data refresh that reshapes `lines` into a new
+	// array reference -- without changing which page we're on -- doesn't
+	// retrigger this effect and reset an in-flight countdown. `revealDurationMs`
+	// and `pauseSeconds` are read untracked: they still determine the delay,
+	// they just don't force a reschedule on their own.
 	$effect(() => {
-		if (lines.length <= 1) return;
-		const timeout = setTimeout(advanceIndex, revealDurationMs + pauseSeconds * 1000);
-		return () => clearTimeout(timeout);
+		void index;
+		const tp = totalPages;
+		if (tp <= 1) return;
+		const delay = untrack(() => revealDurationMs + pauseSeconds * 1000);
+		const timeout = setTimeout(advanceIndex, delay);
+		return () => {
+			clearTimeout(timeout);
+		};
 	});
 
 	$effect(() => {
@@ -82,30 +136,43 @@
 	});
 </script>
 
-<div class="board" bind:clientHeight={boardHeight}>
-	{#key index}
-		{#each visibleChars as chars, r (r)}
-			<div class="row">
-				{#each chars as { ch, bold, italic, underline, strike, code, link, spoiler }, i (i)}
-					<span
-						class="flap"
-						class:bold
-						class:italic
-						class:underline
-						class:strike
-						class:code
-						class:link
-						class:spoiler
-						style="animation-delay: {rowStartDelays[r] + i * CHAR_DELAY_MS}ms;">{ch === ' ' ? ' ' : ch}</span
-					>
-				{/each}
-			</div>
-		{/each}
-	{/key}
+<div
+	class="board"
+	bind:clientHeight={boardHeight}
+	style:--screensaver-font-family={fontFamily}
+	style:--screensaver-font-scale={fontScale}
+>
+	<div class="rows-wrapper" bind:clientHeight={rowsWrapperHeight}>
+		{#key index}
+			{#each visibleChars as chars, r (r)}
+				<div class="row">
+					{#each groupCharsByWord(chars) as word, w (w)}
+						<span class="word">
+							{#each word as { char: { ch, bold, italic, underline, strike, code, link, spoiler }, index: i } (i)}
+								<span
+									class="flap"
+									class:bold
+									class:italic
+									class:underline
+									class:strike
+									class:code
+									class:link
+									class:spoiler
+									style="animation-delay: {rowStartDelays[r] + i * CHAR_DELAY_MS}ms;">{ch === ' ' ? ' ' : ch}</span
+								>
+							{/each}
+						</span>
+					{/each}
+				</div>
+			{/each}
+		{/key}
+	</div>
+	<ScreenIndicator current={currentPage} total={totalPages} onselect={goToPage} />
 </div>
 
 <style>
 	.board {
+		position: relative;
 		height: 100%;
 		display: flex;
 		flex-direction: column;
@@ -115,6 +182,11 @@
 		overflow: hidden;
 	}
 
+	.rows-wrapper {
+		display: flex;
+		flex-direction: column;
+	}
+
 	.row {
 		display: flex;
 		flex-wrap: wrap;
@@ -122,18 +194,25 @@
 		max-width: 90%;
 	}
 
+	/* An inline-flex atomic box so `.row`'s flex-wrap can only break between
+	   words, never between the flaps of a single word (or a time and its
+	   non-breaking-space-glued AM/PM suffix). */
+	.word {
+		display: inline-flex;
+	}
+
 	.flap {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: clamp(1.1rem, 2.2vw, 1.8rem);
-		height: clamp(1.6rem, 3.2vw, 2.6rem);
+		width: calc(clamp(1.1rem, 2.2vw, 1.8rem) * var(--screensaver-font-scale, 1));
+		height: calc(clamp(1.6rem, 3.2vw, 2.6rem) * var(--screensaver-font-scale, 1));
 		margin: 0.1rem;
 		background: #222;
 		color: #f2f2f2;
-		font-family: 'Courier New', monospace;
+		font-family: var(--screensaver-font-family, 'Courier New', monospace);
 		font-weight: 700;
-		font-size: clamp(1rem, 2vw, 1.6rem);
+		font-size: calc(clamp(1rem, 2vw, 1.6rem) * var(--screensaver-font-scale, 1));
 		border-radius: 0.15rem;
 		box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.4);
 		animation-name: flap-flip;

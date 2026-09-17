@@ -1,6 +1,8 @@
 <script lang="ts">
-	import { segmentsToChars, type FormattedSegment } from '$lib/discordMarkdown';
+	import { untrack } from 'svelte';
+	import { groupCharsByWord, segmentsToChars, type FormattedSegment } from '$lib/discordMarkdown';
 	import { getCursor, setCursor } from '$lib/stores/screensaverProgress';
+	import ScreenIndicator from '../ScreenIndicator.svelte';
 
 	// Conservative estimate of one .line row's rendered height (its
 	// clamp(1.5rem, 4vw, 3rem) font-size at ~1.2 line-height, plus its 1rem
@@ -13,17 +15,67 @@
 	const CHAR_DELAY_MS = 30;
 	const MATERIALIZE_DURATION_MS = 500;
 
-	let { id, lines, pauseSeconds = 8 }: { id: string; lines: FormattedSegment[][]; pauseSeconds?: number } = $props();
+	let {
+		id,
+		lines,
+		pauseSeconds = 8,
+		fontFamily,
+		fontScale = 1,
+	}: {
+		id: string;
+		lines: FormattedSegment[][];
+		pauseSeconds?: number;
+		fontFamily?: string;
+		fontScale?: number;
+	} = $props();
 
 	let index = $state(getCursor(id));
 	let matrixHeight = $state(0);
+	let linesWrapperHeight = $state(0);
+	let rowsToShow = $state(1);
 
-	const rowsToShow = $derived(Math.max(1, Math.floor(matrixHeight / ROW_HEIGHT_PX)));
+	// Optimistic starting guess for each new tick's content -- a fresh
+	// estimate rather than something that has to grow back after the
+	// shrink-effect below trimmed it for the previous (possibly longer) tick.
+	$effect(() => {
+		void index;
+		rowsToShow = Math.max(1, Math.floor(matrixHeight / ROW_HEIGHT_PX));
+	});
 
+	// Long lines wrap onto extra visual rows (each character is its own
+	// inline-block `.ch` span, so they wrap like words within `.line`'s
+	// max-width), which the estimate above can't account for. Shrink the row
+	// count until the actually-rendered rows fit within the matrix, rather
+	// than truncating/clipping whatever doesn't fit via `.matrix`'s
+	// `overflow: hidden`. `rowsToShow` itself is read/written untracked so
+	// this only reruns on a genuinely new measurement (a real resize-observer
+	// tick) instead of retriggering itself synchronously on every decrement.
+	$effect(() => {
+		if (linesWrapperHeight > matrixHeight) {
+			untrack(() => {
+				if (rowsToShow > 1) rowsToShow -= 1;
+			});
+		}
+	});
+
+	// Capped at `lines.length` -- when there's less content than fits the
+	// screen (rowsToShow > lines.length), show each line once instead of
+	// wrapping the modulo back around to pad out the remaining rows with
+	// repeats of content already on screen.
 	const visibleLines = $derived(
-		Array.from({ length: rowsToShow }, (_, r) => (lines.length ? lines[(index + r) % lines.length] : []) ?? []),
+		Array.from(
+			{ length: Math.min(rowsToShow, lines.length) },
+			(_, r) => (lines.length ? lines[(index + r) % lines.length] : []) ?? [],
+		),
 	);
 	const visibleChars = $derived(visibleLines.map(segmentsToChars));
+
+	const totalPages = $derived(Math.max(1, Math.ceil(lines.length / rowsToShow)));
+	const currentPage = $derived(Math.floor(index / rowsToShow) % totalPages);
+
+	function goToPage(page: number) {
+		index = (page * rowsToShow) % lines.length;
+	}
 
 	// All rows materialize in parallel, so the reveal is only as long as the
 	// longest visible line takes -- but that's still enough to eat into a
@@ -36,12 +88,17 @@
 		Math.max(0, ...visibleChars.map((chars) => chars.length)) * CHAR_DELAY_MS + MATERIALIZE_DURATION_MS,
 	);
 
+	// Tracks only `index`/`totalPages` (both primitives, safe to compare by
+	// value) so a background data refresh that reshapes `lines` into a new
+	// array reference -- without changing which page we're on -- doesn't
+	// retrigger this effect and reset an in-flight countdown. `revealDurationMs`
+	// and `pauseSeconds` are read untracked: they still determine the delay,
+	// they just don't force a reschedule on their own.
 	$effect(() => {
-		if (lines.length <= 1) return;
-		const timeout = setTimeout(
-			() => (index = (index + rowsToShow) % lines.length),
-			revealDurationMs + pauseSeconds * 1000,
-		);
+		void index;
+		if (totalPages <= 1) return;
+		const delay = untrack(() => revealDurationMs + pauseSeconds * 1000);
+		const timeout = setTimeout(() => (index = (index + rowsToShow) % lines.length), delay);
 		return () => clearTimeout(timeout);
 	});
 
@@ -69,7 +126,12 @@
 	}));
 </script>
 
-<div class="matrix" bind:clientHeight={matrixHeight}>
+<div
+	class="matrix"
+	bind:clientHeight={matrixHeight}
+	style:--screensaver-font-family={fontFamily}
+	style:--screensaver-font-scale={fontScale}
+>
 	<div class="rain">
 		{#each columns as column, i (i)}
 			<div
@@ -82,27 +144,32 @@
 			</div>
 		{/each}
 	</div>
-	<div class="lines">
+	<div class="lines" bind:clientHeight={linesWrapperHeight}>
 		{#key index}
 			{#each visibleChars as chars, r (r)}
 				<div class="line">
-					{#each chars as { ch, bold, italic, underline, strike, code, link, spoiler }, i (i)}
-						<span
-							class="ch"
-							class:bold
-							class:italic
-							class:underline
-							class:strike
-							class:code
-							class:link
-							class:spoiler
-							style="animation-delay: {i * CHAR_DELAY_MS}ms;">{ch === ' ' ? ' ' : ch}</span
-						>
+					{#each groupCharsByWord(chars) as word, w (w)}
+						<span class="word">
+							{#each word as { char: { ch, bold, italic, underline, strike, code, link, spoiler }, index: i } (i)}
+								<span
+									class="ch"
+									class:bold
+									class:italic
+									class:underline
+									class:strike
+									class:code
+									class:link
+									class:spoiler
+									style="animation-delay: {i * CHAR_DELAY_MS}ms;">{ch === ' ' ? ' ' : ch}</span
+								>
+							{/each}
+						</span>
 					{/each}
 				</div>
 			{/each}
 		{/key}
 	</div>
+	<ScreenIndicator current={currentPage} total={totalPages} onselect={goToPage} />
 </div>
 
 <style>
@@ -163,13 +230,20 @@
 		position: relative;
 		max-width: 90%;
 		text-align: center;
-		font-family: 'Courier New', monospace;
+		font-family: var(--screensaver-font-family, 'Courier New', monospace);
 		font-weight: 700;
-		font-size: clamp(1.5rem, 4vw, 3rem);
+		font-size: calc(clamp(1.5rem, 4vw, 3rem) * var(--screensaver-font-scale, 1));
 		color: #4dff8f;
 		background: rgba(2, 8, 3, 0.6);
 		padding: 1rem 2rem;
 		border-radius: 0.5rem;
+	}
+
+	/* An inline-block atomic box so `.line`'s normal text wrapping can only
+	   break between words, never between the chars of a single word (or a
+	   time and its non-breaking-space-glued AM/PM suffix). */
+	.word {
+		display: inline-block;
 	}
 
 	.ch {

@@ -50,10 +50,14 @@
 		data,
 		selectedCallsign = null,
 		onselectflight,
+		fillHeight = false,
+		interactive = true,
 	}: {
 		data: FlightsMapData;
 		selectedCallsign?: string | null;
 		onselectflight?: (callsign: string | null) => void;
+		fillHeight?: boolean;
+		interactive?: boolean;
 	} = $props();
 
 	const LED_COLOR = '#ff8a00';
@@ -241,17 +245,19 @@
 				zIndexOffset: isSelected ? 10000 : 0,
 			});
 
-			marker.bindPopup(popupHtml(flight, current.speed_unit), {
-				className: 'flight-leaflet-popup',
-				maxWidth: 240,
-				minWidth: 220,
-				autoPan: true,
-				autoPanPadding: L.point(20, 20),
-			});
+			if (interactive) {
+				marker.bindPopup(popupHtml(flight, current.speed_unit), {
+					className: 'flight-leaflet-popup',
+					maxWidth: 240,
+					minWidth: 220,
+					autoPan: true,
+					autoPanPadding: L.point(20, 20),
+				});
 
-			marker.on('click', () => {
-				onselectflight?.(flight.callsign);
-			});
+				marker.on('click', () => {
+					onselectflight?.(flight.callsign);
+				});
+			}
 
 			marker.addTo(markerLayer);
 			markersByCallsign.set(flight.callsign, marker);
@@ -327,7 +333,20 @@
 			const L = leaflet.default;
 			leafletInstance = L;
 
-			map = L.map(node).setView([data.latitude, data.longitude], 11);
+			map = L.map(
+				node,
+				interactive
+					? undefined
+					: {
+							dragging: false,
+							scrollWheelZoom: false,
+							doubleClickZoom: false,
+							boxZoom: false,
+							touchZoom: false,
+							keyboard: false,
+							zoomControl: false,
+						},
+			).setView([data.latitude, data.longitude], 11);
 			const tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
 				attribution: '&copy; OpenStreetMap contributors',
 				maxZoom: 18,
@@ -375,7 +394,7 @@
 	});
 </script>
 
-<div class="map-wrap" role="region" aria-label={$_('flights.detail.map_label')}>
+<div class="map-wrap" class:fill-height={fillHeight} role="region" aria-label={$_('flights.detail.map_label')}>
 	<div class="map" use:attachMap></div>
 </div>
 
@@ -386,6 +405,16 @@
 		border-radius: 0.75rem;
 		overflow: hidden;
 		height: 380px;
+	}
+
+	.map-wrap.fill-height {
+		height: 100%;
+		width: 100%;
+		margin: 0;
+		/* The screensaver's flex container centers children instead of
+		   stretching them, so without this the wrap shrinks to fit its
+		   (empty at layout time) content and the map renders as a sliver. */
+		align-self: stretch;
 	}
 
 	.map {

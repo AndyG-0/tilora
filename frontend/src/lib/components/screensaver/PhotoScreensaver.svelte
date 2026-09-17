@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import { env } from '$env/dynamic/public';
 	import { getCursor, setCursor } from '$lib/stores/screensaverProgress';
@@ -29,21 +30,41 @@
 	let index = $state(data.photos.length ? initialCursor % data.photos.length : 0);
 	let autoAdvanceTimer: ReturnType<typeof setInterval> | null = null;
 
-	function restartAutoAdvance() {
+	// Read through `$derived` (value-memoized) rather than off `data` directly
+	// in the effect below -- `data` is reassigned to a brand-new object on
+	// every same-widget refetch (rotation revisit, or the outer screensaver's
+	// periodic re-poll of the widget currently on screen), even when the
+	// photo count and interval haven't actually changed. Depending on `data`
+	// itself would retrigger the effect on every such refetch and clear+
+	// restart `autoAdvanceTimer` before it ever gets to fire -- which looked
+	// like "photos not rotating" whenever the refetch cadence was shorter
+	// than (or close to) the configured photo interval.
+	const photoCount = $derived(data.photos.length);
+	const intervalSeconds = $derived(data.interval_seconds);
+
+	function restartAutoAdvance(count: number, seconds: number) {
 		if (autoAdvanceTimer) clearInterval(autoAdvanceTimer);
 		autoAdvanceTimer = null;
-		if (data.photos.length <= 1) return;
+		if (count <= 1) return;
 		autoAdvanceTimer = setInterval(() => {
-			index = (index + 1) % data.photos.length;
-		}, data.interval_seconds * 1000);
+			index = (index + 1) % count;
+		}, seconds * 1000);
 	}
 
 	$effect(() => {
+		const count = photoCount;
+		const seconds = intervalSeconds;
 		// Clamp rather than reset so a same-widget data refresh (rotation
 		// revisit, or resuming after an idle interruption) picks up where the
-		// last-shown photo left off instead of restarting at photo 0.
-		index = data.photos.length ? index % data.photos.length : 0;
-		restartAutoAdvance();
+		// last-shown photo left off instead of restarting at photo 0. Read
+		// untracked -- `restartAutoAdvance` below already keeps `index` moving
+		// on its own recurring interval, so this effect only needs to
+		// (re)start that interval when `count`/`seconds` actually change, not
+		// on every tick of the interval it just started.
+		untrack(() => {
+			index = count ? index % count : 0;
+		});
+		restartAutoAdvance(count, seconds);
 		return () => {
 			if (autoAdvanceTimer) clearInterval(autoAdvanceTimer);
 		};

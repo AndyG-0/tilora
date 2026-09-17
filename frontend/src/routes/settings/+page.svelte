@@ -28,6 +28,7 @@
 		FLIPBOARD_PATTERNS,
 		type FlipboardPattern,
 	} from '$lib/screensaverTypes';
+	import { SCREENSAVER_FONT_FAMILIES, type ScreensaverFontFamily } from '$lib/screensaverFonts';
 	import {
 		voiceSelection,
 		loadVoiceSelectionFromServer,
@@ -673,6 +674,8 @@
 	let ssLedColor = $state('#ff8a00');
 	let ssTextPauseInput = $state(8);
 	let ssFlipboardPattern = $state<FlipboardPattern>('top_to_bottom');
+	let ssFontFamily = $state<ScreensaverFontFamily>('default');
+	let ssFontScale = $state(1);
 	let ssSaving = $state(false);
 	let ssSaved = $state(false);
 	let ssError = $state<string | null>(null);
@@ -695,6 +698,8 @@
 			ssLedColor = $screensaverSettings.led_color;
 			ssTextPauseInput = $screensaverSettings.text_pause_seconds;
 			ssFlipboardPattern = $screensaverSettings.flipboard_pattern;
+			ssFontFamily = $screensaverSettings.screensaver_font_family;
+			ssFontScale = $screensaverSettings.screensaver_font_scale;
 		}
 	});
 
@@ -714,6 +719,7 @@
 		matrix: $_('settings.screensaver.animation_matrix'),
 		flipboard: $_('settings.screensaver.animation_flipboard'),
 		led_dots: $_('settings.screensaver.animation_led_dots'),
+		plain: $_('settings.screensaver.animation_plain'),
 	});
 
 	const FLIPBOARD_PATTERN_LABELS: Record<FlipboardPattern, string> = $derived({
@@ -750,6 +756,8 @@
 				led_color: ssLedColor,
 				text_pause_seconds: ssTextPauseInput,
 				flipboard_pattern: ssFlipboardPattern,
+				screensaver_font_family: ssFontFamily,
+				screensaver_font_scale: ssFontScale,
 			});
 			ssSaved = true;
 		} catch {
@@ -769,6 +777,8 @@
 			led_color: ssLedColor,
 			text_pause_seconds: ssTextPauseInput,
 			flipboard_pattern: ssFlipboardPattern,
+			screensaver_font_family: ssFontFamily,
+			screensaver_font_scale: ssFontScale,
 		});
 	}
 
@@ -783,6 +793,8 @@
 			led_color: ssLedColor,
 			text_pause_seconds: ssTextPauseInput,
 			flipboard_pattern: ssFlipboardPattern,
+			screensaver_font_family: ssFontFamily,
+			screensaver_font_scale: ssFontScale,
 		});
 	}
 
@@ -2361,6 +2373,22 @@
 								<option value={style}>{TEXT_ANIMATION_STYLE_LABELS[style]}</option>
 							{/each}
 						</select>
+					</label>
+
+					<label>
+						{$_('settings.screensaver.font_family_label')}
+						<select bind:value={ssFontFamily}>
+							{#each SCREENSAVER_FONT_FAMILIES as family (family)}
+								<option value={family}>{$_(`settings.screensaver.font_family_${family}`)}</option>
+							{/each}
+						</select>
+					</label>
+					<p class="hint">{$_('settings.screensaver.font_family_hint')}</p>
+
+					<label>
+						{$_('settings.screensaver.font_scale_label')}
+						<input type="range" min="0.75" max="1.5" step="0.05" bind:value={ssFontScale} />
+						<span>{ssFontScale.toFixed(2)}×</span>
 					</label>
 
 					{#if ssTextAnimationStyle !== 'marquee'}

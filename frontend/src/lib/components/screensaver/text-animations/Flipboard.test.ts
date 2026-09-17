@@ -1,4 +1,5 @@
 import { render } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 
 import Flipboard from './Flipboard.svelte';
@@ -25,6 +26,19 @@ function mockClientHeight(height: number) {
 	return vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(height);
 }
 
+// Mocks .board's and .rows-wrapper's clientHeight independently, so a test
+// can simulate content that wraps onto more visual sub-rows than the
+// one-shot estimate predicted (i.e. the rendered rows wrapper measuring
+// taller than the .board container that's supposed to hold it).
+function mockClientHeightByClass(heights: Record<string, number>) {
+	return vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
+		for (const [className, height] of Object.entries(heights)) {
+			if (this.classList.contains(className)) return height;
+		}
+		return 0;
+	});
+}
+
 describe('Flipboard', () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
@@ -34,6 +48,23 @@ describe('Flipboard', () => {
 	afterEach(() => {
 		vi.useRealTimers();
 		vi.restoreAllMocks();
+	});
+
+	it('shrinks rowsToShow when the rendered rows wrap taller than the container, instead of clipping content', () => {
+		// The one-shot estimate off boardHeight alone would show 3 rows, but
+		// the actually-rendered rows wrapper measures taller (simulating
+		// flap rows that wrapped onto extra sub-rows) -- the shrink-effect must
+		// correct rowsToShow down rather than leaving the overflow silently
+		// clipped by `.board`'s `overflow: hidden`.
+		mockClientHeightByClass({ board: 3 * ROW_HEIGHT_PX, 'rows-wrapper': 3 * ROW_HEIGHT_PX + 50 });
+
+		const { container } = render(Flipboard, {
+			props: { id: 'test', lines: [line('One'), line('Two'), line('Three')] },
+		});
+
+		expect(container.querySelectorAll('.row').length).toBeLessThan(3);
+		// Never shrinks all the way to zero -- at least the current row stays visible.
+		expect(container.querySelectorAll('.row').length).toBeGreaterThanOrEqual(1);
 	});
 
 	it('shows a single row when the container is too short for more', () => {
@@ -56,13 +87,13 @@ describe('Flipboard', () => {
 		expect(container.querySelectorAll('.row')).toHaveLength(4);
 	});
 
-	it('wraps around the lines array via modulo when rowsToShow exceeds the line count', () => {
+	it('shows each line once, without repeating, when rowsToShow exceeds the line count', () => {
 		mockClientHeight(4 * ROW_HEIGHT_PX);
 
 		const { container } = render(Flipboard, { props: { id: 'test', lines: [line('Alpha'), line('Beta')] } });
 
 		const rowTexts = Array.from(container.querySelectorAll('.row')).map((row) => row.textContent?.trim());
-		expect(rowTexts).toEqual([rowTexts[0], rowTexts[1], rowTexts[0], rowTexts[1]]);
+		expect(rowTexts).toEqual(['Alpha', 'Beta']);
 	});
 
 	it('advances by rowsToShow (not 1) per tick so consecutive ticks show fresh content', async () => {
@@ -80,6 +111,69 @@ describe('Flipboard', () => {
 		const secondBatch = Array.from(container.querySelectorAll('.row')).map((row) => normalize(row.textContent));
 		expect(secondBatch).not.toEqual(firstBatch);
 		expect(secondBatch[0]).toBe('Row D');
+	});
+
+	it('jumps to the clicked page instead of advancing sequentially', async () => {
+		mockClientHeight(3 * ROW_HEIGHT_PX);
+
+		const { container } = render(Flipboard, {
+			props: { id: 'test', lines: ['Row A', 'Row B', 'Row C', 'Row D', 'Row E', 'Row F'].map(line), pauseSeconds: 6 },
+		});
+
+		const dots = container.querySelectorAll('.dot');
+		expect(dots).toHaveLength(2);
+
+		(dots[1] as HTMLButtonElement).click();
+		await tick();
+
+		const normalize = (text: string | null | undefined) => text?.replace(/\u00A0/g, ' ').trim();
+		const texts = Array.from(container.querySelectorAll('.row')).map((row) => normalize(row.textContent));
+		expect(texts[0]).toBe('Row D');
+	});
+
+	it('does not advance or re-flap when all content already fits on one page', async () => {
+		mockClientHeight(4 * ROW_HEIGHT_PX);
+
+		// rowsToShow (4) is not a multiple of lines.length (3), so a stray
+		// advance would shift the modulo-wrapped window and be visible here --
+		// this isn't just coincidentally stable.
+		const { container } = render(Flipboard, {
+			props: { id: 'test', lines: ['One', 'Two', 'Three'].map(line), pauseSeconds: 5 },
+		});
+
+		const normalize = (text: string | null | undefined) => text?.replace(/\u00A0/g, ' ').trim();
+		const firstBatch = Array.from(container.querySelectorAll('.row')).map((row) => normalize(row.textContent));
+
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		const secondBatch = Array.from(container.querySelectorAll('.row')).map((row) => normalize(row.textContent));
+		expect(secondBatch).toEqual(firstBatch);
+		expect(localStorage.getItem('screensaver:cursor:test')).toBe('0');
+	});
+
+	it('does not reset a pending advance when the lines prop is replaced with a new array reference mid-countdown', async () => {
+		mockClientHeight(3 * ROW_HEIGHT_PX);
+
+		const initialLines = ['Row A', 'Row B', 'Row C', 'Row D', 'Row E', 'Row F'].map(line);
+		const { container, rerender } = render(Flipboard, {
+			props: { id: 'test', lines: initialLines, pauseSeconds: 6 },
+		});
+
+		const totalDelay = revealDurationMs(['Row A', 'Row B', 'Row C']) + 6000;
+
+		// Simulate a background data refresh (e.g. Discord re-polling) partway
+		// through the countdown: same widget, a brand-new `lines` array
+		// reference, and content whose length differs enough to change
+		// revealDurationMs's computed value -- exactly the scenario that used
+		// to cancel and reschedule the pending timeout with a fresh delay.
+		await vi.advanceTimersByTimeAsync(totalDelay / 2);
+		const refreshedLines = [line('Row A now with a lot more text than before'), ...initialLines.slice(1)];
+		await rerender({ id: 'test', lines: refreshedLines, pauseSeconds: 6 });
+
+		await vi.advanceTimersByTimeAsync(totalDelay / 2);
+
+		const normalize = (text: string | null | undefined) => text?.replace(/\u00A0/g, ' ').trim();
+		expect(normalize(container.querySelector('.row')?.textContent)).toBe('Row D');
 	});
 
 	it('holds the full pauseSeconds of static read time after the last row finishes flapping in', async () => {
