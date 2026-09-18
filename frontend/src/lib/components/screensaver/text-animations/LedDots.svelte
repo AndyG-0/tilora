@@ -121,11 +121,12 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
+		width: 90%;
 	}
 
 	.stack {
 		position: relative;
-		max-width: 90%;
+		width: 100%;
 	}
 
 	.text {

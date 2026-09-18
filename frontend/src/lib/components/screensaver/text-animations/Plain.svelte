@@ -114,11 +114,12 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
+		width: 90%;
 		animation: fade-in 0.6s ease-out;
 	}
 
 	.text {
-		max-width: 90%;
+		width: 100%;
 		margin: 0;
 		text-align: left;
 		color: #f2f2f2;

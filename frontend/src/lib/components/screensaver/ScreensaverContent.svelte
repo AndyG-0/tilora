@@ -71,7 +71,7 @@
 {:else if type === 'flights'}
 	<FlightsScreensaver data={data as never} {id} {ledColor} {textPauseSeconds} />
 {:else if Visual}
-	<Visual data={data as never} {ledColor} />
+	<Visual data={data as never} {ledColor} {id} pauseSeconds={textPauseSeconds} />
 {:else if loadFailed}
 	<div class="load-error">{$_('screensaver.display_failed', { values: { type } })}</div>
 {/if}

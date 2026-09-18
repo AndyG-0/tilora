@@ -224,11 +224,12 @@
 		flex-direction: column;
 		align-items: center;
 		gap: 0.5rem;
+		width: 90%;
 	}
 
 	.line {
 		position: relative;
-		max-width: 90%;
+		width: 100%;
 		text-align: center;
 		font-family: var(--screensaver-font-family, 'Courier New', monospace);
 		font-weight: 700;
