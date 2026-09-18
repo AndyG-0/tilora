@@ -420,25 +420,6 @@
 			"column_server": "Server"
 		}
 	},
-	"packages": {
-		"tile": {
-			"default_title": "Packages",
-			"arriving_today": "Arriving today",
-			"in_transit": "{count} on the way",
-			"nothing_tracked": "Nothing tracked"
-		},
-		"detail": {
-			"tracking_placeholder": "Tracking number…",
-			"label_placeholder": "Label (optional)…",
-			"add_error": "Could not add that tracking number.",
-			"remove_error": "Could not remove the package.",
-			"delivered": "Delivered",
-			"awaiting_status": "Awaiting status",
-			"eta": "ETA {date}",
-			"remove_aria": "Remove package",
-			"empty_hint": "No packages tracked yet — add a tracking number above."
-		}
-	},
 	"nasa_apod": {
 		"tile": {
 			"unavailable": "Picture of the day unavailable",
@@ -1286,7 +1267,6 @@
 		"stat_shopping": "{active} unchecked ({total} items)",
 		"stat_alerts": "{count} active alert(s)",
 		"stat_photos": "{count} indexed photos",
-		"stat_packages": "{count} tracked packages",
 		"stat_custom_settings": "Custom settings stored",
 		"stat_device_settings": "Device overrides active",
 		"stat_user_settings": "User preferences stored",

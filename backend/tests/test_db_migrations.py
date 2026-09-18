@@ -1021,7 +1021,10 @@ def test_upgrade_from_v0_10_0_schema_runs_every_migration_cleanly(tmp_path, monk
     `_V0_10_0_SCHEMA` above is what any environment still running the last
     real release has on disk right now; this proves the current code
     upgrades it all the way to the latest migration without raising, the
-    same as it will need to for a real deployed instance.
+    same as it will need to for a real deployed instance. `packages` itself
+    is later dropped entirely by `_migration_020_remove_packages_widget`
+    (the Packages widget was removed), so this only checks `photo_index`
+    survives and `packages` is gone.
     """
     db_path = tmp_path / "legacy.db"
     conn = sqlite3.connect(db_path)
@@ -1037,15 +1040,14 @@ def test_upgrade_from_v0_10_0_schema_runs_every_migration_cleanly(tmp_path, monk
     conn = sqlite3.connect(db_path)
     version = conn.execute("PRAGMA user_version").fetchone()[0]
     photo_index_columns = {row[1] for row in conn.execute("PRAGMA table_info(photo_index)")}
-    packages_columns = {row[1] for row in conn.execute("PRAGMA table_info(packages)")}
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     indexes = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
     conn.close()
 
     assert version == len(db._MIGRATIONS)
     assert "user_id" in photo_index_columns
-    assert "user_id" in packages_columns
     assert "idx_photo_index_widget_user_position" in indexes
-    assert "idx_packages_widget_user" in indexes
+    assert "packages" not in tables
 
 
 def test_schema_indexes_never_reference_a_column_only_an_alter_migration_adds(tmp_path, monkeypatch):
@@ -1232,4 +1234,69 @@ def test_migration_018_clean_photos_widget_user_settings(tmp_path):
     rows = conn.execute("SELECT user_id, widget_id FROM widget_user_settings").fetchall()
     remaining = {(r["user_id"], r["widget_id"]) for r in rows}
     assert remaining == {("alice", "rss")}
+    conn.close()
+
+
+def test_migration_020_remove_packages_widget(tmp_path):
+    """The Packages widget (dashboard.yaml's default `packages` id, plus a
+    UI-added `custom_widgets` row of that type) and its `packages` tracking
+    table must be fully purged, without touching an unrelated widget's data.
+    """
+    db_path = tmp_path / "migration20.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.executescript(db._SCHEMA)
+    conn.execute(
+        "CREATE TABLE packages ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, widget_id TEXT NOT NULL, tracking_number TEXT NOT NULL)"
+    )
+    conn.execute("INSERT INTO packages (widget_id, tracking_number) VALUES ('packages', 'TRACK123')")
+    conn.execute(
+        "INSERT INTO custom_widgets (id, type, layout, tab) VALUES ('packages-custom', 'packages', '{}', 'home')"
+    )
+    conn.execute("INSERT INTO widget_settings (widget_id, settings) VALUES ('packages', '{}')")
+    conn.execute("INSERT INTO widget_custom_names (widget_id, custom_name) VALUES ('packages', 'My Packages')")
+    conn.executemany(
+        "INSERT INTO widget_layout (user_id, device_id, breakpoint, widget_id, layout) VALUES (?, ?, ?, ?, ?)",
+        [
+            ("alice", "dev-1", "lg", "packages", "{}"),
+            ("alice", "dev-1", "lg", "packages-custom", "{}"),
+            ("alice", "dev-1", "lg", "rss", "{}"),
+        ],
+    )
+    conn.executemany(
+        "INSERT INTO widget_user_settings (user_id, widget_id, settings) VALUES (?, ?, ?)",
+        [
+            ("alice", "packages", "{}"),
+            ("alice", "packages-custom", "{}"),
+            ("alice", "rss", "{}"),
+        ],
+    )
+    conn.executemany(
+        "INSERT INTO hidden_widget_ids (user_id, device_id, widget_id) VALUES (?, ?, ?)",
+        [
+            ("alice", "dev-1", "packages"),
+            ("alice", "dev-1", "packages-custom"),
+            ("alice", "dev-1", "rss"),
+        ],
+    )
+    conn.commit()
+
+    db._migration_020_remove_packages_widget(conn)
+    conn.commit()
+
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert "packages" not in tables
+    assert conn.execute("SELECT id FROM custom_widgets WHERE type = 'packages'").fetchall() == []
+    assert conn.execute("SELECT widget_id FROM widget_settings WHERE widget_id LIKE 'packages%'").fetchall() == []
+    assert conn.execute("SELECT widget_id FROM widget_custom_names WHERE widget_id LIKE 'packages%'").fetchall() == []
+
+    layout_widgets = {r["widget_id"] for r in conn.execute("SELECT widget_id FROM widget_layout")}
+    assert layout_widgets == {"rss"}
+
+    user_settings_widgets = {r["widget_id"] for r in conn.execute("SELECT widget_id FROM widget_user_settings")}
+    assert user_settings_widgets == {"rss"}
+
+    hidden_widgets = {r["widget_id"] for r in conn.execute("SELECT widget_id FROM hidden_widget_ids")}
+    assert hidden_widgets == {"rss"}
     conn.close()

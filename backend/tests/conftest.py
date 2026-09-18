@@ -71,7 +71,12 @@ def tmp_db_pre_token_hashing(tmp_path, monkeypatch):
     conn = sqlite3.connect(db_path)
     try:
         conn.executescript(db._SCHEMA)
-        conn.execute(f"PRAGMA user_version = {len(db._MIGRATIONS) - 1}")
+        # Index, not `len(db._MIGRATIONS) - 1` — that only meant "one short of
+        # migration 019" back when 019 was the last migration in the tuple;
+        # it silently breaks (skips 019 entirely) the moment a migration is
+        # appended after it, as happened when _migration_020 was added.
+        pre_019_version = db._MIGRATIONS.index(db._migration_019_hash_device_and_session_ids)
+        conn.execute(f"PRAGMA user_version = {pre_019_version}")
         conn.commit()
     finally:
         conn.close()

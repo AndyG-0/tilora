@@ -12,12 +12,10 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.ai import assistant
-from app.config import settings
 from app.i18n import DEFAULT_LOCALE, LANGUAGE_NAMES
-from app.integrations import speedtest_runner, track17_client
+from app.integrations import speedtest_runner
 from app.plugins.ai_insights.plugin import AIInsightsPlugin
 from app.plugins.base import registry
-from app.plugins.packages.plugin import PackagesPlugin
 from app.plugins.photos.indexer import index_photos
 from app.plugins.photos.plugin import PhotosPlugin
 from app.plugins.speedtest.plugin import SpeedtestPlugin
@@ -34,10 +32,6 @@ scheduler = AsyncIOScheduler()
 # does, rather than through the AI tool-calling layer.
 ALERT_WIDGET_ID = "alert"
 _SEVERE_WEATHER_ALERT_EXPIRES_MINUTES = 360
-
-# 17Track's free tier is rate-limited, so package status/ETA is refreshed on
-# a slow interval rather than on every dashboard poll — see PackagesPlugin.
-_PACKAGE_REFRESH_INTERVAL_MINUTES = 90
 
 # Cheap enough (one in-memory dict scan) that more frequent sweeping isn't
 # warranted — this just bounds worst-case growth between the lazy,
@@ -218,61 +212,6 @@ def schedule_severe_weather_widgets() -> None:
             schedule_severe_weather_widget(plugin)
 
 
-async def run_package_refresh(plugin: PackagesPlugin) -> None:
-    api_key = settings.track17_api_key
-    if not api_key:
-        return
-
-    # Refreshes every user's packages for this widget, not just whoever's
-    # currently viewing it — see list_all_packages_for_widget's docstring.
-    packages = await asyncio.to_thread(db.list_all_packages_for_widget, plugin.id)
-    pending = [p for p in packages if not p["delivered"]]
-    if not pending:
-        return
-
-    try:
-        results = await track17_client.get_track_info(api_key, [p["tracking_number"] for p in pending])
-    except track17_client.Track17Error:
-        logger.exception("Package refresh failed for widget '%s'", plugin.id)
-        return
-
-    for package in pending:
-        info = results.get(package["tracking_number"])
-        if info is None:
-            continue
-        await asyncio.to_thread(
-            db.update_package_status,
-            package["id"],
-            carrier=info.get("carrier"),
-            status=info.get("status"),
-            last_event=info.get("last_event"),
-            eta_date=info.get("eta_date"),
-            delivered=info.get("delivered"),
-        )
-
-    cache.delete_prefix(f"summary:{plugin.id}:")
-    cache.delete_prefix(f"detail:{plugin.id}:")
-    logger.info("Package widget '%s' refreshed %d pending package(s)", plugin.id, len(pending))
-
-
-def schedule_package_refresh(plugin: PackagesPlugin) -> None:
-    scheduler.add_job(
-        run_package_refresh,
-        trigger=IntervalTrigger(minutes=_PACKAGE_REFRESH_INTERVAL_MINUTES),
-        args=[plugin],
-        id=f"package-refresh:{plugin.id}",
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True,
-    )
-
-
-def schedule_package_refresh_widgets() -> None:
-    for plugin in registry.all():
-        if isinstance(plugin, PackagesPlugin):
-            schedule_package_refresh(plugin)
-
-
 def run_cache_sweep() -> None:
     try:
         dropped = cache.sweep_expired()
@@ -300,7 +239,6 @@ def unschedule_widget(widget_id: str) -> None:
         f"photo-index:{widget_id}",
         f"speedtest:{widget_id}",
         f"severe-weather:{widget_id}",
-        f"package-refresh:{widget_id}",
     ):
         if scheduler.get_job(job_id):
             scheduler.remove_job(job_id)

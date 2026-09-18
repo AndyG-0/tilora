@@ -420,25 +420,6 @@
 			"column_server": "Servidor"
 		}
 	},
-	"packages": {
-		"tile": {
-			"default_title": "Paquetes",
-			"arriving_today": "Llegan hoy",
-			"in_transit": "{count} en camino",
-			"nothing_tracked": "Nada en seguimiento"
-		},
-		"detail": {
-			"tracking_placeholder": "Número de seguimiento…",
-			"label_placeholder": "Etiqueta (opcional)…",
-			"add_error": "No se pudo añadir ese número de seguimiento.",
-			"remove_error": "No se pudo eliminar el paquete.",
-			"delivered": "Entregado",
-			"awaiting_status": "Esperando estado",
-			"eta": "Llegada estimada {date}",
-			"remove_aria": "Eliminar paquete",
-			"empty_hint": "Aún no hay paquetes — añade un número de seguimiento arriba."
-		}
-	},
 	"nasa_apod": {
 		"tile": {
 			"unavailable": "Foto del día no disponible",
@@ -1265,7 +1246,6 @@
 		"stat_shopping": "{active} pendientes ({total} artículos)",
 		"stat_alerts": "{count} alerta(s) activa(s)",
 		"stat_photos": "{count} fotos indexadas",
-		"stat_packages": "{count} paquetes seguidos",
 		"stat_custom_settings": "Ajustes personalizados guardados",
 		"stat_device_settings": "Ajustes de dispositivo activos",
 		"stat_user_settings": "Preferencias de usuario guardadas",

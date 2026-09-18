@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -37,7 +39,11 @@ def test_load_plugins_registers_enabled_widgets_and_skips_disabled(dashboard_yam
     assert registry.get("disabled-widget") is None
 
 
-def test_load_plugins_raises_for_unregistered_widget_type(tmp_path, tmp_db, monkeypatch):
+def test_load_plugins_skips_unregistered_widget_type(tmp_path, tmp_db, monkeypatch, caplog):
+    """A widget type can disappear (a plugin removed in an upgrade) while a
+    persisted widget of that type still exists — startup must log and skip
+    it rather than crashing the whole app.
+    """
     path = tmp_path / "dashboard.yaml"
     path.write_text(
         """
@@ -47,12 +53,21 @@ widgets:
     enabled: true
     layout: { col: 1, row: 1, colSpan: 1, rowSpan: 1 }
     settings: {}
+  - id: weather
+    type: weather
+    enabled: true
+    layout: { col: 2, row: 1, colSpan: 1, rowSpan: 1 }
+    settings: { latitude: 1, longitude: 2 }
 """
     )
     monkeypatch.setattr(config, "DASHBOARD_CONFIG_PATH", path)
 
-    with pytest.raises(ValueError, match="not_a_real_plugin_type"):
+    with caplog.at_level(logging.WARNING, logger="app.main"):
         main.load_plugins()
+
+    assert registry.get("mystery") is None
+    assert isinstance(registry.get("weather"), WeatherPlugin)
+    assert any("mystery" in r.message and "not_a_real_plugin_type" in r.message for r in caplog.records)
 
 
 def test_load_plugins_layers_db_persisted_settings_over_yaml(dashboard_yaml, tmp_db):
