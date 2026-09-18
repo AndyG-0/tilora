@@ -101,7 +101,6 @@ nav:
           - Message Board: user-guide/widgets/message.md
           - Movies & Shows: user-guide/widgets/movies.md
           - NASA APOD: user-guide/widgets/nasa-apod.md
-          - Package Tracking: user-guide/widgets/packages.md
           - Photos Slideshow: user-guide/widgets/photos.md
           - Pi-hole: user-guide/widgets/pihole.md
           - qBittorrent: user-guide/widgets/qbittorrent.md

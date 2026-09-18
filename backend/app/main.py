@@ -44,9 +44,6 @@ from app.api import (
     network_settings as network_settings_api,
 )
 from app.api import (
-    packages as packages_api,
-)
-from app.api import (
     pihole as pihole_api,
 )
 from app.api import (
@@ -93,7 +90,6 @@ from app.plugins.registry_types import PLUGIN_CLASSES_BY_TYPE
 from app.scheduler import (
     schedule_ai_widgets,
     schedule_cache_sweep,
-    schedule_package_refresh_widgets,
     schedule_photo_index_widgets,
     schedule_severe_weather_widgets,
     schedule_speedtest_widgets,
@@ -115,7 +111,12 @@ def load_plugins() -> None:
             continue
         plugin_cls = PLUGIN_CLASSES_BY_TYPE.get(widget["type"])
         if plugin_cls is None:
-            raise ValueError(f"No plugin registered for widget type '{widget['type']}'")
+            # A widget type can disappear (a plugin removed in an upgrade)
+            # while a persisted widget of that type still exists, either in
+            # dashboard.yaml or a UI-added `custom_widgets` row — skip it
+            # rather than taking the whole app down at startup.
+            logger.warning("Skipping widget %r: no plugin registered for type %r", widget["id"], widget["type"])
+            continue
         # Settings changed at runtime (e.g. the weather widget's city) are
         # persisted separately from dashboard.yaml; layer them on top. The
         # plugin's own starter defaults sit underneath both, so a widget
@@ -139,7 +140,6 @@ async def lifespan(app: FastAPI):
     schedule_photo_index_widgets()
     schedule_speedtest_widgets()
     schedule_severe_weather_widgets()
-    schedule_package_refresh_widgets()
     schedule_cache_sweep()
     schedule_update_check(scheduler)
     scheduler.start()
@@ -193,7 +193,6 @@ app.include_router(version_api.router)
 app.include_router(alerts.router)
 app.include_router(chores.router)
 app.include_router(shopping.router)
-app.include_router(packages_api.router)
 app.include_router(calendar_auth.router)
 app.include_router(icloud_auth.router)
 app.include_router(assistant_api.router)

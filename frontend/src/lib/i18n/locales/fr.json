@@ -420,25 +420,6 @@
 			"column_server": "Serveur"
 		}
 	},
-	"packages": {
-		"tile": {
-			"default_title": "Colis",
-			"arriving_today": "Arrivent aujourd'hui",
-			"in_transit": "{count} en cours d'acheminement",
-			"nothing_tracked": "Rien à suivre"
-		},
-		"detail": {
-			"tracking_placeholder": "Numéro de suivi…",
-			"label_placeholder": "Libellé (optionnel)…",
-			"add_error": "Impossible d'ajouter ce numéro de suivi.",
-			"remove_error": "Impossible de supprimer le colis.",
-			"delivered": "Livré",
-			"awaiting_status": "En attente de statut",
-			"eta": "Arrivée estimée {date}",
-			"remove_aria": "Supprimer le colis",
-			"empty_hint": "Aucun colis suivi pour l'instant — ajoutez un numéro de suivi ci-dessus."
-		}
-	},
 	"nasa_apod": {
 		"tile": {
 			"unavailable": "Photo du jour indisponible",
@@ -1127,6 +1108,9 @@
 		"remove_tile": "Supprimer la tuile",
 		"resize_tile": "Redimensionner la tuile",
 		"add_tile": "+ Ajouter une tuile",
+		"widget_picker_search_placeholder": "Rechercher des tuiles…",
+		"widget_picker_search_clear": "Effacer la recherche",
+		"widget_picker_no_results": "Aucune tuile ne correspond à « {query} »",
 		"auto_arrange": "Organisation automatique",
 		"auto_arrange_confirm_title": "Organiser automatiquement les tuiles ?",
 		"auto_arrange_confirm_text": "Cela repositionne toutes les tuiles de cet onglet pour supprimer les espaces vides. Cela peut annuler toute disposition manuelle que vous avez effectuée.",
@@ -1265,7 +1249,6 @@
 		"stat_shopping": "{active} non cochée(s) ({total} articles)",
 		"stat_alerts": "{count} alerte(s) active(s)",
 		"stat_photos": "{count} photos indexées",
-		"stat_packages": "{count} colis suivis",
 		"stat_custom_settings": "Paramètres personnalisés enregistrés",
 		"stat_device_settings": "Remplacements d'appareil actifs",
 		"stat_user_settings": "Préférences utilisateur enregistrées",

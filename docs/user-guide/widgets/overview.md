@@ -33,7 +33,6 @@ Every widget operates as a modular plugin (`backend/app/plugins/`):
 | [Message Board](message.md) | `message` | Productivity | Household sticky note and announcement board. |
 | [Movies & Shows](movies.md) | `movies` | Media | TMDB trending titles and streaming provider availability via JustWatch. |
 | [NASA APOD](nasa-apod.md) | `nasa_apod` | Display | Daily Astronomy Picture of the Day with full-res imagery. |
-| [Package Tracking](packages.md) | `packages` | Utilities | Multi-carrier package delivery tracking via 17Track. |
 | [Photos Slideshow](photos.md) | `photos` | Media | Slideshow from local folders, iCloud Shared Albums, iCloud Private, or Immich. |
 | [Pi-hole](pihole.md) | `pihole` | Network | Pi-hole v6+ DNS ad-blocking metrics, block rate, and top clients. |
 | [qBittorrent](qbittorrent.md) | `qbittorrent` | Media | Active torrent downloads, speeds, and status management. |

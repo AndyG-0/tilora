@@ -44,7 +44,6 @@
 		speedtest: '⚡',
 		chores: '📋',
 		shopping: '🛒',
-		packages: '📦',
 		nasa_apod: '🚀',
 		flights: '✈️',
 	};
@@ -538,11 +537,6 @@
 									{#if tile.stats.photos_count > 0}
 										<span class="db-stat-tag photo-tag">
 											🖼️ {$_('reports.stat_photos', { values: { count: tile.stats.photos_count } })}
-										</span>
-									{/if}
-									{#if tile.stats.packages_count > 0}
-										<span class="db-stat-tag package-tag">
-											📦 {$_('reports.stat_packages', { values: { count: tile.stats.packages_count } })}
 										</span>
 									{/if}
 									{#if tile.stats.has_custom_settings}

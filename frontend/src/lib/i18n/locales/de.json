@@ -420,25 +420,6 @@
 			"column_server": "Server"
 		}
 	},
-	"packages": {
-		"tile": {
-			"default_title": "Pakete",
-			"arriving_today": "Kommen heute an",
-			"in_transit": "{count} unterwegs",
-			"nothing_tracked": "Nichts wird verfolgt"
-		},
-		"detail": {
-			"tracking_placeholder": "Sendungsnummer…",
-			"label_placeholder": "Bezeichnung (optional)…",
-			"add_error": "Diese Sendungsnummer konnte nicht hinzugefügt werden.",
-			"remove_error": "Das Paket konnte nicht entfernt werden.",
-			"delivered": "Zugestellt",
-			"awaiting_status": "Status ausstehend",
-			"eta": "Voraussichtliche Ankunft {date}",
-			"remove_aria": "Paket entfernen",
-			"empty_hint": "Noch keine Pakete verfolgt — füge oben eine Sendungsnummer hinzu."
-		}
-	},
 	"nasa_apod": {
 		"tile": {
 			"unavailable": "Bild des Tages nicht verfügbar",
@@ -1127,6 +1108,9 @@
 		"remove_tile": "Kachel entfernen",
 		"resize_tile": "Kachel-Größe ändern",
 		"add_tile": "+ Kachel hinzufügen",
+		"widget_picker_search_placeholder": "Kacheln suchen…",
+		"widget_picker_search_clear": "Suche löschen",
+		"widget_picker_no_results": "Keine Kacheln für „{query}“ gefunden",
 		"auto_arrange": "Automatisch anordnen",
 		"auto_arrange_confirm_title": "Kacheln automatisch anordnen?",
 		"auto_arrange_confirm_text": "Dadurch werden alle Kacheln auf diesem Tab neu angeordnet, um Lücken zu entfernen. Manuelle Anordnungen können dabei verloren gehen.",
@@ -1265,7 +1249,6 @@
 		"stat_shopping": "{active} offen ({total} Einträge)",
 		"stat_alerts": "{count} aktive Warnung(en)",
 		"stat_photos": "{count} indizierte Fotos",
-		"stat_packages": "{count} verfolgte Pakete",
 		"stat_custom_settings": "Benutzerdefinierte Einstellungen",
 		"stat_device_settings": "Geräteüberschreibungen aktiv",
 		"stat_user_settings": "Benutzereinstellungen gespeichert",

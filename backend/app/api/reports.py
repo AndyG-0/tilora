@@ -138,7 +138,6 @@ def _build_tiles_report_sync(user_id: str, device_id: str, is_admin: bool) -> di
                 "shopping_total": 0,
                 "alerts_active": 0,
                 "photos_count": 0,
-                "packages_count": 0,
                 "has_custom_settings": False,
                 "has_user_settings": False,
                 "has_device_settings": False,

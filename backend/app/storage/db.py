@@ -309,31 +309,6 @@ CREATE TABLE IF NOT EXISTS severe_weather_seen (
     PRIMARY KEY (widget_id, alert_key)
 );
 
--- Deliberately per-user (user_id, added by migration 012 for an upgrade)
--- rather than shared household-wide: each member tracks their own
--- deliveries, the same "user-level settings" tier as Steam/Goodreads — see
--- app.plugins.packages.plugin's settings_scope comment.
-CREATE TABLE IF NOT EXISTS packages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    widget_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    tracking_number TEXT NOT NULL,
-    carrier TEXT,
-    label TEXT,
-    status TEXT,
-    last_event TEXT,
-    eta_date TEXT,
-    delivered INTEGER NOT NULL DEFAULT 0,
-    added_at TEXT NOT NULL,
-    updated_at TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_packages_widget ON packages (widget_id, delivered, eta_date);
--- idx_packages_widget_user is NOT created here: on an upgrade this CREATE
--- TABLE is a no-op against the pre-existing (pre-`user_id`) table, so an
--- index referencing `user_id` would fail before migration 012 gets a chance
--- to add the column. Migration 012 creates this same index itself, after
--- adding the column.
-
 -- A household member's own RSS feed catalog, independent of any single
 -- widget instance — feeds are added/removed here once, then any of that
 -- same user's RSS tiles picks a subset via feed_ids in its (personal-scope)
@@ -862,15 +837,23 @@ def _migration_011_seed_hidden_widget_ids(conn: sqlite3.Connection) -> None:
     )
 
 
-# `packages` gained user_id (see the table comment above) as part of moving
-# package tracking from a single household-wide list to a per-user one (see
-# app.plugins.packages.plugin). Existing untagged rows are backfilled to the
-# household admin (the oldest-created one, same "promote the oldest"
-# precedent as _migration_002_user_roles) rather than left ownerless — an
-# ownerless row would simply become invisible once the packages API starts
-# filtering by requesting user, silently dropping whatever was already being
-# tracked.
+# `packages` gained user_id as part of moving package tracking from a single
+# household-wide list to a per-user one. Existing untagged rows are
+# backfilled to the household admin (the oldest-created one, same "promote
+# the oldest" precedent as _migration_002_user_roles) rather than left
+# ownerless — an ownerless row would simply become invisible once the
+# packages API starts filtering by requesting user, silently dropping
+# whatever was already being tracked.
+#
+# The `packages` table itself (and the Packages widget/plugin) was later
+# removed entirely — see _migration_020_remove_packages_widget below — so on
+# a fresh install (or one already past that removal) this table never
+# exists; guarded as a no-op rather than removed outright, so upgrades from
+# any older version still walk every migration in order without erroring on
+# a table that predates them.
 def _migration_012_packages_user_id(conn: sqlite3.Connection) -> None:
+    if not conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'packages'").fetchone():
+        return
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(packages)")}
     if "user_id" not in columns:
         conn.execute("ALTER TABLE packages ADD COLUMN user_id TEXT")
@@ -1091,6 +1074,28 @@ def _migration_019_hash_device_and_session_ids(conn: sqlite3.Connection) -> None
         conn.execute("UPDATE sessions SET id = ? WHERE id = ?", (_hash(old_id), old_id))
 
 
+# The Packages widget (17Track integration) was removed — 17Track's free API
+# key signup turned out not to accept personal email accounts, making it
+# unusable for Tilora's self-hosted, personal audience. Purges every trace of
+# any packages widget (the dashboard.yaml default `packages` id, plus any
+# UI-added `custom_widgets` of that type) using the same per-widget cleanup
+# `app.api.widgets.remove_widget` performs for a normal widget deletion, then
+# drops the `packages` tracking-numbers table itself.
+def _migration_020_remove_packages_widget(conn: sqlite3.Connection) -> None:
+    widget_ids = {"packages"} | {
+        row[0] for row in conn.execute("SELECT id FROM custom_widgets WHERE type = 'packages'")
+    }
+    for widget_id in widget_ids:
+        conn.execute("DELETE FROM widget_settings WHERE widget_id = ?", (widget_id,))
+        conn.execute("DELETE FROM widget_layout WHERE widget_id = ?", (widget_id,))
+        conn.execute("DELETE FROM widget_user_settings WHERE widget_id = ?", (widget_id,))
+        conn.execute("DELETE FROM widget_device_settings WHERE widget_id = ?", (widget_id,))
+        conn.execute("DELETE FROM hidden_widget_ids WHERE widget_id = ?", (widget_id,))
+        conn.execute("DELETE FROM widget_custom_names WHERE widget_id = ?", (widget_id,))
+    conn.execute("DELETE FROM custom_widgets WHERE type = 'packages'")
+    conn.execute("DROP TABLE IF EXISTS packages")
+
+
 _MIGRATIONS: tuple[str | Callable[[sqlite3.Connection], None], ...] = (
     _MIGRATION_001_USERS_DEVICES,
     _migration_002_user_roles,
@@ -1111,6 +1116,7 @@ _MIGRATIONS: tuple[str | Callable[[sqlite3.Connection], None], ...] = (
     _migration_017_weather_flights_personal_scope,
     _migration_018_clean_photos_widget_user_settings,
     _migration_019_hash_device_and_session_ids,
+    _migration_020_remove_packages_widget,
 )
 
 
@@ -1977,126 +1983,6 @@ def list_user_ids_with_credentials(provider: str) -> list[str]:
     return [row["user_id"] for row in rows]
 
 
-_PACKAGE_COLUMNS = (
-    "id, widget_id, user_id, tracking_number, carrier, label, status, last_event, eta_date, delivered, "
-    "added_at, updated_at"
-)
-
-
-def add_package(widget_id: str, user_id: str, tracking_number: str, label: str | None = None) -> dict[str, Any]:
-    added_at = datetime.now(UTC).isoformat()
-    with _connect() as conn:
-        cursor = conn.execute(
-            "INSERT INTO packages "
-            "(widget_id, user_id, tracking_number, carrier, label, status, last_event, eta_date, delivered, "
-            "added_at, updated_at) "
-            "VALUES (?, ?, ?, NULL, ?, NULL, NULL, NULL, 0, ?, NULL)",
-            (widget_id, user_id, tracking_number, label, added_at),
-        )
-        package_id = cursor.lastrowid
-    return {
-        "id": package_id,
-        "widget_id": widget_id,
-        "user_id": user_id,
-        "tracking_number": tracking_number,
-        "carrier": None,
-        "label": label,
-        "status": None,
-        "last_event": None,
-        "eta_date": None,
-        "delivered": False,
-        "added_at": added_at,
-        "updated_at": None,
-    }
-
-
-def list_packages(widget_id: str, user_id: str) -> list[dict[str, Any]]:
-    """A (widget, user)'s tracked packages, active (not yet delivered) first, earliest ETA first within each group.
-
-    Scoped per user (see the packages table comment) — each household member
-    tracks their own deliveries, so this only returns the requesting user's
-    packages for the widget, not every user's.
-    """
-    with _connect() as conn:
-        rows = conn.execute(
-            f"SELECT {_PACKAGE_COLUMNS} FROM packages WHERE widget_id = ? AND user_id = ? "
-            "ORDER BY delivered ASC, eta_date IS NULL, eta_date ASC, added_at ASC",
-            (widget_id, user_id),
-        ).fetchall()
-    return [dict(row) | {"delivered": bool(row["delivered"])} for row in rows]
-
-
-def list_all_packages_for_widget(widget_id: str) -> list[dict[str, Any]]:
-    """Every user's tracked packages for a widget, regardless of owner.
-
-    Used only by the background 17Track refresh job (see
-    app.scheduler.refresh_package_widget) — deliveries keep getting tracked
-    for every household member even while nobody's actively viewing the
-    widget; `list_packages` above is for the per-viewer read path, which
-    filters to just the requesting user.
-    """
-    with _connect() as conn:
-        rows = conn.execute(f"SELECT {_PACKAGE_COLUMNS} FROM packages WHERE widget_id = ?", (widget_id,)).fetchall()
-    return [dict(row) | {"delivered": bool(row["delivered"])} for row in rows]
-
-
-def get_package(package_id: int) -> dict[str, Any] | None:
-    with _connect() as conn:
-        row = conn.execute(f"SELECT {_PACKAGE_COLUMNS} FROM packages WHERE id = ?", (package_id,)).fetchone()
-    return None if row is None else dict(row) | {"delivered": bool(row["delivered"])}
-
-
-def remove_package(package_id: int) -> dict[str, Any] | None:
-    """Delete a tracked package. Returns the deleted row, or None if not found."""
-    with _connect() as conn:
-        row = conn.execute(f"SELECT {_PACKAGE_COLUMNS} FROM packages WHERE id = ?", (package_id,)).fetchone()
-        if row is None:
-            return None
-        conn.execute("DELETE FROM packages WHERE id = ?", (package_id,))
-    return dict(row) | {"delivered": bool(row["delivered"])}
-
-
-def update_package_status(
-    package_id: int,
-    carrier: str | None = None,
-    status: str | None = None,
-    last_event: str | None = None,
-    eta_date: str | None = None,
-    delivered: bool | None = None,
-) -> dict[str, Any] | None:
-    """Apply a 17Track refresh's results to a package row.
-
-    Each param defaults to None meaning "leave unchanged" — a refresh only
-    overwrites fields 17Track actually returned a value for, so a
-    momentarily-thin API response can't blank out previously-known status.
-    """
-    with _connect() as conn:
-        existing = conn.execute("SELECT * FROM packages WHERE id = ?", (package_id,)).fetchone()
-        if existing is None:
-            return None
-        conn.execute(
-            "UPDATE packages SET "
-            "carrier = COALESCE(?, carrier), "
-            "status = COALESCE(?, status), "
-            "last_event = COALESCE(?, last_event), "
-            "eta_date = COALESCE(?, eta_date), "
-            "delivered = COALESCE(?, delivered), "
-            "updated_at = ? "
-            "WHERE id = ?",
-            (
-                carrier,
-                status,
-                last_event,
-                eta_date,
-                None if delivered is None else int(delivered),
-                datetime.now(UTC).isoformat(),
-                package_id,
-            ),
-        )
-        row = conn.execute(f"SELECT {_PACKAGE_COLUMNS} FROM packages WHERE id = ?", (package_id,)).fetchone()
-    return dict(row) | {"delivered": bool(row["delivered"])}
-
-
 def save_oauth_tokens(
     provider: str, refresh_token: str, access_token: str | None = None, expires_at: str | None = None
 ) -> None:
@@ -2279,7 +2165,6 @@ _USER_SCOPED_TABLES: tuple[tuple[str, str], ...] = (
     ("screensaver_settings", "user_id"),
     ("user_preferences", "user_id"),
     ("hidden_widget_ids", "user_id"),
-    ("packages", "user_id"),
     ("user_credentials", "user_id"),
 )
 
@@ -2452,7 +2337,6 @@ def get_tile_report_stats() -> dict[str, dict[str, Any]]:
             "SELECT widget_id, COUNT(*) as active FROM alerts WHERE dismissed = 0 GROUP BY widget_id"
         ).fetchall()
         photo_rows = conn.execute("SELECT widget_id, COUNT(*) as total FROM photo_index GROUP BY widget_id").fetchall()
-        packages_rows = conn.execute("SELECT widget_id, COUNT(*) as total FROM packages GROUP BY widget_id").fetchall()
         custom_settings = {row["widget_id"] for row in conn.execute("SELECT widget_id FROM widget_settings").fetchall()}
         user_settings = {
             row["widget_id"] for row in conn.execute("SELECT DISTINCT widget_id FROM widget_user_settings").fetchall()
@@ -2469,7 +2353,6 @@ def get_tile_report_stats() -> dict[str, dict[str, Any]]:
         | {r["widget_id"] for r in shopping_rows}
         | {r["widget_id"] for r in alerts_rows}
         | {r["widget_id"] for r in photo_rows}
-        | {r["widget_id"] for r in packages_rows}
         | custom_settings
         | user_settings
         | device_settings
@@ -2480,7 +2363,6 @@ def get_tile_report_stats() -> dict[str, dict[str, Any]]:
     shopping_map = {r["widget_id"]: {"total": r["total"], "active": r["active"]} for r in shopping_rows}
     alerts_map = {r["widget_id"]: r["active"] for r in alerts_rows}
     photo_map = {r["widget_id"]: r["total"] for r in photo_rows}
-    packages_map = {r["widget_id"]: r["total"] for r in packages_rows}
 
     result: dict[str, dict[str, Any]] = {}
     for wid in all_ids:
@@ -2493,7 +2375,6 @@ def get_tile_report_stats() -> dict[str, dict[str, Any]]:
             "shopping_total": shopping_info["total"],
             "alerts_active": alerts_map.get(wid, 0),
             "photos_count": photo_map.get(wid, 0),
-            "packages_count": packages_map.get(wid, 0),
             "has_custom_settings": wid in custom_settings,
             "has_user_settings": wid in user_settings,
             "has_device_settings": wid in device_settings,

@@ -43,7 +43,7 @@ graph LR
 - **Comprehensive Home & Homelab Integrations**:
     - **Media & Entertainment**: Jellyfin media server, HDHomeRun live TV with hardware-accelerated transcoding, TMDB movies & TV shows with JustWatch availability, Goodreads, Steam, Battlefield stats.
     - **Homelab & Network Monitoring**: Pi-hole DNS ad-blocking, Asus router SSH monitoring with port scanning, Synology NAS storage and drive health, multi-host Docker & Podman containers, host resource monitor.
-    - **Personal & Household Productivity**: Google Calendar, Microsoft 365, CalDAV (iCloud/Nextcloud/Fastmail), personal To-Do checklists, shared shopping lists, 17Track parcel tracking, RSS news reader, bookmarks launcher.
+    - **Personal & Household Productivity**: Google Calendar, Microsoft 365, CalDAV (iCloud/Nextcloud/Fastmail), personal To-Do checklists, shared shopping lists, RSS news reader, bookmarks launcher.
     - **Smart Display Features**: Open-Meteo weather with air quality & pollen, OpenSky ADS-B flight radar, interactive Leaflet maps with directions and nearby places, photos slideshow (local filesystem, iCloud shared albums, private iCloud library, Immich), customizable clock faces, retro screensavers with digital rain and LED dot-matrix animations.
 - **Four-Tier Settings & Security Architecture**: Clean separation between Household Admin settings, User-level preferences, Widget-instance settings, and per-device display overrides.
 - **Flexible Deployment**: One-line native Linux installer, dedicated Raspberry Pi touchscreen kiosk configuration, systemd services with sandboxing, and production-ready Docker Compose images published to GHCR.

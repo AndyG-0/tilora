@@ -32,7 +32,6 @@ export interface TileReportStats {
 	shopping_total: number;
 	alerts_active: number;
 	photos_count: number;
-	packages_count: number;
 	has_custom_settings: boolean;
 	has_user_settings: boolean;
 	has_device_settings: boolean;
@@ -616,20 +615,6 @@ export interface ShoppingData {
 	open_count: number;
 }
 
-export interface Package {
-	id: number;
-	widget_id: string;
-	tracking_number: string;
-	carrier: string | null;
-	label: string | null;
-	status: string | null;
-	last_event: string | null;
-	eta_date: string | null;
-	delivered: boolean;
-	added_at: string;
-	updated_at: string | null;
-}
-
 export interface RSSFeed {
 	id: number;
 	user_id: string;
@@ -664,17 +649,6 @@ export interface RSSSummary {
 export interface RSSDetail extends RSSSummary {
 	feed_ids: number[];
 	all_feeds: RSSFeed[];
-}
-
-export interface PackagesSummary {
-	title: string;
-	arriving_today_count: number;
-	arriving_today: Package[];
-	active_count: number;
-}
-
-export interface PackagesData extends PackagesSummary {
-	packages: Package[];
 }
 
 export interface NASAApodSummary {
@@ -1368,13 +1342,6 @@ export const api = {
 		postJSON<ShoppingItem>('/api/shopping', { widget_id: widgetId, text }),
 	checkShoppingItem: (id: number) => postJSON<ShoppingItem>(`/api/shopping/${id}/check`),
 	removeShoppingItem: (id: number) => deleteJSON<{ status: string }>(`/api/shopping/${id}`),
-	createPackage: (widgetId: string, trackingNumber: string, label?: string) =>
-		postJSON<Package>('/api/packages', {
-			widget_id: widgetId,
-			tracking_number: trackingNumber,
-			...(label && { label }),
-		}),
-	removePackage: (id: number) => deleteJSON<{ status: string }>(`/api/packages/${id}`),
 	listRSSFeeds: () => getJSON<RSSFeed[]>('/api/rss/feeds'),
 	addRSSFeed: (url: string, name?: string, item_limit?: number) =>
 		postJSON<RSSFeed>('/api/rss/feeds', { url, ...(name && { name }), ...(item_limit && { item_limit }) }),

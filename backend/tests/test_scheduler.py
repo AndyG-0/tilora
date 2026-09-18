@@ -9,7 +9,6 @@ from app import config
 from app.ai.provider import PromptResult
 from app.plugins.ai_insights.plugin import AIInsightsPlugin
 from app.plugins.base import registry
-from app.plugins.packages.plugin import PackagesPlugin
 from app.plugins.photos.plugin import PhotosPlugin
 from app.plugins.speedtest.plugin import SpeedtestPlugin
 from app.plugins.weather.plugin import WeatherPlugin
@@ -34,10 +33,6 @@ def make_photos_plugin(**settings) -> PhotosPlugin:
 
 def make_speedtest_plugin(**settings) -> SpeedtestPlugin:
     return SpeedtestPlugin({"id": "speedtest", "settings": {"title": "Speedtest", "interval_minutes": 60, **settings}})
-
-
-def make_packages_plugin(**settings) -> PackagesPlugin:
-    return PackagesPlugin({"id": "packages", "settings": {"title": "Packages", **settings}})
 
 
 def test_schedule_ai_widgets_only_schedules_ai_insights_plugins():
@@ -310,117 +305,5 @@ def test_unschedule_widget_removes_speedtest_job():
         scheduler_module.unschedule_widget("speedtest")
 
         assert scheduler_module.scheduler.get_job("speedtest:speedtest") is None
-    finally:
-        scheduler_module.scheduler.remove_all_jobs()
-
-
-def test_schedule_package_refresh_widgets_only_schedules_packages_plugins():
-    registry.register(make_packages_plugin())
-    registry.register(WeatherPlugin({"id": "weather", "settings": {"latitude": 0, "longitude": 0}}))
-
-    scheduler_module.schedule_package_refresh_widgets()
-    try:
-        job_ids = {job.id for job in scheduler_module.scheduler.get_jobs()}
-        assert job_ids == {"package-refresh:packages"}
-    finally:
-        scheduler_module.scheduler.remove_all_jobs()
-
-
-def test_schedule_package_refresh_uses_90_minute_interval():
-    plugin = make_packages_plugin()
-
-    scheduler_module.schedule_package_refresh(plugin)
-    try:
-        job = scheduler_module.scheduler.get_job("package-refresh:packages")
-        assert job.trigger.interval.total_seconds() == 90 * 60
-    finally:
-        scheduler_module.scheduler.remove_all_jobs()
-
-
-async def test_run_package_refresh_noop_without_api_key(tmp_db, monkeypatch):
-    monkeypatch.setattr(scheduler_module.settings, "track17_api_key", None)
-    plugin = make_packages_plugin()
-    package = db.add_package(plugin.id, "alice", "1Z999AA1")
-
-    await scheduler_module.run_package_refresh(plugin)
-
-    assert db.get_package(package["id"])["status"] is None
-
-
-async def test_run_package_refresh_noop_when_no_pending_packages(tmp_db, monkeypatch):
-    monkeypatch.setattr(scheduler_module.settings, "track17_api_key", "test-key")
-    plugin = make_packages_plugin()
-
-    async def fail_if_called(*args, **kwargs):
-        raise AssertionError("get_track_info should not be called with nothing pending")
-
-    monkeypatch.setattr(scheduler_module.track17_client, "get_track_info", fail_if_called)
-
-    await scheduler_module.run_package_refresh(plugin)  # must not raise
-
-
-async def test_run_package_refresh_updates_pending_packages(tmp_db, monkeypatch):
-    monkeypatch.setattr(scheduler_module.settings, "track17_api_key", "test-key")
-    plugin = make_packages_plugin()
-    package = db.add_package(plugin.id, "alice", "1Z999AA1")
-
-    async def fake_get_track_info(api_key, tracking_numbers):
-        assert api_key == "test-key"
-        assert tracking_numbers == ["1Z999AA1"]
-        return {
-            "1Z999AA1": {
-                "carrier": "UPS",
-                "status": "InTransit",
-                "last_event": "Departed facility",
-                "eta_date": "2026-08-10",
-                "delivered": False,
-            }
-        }
-
-    monkeypatch.setattr(scheduler_module.track17_client, "get_track_info", fake_get_track_info)
-
-    await scheduler_module.run_package_refresh(plugin)
-
-    updated = db.get_package(package["id"])
-    assert updated["carrier"] == "UPS"
-    assert updated["status"] == "InTransit"
-    assert updated["eta_date"] == "2026-08-10"
-
-
-async def test_run_package_refresh_skips_packages_17track_returns_nothing_for(tmp_db, monkeypatch):
-    monkeypatch.setattr(scheduler_module.settings, "track17_api_key", "test-key")
-    plugin = make_packages_plugin()
-    package = db.add_package(plugin.id, "alice", "1Z999AA1")
-
-    async def fake_get_track_info(api_key, tracking_numbers):
-        return {}
-
-    monkeypatch.setattr(scheduler_module.track17_client, "get_track_info", fake_get_track_info)
-
-    await scheduler_module.run_package_refresh(plugin)  # must not raise
-
-    assert db.get_package(package["id"])["status"] is None
-
-
-async def test_run_package_refresh_swallows_track17_errors(tmp_db, monkeypatch):
-    monkeypatch.setattr(scheduler_module.settings, "track17_api_key", "test-key")
-    plugin = make_packages_plugin()
-    db.add_package(plugin.id, "alice", "1Z999AA1")
-
-    async def failing_get_track_info(api_key, tracking_numbers):
-        raise scheduler_module.track17_client.Track17Error("boom")
-
-    monkeypatch.setattr(scheduler_module.track17_client, "get_track_info", failing_get_track_info)
-
-    await scheduler_module.run_package_refresh(plugin)  # must not raise
-
-
-def test_unschedule_widget_removes_package_refresh_job():
-    plugin = make_packages_plugin()
-    scheduler_module.schedule_package_refresh(plugin)
-    try:
-        scheduler_module.unschedule_widget("packages")
-
-        assert scheduler_module.scheduler.get_job("package-refresh:packages") is None
     finally:
         scheduler_module.scheduler.remove_all_jobs()

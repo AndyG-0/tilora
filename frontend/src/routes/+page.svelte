@@ -601,6 +601,13 @@
 	let widgetTypeOptions = $state<
 		{ type: string; name: string; default_layout: { colSpan: number; rowSpan: number } }[]
 	>([]);
+	let widgetPickerQuery = $state('');
+
+	let filteredWidgetTypeOptions = $derived.by(() => {
+		const q = widgetPickerQuery.trim().toLowerCase();
+		if (!q) return widgetTypeOptions;
+		return widgetTypeOptions.filter((option) => option.name.toLowerCase().includes(q));
+	});
 
 	async function handleRemoveWidget(event: Event, widgetId: string) {
 		event.stopPropagation();
@@ -610,7 +617,11 @@
 
 	async function openAddWidgetAt(tabId: string, cell: { col: number; row: number } | null) {
 		addAtCell = { tabId, cell };
-		widgetTypeOptions = await api.widgetTypes();
+		widgetPickerQuery = '';
+		const options = await api.widgetTypes();
+		widgetTypeOptions = [...options].sort((a, b) =>
+			a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }),
+		);
 	}
 
 	function closeAddWidget() {
@@ -645,6 +656,42 @@
 		addWidgetLocal(newWidget);
 	}
 </script>
+
+{#snippet widgetPicker()}
+	<div class="widget-picker">
+		<div class="widget-picker-search">
+			<input
+				type="search"
+				class="widget-picker-search-input"
+				placeholder={$_('dashboard.widget_picker_search_placeholder')}
+				aria-label={$_('dashboard.widget_picker_search_placeholder')}
+				bind:value={widgetPickerQuery}
+			/>
+			{#if widgetPickerQuery}
+				<button
+					class="widget-picker-search-clear"
+					type="button"
+					onclick={() => (widgetPickerQuery = '')}
+					aria-label={$_('dashboard.widget_picker_search_clear')}
+				>
+					✕
+				</button>
+			{/if}
+		</div>
+		<div class="widget-picker-options">
+			{#each filteredWidgetTypeOptions as option (option.type)}
+				<button class="widget-picker-option" onclick={() => selectWidgetType(option)}>
+					{option.name}
+				</button>
+			{:else}
+				<p class="widget-picker-empty">
+					{$_('dashboard.widget_picker_no_results', { values: { query: widgetPickerQuery } })}
+				</p>
+			{/each}
+		</div>
+		<button class="widget-picker-cancel" onclick={closeAddWidget}>{$_('common.cancel')}</button>
+	</div>
+{/snippet}
 
 <svelte:window
 	onkeydown={onKeydown}
@@ -1065,14 +1112,7 @@
 										+
 									</button>
 									{#if addAtCell?.tabId === tab.id && addAtCell.cell?.col === cell.col && addAtCell.cell?.row === cell.row}
-										<div class="widget-picker">
-											{#each widgetTypeOptions as option (option.type)}
-												<button class="widget-picker-option" onclick={() => selectWidgetType(option)}>
-													{option.name}
-												</button>
-											{/each}
-											<button class="widget-picker-cancel" onclick={closeAddWidget}>{$_('common.cancel')}</button>
-										</div>
+										{@render widgetPicker()}
 									{/if}
 								{/if}
 							</div>
@@ -1095,14 +1135,7 @@
 								>{$_('dashboard.add_tile')}</button
 							>
 							{#if addAtCell?.tabId === tab.id && addAtCell.cell === null}
-								<div class="widget-picker">
-									{#each widgetTypeOptions as option (option.type)}
-										<button class="widget-picker-option" onclick={() => selectWidgetType(option)}>
-											{option.name}
-										</button>
-									{/each}
-									<button class="widget-picker-cancel" onclick={closeAddWidget}>{$_('common.cancel')}</button>
-								</div>
+								{@render widgetPicker()}
 							{/if}
 						</div>
 					{/if}
@@ -1513,10 +1546,55 @@
 		flex-direction: column;
 		gap: 0.35rem;
 		padding: 0.75rem;
-		overflow-y: auto;
 		background: var(--color-surface);
 		border-radius: 1rem;
 		border: 1px solid var(--color-border);
+	}
+
+	.widget-picker-search {
+		position: relative;
+		display: flex;
+		align-items: center;
+		flex-shrink: 0;
+	}
+
+	.widget-picker-search-input {
+		width: 100%;
+		font: inherit;
+		font-size: 0.85rem;
+		padding: 0.4rem 1.6rem 0.4rem 0.5rem;
+		border-radius: 0.4rem;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface);
+		color: var(--color-text);
+	}
+
+	.widget-picker-search-clear {
+		position: absolute;
+		right: 0.35rem;
+		background: none;
+		border: none;
+		color: var(--color-text-muted);
+		cursor: pointer;
+		font-size: 0.75rem;
+		padding: 0.15rem 0.35rem;
+	}
+
+	.widget-picker-options {
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+	}
+
+	.widget-picker-empty {
+		color: var(--color-text-muted);
+		font-size: 0.85rem;
+		padding: 0.5rem;
+		text-align: center;
+		margin: 0;
 	}
 
 	.widget-picker-option,
@@ -1532,6 +1610,7 @@
 
 	.widget-picker-cancel {
 		color: var(--color-text-muted);
+		flex-shrink: 0;
 	}
 
 	.modal-backdrop {

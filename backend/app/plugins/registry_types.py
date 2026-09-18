@@ -28,7 +28,6 @@ from app.plugins.mapping.plugin import MappingPlugin
 from app.plugins.message.plugin import MessagePlugin
 from app.plugins.movies.plugin import MoviesPlugin
 from app.plugins.nasa_apod.plugin import NASAApodPlugin
-from app.plugins.packages.plugin import PackagesPlugin
 from app.plugins.photos.plugin import PhotosPlugin
 from app.plugins.pihole.plugin import PiholePlugin
 from app.plugins.qbittorrent.plugin import QBittorrentPlugin
@@ -76,7 +75,6 @@ PLUGIN_CLASSES_BY_TYPE = {
     "goodreads": GoodreadsPlugin,
     "qbittorrent": QBittorrentPlugin,
     "speedtest": SpeedtestPlugin,
-    "packages": PackagesPlugin,
     "nasa_apod": NASAApodPlugin,
     "artificial_analysis": ArtificialAnalysisPlugin,
 }

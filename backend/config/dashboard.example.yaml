@@ -568,17 +568,3 @@ widgets:
       bookmarks:
         - name: "GitHub"
           url: "https://github.com"
-
-  - id: packages
-    type: packages
-    # Disabled by default. Requires a `TRACK17_API_KEY` in the backend's
-    # .env (17track.net/en/api) — the widget just shows a "17Track isn't
-    # configured" state until that's set. One shared tracking-number list
-    # for the whole household, same "network" scope as Shopping. Add a
-    # tracking number from this widget's detail view; status/ETA refresh
-    # on a slow background interval since 17Track's free tier is
-    # rate-limited, not on every dashboard poll.
-    enabled: false
-    layout: { col: 3, row: 15, colSpan: 1, rowSpan: 2 }
-    settings:
-      title: "Packages"

@@ -48,7 +48,6 @@ sequenceDiagram
     - *"Are all docker containers healthy?"*
     - *"What's playing on live TV?"*
     - *"What are the trending movies this week?"*
-    - *"Did my tracked packages arrive?"*
 - **General Knowledge & Live Web Search**:
     - *"Who won the Cowboys game yesterday?"*
     - *"Search the web for the nearest hardware store hours."*

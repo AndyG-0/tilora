@@ -41,11 +41,11 @@ code**, wired through four hardcoded, hand-maintained lists:
   single source of truth mapping a `type` string to its `TileComponent`/
   `DetailComponent`/`ScreensaverComponent` Svelte imports — all static
   `import` statements resolved at build time.
-- **Scheduler wiring**: `backend/app/scheduler.py` hardcodes five
+- **Scheduler wiring**: `backend/app/scheduler.py` hardcodes four
   `isinstance()` checks against imported classes (`AIInsightsPlugin`,
-  `PhotosPlugin`, `SpeedtestPlugin`, `WeatherPlugin`, `PackagesPlugin`) to
-  register each one's background job (AI prompt runs, photo indexing,
-  speedtest runs, severe-weather polling, package-tracking refresh).
+  `PhotosPlugin`, `SpeedtestPlugin`, `WeatherPlugin`) to register each one's
+  background job (AI prompt runs, photo indexing, speedtest runs,
+  severe-weather polling).
 
 `Plugin` (`backend/app/plugins/base.py`) carries no manifest metadata beyond
 class attributes used internally (`id`, `name`, `refresh_interval_seconds`,

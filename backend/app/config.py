@@ -126,9 +126,6 @@ class Settings(BaseSettings):
     # Discord bot token, used by the discord plugin (discord.com/developers/applications).
     discord_bot_token: str | None = None
 
-    # 17Track API key, used by the packages plugin (17track.net/en/api).
-    track17_api_key: str | None = None
-
     # NASA API key, used by the nasa_apod plugin (api.nasa.gov). Falls back
     # to NASA's shared "DEMO_KEY" (low rate limit) when unset.
     nasa_api_key: str | None = None
