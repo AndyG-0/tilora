@@ -9,9 +9,12 @@ login path on Merlin firmware and isn't subject to that same single-session
 limit, so any number of Tilora backends can read status concurrently
 without stepping on each other or on the router's own web admin UI.
 
-Each poll opens one SSH connection and runs a single batched shell command
-that echoes `nvram`/`/proc`/`dnsmasq` output for WAN status, connected
-clients, and WAN traffic, all in one round trip (see `_REMOTE_COMMAND`).
+Each poll runs a single batched shell command that echoes `nvram`/`/proc`/
+`dnsmasq` output for WAN status, connected clients, and WAN traffic, all in
+one round trip (see `_REMOTE_COMMAND`). The SSH connection itself is pooled
+and reused across polls (see `_acquire_connection`) rather than reconnecting
+every time, since the handshake is the expensive part of a poll that's
+otherwise just one shell command.
 The `nvram` key names and file paths here are long-standing, widely used
 Merlin conventions (the same ones Home Assistant's `asuswrt` integration
 relies on) but aren't formally documented by Asus — treat an unexpected/
@@ -28,6 +31,7 @@ import logging
 import re
 import socket
 import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -42,6 +46,13 @@ _LOGGER = logging.getLogger(__name__)
 _STATUS_TTL_SECONDS = 20
 _CONNECT_TIMEOUT_SECONDS = 10
 _COMMAND_TIMEOUT_SECONDS = 10
+
+# One router per household in practice, but keyed/capped like
+# container_client.py's client pool rather than a single global connection,
+# in case a widget's settings change to point at a different router.
+_MAX_SSH_CONNECTIONS = 4
+_ssh_connections: OrderedDict[str, asyncssh.SSHClientConnection] = OrderedDict()
+_ssh_connections_lock = asyncio.Lock()
 
 # Each command's output is wrapped between an echoed marker line so one SSH
 # round trip can gather everything a poll needs instead of opening a new
@@ -638,6 +649,38 @@ async def _connect(settings: dict[str, Any]) -> asyncssh.SSHClientConnection:
     except (OSError, asyncssh.Error) as exc:
         _LOGGER.warning("Could not reach the router over SSH: %s", exc)
         raise AsusRouterError("Could not reach the router over SSH") from exc
+
+
+def _ssh_connection_key(settings: dict[str, Any]) -> str:
+    return f"{settings.get('host', '')}:{_ssh_port(settings)}:{settings.get('username', '')}"
+
+
+async def _acquire_connection(settings: dict[str, Any]) -> asyncssh.SSHClientConnection:
+    """A pooled, already-authenticated connection for these settings, reused across polls.
+
+    Only the periodic poll path (`_fetch_status`) uses this pool — `send_wake_on_lan`/
+    `ping_client` are rare, user-triggered one-offs that still connect/close per call.
+    """
+    key = _ssh_connection_key(settings)
+    async with _ssh_connections_lock:
+        conn = _ssh_connections.get(key)
+        if conn is not None and not conn.is_closed():
+            _ssh_connections.move_to_end(key)
+            return conn
+
+        conn = await _connect(settings)
+        _ssh_connections[key] = conn
+        _ssh_connections.move_to_end(key)
+        while len(_ssh_connections) > _MAX_SSH_CONNECTIONS:
+            _evicted_key, evicted = _ssh_connections.popitem(last=False)
+            evicted.close()
+        return conn
+
+
+def _discard_connection(settings: dict[str, Any]) -> None:
+    conn = _ssh_connections.pop(_ssh_connection_key(settings), None)
+    if conn is not None:
+        conn.close()
 
 
 def _parse_sections(output: str) -> dict[str, str]:
@@ -1276,6 +1319,33 @@ def _parse_clients(
     return clients
 
 
+async def _run_remote_command(settings: dict[str, Any]) -> asyncssh.SSHCompletedProcess:
+    """Run `_REMOTE_COMMAND` on the pooled connection for these settings.
+
+    A pooled connection can have died silently between polls (router reboot, idle
+    timeout) — on a connection-level error, discard it and retry once on a fresh
+    connection rather than failing (and leaving the stale entry pooled) outright.
+    """
+    conn = await _acquire_connection(settings)
+    try:
+        return await asyncio.wait_for(conn.run(_REMOTE_COMMAND, check=False), timeout=_COMMAND_TIMEOUT_SECONDS)
+    except TimeoutError as exc:
+        raise AsusRouterError("Could not read status from the router: command timed out.") from exc
+    except (OSError, asyncssh.Error) as exc:
+        _LOGGER.info("Pooled SSH connection to the router was closed, reconnecting: %s", exc)
+        _discard_connection(settings)
+
+    conn = await _acquire_connection(settings)
+    try:
+        return await asyncio.wait_for(conn.run(_REMOTE_COMMAND, check=False), timeout=_COMMAND_TIMEOUT_SECONDS)
+    except TimeoutError as exc:
+        raise AsusRouterError("Could not read status from the router: command timed out.") from exc
+    except (OSError, asyncssh.Error) as exc:
+        _discard_connection(settings)
+        _LOGGER.warning("Could not read status from the router: %s", exc)
+        raise AsusRouterError("Could not read status from the router") from exc
+
+
 async def _fetch_status(settings: dict[str, Any], widget_id: str, *, use_cache: bool = True) -> AsusRouterStatus:
     cache_key = f"asus_status:{widget_id}"
     if use_cache:
@@ -1283,18 +1353,7 @@ async def _fetch_status(settings: dict[str, Any], widget_id: str, *, use_cache: 
         if cached is not None:
             return cached
 
-    conn = await _connect(settings)
-    try:
-        try:
-            result = await asyncio.wait_for(conn.run(_REMOTE_COMMAND, check=False), timeout=_COMMAND_TIMEOUT_SECONDS)
-        except TimeoutError as exc:
-            raise AsusRouterError("Could not read status from the router: command timed out.") from exc
-        except (OSError, asyncssh.Error) as exc:
-            _LOGGER.warning("Could not read status from the router: %s", exc)
-            raise AsusRouterError("Could not read status from the router") from exc
-    finally:
-        conn.close()
-        await conn.wait_closed()
+    result = await _run_remote_command(settings)
 
     stdout = result.stdout if isinstance(result.stdout, str) else ""
     sections = _parse_sections(stdout)

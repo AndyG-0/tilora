@@ -533,6 +533,7 @@ export interface AsusRouterSummary {
 	ssh_port: number;
 	username: string;
 	has_password: boolean;
+	poll_interval_seconds: number;
 	error?: string;
 }
 

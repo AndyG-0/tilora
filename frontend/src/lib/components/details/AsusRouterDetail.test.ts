@@ -5,6 +5,7 @@ vi.mock('$env/dynamic/public', () => ({ env: { PUBLIC_API_BASE_URL: 'http://api.
 vi.mock('$app/state', () => ({ page: { params: { id: 'asus_router' } } }));
 
 import { api, type AsusRouterDetail as AsusRouterDetailType } from '$lib/api';
+import { user } from '$lib/stores/user';
 import AsusRouterDetail from './AsusRouterDetail.svelte';
 
 const notConnected: AsusRouterDetailType = {
@@ -15,6 +16,7 @@ const notConnected: AsusRouterDetailType = {
 	ssh_port: 22,
 	username: '',
 	has_password: false,
+	poll_interval_seconds: 60,
 	wan_ip: null,
 	clients: [],
 	rx_bytes: 0,
@@ -29,6 +31,7 @@ const connected: AsusRouterDetailType = {
 	ssh_port: 22,
 	username: 'admin',
 	has_password: true,
+	poll_interval_seconds: 60,
 	wan_ip: '203.0.113.5',
 	clients: [
 		{
@@ -74,6 +77,7 @@ const connected: AsusRouterDetailType = {
 describe('AsusRouterDetail', () => {
 	beforeEach(() => {
 		vi.restoreAllMocks();
+		user.set(null);
 	});
 
 	it('shows a not-connected hint', () => {
@@ -182,5 +186,29 @@ describe('AsusRouterDetail', () => {
 		const closeBtn = within(dialog).getByLabelText('Close');
 		await fireEvent.click(closeBtn);
 		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+	});
+
+	it('hides the edit-poll-interval control for a non-admin', () => {
+		render(AsusRouterDetail, { props: { data: connected } });
+
+		expect(screen.queryByText('Edit poll interval')).not.toBeInTheDocument();
+	});
+
+	it('saves the poll interval from the editor for an admin', async () => {
+		user.set({ id: 'admin-user', name: 'Admin', avatar: null, role: 'admin' });
+		vi.spyOn(api, 'updateWidgetSettings').mockResolvedValue({});
+		vi.spyOn(api, 'widgetDetail').mockResolvedValue({ ...connected, poll_interval_seconds: 120 });
+
+		render(AsusRouterDetail, { props: { data: connected } });
+
+		await fireEvent.click(screen.getByText('Edit poll interval'));
+		const input = screen.getByLabelText('Poll every (seconds)') as HTMLInputElement;
+		await fireEvent.input(input, { target: { value: '120' } });
+		await fireEvent.click(screen.getByText('Save'));
+
+		await vi.waitFor(() =>
+			expect(api.updateWidgetSettings).toHaveBeenCalledWith('asus_router', { poll_interval_seconds: 120 }),
+		);
+		expect(api.widgetDetail).toHaveBeenCalledWith('asus_router');
 	});
 });

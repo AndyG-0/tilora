@@ -18,12 +18,17 @@ from app.plugins.base import Plugin, ToolDef
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_POLL_INTERVAL_SECONDS = 60
+# Matches asus_router_client._STATUS_TTL_SECONDS — below that, a lower poll
+# interval wouldn't actually poll any more often, just skip the cache.
+_MIN_POLL_INTERVAL_SECONDS = 20
+
 
 class AsusRouterPlugin(Plugin):
     id = "asus_router"
     name = "Asus Router"
-    refresh_interval_seconds = 30
     network_integration_type = "asus_router"
+    default_settings: ClassVar[dict[str, Any]] = {"poll_interval_seconds": _DEFAULT_POLL_INTERVAL_SECONDS}
     network_default_settings: ClassVar[dict[str, Any]] = {
         "host": "",
         "ssh_port": 22,
@@ -31,6 +36,24 @@ class AsusRouterPlugin(Plugin):
         "password": "",
     }
     secret_setting_keys: ClassVar[frozenset[str]] = frozenset({"password"})
+
+    @property
+    def refresh_interval_seconds(self) -> int:
+        raw = self.config["settings"].get("poll_interval_seconds", _DEFAULT_POLL_INTERVAL_SECONDS)
+        try:
+            seconds = int(raw)
+        except (TypeError, ValueError):
+            return _DEFAULT_POLL_INTERVAL_SECONDS
+        return max(_MIN_POLL_INTERVAL_SECONDS, seconds)
+
+    def validate_settings(self, payload: dict[str, Any]) -> None:
+        if "poll_interval_seconds" in payload:
+            try:
+                seconds = int(payload["poll_interval_seconds"])
+            except (TypeError, ValueError) as exc:
+                raise ValueError("poll_interval_seconds must be a whole number of seconds") from exc
+            if seconds < _MIN_POLL_INTERVAL_SECONDS:
+                raise ValueError(f"poll_interval_seconds must be at least {_MIN_POLL_INTERVAL_SECONDS}")
 
     def _is_connected(self) -> bool:
         return asus_router_client.is_configured(self.config["settings"])
