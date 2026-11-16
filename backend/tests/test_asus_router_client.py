@@ -34,6 +34,9 @@ class _FakeConnection:
     def close(self) -> None:
         self.closed = True
 
+    def is_closed(self) -> bool:
+        return self.closed
+
     async def wait_closed(self) -> None:
         pass
 
@@ -50,6 +53,23 @@ def _fake_connect(*, stdout: str = "", connect_error: Exception | None = None, r
 
     fake_connect.calls = calls
     fake_connect.connection = connection
+    return fake_connect
+
+
+def _fake_connect_sequence(connections: list[_FakeConnection]):
+    """Like `_fake_connect`, but returns a different connection on each successive
+    call to `asyncssh.connect` — for exercising discard-and-reconnect behavior."""
+    calls: list[dict] = []
+    iterator = iter(connections)
+
+    async def fake_connect(host, *, port, username, password, known_hosts):
+        calls.append({"host": host, "port": port, "username": username, "password": password})
+        try:
+            return next(iterator)
+        except StopIteration:
+            return connections[-1]
+
+    fake_connect.calls = calls
     return fake_connect
 
 
@@ -149,6 +169,47 @@ async def test_test_connection_bypasses_cache(monkeypatch):
     await asus_router_client.test_connection(SETTINGS, "test-widget")
 
     assert fake.connection.run_calls == 2
+    # The SSH connection itself is pooled across both calls — only test_connection's
+    # cache bypass should force another SSH *command*, not another SSH connection.
+    assert len(fake.calls) == 1
+    assert fake.connection.closed is False
+
+
+async def test_fetch_status_reuses_pooled_connection_across_polls(monkeypatch):
+    fake = _fake_connect(stdout=_build_output())
+    monkeypatch.setattr(asyncssh, "connect", fake)
+
+    await asus_router_client._fetch_status(SETTINGS, "test-widget", use_cache=False)
+    await asus_router_client._fetch_status(SETTINGS, "test-widget", use_cache=False)
+
+    assert len(fake.calls) == 1
+    assert fake.connection.run_calls == 2
+
+
+async def test_fetch_status_discards_and_reconnects_on_dead_pooled_connection(monkeypatch):
+    dead = _FakeConnection(run_error=OSError("broken pipe"))
+    alive = _FakeConnection(stdout=_build_output(wan_state="2", wan_ip="203.0.113.5"))
+    fake = _fake_connect_sequence([dead, alive])
+    monkeypatch.setattr(asyncssh, "connect", fake)
+
+    status = await asus_router_client.get_wan_status(SETTINGS, "test-widget")
+
+    assert status == {"connected": True, "ip": "203.0.113.5"}
+    assert len(fake.calls) == 2
+    assert dead.closed is True
+    assert alive.run_calls == 1
+
+
+async def test_fetch_status_raises_and_discards_when_retry_also_fails(monkeypatch):
+    fake = _fake_connect(run_error=OSError("broken pipe"))
+    monkeypatch.setattr(asyncssh, "connect", fake)
+
+    with pytest.raises(asus_router_client.AsusRouterError):
+        await asus_router_client._fetch_status(SETTINGS, "test-widget", use_cache=False)
+
+    assert len(fake.calls) == 2
+    assert fake.connection.closed is True
+    assert asus_router_client._ssh_connections == {}
 
 
 async def test_poll_calls_share_one_ssh_round_trip_within_cache_ttl(monkeypatch):

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import asyncssh
+import pytest
 
 from app.plugins.asus_router.plugin import AsusRouterPlugin
 
@@ -33,6 +34,9 @@ class _FakeConnection:
 
     def close(self) -> None:
         pass
+
+    def is_closed(self) -> bool:
+        return False
 
     async def wait_closed(self) -> None:
         pass
@@ -187,3 +191,55 @@ async def test_get_ai_tools_returns_status_and_client_tools():
     assert "asus_router_wake_on_lan" in tool_names
     result = await tools[0].handler()
     assert result["connected"] is False
+
+
+def test_refresh_interval_seconds_defaults_to_60():
+    plugin = make_plugin()
+
+    assert plugin.refresh_interval_seconds == 60
+
+
+def test_refresh_interval_seconds_honors_poll_interval_setting():
+    plugin = make_plugin(poll_interval_seconds=120)
+
+    assert plugin.refresh_interval_seconds == 120
+
+
+def test_refresh_interval_seconds_is_floored_at_minimum():
+    plugin = make_plugin(poll_interval_seconds=5)
+
+    assert plugin.refresh_interval_seconds == 20
+
+
+def test_refresh_interval_seconds_falls_back_to_default_on_bad_value():
+    plugin = make_plugin(poll_interval_seconds="not-a-number")
+
+    assert plugin.refresh_interval_seconds == 60
+
+
+def test_validate_settings_rejects_non_numeric_poll_interval():
+    plugin = make_plugin()
+
+    with pytest.raises(ValueError, match="poll_interval_seconds"):
+        plugin.validate_settings({"poll_interval_seconds": "soon"})
+
+
+def test_validate_settings_rejects_poll_interval_below_minimum():
+    plugin = make_plugin()
+
+    with pytest.raises(ValueError, match="at least 20"):
+        plugin.validate_settings({"poll_interval_seconds": 5})
+
+
+def test_validate_settings_accepts_valid_poll_interval():
+    plugin = make_plugin()
+
+    plugin.validate_settings({"poll_interval_seconds": 90})
+
+
+async def test_get_summary_includes_poll_interval_seconds():
+    plugin = make_plugin(host="", poll_interval_seconds=90)
+
+    summary = await plugin.get_summary()
+
+    assert summary["poll_interval_seconds"] == 90

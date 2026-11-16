@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { type AsusRouterClient, type AsusRouterDetail } from '$lib/api';
+	import { api, type AsusRouterClient, type AsusRouterDetail } from '$lib/api';
 	import { user } from '$lib/stores/user';
 	import { _ } from 'svelte-i18n';
+	import { get } from 'svelte/store';
 	import AsusRouterClientModal from './AsusRouterClientModal.svelte';
 
 	let { data: initialData }: { data: AsusRouterDetail } = $props();
@@ -13,8 +14,32 @@
 	let searchQuery = $state('');
 	let filterType = $state<'all' | 'wired' | 'wireless' | 'online'>('all');
 
+	let editingPollInterval = $state(false);
+	let pollIntervalInput = $state(60);
+	let savingPollInterval = $state(false);
+	let pollIntervalError = $state<string | null>(null);
+
 	const widgetId = $derived(page.params.id || 'asus_router');
 	const isAdmin = $derived($user?.role === 'admin');
+
+	function openPollIntervalEditor() {
+		pollIntervalInput = router.poll_interval_seconds;
+		editingPollInterval = true;
+	}
+
+	async function savePollInterval() {
+		savingPollInterval = true;
+		pollIntervalError = null;
+		try {
+			await api.updateWidgetSettings(widgetId, { poll_interval_seconds: pollIntervalInput });
+			router = await api.widgetDetail<AsusRouterDetail>(widgetId);
+			editingPollInterval = false;
+		} catch {
+			pollIntervalError = get(_)('asus_router.detail.poll_interval_save_error');
+		} finally {
+			savingPollInterval = false;
+		}
+	}
 
 	function formatBytes(bytes: number): string {
 		if (bytes < 1024) return `${bytes} B`;
@@ -61,7 +86,34 @@
 
 <div class="header">
 	<h1>Asus Router</h1>
+	{#if isAdmin}
+		<div class="actions">
+			<button
+				class="edit-settings"
+				onclick={() => (editingPollInterval ? (editingPollInterval = false) : openPollIntervalEditor())}
+			>
+				{editingPollInterval ? $_('common.cancel') : $_('asus_router.detail.edit_poll_interval')}
+			</button>
+		</div>
+	{/if}
 </div>
+
+{#if editingPollInterval}
+	<div class="settings-form">
+		<label>
+			{$_('asus_router.detail.poll_interval_label')}
+			<input type="number" min="20" bind:value={pollIntervalInput} />
+		</label>
+
+		<button class="save" disabled={savingPollInterval} onclick={savePollInterval}>
+			{savingPollInterval ? $_('common.saving') : $_('common.save')}
+		</button>
+	</div>
+{/if}
+
+{#if pollIntervalError}
+	<p class="hint error">{pollIntervalError}</p>
+{/if}
 
 {#if !router.connected}
 	<p class="hint">{$_('asus_router.detail.not_connected_hint')}</p>
@@ -219,6 +271,59 @@
 
 	.header h1 {
 		margin: 0;
+	}
+
+	.actions {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.edit-settings {
+		background: none;
+		border: 1px solid var(--color-border);
+		border-radius: 0.5rem;
+		padding: 0.4rem 0.75rem;
+		color: var(--color-accent);
+		cursor: pointer;
+	}
+
+	.settings-form {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		max-width: 20rem;
+		margin: 1rem 0 1.5rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: 0.75rem;
+		padding: 1rem;
+	}
+
+	.settings-form label {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		font-size: 0.9rem;
+		color: var(--color-text-muted);
+	}
+
+	.settings-form input[type='number'] {
+		font: inherit;
+		padding: 0.5rem 0.75rem;
+		border-radius: 0.5rem;
+		border: 1px solid var(--color-border);
+		background: var(--color-surface);
+		color: var(--color-text);
+	}
+
+	.save {
+		align-self: flex-start;
+		background: var(--color-accent);
+		color: var(--color-surface);
+		border: none;
+		border-radius: 0.5rem;
+		padding: 0.5rem 1rem;
+		cursor: pointer;
 	}
 
 	.hint {

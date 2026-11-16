@@ -5,6 +5,7 @@ import sqlite3
 import pytest
 
 from app import auth, config, crypto
+from app.integrations import asus_router_client
 from app.plugins.base import registry
 from app.scheduler import scheduler
 from app.storage import db
@@ -13,18 +14,21 @@ from app.storage.cache import cache
 
 @pytest.fixture(autouse=True)
 def _reset_shared_state():
-    """The plugin registry, TTL cache, and PIN-login lockout tracker are
-    process-wide singletons; tests must not leak registrations or cached
-    values into each other."""
+    """The plugin registry, TTL cache, PIN-login lockout tracker, and the
+    Asus Router plugin's pooled SSH connections are process-wide singletons;
+    tests must not leak registrations, cached values, or pooled connections
+    into each other."""
     registry._plugins.clear()
     cache._store.clear()
     auth._failed_attempts.clear()
     scheduler.remove_all_jobs()
+    asus_router_client._ssh_connections.clear()
     yield
     registry._plugins.clear()
     cache._store.clear()
     auth._failed_attempts.clear()
     scheduler.remove_all_jobs()
+    asus_router_client._ssh_connections.clear()
 
 
 @pytest.fixture(autouse=True)
